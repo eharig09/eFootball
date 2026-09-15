@@ -868,7 +868,9 @@ create the SQLite schema, but it cannot copy a developer workstation's data onto
 attached Render disk. Render also does not expose a persistent disk to build or
 pre-deploy commands. Production therefore uses a runtime initializer:
 
-- `NFL_AUTO_SEED=1` asks the single web worker to inspect the current-season store.
+- Render defaults `NFL_AUTO_SEED` on because an existing service might deploy a
+  Blueprint change without importing newly declared environment variables. An
+  explicit `NFL_AUTO_SEED=0` still disables it; other environments remain opt-in.
 - Missing teams, games, or players launch `sports_aggregator.nfl.production_seed`.
 - An atomic disk lock prevents worker recycling or overlapping deploys from starting
   duplicate population processes; failed attempts become eligible for retry after a

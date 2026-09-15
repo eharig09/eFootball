@@ -111,7 +111,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         NFL_PFF_SOURCE_ROOT=os.getenv(
             "NFL_PFF_SOURCE_ROOT", r"C:\Users\ehari\Desktop\scouting_report"
         ),
-        NFL_AUTO_SEED=_env_flag("NFL_AUTO_SEED", False),
+        # Existing Render services are not guaranteed to re-sync Blueprint
+        # environment additions on deploy. Render itself is therefore the safe
+        # default; local/test processes remain opt-in and an explicit 0 wins.
+        NFL_AUTO_SEED=_env_flag("NFL_AUTO_SEED", _env_flag("RENDER", False)),
         CFBD_RAW_CACHE_PATH=os.getenv(
             "CFBD_RAW_CACHE_PATH", os.path.join(app.instance_path, "cfbd_raw")
         ),

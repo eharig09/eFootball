@@ -294,7 +294,8 @@ uses one threaded Gunicorn worker and leaves the memory-heavy legacy dashboards 
 which preserves headroom for an in-service refresh subprocess.
 
 The NFL store is initialized at runtime because Render does not mount persistent
-disks into build or pre-deploy instances. With `NFL_AUTO_SEED=1`, an empty
+disks into build or pre-deploy instances. Render enables the behavior by default
+(and `NFL_AUTO_SEED=1` can enable it elsewhere); an empty
 `NFL_DATABASE_PATH` launches one lock-safe helper after the web worker starts. It
 loads current public essentials first, then reporting and a statistics-only
 2010-through-prior-season backfill. Each stage is a separate subprocess to release
