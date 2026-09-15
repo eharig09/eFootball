@@ -60,6 +60,14 @@
     </section>
     {% endif %}
 
+    {% if player_watches %}
+    <section class="section" id="player-watches" data-nfl-panel="matchups">
+        <div class="section-head"><div><p class="eyebrow">Named on both sides</p><h2>Player matchups to watch</h2></div></div>
+        <p class="section-note">These are the only pairings the stored data can name a specific opponent for: a slot receiver against the opponent's primary slot corner, and a team's leading pass rusher against the opposing line's best pass-block grade. Everything else on this tab is a player-vs-zone or unit-vs-unit read, not a coverage assignment.</p>
+        <div class="player-watch-grid">{% for watch in player_watches %}<article class="player-watch-card"><span class="watch-kind">{{ watch.kind }}</span><div class="watch-side"><a href="{{ url_for('nfl.player_page', player_id=watch.offense_player_id, season=game.season) }}"><b>{{ watch.offense_player }}</b><small>{{ watch.offense }}</small></a><em>{{ watch.offense_detail }}</em></div><span class="watch-versus">vs</span><div class="watch-side"><a href="{{ url_for('nfl.player_page', player_id=watch.defense_player_id, season=game.season) }}"><b>{{ watch.defense_player }}</b><small>{{ watch.defense }}</small></a><em>{{ watch.defense_detail }}</em></div></article>{% endfor %}</div>
+    </section>
+    {% endif %}
+
     {% if defense_pass_profiles[game.away_team].has_data or defense_pass_profiles[game.home_team].has_data %}
     <section class="section" id="pass-defense" data-nfl-panel="matchups">
         <div class="section-head"><div><p class="eyebrow">{{ pass_profile_season }} quarterback usage vs opponent results{% if pass_profile_season != game.season %} &middot; prior-season baseline{% endif %}</p><h2>Charted passing: offense against defense</h2></div></div>
@@ -191,5 +199,6 @@
 </main>
 <script src="{{ url_for('static', filename='nfl_tabs.js') }}"></script>
 <script src="{{ url_for('static', filename='table_sort.js') }}"></script>
+<script src="{{ url_for('static', filename='nfl_tooltips.js') }}"></script>
 </body>
 </html>

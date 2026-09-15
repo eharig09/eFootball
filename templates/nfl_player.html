@@ -1,7 +1,7 @@
 {% from '_tables.html' import data_table %}
 {% from '_nfl_nav.html' import nfl_nav %}
 {% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
-{% from '_nfl_charts.html' import line_chart, chart_workbench %}
+{% from '_nfl_charts.html' import chart_workbench, nfl_chart_scripts %}
 {% from '_nfl_passing.html' import pass_zone_grid %}
 <!DOCTYPE html>
 <html lang="en">
@@ -93,12 +93,13 @@
     </section>
 
     <section class="section" id="game-log">
-        <div class="section-head"><div><p class="eyebrow">By week</p><h2>Game log</h2></div></div>
-        <p class="section-note">Only stat families this player recorded are shown. Each week links to its matchup page.</p>
+        <div class="section-head"><div><p class="eyebrow">{{ 'Full career' if career_view else 'By week' }}</p><h2>Game log</h2></div><a class="section-action" href="{{ url_for('nfl.player_page', player_id=player.player_id, season=season, career=(None if career_view else 1)) }}">{{ 'Back to ' ~ season|string if career_view else 'View full career' }}</a></div>
+        <p class="section-note">Only stat families this player recorded are shown. Each {{ 'game' if career_view else 'week' }} links to its matchup page.{% if career_view %} Spans every season synced for this player.{% endif %}</p>
         <div class="player-log-grid">{% for group in game_log_groups %}<div>{{ data_table(group.table) }}</div>{% else %}<div class="empty">No weekly statistics are available for this player.</div>{% endfor %}</div>
     </section>
     <section class="section" id="coverage"><div class="section-head"><div><p class="eyebrow">Connected reporting + social</p><h2>{{ player.full_name }} coverage</h2></div></div>{{ nfl_reporting_streams(content_streams, 'No stored coverage is linked to this player yet.') }}</section>
 </main>
 <script src="{{ url_for('static', filename='table_sort.js') }}"></script>
+{{ nfl_chart_scripts() }}
 </body>
 </html>

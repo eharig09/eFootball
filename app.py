@@ -252,6 +252,26 @@ def create_app(test_config: dict | None = None) -> Flask:
                         **({"segment": segment} if segment else {}),
                         **({"reason": decision["reason"], "games": decision["games"]} if decision else {})}), 202
 
+    @app.post("/internal/nfl-refresh")
+    def start_nfl_refresh():
+        # NFL had no recurring refresh at all -- the cron below is new. Content
+        # is the default because it is what actually goes stale: rosters/PBP
+        # already refresh through the NFL_AUTO_SEED path and manual CLI runs.
+        require_refresh_auth()
+        segment = (request.args.get("segment") or "content").strip().casefold()
+        # "rosters" already refreshes injury/staff context alongside the
+        # roster itself (sync-nfl-rosters calls sync_espn_context too).
+        if segment not in {"content", "rosters"}:
+            abort(400, description="segment must be one of content, rosters")
+        season = app.config.get("CFB_DEFAULT_SEASON") or current_nfl_season()
+        root = Path(__file__).resolve().parent
+        subprocess.Popen(
+            [sys.executable, "-m", "sports_aggregator.nfl.refresh_cli", segment,
+             "--season", str(season)],
+            cwd=str(root), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+        )
+        return jsonify({"status": "accepted", "season": season, "segment": segment}), 202
+
     @app.post("/internal/cfb-content-zap")
     def cfb_content_zap():
         require_refresh_auth()

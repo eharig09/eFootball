@@ -17,7 +17,7 @@
 {% macro pass_matchup_grid(comparison) %}
 <article class="pass-matchup-card" style="--offense-color:{{ comparison.offense_identity.color or '#3d8eb9' }};--defense-color:{{ comparison.defense_identity.color or '#a95757' }}">
     <header><div><small>{{ comparison.offense }} offense</small><h3>{{ comparison.quarterback.player_name if comparison.quarterback else 'Quarterback sample unavailable' }}</h3></div><span>vs</span><div><small>{{ comparison.defense }} defense</small><h3>Results allowed</h3></div></header>
-    <div class="pass-matchup-legend"><span class="offense-key">{{ comparison.offense }} advantage</span><span>Edge = QB EPA/att minus defense EPA/att allowed</span><span class="defense-key">{{ comparison.defense }} advantage</span></div>
+    <div class="pass-matchup-legend"><span class="offense-key">{{ comparison.offense }} advantage</span><span>Edge = QB EPA/att + defense EPA/att allowed (both favor the offense when positive)</span><span class="defense-key">{{ comparison.defense }} advantage</span></div>
     <div class="pass-zone-head"><span>Depth</span><b>Left</b><b>Middle</b><b>Right</b></div>
     {% for row in comparison.matchup.rows %}<div class="pass-zone-row"><strong>{{ row.label }}</strong>{% for zone in row.cells %}
         <div class="pass-matchup-cell edge-{{ zone.lean }}-{{ zone.strength }}{% if zone.edge is none %} empty-zone{% endif %}"{% if zone.contributors %} tabindex="0"{% endif %}>

@@ -10,6 +10,7 @@
             <a class="{{ 'active' if active == 'scoreboard' }}" href="{{ url_for('nfl.scoreboard', season=season) }}">Scoreboard</a>
             <a href="{{ url_for('nfl.dashboard', season=season, _anchor='standings') }}">Standings</a>
             <a href="{{ url_for('nfl.dashboard', season=season, _anchor='teams') }}">Teams</a>
+            <a class="{{ 'active' if active == 'explorer' }}" href="{{ url_for('nfl.stat_explorer', season=season) }}">Explorer</a>
             <a class="{{ 'active' if active == 'pff' }}" href="{{ url_for('nfl.pff_explorer', season=(season - 1 if season and season > 2025 else season)) }}">PFF</a>
             <a class="{{ 'active' if active == 'sources' }}" href="{{ url_for('nfl.source_audit', season=season) }}">Sources</a>
             <a href="{{ url_for('nfl.dashboard', season=season, _anchor='news') }}">News</a>

@@ -36,6 +36,13 @@ class PageCacheTests(unittest.TestCase):
         handle, self.path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(handle)
         os.unlink(self.path)
+        # data_version() hashes NFL_DATABASE_PATH alongside the CFB one, so
+        # this needs the same isolation as CFB's -- otherwise the cache key
+        # depends on whatever instance/nfl.sqlite3 happens to hold locally,
+        # which a cache-invalidation test cannot control.
+        nfl_handle, self.nfl_path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(nfl_handle)
+        os.unlink(self.nfl_path)
         forget_initialized_schemas()
         self.repository = CFBRepository(self.path)
         self.repository.replace_teams([Team.from_cfbd(payload) for payload in (
@@ -66,6 +73,7 @@ class PageCacheTests(unittest.TestCase):
         self.app = create_app({
             "REGISTER_LEGACY_DASHBOARDS": False, "CFB_REPOSITORY": self.repository,
             "CFB_DEFAULT_SEASON": 2026, "CFB_DATABASE_PATH": self.path,
+            "NFL_DATABASE_PATH": self.nfl_path,
         })
         cache.clear()
         self.client = self.app.test_client()
@@ -73,7 +81,8 @@ class PageCacheTests(unittest.TestCase):
     def tearDown(self):
         cache.clear()
         forget_initialized_schemas()
-        for path in (self.path, self.path + "-wal", self.path + "-shm"):
+        for path in (self.path, self.path + "-wal", self.path + "-shm",
+                     self.nfl_path, self.nfl_path + "-wal", self.nfl_path + "-shm"):
             if os.path.exists(path):
                 os.unlink(path)
 

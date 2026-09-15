@@ -939,3 +939,182 @@ PFF seed stage can run.
   entry, a "Deep receiving grade" dashboard leaders card, and wired
   `deep/medium/short/behind_los_grades_pass_route` into `personnel._relevant_grades`
   for `WR`/`TE` position-room grading, alongside the existing overall route grade.
+
+## 2026-09-15 sample-floor scaling, source directory, and defensive-line PFF
+
+- Every PFF "leaders" query (dashboard tabs, team PFF cards, the trench blocker
+  card, alignment matchups) required a full-season sample -- 100 routes, 100-200
+  combined snaps -- before a player counted. Early in a season nobody clears
+  that, so freshly synced PFF data rendered as empty everywhere a leaders filter
+  touched it even though the raw explorer showed real grades.
+  `pff.season_scaled_minimum()` scales each floor down by how many weeks are
+  actually synced for that season (floored at 12%), climbing back to the
+  configured full-season value as the season progresses. Wired into
+  `web.py`'s dashboard/team PFF leaders, `trenches.py`'s blocker sample, and
+  `alignments.py`'s receiver/slot-coverage samples.
+- `significant_movements()` graded every arrival/departure against
+  `season - 1` unconditionally. PFF is licensed data uploaded season by
+  season, and this database has 2026 grades with nothing synced for 2025 --
+  every arrival's `grade_points` was silently 0, so ranking collapsed to pure
+  snap-participation percentage regardless of actual quality. It now falls
+  back to the current season when the prior one has no PFF rows. Separately,
+  `_score()` capped any position with no PFF grade evidence at 37 points below
+  every graded peer; that weight now moves into participation instead, so an
+  every-down starter at a position with no PFF family (special teams) doesn't
+  read as a marginal-depth mover for having no grade to show.
+- Added `defense_summary` and `pass_rush_summary` as recognized PFF families
+  (`grades_defense`/`grades_run_defense`/`stops`/`tackles` and
+  `grades_pass_rush_defense`/`pass_rush_win_rate`/`total_pressures`/`sacks`/
+  `hits`). EDGE/DE/DT/NT/DL had no PFF family at all before this -- every
+  defensive lineman's `grade_points` was structurally 0, which combined with
+  the bug above to make pass rushers essentially invisible in arrivals,
+  departures, and position-room grades. Wired into
+  `personnel.GRADE_KEYS`/`GRADE_FAMILIES`/`_relevant_grades`, the PFF
+  explorer, and new "Pass-rush grade"/"Run-defense grade" dashboard and team
+  leaders cards.
+- The Render disk's compact-snapshot fast path (`restore_public_seed`)
+  returns before the `essentials` stage ever runs, and only `essentials`
+  (`sync-nfl`) imports the source directory into the shared, CFB-hosted
+  registry. On a fresh disk that left `source_registry.list_league_sources
+  ("nfl")` permanently empty -- team coverage, the source audit page, and
+  `ingest_bluesky`'s account list all saw nothing configured, even though
+  NFL data itself restored fine. `production_seed.run()` now imports the
+  directory unconditionally after either seed path.
+- NFL had no recurring content refresh at all -- rosters/PBP refresh through
+  `NFL_AUTO_SEED` and manual CLI runs, but nothing kept RSS/Bluesky content
+  current after the initial seed. Added `POST /internal/nfl-refresh`
+  (mirrors `/internal/cfb-refresh`'s auth) and a `nfl-content-refresh-trigger`
+  Render cron, every 3 hours, offset from CFB's top-of-hour schedule.
+- Fixed the same stacking-context gap as the injury tooltip (see the staff
+  and availability pass above) in the pass-zone and pass-rush matchup grids:
+  `position:relative` alone doesn't lift a hovered cell above cells painted
+  after it in the grid, so an open "+ players" tooltip could lose to a
+  later cell. The hovered/focused cell now gets an elevated z-index.
+- The weekly-form chart workbench now caps overlays at two metrics (checking
+  a third silently drops the oldest), shows more history (a full 17-week
+  season instead of a rolling 10-game window), and brightened its axis
+  labels for legibility.
+
+## 2026-09-15 chart legibility, stat explorer, player game logs, draft weight
+
+- A season's worth of x-axis labels ("25·W2 25·W3 25·W4 ...") collided into
+  an unreadable smear once the window widened to 17 points. `series()` now
+  tags roughly nine evenly spaced points per chart as `show_label` (always
+  including the most recent), so the line/dots stay fully granular while
+  only a legible subset gets a text label underneath.
+- Added `/nfl/explorer/`: a league-wide player stat table (every metric
+  `player_weekly_stats` tracks that can be correctly summed across weeks,
+  plus a few derived rate columns computed from those totals rather than
+  averaged week-to-week) with position/team/min-games filters, sortable via
+  the existing `table_sort.js`, plus a scatter-plot builder for any two
+  metrics. `NFLRepository.player_season_stats()` pivots the long
+  (season,week,player,metric,value) table into one wide row per player via
+  conditional `SUM(CASE WHEN metric=? THEN value END)` -- no `ELSE 0`,
+  so a player who never had a row for a metric (a lineman has no
+  `passing_yards` row, ever) sums to NULL and is correctly excluded from a
+  scatter axis, rather than plotting at a false zero and burying the
+  players the metric actually describes.
+- Expanded the player page's family game-log tables (passing/rushing/
+  receiving/defense) with the advanced columns `player_weekly_stats` already
+  carried but nothing rendered: EPA, CPOE, air yards, YAC, target share,
+  tackles for loss, passes defended, forced fumbles.
+- `significant_movements()`'s draft-capital weighting was low enough that a
+  rotational veteran's participation could outrank a true premium pick.
+  Round 1 now exceeds the entire grade range (45 of a possible ~120 points)
+  so a real premium pick outranks a rotational add on pedigree alone, while
+  genuine performance (high snap share plus a strong grade) still clears any
+  round's bonus on its own -- pedigree shifts the ranking, it doesn't own it.
+
+## 2026-09-15 tooltip escape hatch, Chart.js migration, career log, player watches
+
+- The z-index fix from the previous pass was necessary but not sufficient:
+  `.injury-tooltip`/`.pass-zone-tooltip` live inside a `.section` (or
+  `.pass-matchup-card`), and both clip with `overflow:hidden`/`overflow-x:
+  auto` for their own rounded-corner/scroll styling. An ancestor's overflow
+  clipping wins over any z-index, full stop -- there is no CSS-only escape.
+  `static/nfl_tooltips.js` now drives both tooltip types with
+  `position:fixed`, computed from the trigger's `getBoundingClientRect()` on
+  hover/focus (clamped to the viewport), which is positioned against the
+  viewport and so escapes every scrolling/clipping ancestor by construction.
+  A debounced hide (and listening on the tooltip itself, not just the
+  trigger) keeps a pointer moving from the trigger toward the relocated
+  tooltip -- to click a player link inside it -- from closing it first.
+- Migrated the weekly-form line charts (team and player pages) from hand-
+  computed SVG pixel geometry to Chart.js, mirroring the pattern
+  `_cfb_page_visuals.html`'s `trend_chart`/`trend_scripts` already uses
+  successfully for the same kind of chart. `sports_aggregator.nfl.charts`
+  now only shapes `{key, label, format, color, values}` -- Chart.js handles
+  axis auto-scaling and tick-density (no more manually thinning x-axis
+  labels) and dataset-level `yAxisID` gives the two-metric overlay a real
+  second axis natively, rather than a hand-rolled parallel SVG axis. New
+  `static/nfl_charts.js` (driver), loaded alongside the same jsdelivr
+  Chart.js CDN build CFB already uses, via `_nfl_charts.html`'s
+  `nfl_chart_scripts()`. The stat explorer's scatter plot (a different,
+  newer chart) stays hand-rolled
+  SVG for now; `sports_aggregator.nfl.charts.LEFT/RIGHT/TOP/PLOT_W/PLOT_H`
+  remain only for that.
+- Added a career game log: `NFLRepository.player_career_weekly()` is the
+  same wide-row-per-game shape as `player_weekly()`, just not scoped to one
+  season. `?career=1` on a player page swaps the family game-log tables to
+  the full history (with a Season column, via `player_game_log_tables`'s
+  new `show_season` flag) instead of the current season.
+- Added a "Player matchups to watch" section to the game page's Matchups
+  tab. Most of what alignment_matchups already computes is receiver-vs-zone,
+  not receiver-vs-defender -- there is no coverage-assignment data to name a
+  specific opponent with, and the page says so deliberately. Two pairings
+  genuinely can be: a slot receiver against the opponent's primary slot
+  corner (alignment_matchups already resolves this), and a team's leading
+  pass rusher against the opposing line's best-graded pass blocker (from
+  trench_matchups' existing blockers/rushers lists) -- both are positional
+  roles, not a specific-play assignment, so naming them isn't overreach the
+  way naming a WR's shadow corner would be. `alignments.
+  player_matchup_watches()` extracts both from data the page already
+  computes for the tab, rather than adding new queries.
+- The stat explorer gained week-range filtering (`player_season_stats()`
+  takes `week_from`/`week_to`) and a team dual-color scatter mode: each
+  team's primary color fills the dot, its alternate rings it, instead of
+  the default position-group coloring.
+
+## 2026-09-15 pass-matchup edge fix, scatter-plot Chart.js migration, chart catalog expansion
+
+- Fixed a sign-inversion bug in the game page's team-colored "Charted
+  passing: offense against defense" grid (`pass_matchup_packet` in
+  `sports_aggregator/nfl/passing.py`). Both `attack_epa` and `defense_epa`
+  share the same attacking-offense-relative sign convention (positive
+  always favors whoever has the ball; see `qb_pass_profiles.total_epa`), so
+  a favorable matchup needs both terms pointing the same way and they must
+  combine by addition. The code instead computed `edge = attack_epa -
+  defense_epa`, which cancels a good offense against a leaky defense (and a
+  bad offense against a stingy one) to a false "even" reading, and flips a
+  wash into a false lopsided one. Confirmed against a live example: a zone
+  where the offense's own EPA/att was negative but the opposing defense had
+  allowed a strongly positive EPA/att there was rendered as a defense edge,
+  when the leaky defense should have made it an offense edge. Fixed to
+  `edge = attack_epa + defense_epa`; the existing unit test had encoded the
+  same wrong assumption and was corrected alongside a new test for the
+  opposite (leaky-defense) case.
+- Migrated the stat explorer's scatter plot from hand-rolled SVG pixel
+  geometry to Chart.js's native `type: "scatter"`, the same migration
+  already done for the weekly-form line charts. `explorer.scatter_plot()`
+  now just pairs each player into a `{x, y, color, ring_color, ...}` point
+  -- no more `cx`/`cy` pixel projection or hand-built tick arrays; axis
+  scaling, gridlines, and tick formatting are native Chart.js. The now-
+  unused `LEFT`/`RIGHT`/`TOP`/`BOTTOM`/`PLOT_W`/`PLOT_H`/`WIDTH`/`HEIGHT`
+  constants and the SVG-only CSS (`.scatter-svg`, `.scatter-dot`,
+  `.chart-gridline`, `.chart-axis-title`, `.chart-y-label`/`.chart-x-label`,
+  the dead `.mini-line-chart` rules from the pre-Chart.js line chart) were
+  removed from `charts.py`/`nfl_components.css`. `static/nfl_charts.js`
+  gained a second driver block for `[data-scatter-chart]` root elements,
+  reusing the same click-to-navigate (to the player page) and formatted-
+  tooltip pattern as the line-chart workbench.
+- Expanded the weekly-form chart catalogs. Team charts grew from 8 to 13:
+  `team_weekly_performance()` now also joins each game's *opponent* row
+  from `game_team_efficiency` (keyed by `opponent_team=team`) to expose
+  that week's `defensive_epa_allowed`/`defensive_success_allowed`/
+  `defensive_pass_epa_allowed`/`defensive_rush_epa_allowed`/
+  `defensive_explosive_allowed` -- previously that family only existed as a
+  season aggregate in `league_efficiency()`. Player charts were widened per
+  position group (QB 5→9, RB/FB 5→9, WR/TE 6→8, defense 5→8) by drawing on
+  metric keys already present in `player_weekly()`'s wide row (the same
+  `player_weekly_stats` vocabulary `sports_aggregator.nfl.explorer.METRICS`
+  already catalogs for the explorer), not new queries.

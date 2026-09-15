@@ -71,7 +71,11 @@ def pass_matchup_packet(offense: dict[str, Any] | None,
             defense_epa = resist.get("epa_per_attempt")
             comparable = bool(attack_attempts and defense_attempts and
                               attack_epa is not None and defense_epa is not None)
-            edge = attack_epa - defense_epa if comparable else None
+            # Both values share the attacking-offense EPA sign convention (positive
+            # favors whoever has the ball), so a favorable matchup for the offense
+            # needs BOTH terms to point that way — they combine additively, not by
+            # subtraction (which would cancel a good offense against a leaky defense).
+            edge = attack_epa + defense_epa if comparable else None
             interaction = (sqrt((attack_attempts / offense_total) *
                                 (defense_attempts / defense_total))
                            if offense_total and defense_total else None)

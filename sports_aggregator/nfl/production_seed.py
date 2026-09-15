@@ -23,6 +23,7 @@ from typing import Any
 
 from sports_aggregator.nfl.nflverse import current_season
 from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.nfl.source_directory import DEFAULT_PATH as SOURCE_DIRECTORY_PATH, import_directory
 
 
 LOCK_NAME = "nfl_production_seed.lock"
@@ -122,6 +123,26 @@ def _pff_available() -> bool:
     return any((root / relative).is_dir() for relative in ("nfl/pff", "pff_coverage_data"))
 
 
+def _import_source_directory() -> int | None:
+    """Seed the shared, CFB-hosted source registry with the NFL directory.
+
+    Normally `sync-nfl` (the "essentials" stage) does this. The snapshot
+    fast path below returns before that stage ever runs, so on a fresh disk
+    the registry stayed empty forever even though the NFL data itself
+    restored fine -- every "leaders"/"sources" page that reads it (team
+    coverage, the source audit page, ingest_bluesky's account list) saw
+    nothing configured. This is cheap (one workbook, no pandas) so it runs
+    unconditionally after either seed path.
+    """
+    if not SOURCE_DIRECTORY_PATH.exists():
+        return None
+    from sports_aggregator.social.registry import SourceRegistry
+    cfb_database = Path(os.getenv("CFB_DATABASE_PATH", "instance/cfb.sqlite3"))
+    if not cfb_database.is_absolute():
+        cfb_database = Path(__file__).resolve().parents[2] / cfb_database
+    return import_directory(SourceRegistry(cfb_database), SOURCE_DIRECTORY_PATH)
+
+
 def restore_public_seed(database: Path, archive: Path = DEFAULT_SEED_ARCHIVE) -> dict[str, int]:
     """Merge a compressed, public-only SQLite snapshot without loading pandas."""
     if not archive.is_file():
@@ -194,6 +215,14 @@ def run(season: int) -> dict[str, Any]:
     if restored["rows"]:
         state["stages"].append({"stage": "public_snapshot", "started_at": state["started_at"],
                                 "finished_at": _stamp(), "status": "success", **restored})
+        try:
+            imported = _import_source_directory()
+            state["stages"].append({"stage": "source_directory", "finished_at": _stamp(),
+                                    "status": "success", "sources": imported})
+        except Exception as exc:
+            state["stages"].append({"stage": "source_directory", "finished_at": _stamp(),
+                                    "status": "failed",
+                                    "error": f"{type(exc).__name__}: {exc}"})
         state["status"] = "success" if not needs_seed(NFLRepository(database), season) else "degraded"
         state["counts"] = NFLRepository(database).counts(season)
         state["finished_at"] = _stamp()

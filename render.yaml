@@ -129,3 +129,21 @@ services:
         sync: false
       - key: CFB_REFRESH_TIMEZONE
         value: America/New_York
+
+  - type: cron
+    name: nfl-content-refresh-trigger
+    runtime: python
+    # NFL had no recurring refresh at all: rosters/PBP refresh through the
+    # NFL_AUTO_SEED path and manual CLI runs, but content (RSS + Bluesky)
+    # had nothing keeping it current. Every 3 hours, offset from the CFB
+    # trigger's top-of-hour schedule.
+    schedule: "20 */3 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      curl -fsS -X POST -H "Authorization: Bearer $CFB_REFRESH_TOKEN"
+      "$NFL_REFRESH_URL"
+    envVars:
+      - key: NFL_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_TOKEN
+        sync: false

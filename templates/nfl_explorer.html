@@ -1,0 +1,73 @@
+{% from '_tables.html' import data_table %}
+{% from '_nfl_nav.html' import nfl_nav %}
+{% from '_nfl_charts.html' import scatter_chart, nfl_chart_scripts %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>{{ season }} NFL Stat Explorer</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+</head>
+<body class="nfl-explorer-page">
+{{ nfl_nav('explorer', season) }}
+<main>
+    <section class="nfl-hero compact-hero">
+        <p class="eyebrow">{{ season }} season</p>
+        <h1>Stat explorer</h1>
+        <p>Every synced player, one row per season, sortable on any column. Build a scatter plot from any two metrics to compare players at a glance.</p>
+        <div class="metrics"><span><b>{{ player_count }}</b> players</span></div>
+    </section>
+
+    <section class="section">
+        <form method="get" class="explorer-controls" action="{{ url_for('nfl.stat_explorer') }}">
+            <input type="hidden" name="season" value="{{ season }}">
+            <label>Position<select name="position">
+                <option value="">All positions</option>
+                {% for option in positions %}<option value="{{ option }}"{{ ' selected' if option == position_filter }}>{{ option }}</option>{% endfor %}
+            </select></label>
+            <label>Team<select name="team">
+                <option value="">All teams</option>
+                {% for team in teams %}<option value="{{ team.abbreviation }}"{{ ' selected' if team.abbreviation == team_filter }}>{{ team.abbreviation }} — {{ team.nickname }}</option>{% endfor %}
+            </select></label>
+            <label>Min. games<input type="number" name="min_games" value="{{ minimum_games }}" min="1" max="20" style="width:70px"></label>
+            <label>Week from<select name="week_from">
+                <option value="">Start</option>
+                {% for week in range(1, latest_week + 1) %}<option value="{{ week }}"{{ ' selected' if week == week_from }}>{{ week }}</option>{% endfor %}
+            </select></label>
+            <label>Week to<select name="week_to">
+                <option value="">End</option>
+                {% for week in range(1, latest_week + 1) %}<option value="{{ week }}"{{ ' selected' if week == week_to }}>{{ week }}</option>{% endfor %}
+            </select></label>
+            <label>Scatter X<select name="x">
+                {% for category in metric_categories %}<optgroup label="{{ category }}">{% for key, label, fmt, cat in metrics if cat == category %}<option value="{{ key }}"{{ ' selected' if key == x_key }}>{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
+            </select></label>
+            <label>Scatter Y<select name="y">
+                {% for category in metric_categories %}<optgroup label="{{ category }}">{% for key, label, fmt, cat in metrics if cat == category %}<option value="{{ key }}"{{ ' selected' if key == y_key }}>{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
+            </select></label>
+            <label>Color by<select name="color_by">
+                <option value="position"{{ ' selected' if color_by == 'position' }}>Position group</option>
+                <option value="team"{{ ' selected' if color_by == 'team' }}>Team colors</option>
+            </select></label>
+            <button type="submit">Apply</button>
+        </form>
+    </section>
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Scatter{% if week_from or week_to %} · weeks {{ week_from or 1 }}–{{ week_to or latest_week }}{% endif %}</p><h2>{{ scatter.y_label }} vs {{ scatter.x_label }}</h2></div></div>
+        <p class="section-note">Each dot is one player, {{ 'colored and ringed by team' if color_by == 'team' else 'colored by position group' }}. Hover for exact values; click to open the player page.</p>
+        {{ scatter_chart(scatter) }}
+    </section>
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Full table</p><h2>Player stats</h2></div></div>
+        {{ data_table(table) }}
+    </section>
+</main>
+<script src="{{ url_for('static', filename='table_sort.js') }}"></script>
+{{ nfl_chart_scripts() }}
+</body>
+</html>

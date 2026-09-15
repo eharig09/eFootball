@@ -18,6 +18,7 @@ GRADE_KEYS = (
     "short_grades_pass_route", "behind_los_grades_pass_route",
     "grades_run", "grades_pass_block", "grades_run_block",
     "man_grades_coverage_defense", "zone_grades_coverage_defense",
+    "grades_pass_rush_defense", "grades_run_defense",
 )
 GRADE_FAMILIES = {
     "deep_grades_pass": "passing_depth", "medium_grades_pass": "passing_depth",
@@ -29,6 +30,7 @@ GRADE_FAMILIES = {
     "grades_run_block": "offense_blocking",
     "man_grades_coverage_defense": "defense_coverage_scheme",
     "zone_grades_coverage_defense": "defense_coverage_scheme",
+    "grades_pass_rush_defense": "pass_rush_summary", "grades_run_defense": "defense_summary",
 }
 POSITION_SECTIONS = (
     ("Offense", ("QB", "RB", "FB", "WR", "TE", "LT", "LG", "C", "RG", "RT", "OT", "OG", "OL")),
@@ -99,6 +101,8 @@ def _relevant_grades(position: str | None, metrics: dict[str, float]) -> list[di
         keys = ("grades_pass_block", "grades_run_block")
     elif position in {"CB", "DB", "S", "FS", "SS", "LB", "ILB", "OLB"}:
         keys = ("man_grades_coverage_defense", "zone_grades_coverage_defense")
+    elif position in {"EDGE", "DE", "DT", "NT", "DL"}:
+        keys = ("grades_pass_rush_defense", "grades_run_defense")
     else: keys = ()
     labels = {
         "deep_grades_pass": "deep passing", "medium_grades_pass": "intermediate passing",
@@ -109,6 +113,7 @@ def _relevant_grades(position: str | None, metrics: dict[str, float]) -> list[di
         "grades_run": "rushing", "grades_pass_block": "pass block",
         "grades_run_block": "run block", "man_grades_coverage_defense": "man coverage",
         "zone_grades_coverage_defense": "zone coverage",
+        "grades_pass_rush_defense": "pass rush", "grades_run_defense": "run defense",
     }
     return [{"metric": key, "label": labels[key], "value": metrics[key]}
             for key in keys if key in metrics]
@@ -133,23 +138,38 @@ def _score(row: dict[str, Any], snaps: dict[str, Any] | None,
     snap_pct = max((snaps or {}).get("offense_pct") or 0,
                    (snaps or {}).get("defense_pct") or 0,
                    (snaps or {}).get("st_pct") or 0)
-    snap_points = min(38.0, snap_pct * 38)
     grade = (sum(item["value"] for item in grades) / len(grades)) if grades else None
-    grade_points = 0 if grade is None else max(0.0, min(37.0, (grade - 50) * 1.15))
+    if grade is None:
+        # No PFF evidence for this player -- structurally true for every
+        # position with no ingested grade family (edge rushers and interior
+        # linemen have no pass-rush export), and sometimes just a data gap
+        # for a gradeable one. Either way, leaving grade_points at 0 would
+        # cap this player 37 points below every peer who has a grade; put
+        # that weight into participation instead so an every-down starter
+        # at an ungraded position can still score like one.
+        snap_points = min(75.0, snap_pct * 75)
+        grade_points = 0.0
+    else:
+        snap_points = min(38.0, snap_pct * 38)
+        grade_points = max(0.0, min(37.0, (grade - 50) * 1.15))
     draft_round = draft.get("draft_round")
     draft_pick = draft.get("draft_pick")
     career_year = max(1, season - (draft.get("draft_year") or season) + 1)
     draft_weight = 1.0 if career_year <= 2 else (.4 if career_year <= 4 else 0.0)
+    # Weighted enough that a real premium pick outranks a rotational veteran
+    # add on pedigree alone (round 1 exceeds the entire grade range), but not
+    # so far that pedigree beats genuine performance: an every-down snap
+    # share plus a strong grade still clears any of these on its own.
     if draft_round == 1:
-        draft_points = 25
+        draft_points = 45
     elif draft_round == 2:
-        draft_points = 20
+        draft_points = 32
     elif draft_round == 3:
-        draft_points = 15
+        draft_points = 20
     elif draft_round in {4, 5}:
-        draft_points = 9
+        draft_points = 12
     elif draft_round in {6, 7}:
-        draft_points = 5
+        draft_points = 6
     else:
         draft_points = 0
     draft_points *= draft_weight
@@ -182,7 +202,14 @@ def significant_movements(repository: NFLRepository, pff: NFLPFFService,
     snaps = _snap_index(repository, prior, teams)
     player_ids = {row["player_id"] for row in
                   movement["arrivals"] + movement["departures"]}
-    grades = _grade_index(repository, prior, player_ids)
+    # PFF exports are licensed data uploaded season by season -- a database
+    # can easily hold the current season's grades and nothing for the one
+    # before it. Grading every arrival/departure against a season with no
+    # PFF rows synced silently zeroed the grade component for everyone
+    # (evaluate() below falls back through every team the player has a
+    # grade under, so this only changes which season's rows it looks in).
+    grade_season = prior if pff.counts(prior)["metrics"] else season
+    grades = _grade_index(repository, grade_season, player_ids)
     drafts = _draft_index(repository, player_ids)
 
     def enrich(row: dict[str, Any]) -> dict[str, Any]:

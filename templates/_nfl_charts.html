@@ -1,29 +1,29 @@
-{% macro chart_x_label(point, reference_season) %}{% if point.season and reference_season and point.season != reference_season %}{{ point.season % 100 }}&middot;{% endif %}W{{ point.week }}{% endmacro %}
-
-{% macro line_chart(chart) %}
-<article class="mini-line-chart" style="--chart-color:{{ chart.color }}">
-    <header><h3>{{ chart.label }}</h3><span>{{ chart['values'][-1].value|cell(chart.format) }} latest</span></header>
-    <svg viewBox="0 0 720 260" role="img" aria-label="{{ chart.label }} by week">
-        {% for tick in chart.ticks %}<line x1="58" y1="{{ tick.y }}" x2="666" y2="{{ tick.y }}" class="chart-gridline"/><text x="51" y="{{ tick.y + 4 }}" class="chart-y-label">{{ tick.value|cell(chart.format) }}</text>{% endfor %}
-        {% if chart.baseline is not none %}<line x1="58" y1="{{ chart.baseline }}" x2="666" y2="{{ chart.baseline }}" class="chart-zero" />{% endif %}
-        <path d="{{ chart.path }}" class="chart-path" />
-        {% set reference_season = chart['values'][-1].season %}
-        {% for point in chart['values'] %}<a href="{{ url_for('nfl.game_page', game_id=point.game_id) }}"><circle cx="{{ point.x }}" cy="{{ point.y }}" r="5"><title>{% if point.season != reference_season %}{{ point.season }} {% endif %}Week {{ point.week }} vs {{ point.opponent }}: {{ point.value|cell(chart.format) }}</title></circle><text x="{{ point.x }}" y="250" class="chart-x-label">{{ chart_x_label(point, reference_season) }}</text></a>{% endfor %}
-    </svg>
-</article>
+{#- Renders client-side with Chart.js's native "scatter" type (see
+    nfl_chart_scripts() below and static/nfl_charts.js), which handles axis
+    scaling and tick density -- matching the weekly-form workbench's pattern
+    rather than hand-computed SVG geometry. -#}
+{% macro scatter_chart(scatter) %}
+{% if scatter.points %}
+<div class="chart-canvas-wrap" data-scatter-chart>
+    <canvas role="img" aria-label="{{ scatter.y_label }} versus {{ scatter.x_label }}, one point per player"></canvas>
+    <script type="application/json" data-scatter-json>{{ scatter|tojson }}</script>
+</div>
+{% else %}<div class="empty">No players have both metrics recorded for this filter.</div>{% endif %}
 {% endmacro %}
 
+{#- Weekly form: rendered client-side with Chart.js (see nfl_chart_scripts()
+    below), which handles axis auto-scaling and tick density natively --
+    matching the pattern _cfb_page_visuals.html already uses for the same
+    kind of weekly trend chart, rather than hand-computed SVG geometry. -#}
 {% macro chart_workbench(charts, chart_id) %}
 {% if charts %}<div class="chart-workbench" data-chart-workbench>
-    <header><div><h3>Weekly form</h3><p>Select a metric; check a second one to overlay it on its own right-hand axis. Exact values remain available in each point tooltip.</p></div><div class="chart-toggles">{% for chart in charts %}<label style="--series:{{ chart.color }}"><input type="checkbox" data-series="{{ chart_id }}-{{ loop.index }}" data-ticks="{{ chart.ticks|map(attribute='value')|map('cell', chart.format)|join('|') }}" {{ 'checked' if loop.first }}><span></span>{{ chart.label }}</label>{% endfor %}</div></header>
-    <svg viewBox="0 0 720 260" role="img" aria-label="Weekly performance, with a second overlaid metric on its own right-hand axis">
-        {% for y in [22,72,122,172,222] %}<line x1="58" y1="{{ y }}" x2="666" y2="{{ y }}" class="chart-gridline"/>{% endfor %}
-        {% for tick in charts[0].ticks %}<text x="51" y="{{ tick.y + 4 }}" class="chart-y-label" data-axis-label="{{ chart_id }}-left-{{ loop.index0 }}" style="fill:{{ charts[0].color }}">{{ tick.value|cell(charts[0].format) }}</text>{% endfor %}
-        {% for tick in charts[0].ticks %}<text x="673" y="{{ tick.y + 4 }}" class="chart-y-label chart-y-label-right" data-axis-label="{{ chart_id }}-right-{{ loop.index0 }}" hidden></text>{% endfor %}
-        {% set reference_season = charts[0]['values'][-1].season %}
-        {% for chart in charts %}<g data-series-path="{{ chart_id }}-{{ loop.index }}" style="--chart-color:{{ chart.color }};display:{{ 'inline' if loop.first else 'none' }}"><path d="{{ chart.path }}" class="chart-path"/>{% for point in chart['values'] %}<circle cx="{{ point.x }}" cy="{{ point.y }}" r="4"><title>{{ chart.label }} · {% if point.season != reference_season %}{{ point.season }} {% endif %}Week {{ point.week }}: {{ point.value|cell(chart.format) }}</title></circle>{% endfor %}</g>{% endfor %}
-        {% for point in charts[0]['values'] %}<text x="{{ point.x }}" y="250" class="chart-x-label">{{ chart_x_label(point, reference_season) }}</text>{% endfor %}
-    </svg>
-</div>
-<script>(function(){document.querySelectorAll('[data-chart-workbench]').forEach(function(root){var inputs=Array.prototype.slice.call(root.querySelectorAll('input[data-series]'));var leftLabels=Array.prototype.slice.call(root.querySelectorAll('[data-axis-label*="-left-"]'));var rightLabels=Array.prototype.slice.call(root.querySelectorAll('[data-axis-label*="-right-"]'));function applyAxis(labels,input){var ticks=(input&&input.dataset.ticks||'').split('|');var color=input?input.closest('label').style.getPropertyValue('--series'):'';labels.forEach(function(label,index){label.textContent=input&&ticks[index]!==undefined?ticks[index]:'';if(color)label.style.fill=color;label.hidden=!input;});}function relabel(){var checked=inputs.filter(function(input){return input.checked;});applyAxis(leftLabels,checked[0]);applyAxis(rightLabels,checked[1]);}inputs.forEach(function(input){input.addEventListener('change',function(){var line=root.querySelector('[data-series-path="'+input.dataset.series+'"]');if(line)line.style.display=input.checked?'inline':'none';relabel();});});relabel();});})();</script>{% endif %}
+    <header><div><h3>Weekly form</h3><p>Select up to two metrics; the second overlays on its own right-hand axis. Exact values remain available on hover, and each point links to its game.</p></div><div class="chart-toggles">{% for chart in charts %}<label style="--series:{{ chart.color }}"><input type="checkbox" data-metric="{{ chart.key }}"{{ ' checked' if loop.first }}><span></span>{{ chart.label }}</label>{% endfor %}</div></header>
+    <div class="chart-canvas-wrap"><canvas role="img" aria-label="Weekly performance trend"></canvas></div>
+    <script type="application/json" data-chart-json>{{ charts|tojson }}</script>
+</div>{% endif %}
+{% endmacro %}
+
+{% macro nfl_chart_scripts() %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='nfl_charts.js') }}"></script>
 {% endmacro %}

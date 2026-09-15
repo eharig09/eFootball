@@ -1124,6 +1124,50 @@ class NFLRepository:
             ).fetchone()
         return int(row[0]) if row and row[0] is not None else None
 
+    def player_season_stats(self, season: int, metrics: Iterable[str], *,
+                            team: str | None = None, position: str | None = None,
+                            week_from: int | None = None, week_to: int | None = None,
+                            minimum_games: int = 1) -> list[dict[str, Any]]:
+        """One wide row per player: every requested metric summed for the season
+        (or, with week_from/week_to, for just that slice of it).
+
+        Pivots the long (season,week,player,metric,value) table via conditional
+        aggregation so the stat explorer can sort/filter/plot across many
+        metrics without one query per column.
+        """
+        wanted = tuple(dict.fromkeys(str(metric) for metric in metrics if metric))
+        if not wanted:
+            return []
+        self.initialize()
+        where = ["season=?"]
+        where_params: list[Any] = [season]
+        if team:
+            where.append("team=?"); where_params.append(team)
+        if position:
+            where.append("position=?"); where_params.append(position)
+        if week_from is not None:
+            where.append("week>=?"); where_params.append(week_from)
+        if week_to is not None:
+            where.append("week<=?"); where_params.append(week_to)
+        # No ELSE 0: a player who never had a row for this metric (a
+        # lineman has no "passing_yards" row, ever) must SUM to NULL, not a
+        # real zero, so the scatter plot and column filters can tell "never
+        # played that role" apart from "played it and recorded a zero."
+        case_columns = ",".join(
+            f'SUM(CASE WHEN metric=? THEN value END) "{metric}"' for metric in wanted
+        )
+        parameters: list[Any] = [*wanted, *where_params, max(1, int(minimum_games))]
+        with closing(self._connect()) as connection:
+            return [dict(row) for row in connection.execute(
+                f"""SELECT player_id, MAX(player_name) player_name, MAX(team) team,
+                           MAX(position) position, COUNT(DISTINCT game_id) games,
+                           {case_columns}
+                    FROM player_weekly_stats WHERE {' AND '.join(where)}
+                    GROUP BY player_id
+                    HAVING games >= ?""",
+                parameters,
+            )]
+
     def team_player_usage(self, season: int, team: str, *,
                           before_week: int | None = None) -> list[dict[str, Any]]:
         """Aggregate touch and target workload into one row per player."""
@@ -1765,19 +1809,34 @@ class NFLRepository:
                 "SELECT * FROM game_team_efficiency WHERE season=? AND team=?",
                 (season, team),
             )}
+            # The opponent's own offensive row in the same game is this team's
+            # defense-allowed line -- same source table game_elo/league_efficiency
+            # already use for the season-long "defensive_epa_allowed" family.
+            allowed = {row["game_id"]: self._efficiency_rates(dict(row))
+                      for row in connection.execute(
+                "SELECT * FROM game_team_efficiency WHERE season=? AND opponent_team=?",
+                (season, team),
+            )}
         output = []
         for game in games:
             away = game["away_team"] == team
             points = game["away_score"] if away else game["home_score"]
-            allowed = game["home_score"] if away else game["away_score"]
+            points_against = game["home_score"] if away else game["away_score"]
+            faced = allowed.get(game["game_id"], {})
             output.append({
                 "season": season, "week": game["week"], "game_id": game["game_id"],
                 "opponent": game["home_team"] if away else game["away_team"],
-                "points": points, "points_allowed": allowed, "point_margin": points - allowed,
+                "points": points, "points_allowed": points_against,
+                "point_margin": points - points_against,
                 **{key: efficiency.get(game["game_id"], {}).get(key) for key in (
                     "epa_per_play", "success_rate", "pass_epa_per_play", "rush_epa_per_play",
                     "explosive_rate",
                 )},
+                "defensive_epa_allowed": faced.get("epa_per_play"),
+                "defensive_success_allowed": faced.get("success_rate"),
+                "defensive_pass_epa_allowed": faced.get("pass_epa_per_play"),
+                "defensive_rush_epa_allowed": faced.get("rush_epa_per_play"),
+                "defensive_explosive_allowed": faced.get("explosive_rate"),
             })
         return output
 
@@ -1936,6 +1995,29 @@ class NFLRepository:
             for row in rows:
                 game = games.setdefault(row["game_id"], {
                     "week": row["week"], "season": season, "season_type": row["season_type"],
+                    "game_id": row["game_id"], "team": row["team"],
+                    "opponent_team": row["opponent_team"],
+                    "player_name": row["player_name"], "position": row["position"],
+                })
+                game[row["metric"]] = row["value"]
+        return list(games.values())
+
+    def player_career_weekly(self, player_id: str) -> list[dict[str, Any]]:
+        """Every synced game for one player, across every season -- the same
+        wide-row shape as player_weekly(), just not scoped to one year."""
+        self.initialize()
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """SELECT season,week,season_type,game_id,team,opponent_team,player_name,
+                          position,metric,SUM(value) value
+                   FROM player_weekly_stats WHERE player_id=?
+                   GROUP BY season,week,season_type,game_id,team,opponent_team,player_name,position,metric
+                   ORDER BY season,week,game_id,metric""", (player_id,)
+            )
+            games: dict[str, dict[str, Any]] = {}
+            for row in rows:
+                game = games.setdefault(row["game_id"], {
+                    "week": row["week"], "season": row["season"], "season_type": row["season_type"],
                     "game_id": row["game_id"], "team": row["team"],
                     "opponent_team": row["opponent_team"],
                     "player_name": row["player_name"], "position": row["position"],

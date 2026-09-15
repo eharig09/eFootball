@@ -263,34 +263,48 @@ def player_game_log(rows: list[dict]) -> Table:
     )
 
 
-def player_game_log_tables(rows: list[dict]) -> list[dict]:
-    """Return only the stat-family tables relevant to a player's actual season."""
+def player_game_log_tables(rows: list[dict], *, show_season: bool = False) -> list[dict]:
+    """Return only the stat-family tables relevant to a player's actual season.
+
+    `show_season=True` (the career view, which spans many seasons) prepends
+    a Season column to every family table so rows stay identifiable once
+    "Week 1" no longer means one specific game.
+    """
+    season_column = (Column("season", "Season", "int"),) if show_season else ()
     definitions = (
         ("Passing", ("completions", "attempts", "passing_yards", "passing_tds", "passing_interceptions"), (
-            Column("week", "Week", "int"), Column("opponent_team", "Opp."),
+            *season_column, Column("week", "Week", "int"), Column("opponent_team", "Opp."),
             Column("completions", "Cmp", "int"), Column("attempts", "Att", "int"),
             Column("passing_yards", "Yds", "int", emphasis=True),
             Column("passing_tds", "TD", "int"), Column("passing_interceptions", "INT", "int"),
+            Column("passing_epa", "EPA", "signed2"), Column("passing_cpoe", "CPOE", "signed2"),
+            Column("passing_air_yards", "Air yd", "int"),
         )),
         ("Rushing", ("carries", "rushing_yards", "rushing_tds"), (
-            Column("week", "Week", "int"), Column("opponent_team", "Opp."),
+            *season_column, Column("week", "Week", "int"), Column("opponent_team", "Opp."),
             Column("carries", "Car", "int"), Column("rushing_yards", "Yds", "int", emphasis=True),
             Column("rushing_tds", "TD", "int"), Column("rushing_first_downs", "1D", "int"),
+            Column("rushing_epa", "EPA", "signed2"), Column("rushing_fumbles_lost", "Fum", "int"),
         )),
         ("Receiving", ("targets", "receptions", "receiving_yards", "receiving_tds"), (
-            Column("week", "Week", "int"), Column("opponent_team", "Opp."),
+            *season_column, Column("week", "Week", "int"), Column("opponent_team", "Opp."),
             Column("targets", "Tgt", "int"), Column("receptions", "Rec", "int"),
             Column("receiving_yards", "Yds", "int", emphasis=True),
             Column("receiving_tds", "TD", "int"), Column("receiving_first_downs", "1D", "int"),
+            Column("receiving_air_yards", "Air yd", "int"),
+            Column("receiving_yards_after_catch", "YAC", "int"),
+            Column("target_share", "Tgt share", "rate"), Column("receiving_epa", "EPA", "signed2"),
         )),
         ("Defense", ("def_tackles_solo", "def_sacks", "def_interceptions"), (
-            Column("week", "Week", "int"), Column("opponent_team", "Opp."),
+            *season_column, Column("week", "Week", "int"), Column("opponent_team", "Opp."),
             Column("def_tackles_solo", "Solo", "int", emphasis=True),
             Column("def_tackle_assists", "Ast", "int"), Column("def_sacks", "Sack", "f1"),
             Column("def_qb_hits", "QB hit", "int"), Column("def_interceptions", "INT", "int"),
+            Column("def_tackles_for_loss", "TFL", "int"), Column("def_pass_defended", "PD", "int"),
+            Column("def_fumbles_forced", "FF", "int"),
         )),
         ("Kicking", ("fg_att", "fg_made", "pat_att", "pat_made"), (
-            Column("week", "Week", "int"), Column("opponent_team", "Opp."),
+            *season_column, Column("week", "Week", "int"), Column("opponent_team", "Opp."),
             Column("fg_made", "FGM", "int"), Column("fg_att", "FGA", "int"),
             Column("fg_long", "Long", "int"), Column("pat_made", "XPM", "int"),
             Column("pat_att", "XPA", "int"),

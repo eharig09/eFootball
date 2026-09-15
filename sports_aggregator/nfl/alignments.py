@@ -138,3 +138,45 @@ def rushing_matchups(repository: NFLRepository, pff: NFLPFFService,
                 "season": pff_season,
             })
     return output
+
+
+def player_matchup_watches(alignment_cards: list[dict[str, Any]],
+                           trench_cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Named player-vs-player pairings worth calling out on the matchups tab.
+
+    Most of what this page knows is receiver-vs-zone, not receiver-vs-
+    defender -- the stored data has no coverage assignment, and the page
+    says so deliberately (see alignment_matchups' docstring context). Two
+    pairings ARE genuinely named on both sides: a slot receiver against the
+    opponent's primary slot corner, and a team's leading pass rusher against
+    the opposing line's best pass-block grade -- both roles are positional,
+    not a specific-play assignment, so naming them is not overreach.
+    """
+    watches = []
+    for card in alignment_cards:
+        defender = card.get("defender")
+        if not defender or not defender.get("player_name") or not card.get("player_id"):
+            continue
+        watches.append({
+            "kind": "Slot coverage", "offense": card["offense"], "defense": card["defense"],
+            "offense_player": card["player_name"], "offense_player_id": card["player_id"],
+            "offense_detail": f"{card.get('route_grade') or 0:.1f} route grade · "
+                              f"{card.get('yprr') or 0:.2f} yd/route",
+            "defense_player": defender["player_name"], "defense_player_id": defender.get("gsis_id"),
+            "defense_detail": f"{defender.get('yards_per_coverage_snap') or 0:.2f} "
+                              f"yd/snap allowed in the slot",
+        })
+    for card in trench_cards:
+        rusher = card["rushers"][0] if card.get("rushers") else None
+        blockers = [row for row in card.get("blockers", []) if row.get("grades_pass_block") is not None]
+        blocker = max(blockers, key=lambda row: row["grades_pass_block"], default=None)
+        if not rusher or not blocker or not rusher.get("player_id"):
+            continue
+        watches.append({
+            "kind": "Pass rush", "offense": card["offense"], "defense": card["defense"],
+            "offense_player": blocker["player_name"], "offense_player_id": blocker.get("gsis_id"),
+            "offense_detail": f"{blocker.get('grades_pass_block') or 0:.1f} pass-block grade",
+            "defense_player": rusher["player_name"], "defense_player_id": rusher.get("player_id"),
+            "defense_detail": f"{rusher.get('qb_hits') or 0:.0f} hits · {rusher.get('sacks') or 0:.1f} sacks",
+        })
+    return watches

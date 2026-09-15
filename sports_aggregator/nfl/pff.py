@@ -18,7 +18,7 @@ from sports_aggregator.nfl.repository import NFLRepository
 PFF_FAMILIES = (
     "passing_depth", "receiving_summary", "receiving_depth", "receiving_scheme",
     "receiving_concept", "rushing_summary", "offense_blocking",
-    "defense_coverage_scheme", "slot_coverage",
+    "defense_coverage_scheme", "slot_coverage", "defense_summary", "pass_rush_summary",
 )
 PFF_EXPLORER_METRICS = {
     "receiving_summary": (
@@ -59,6 +59,19 @@ PFF_EXPLORER_METRICS = {
         ("behind_los_grades_pass_route", "Behind-LOS route grade"),
         ("deep_yprr", "Deep yards / route"),
         ("deep_targets", "Deep targets"),
+    ),
+    "defense_summary": (
+        ("grades_defense", "Overall defense grade"),
+        ("grades_run_defense", "Run-defense grade"),
+        ("stops", "Stops"),
+        ("tackles", "Tackles"),
+    ),
+    "pass_rush_summary": (
+        ("grades_pass_rush_defense", "Pass-rush grade"),
+        ("pass_rush_win_rate", "Pass-rush win rate"),
+        ("total_pressures", "Total pressures"),
+        ("sacks", "Sacks"),
+        ("hits", "QB hits"),
     ),
 }
 PFF_ROOTS = (Path("nfl/pff"), Path("pff_coverage_data"))

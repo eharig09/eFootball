@@ -1,7 +1,7 @@
 {% from '_tables.html' import data_table %}
 {% from '_nfl_nav.html' import nfl_nav %}
 {% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
-{% from '_nfl_charts.html' import line_chart, chart_workbench %}
+{% from '_nfl_charts.html' import chart_workbench, nfl_chart_scripts %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -156,5 +156,7 @@
 </main>
 <script src="{{ url_for('static', filename='nfl_tabs.js') }}"></script>
 <script src="{{ url_for('static', filename='table_sort.js') }}"></script>
+<script src="{{ url_for('static', filename='nfl_tooltips.js') }}"></script>
+{{ nfl_chart_scripts() }}
 </body>
 </html>

@@ -7,9 +7,15 @@ from flask import Blueprint, abort, current_app, jsonify, render_template, reque
 
 from sports_aggregator.catalog import get_league
 from sports_aggregator.nfl.charts import player_charts, team_charts, with_last_season
-from sports_aggregator.nfl.alignments import alignment_matchups, rushing_matchups
+from sports_aggregator.nfl.alignments import (
+    alignment_matchups, player_matchup_watches, rushing_matchups,
+)
 from sports_aggregator.nfl.availability import availability_packet
 from sports_aggregator.nfl.content import NFLContentRepository
+from sports_aggregator.nfl.explorer import (
+    METRICS, METRIC_CATEGORIES, METRIC_LABELS, SUM_METRICS,
+    player_stat_table, scatter_plot, with_rates,
+)
 from sports_aggregator.nfl.naming import canon_team
 from sports_aggregator.nfl.matchups import matchup_context
 from sports_aggregator.nfl.landing import draft_projection, games_to_watch
@@ -101,6 +107,8 @@ def _team_pff(team: str, season: int) -> dict:
         ("Run grade", "rushing_summary", "grades_run", "attempts", 50),
         ("Pass protection", "offense_blocking", "grades_pass_block", "snap_counts_pass_block", 100),
         ("Man coverage", "defense_coverage_scheme", "man_grades_coverage_defense", "man_snap_counts_coverage", 50),
+        ("Pass rush", "pass_rush_summary", "grades_pass_rush_defense", "total_pressures", 10),
+        ("Run defense", "defense_summary", "grades_run_defense", "tackles", 15),
     ):
         rows = service.leaders(pff_season, family, metric, team=team, limit=100,
                                minimum_metric=sample_metric,
@@ -324,6 +332,18 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
                                 minimum_metric="deep_targets", minimum_value=_min(15)),
             caption="Deep receiving grade", season=analysis_season,
         ),
+        "pass_rush": pff_leaders_table(
+            pff_service.leaders(analysis_season, "pass_rush_summary",
+                                "grades_pass_rush_defense", limit=10,
+                                minimum_metric="total_pressures", minimum_value=_min(15)),
+            caption="Pass-rush grade", season=analysis_season,
+        ),
+        "run_defense": pff_leaders_table(
+            pff_service.leaders(analysis_season, "defense_summary",
+                                "grades_run_defense", limit=10,
+                                minimum_metric="tackles", minimum_value=_min(30)),
+            caption="Run-defense grade", season=analysis_season,
+        ),
     }
     slate = current_games(all_games)
     # Games to Watch is deliberately constrained to the same current-week
@@ -464,6 +484,62 @@ def pff_explorer():
 @nfl_pages.get("/api/v1/nfl/pff")
 def pff_api():
     packet = _pff_packet()
+    return jsonify({**packet, "table": packet["table"].as_dict()})
+
+
+def _explorer_packet() -> dict:
+    repository = _repository()
+    season = request.args.get("season", type=int) or (repository.latest_season() or current_season())
+    team = canon_team(request.args.get("team")) if request.args.get("team") else None
+    position = (request.args.get("position") or "").strip().upper() or None
+    minimum_games = max(1, request.args.get("min_games", 1, type=int) or 1)
+    week_from = request.args.get("week_from", type=int)
+    week_to = request.args.get("week_to", type=int)
+    color_by = request.args.get("color_by") or "position"
+    if color_by not in {"position", "team"}:
+        color_by = "position"
+    teams = repository.list_teams()
+    rows = [with_rates(row) for row in repository.player_season_stats(
+        season, SUM_METRICS, team=team, position=position, minimum_games=minimum_games,
+        week_from=week_from, week_to=week_to,
+    )]
+    rows.sort(key=lambda row: row["player_name"])
+    x_key = request.args.get("x") or "passing_epa"
+    y_key = request.args.get("y") or "passing_yards"
+    if x_key not in METRIC_LABELS:
+        x_key = "passing_epa"
+    if y_key not in METRIC_LABELS:
+        y_key = "passing_yards"
+    # Any single real metric works here -- this only reads the position
+    # column across every player synced this season, unfiltered, to build
+    # the filter dropdown's option list.
+    positions = sorted({row["position"] for row in
+                        repository.player_season_stats(season, ("attempts",), minimum_games=1)
+                        if row.get("position")})
+    team_colors = {row["abbreviation"]: (row.get("color") or "#8296a4",
+                                         row.get("alternate_color") or row.get("color") or "#0b1319")
+                  for row in teams}
+    return {
+        "season": season, "team_filter": team, "position_filter": position,
+        "minimum_games": minimum_games, "week_from": week_from, "week_to": week_to,
+        "latest_week": repository.latest_stat_week(season) or 18,
+        "color_by": color_by, "teams": teams,
+        "positions": positions, "table": player_stat_table(rows, season=season),
+        "metrics": METRICS, "metric_categories": METRIC_CATEGORIES,
+        "x_key": x_key, "y_key": y_key,
+        "scatter": scatter_plot(rows, x_key, y_key, color_by=color_by, team_colors=team_colors),
+        "player_count": len(rows),
+    }
+
+
+@nfl_pages.get("/nfl/explorer/")
+def stat_explorer():
+    return render_template("nfl_explorer.html", league=get_league("nfl"), **_explorer_packet())
+
+
+@nfl_pages.get("/api/v1/nfl/explorer")
+def stat_explorer_api():
+    packet = _explorer_packet()
     return jsonify({**packet, "table": packet["table"].as_dict()})
 
 
@@ -668,6 +744,7 @@ def _game_packet(game_id: str) -> dict:
         repository, _pff(), game, game["season"], pff_season,
         context["baseline_season"], context["profiles"],
     )
+    player_watches = player_matchup_watches(player_matchups, trenches)
     content_items = _content().for_game(game_id, 60)
     postgame = (postgame_packet(repository, game, efficiency_rows, player_rows)
                 if game["completed"] else None)
@@ -685,7 +762,8 @@ def _game_packet(game_id: str) -> dict:
             "efficiency_rows": {row["team"]: row for row in efficiency_rows},
             "pass_profile_season": profile_season, "defense_pass_profiles": defense_profiles,
             "passing_comparisons": passing_comparisons,
-            "player_matchups": player_matchups, "pff_season": pff_season,
+            "player_matchups": player_matchups, "player_watches": player_watches,
+            "pff_season": pff_season,
             "run_matchups": run_matchups,
             "trenches": trenches,
             "availability": availability,
@@ -724,7 +802,8 @@ def game_api(game_id: str):
         "pass_profile_season": packet["pass_profile_season"],
         "defense_pass_profiles": packet["defense_pass_profiles"],
         "passing_comparisons": packet["passing_comparisons"],
-        "player_matchups": packet["player_matchups"], "pff_season": packet["pff_season"],
+        "player_matchups": packet["player_matchups"], "player_watches": packet["player_watches"],
+        "pff_season": packet["pff_season"],
         "run_matchups": packet["run_matchups"],
         "trenches": packet["trenches"],
         "availability": packet["availability"],
@@ -761,13 +840,15 @@ def _player_packet(player_id: str, season: int) -> dict:
             repository.receiver_pass_profile(season - 1, player_id), receiver=True,
         )
     content_items = _content().for_player(season, player_id, 50)
+    career_view = request.args.get("career") == "1"
+    log_rows = repository.player_career_weekly(player_id) if career_view else weekly
     return {
-        "season": season, "player": player,
+        "season": season, "player": player, "career_view": career_view,
         "team_identity": team_identity or {},
         "totals": player_totals_table(totals),
         "headline_stats": player_headline_stats(totals, player.get("position")),
         "game_log": player_game_log(weekly),
-        "game_log_groups": player_game_log_tables(weekly),
+        "game_log_groups": player_game_log_tables(log_rows, show_season=career_view),
         "performance_charts": player_charts(chart_rows, player.get("position")),
         "passing_profile": passing_profile,
         "receiving_profile": receiving_profile,

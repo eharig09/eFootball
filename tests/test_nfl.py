@@ -19,6 +19,8 @@ from sports_aggregator.nfl.source_directory import import_directory, load_direct
 from sports_aggregator.nfl.sync import NFLDataSync
 from sports_aggregator.nfl.teams import unit_continuity
 from sports_aggregator.nfl.nflverse import NflverseClient, NflverseError, current_season
+from sports_aggregator.nfl.charts import player_charts, team_charts
+from sports_aggregator.nfl.explorer import scatter_plot
 from sports_aggregator.nfl.passing import pass_matchup_packet, pass_zone_packet
 from sports_aggregator.nfl.personnel import _score
 from sports_aggregator.nfl.postgame import postgame_packet
@@ -68,9 +70,68 @@ class NFLNamingTests(unittest.TestCase):
              "epa_per_attempt": -.2},
         ], "total": {"attempts": 36}, "season": 2026}, lower_is_better=True)
         cell = pass_matchup_packet(offense, defense)["rows"][0]["cells"][0]
-        self.assertAlmostEqual(cell["edge"], .5)
+        # Offense EPA/att (+.3) and defense EPA/att allowed (-.2, stingy) share the
+        # same offense-relative sign convention, so a stingy defense should shrink
+        # the offense's edge, not add to it: .3 + (-.2) = .1, not .3 - (-.2) = .5.
+        self.assertAlmostEqual(cell["edge"], .1)
         self.assertEqual(cell["lean"], "offense")
         self.assertAlmostEqual(cell["interaction_share"], (0.4 * 0.25) ** .5)
+
+    def test_pass_matchup_favors_offense_against_a_leaky_defense(self):
+        offense = pass_zone_packet({"zones": [
+            {"depth_bucket": "short", "pass_location": "middle", "attempts": 4,
+             "epa_per_attempt": -.3},
+        ], "total": {"attempts": 10}, "season": 2026})
+        defense = pass_zone_packet({"zones": [
+            {"depth_bucket": "short", "pass_location": "middle", "attempts": 9,
+             "epa_per_attempt": .8},
+        ], "total": {"attempts": 36}, "season": 2026}, lower_is_better=True)
+        cell = pass_matchup_packet(offense, defense)["rows"][2]["cells"][1]
+        # A below-average offense (-.3) facing a defense that has allowed a lot of
+        # value in this zone (+.8, leaky) should still lean offense overall, since
+        # both terms describe the same offense-relative outcome: -.3 + .8 = .5.
+        self.assertAlmostEqual(cell["edge"], .5)
+        self.assertEqual(cell["lean"], "offense")
+
+    def test_team_charts_include_defense_allowed_metrics(self):
+        rows = [{"week": 1, "season": 2026, "game_id": "g1", "opponent": "SEA",
+                 "point_margin": 7, "points": 24, "points_allowed": 17,
+                 "epa_per_play": .1, "success_rate": .45, "pass_epa_per_play": .2,
+                 "rush_epa_per_play": -.05, "explosive_rate": .1,
+                 "defensive_epa_allowed": -.08, "defensive_success_allowed": .38,
+                 "defensive_pass_epa_allowed": -.1, "defensive_rush_epa_allowed": .02,
+                 "defensive_explosive_allowed": .07}]
+        charts = {chart["key"]: chart for chart in team_charts(rows)}
+        self.assertIn("defensive_epa_allowed", charts)
+        self.assertAlmostEqual(charts["defensive_epa_allowed"]["values"][0]["value"], -.08)
+        self.assertIn("defensive_explosive_allowed", charts)
+
+    def test_player_charts_expanded_per_position(self):
+        qb_row = {"week": 1, "season": 2026, "game_id": "g1", "opponent_team": "SEA",
+                  "passing_yards": 280, "passing_epa": 5.2, "passing_air_yards": 190,
+                  "attempts": 34, "completions": 22, "passing_tds": 2,
+                  "passing_interceptions": 1, "rushing_yards": 12, "rushing_epa": .3}
+        qb_charts = {chart["key"] for chart in player_charts([qb_row], "QB")}
+        self.assertIn("passing_tds", qb_charts)
+        self.assertIn("passing_interceptions", qb_charts)
+        self.assertIn("rushing_yards", qb_charts)
+
+        dl_row = {"week": 1, "season": 2026, "game_id": "g1", "opponent_team": "SEA",
+                  "def_tackles_solo": 4, "def_qb_hits": 2, "def_sacks": 1.5,
+                  "def_tackles_for_loss": 1, "def_interceptions": 0,
+                  "def_pass_defended": 1, "def_fumbles_forced": 1, "def_tackle_assists": 2}
+        dl_charts = {chart["key"] for chart in player_charts([dl_row], "EDGE")}
+        self.assertIn("def_pass_defended", dl_charts)
+        self.assertIn("def_fumbles_forced", dl_charts)
+
+    def test_scatter_plot_emits_chartjs_points_not_pixel_geometry(self):
+        rows = [{"player_id": "1", "player_name": "A", "team": "SEA", "position": "QB",
+                 "passing_epa": 5.0, "passing_yards": 300}]
+        scatter = scatter_plot(rows, "passing_epa", "passing_yards")
+        self.assertEqual(scatter["points"][0]["x"], 5.0)
+        self.assertEqual(scatter["points"][0]["y"], 300)
+        self.assertNotIn("cx", scatter["points"][0])
+        self.assertNotIn("x_ticks", scatter)
 
     def test_current_slate_retains_finals_from_the_active_week(self):
         games = [
