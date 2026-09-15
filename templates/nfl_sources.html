@@ -39,5 +39,6 @@
     <section class="section"><div class="section-head"><div><p class="eyebrow">All 32 teams</p><h2>Team-account coverage</h2></div></div>{{ data_table(team_table) }}</section>
     <section class="section"><div class="section-head"><div><p class="eyebrow">Directory reconciliation</p><h2>Configured accounts</h2></div></div>{{ data_table(source_table) }}</section>
 </main>
+<script src="{{ url_for('static', filename='table_sort.js') }}"></script>
 </body>
 </html>

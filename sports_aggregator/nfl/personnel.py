@@ -6,20 +6,25 @@ from collections import defaultdict
 from contextlib import closing
 from typing import Any
 
+from sports_aggregator.nfl.availability import annotate_injury
 from sports_aggregator.nfl.pff import NFLPFFService
 from sports_aggregator.nfl.naming import normalize_name
 from sports_aggregator.nfl.repository import NFLRepository
 
 GRADE_KEYS = (
     "deep_grades_pass", "medium_grades_pass", "short_grades_pass",
-    "behind_los_grades_pass", "grades_pass_route", "grades_run",
-    "grades_pass_block", "grades_run_block", "man_grades_coverage_defense",
-    "zone_grades_coverage_defense",
+    "behind_los_grades_pass", "grades_pass_route",
+    "deep_grades_pass_route", "medium_grades_pass_route",
+    "short_grades_pass_route", "behind_los_grades_pass_route",
+    "grades_run", "grades_pass_block", "grades_run_block",
+    "man_grades_coverage_defense", "zone_grades_coverage_defense",
 )
 GRADE_FAMILIES = {
     "deep_grades_pass": "passing_depth", "medium_grades_pass": "passing_depth",
     "short_grades_pass": "passing_depth", "behind_los_grades_pass": "passing_depth",
     "grades_pass_route": "receiving_summary",
+    "deep_grades_pass_route": "receiving_depth", "medium_grades_pass_route": "receiving_depth",
+    "short_grades_pass_route": "receiving_depth", "behind_los_grades_pass_route": "receiving_depth",
     "grades_run": "rushing_summary", "grades_pass_block": "offense_blocking",
     "grades_run_block": "offense_blocking",
     "man_grades_coverage_defense": "defense_coverage_scheme",
@@ -86,7 +91,10 @@ def _relevant_grades(position: str | None, metrics: dict[str, float]) -> list[di
         keys = ("deep_grades_pass", "medium_grades_pass", "short_grades_pass",
                 "behind_los_grades_pass")
     elif position in {"RB", "FB"}: keys = ("grades_run", "grades_pass_route", "grades_pass_block")
-    elif position in {"WR", "TE"}: keys = ("grades_pass_route",)
+    elif position in {"WR", "TE"}: keys = (
+        "grades_pass_route", "deep_grades_pass_route", "medium_grades_pass_route",
+        "short_grades_pass_route", "behind_los_grades_pass_route",
+    )
     elif position in {"OT", "T", "OG", "G", "C", "OL", "LT", "LG", "RG", "RT"}:
         keys = ("grades_pass_block", "grades_run_block")
     elif position in {"CB", "DB", "S", "FS", "SS", "LB", "ILB", "OLB"}:
@@ -96,6 +104,8 @@ def _relevant_grades(position: str | None, metrics: dict[str, float]) -> list[di
         "deep_grades_pass": "deep passing", "medium_grades_pass": "intermediate passing",
         "short_grades_pass": "short passing", "behind_los_grades_pass": "behind-LOS passing",
         "grades_pass_route": "route",
+        "deep_grades_pass_route": "deep route", "medium_grades_pass_route": "intermediate route",
+        "short_grades_pass_route": "short route", "behind_los_grades_pass_route": "behind-LOS route",
         "grades_run": "rushing", "grades_pass_block": "pass block",
         "grades_run_block": "run block", "man_grades_coverage_defense": "man coverage",
         "zone_grades_coverage_defense": "zone coverage",
@@ -248,6 +258,8 @@ def position_rooms(repository: NFLRepository, pff: NFLPFFService,
         injury = (injury_by_gsis.get(player_id) or
                   injury_by_espn.get(str(player.get("espn_id"))) or
                   injury_by_name.get(normalize_name(player.get("full_name") or slot.get("player_name"))))
+        if injury:
+            injury = annotate_injury(injury)
         groups[group].append({"player_id": player_id,
                               "full_name": player.get("full_name") or slot.get("player_name") or player_id,
                               **player, "depth_rank": slot.get("position_rank"),

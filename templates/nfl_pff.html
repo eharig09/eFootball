@@ -17,7 +17,7 @@
     <section class="nfl-hero compact-hero">
         <p class="eyebrow">Local licensed-data workspace &middot; {{ season }}</p>
         <h1>PFF explorer</h1>
-        <p>Explore normalized NFL grades, depth and alignment splits sourced read-only from the sibling scouting_report repository.</p>
+        <p>Explore normalized NFL grades, depth and alignment splits sourced from the sibling scouting_report repository or from exports uploaded directly.</p>
         <div class="metrics"><span><b>{{ counts.families }}</b> families</span><span><b>{{ counts.players }}</b> players</span><span><b>{{ counts.metrics|cell('big') }}</b> metric rows</span></div>
     </section>
 
@@ -38,9 +38,10 @@
     </section>
 
     <section class="section">
-        <div class="section-head"><div><p class="eyebrow">Ingestion audit</p><h2>Source catalog</h2></div></div>
+        <div class="section-head"><div><p class="eyebrow">Ingestion audit</p><h2>Source catalog</h2></div><a class="section-action" href="{{ url_for('nfl_data_import.data_import', season=season) }}">Upload PFF exports</a></div>
         <div class="pff-catalog-grid">{% for item in catalog if item.usable and item.season == season %}<article><b>{{ item.family|replace('_',' ')|title }}</b><span>{{ item.row_count }} rows</span><small>{{ (item.confidence * 100)|round(1) }}% season confidence &middot; {{ item.path.split('scouting_report')[-1] }}</small></article>{% endfor %}</div>
     </section>
 </main>
+<script src="{{ url_for('static', filename='table_sort.js') }}"></script>
 </body>
 </html>

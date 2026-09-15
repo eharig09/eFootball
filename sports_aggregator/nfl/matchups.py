@@ -390,10 +390,12 @@ def matchup_context(repository: NFLRepository, game: dict[str, Any],
         _unit_card(profiles, ranks, away, home),
         _unit_card(profiles, ranks, home, away),
     )
+    elo_ratings = {row["team"]: row["rating"] for row in repository.elo_ratings()}
     return {
         "baseline_season": baseline_season,
         "records": {away: repository.team_record(season, away, before_week=before_week),
                     home: repository.team_record(season, home, before_week=before_week)},
+        "elo": {away: round(elo_ratings.get(away, 1500)), home: round(elo_ratings.get(home, 1500))},
         "profiles": {away: profiles.get(away), home: profiles.get(home)},
         "unit_cards": unit_cards,
         "matchup_watches": _matchup_watches(unit_cards),

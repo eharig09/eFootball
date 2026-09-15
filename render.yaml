@@ -94,6 +94,11 @@ services:
         value: "1"
       - key: NFL_PFF_SOURCE_ROOT
         value: /var/data/nfl_pff
+      # PFF exports uploaded through /nfl/data-import/ land here; there is no
+      # sibling scouting_report checkout on Render, so this is the only way
+      # to get PFF data onto this deploy.
+      - key: NFL_PFF_UPLOAD_ROOT
+        value: /var/data/nfl_pff_uploads
       - key: SPORTSDATAVERSE_CACHE_PATH
         value: /var/data/sportsdataverse
       - key: CFB_WEATHER_CACHE_PATH

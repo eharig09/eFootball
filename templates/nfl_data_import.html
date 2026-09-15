@@ -1,0 +1,90 @@
+{% from '_nfl_nav.html' import nfl_nav %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>{{ season }} NFL PFF Import</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+</head>
+<body class="nfl-data-import-page">
+{{ nfl_nav('pff', season, 'PFF import') }}
+<main>
+    <section class="nfl-hero compact-hero">
+        <p class="eyebrow">Private data admin &middot; {{ season }}</p>
+        <h1>PFF data import</h1>
+        <p>Upload PFF export CSVs directly — no sibling scouting_report checkout required. Files are
+           recognized by their column headers, and the season each belongs to is inferred by matching
+           its players against the roster already synced for that season, the same way the folder-based
+           scan does.</p>
+    </section>
+
+    {% if result %}
+    <section class="section {{ 'import-ok' if result.ok else 'import-bad' }}" role="status">
+        <div class="section-head"><div><h2>{{ result.headline }}</h2></div></div>
+        {% if result.detail %}<p class="section-note">{{ result.detail }}</p>{% endif %}
+        {% if result.rows %}
+        <ul class="import-result-rows">
+            {% for row in result.rows %}<li><b>{{ row.file }}</b> {{ row.detail }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    <section class="section">
+        <div class="section-head">
+            <div><p class="eyebrow">Season {{ season }} snapshot</p><h2>What is loaded</h2></div>
+            {% if seasons|length > 1 %}
+            <form method="get" class="inline-filter">
+                <label>Season<select name="season" onchange="this.form.submit()">
+                    {% for option in seasons %}<option value="{{ option }}"{{ ' selected' if option == season }}>{{ option }}</option>{% endfor %}
+                </select></label>
+            </form>
+            {% endif %}
+        </div>
+        <div class="metrics"><span><b>{{ counts.families }}</b> families</span><span><b>{{ counts.players }}</b> players</span><span><b>{{ counts.metrics|cell('big') }}</b> metric rows</span></div>
+        <div class="table-wrap">
+            <table class="data">
+                <thead><tr><th>Family</th><th>Status</th><th class="num">Rows</th><th>Matched file</th></tr></thead>
+                <tbody>
+                {% for entry in families %}
+                <tr>
+                    <td>{{ entry.family|replace('_',' ')|title }}</td>
+                    <td>{% if entry.present %}<span class="import-ok-pill">loaded</span>{% else %}<span class="import-bad-pill">{{ entry.note or 'not loaded' }}</span>{% endif %}</td>
+                    <td class="num">{{ '{:,}'.format(entry.row_count) if entry.present else '—' }}</td>
+                    <td>{{ entry.file or '—' }}{% if entry.present %} <small>({{ entry.confidence|round(1) }}% confidence)</small>{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Upload</p><h2>Add PFF exports</h2></div></div>
+        <p class="section-note">Select the whole export batch at once — passing depth, receiving depth,
+           receiving/rushing summary, blocking, coverage scheme, slot coverage, and receiving concept are
+           all recognized. Uploading a file replaces the previously matched file for that family and
+           season once it re-syncs.</p>
+        <form class="import-form" method="post" enctype="multipart/form-data"
+              action="{{ url_for('nfl_data_import.import_pff') }}">
+            <div class="import-fields">
+                <label>Admin PIN or refresh token
+                    <input type="password" name="token" required autocomplete="current-password">
+                </label>
+                <label>Sync season
+                    <input type="number" name="season" value="{{ season }}" min="2000" max="2100">
+                </label>
+            </div>
+            <label class="import-file">Export batch (.csv, select all)
+                <input type="file" name="batch" accept=".csv,text/csv" multiple required>
+            </label>
+            <button type="submit">Upload and sync batch</button>
+        </form>
+    </section>
+</main>
+</body>
+</html>

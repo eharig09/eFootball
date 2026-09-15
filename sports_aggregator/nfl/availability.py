@@ -19,6 +19,21 @@ def _clean_detail(row: dict[str, Any]) -> str:
     return " · ".join(str(value) for value in parts if value)
 
 
+def annotate_injury(injury: dict[str, Any]) -> dict[str, Any]:
+    """Derive the severity/label/detail fields every injury display renders.
+
+    Shared by the availability grid and the depth-chart hover tooltip so both
+    read the same designation coloring and detail text off one raw
+    injury_reports row.
+    """
+    designation = str(injury.get("designation") or injury.get("status") or "Unknown").upper()
+    severity = SEVERITY.get(designation, SEVERITY.get(str(injury.get("status") or "").upper(), 2))
+    return {**injury, "designation_label": injury.get("status") or designation,
+            "designation_class": "out" if severity >= 5 else
+            ("doubtful" if severity == 4 else "questionable"),
+            "severity": severity, "detail_line": _clean_detail(injury)}
+
+
 def availability_packet(repository: NFLRepository, season: int, team: str) -> dict[str, Any]:
     injuries = repository.team_injuries(season, team)
     depth_rows = repository.current_depth_chart(season, team)
@@ -36,17 +51,11 @@ def availability_packet(repository: NFLRepository, season: int, team: str) -> di
         snap = snaps.get(injury.get("gsis_id"), {})
         participation = max(snap.get("offense_pct") or 0, snap.get("defense_pct") or 0,
                             snap.get("st_pct") or 0) or None
-        designation = str(injury.get("designation") or injury.get("status") or "Unknown").upper()
-        severity = SEVERITY.get(designation, SEVERITY.get(str(injury.get("status") or "").upper(), 2))
-        rows.append({**injury, "designation_label": injury.get("status") or designation,
-                     "designation_class": "out" if severity >= 5 else
-                     ("doubtful" if severity == 4 else "questionable"),
-                     "severity": severity, "depth_rank": depth.get("position_rank"),
+        rows.append({**annotate_injury(injury), "depth_rank": depth.get("position_rank"),
                      "depth_slot": depth.get("position_abbreviation"),
                      "snap_participation": participation,
                      "impact": "Starter" if depth.get("position_rank") == 1 else
                      ("High-use" if (participation or 0) >= .5 else "Depth"),
-                     "detail_line": _clean_detail(injury),
                      "player_url": (f"/nfl/players/{injury['gsis_id']}/?season={season}"
                                     if injury.get("gsis_id") else None)})
     rows.sort(key=lambda row: (-row["severity"], 0 if row["impact"] == "Starter" else 1,

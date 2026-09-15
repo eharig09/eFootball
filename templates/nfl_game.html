@@ -24,7 +24,7 @@
             <article class="scoreboard-team {{ side|lower }}">
                 <span class="scoreboard-side">{{ side }}</span>
                 {% if identity.logo_url %}<img src="{{ identity.logo_url }}" alt="{{ identity.name or code }} logo">{% endif %}
-                <div><a href="{{ url_for('nfl.team_page', abbreviation=code, season=game.season) }}">{{ identity.nickname or code }}</a><small>{{ record.record if record else '0-0' }}</small></div>
+                <div><a href="{{ url_for('nfl.team_page', abbreviation=code, season=game.season) }}">{{ identity.nickname or code }}</a><small>{{ record.record if record else '0-0' }} &middot; {{ elo.get(code, 1500) }} Elo</small></div>
                 <strong>{{ score if score is not none else '&mdash;'|safe }}</strong>
             </article>
             {% if loop.first %}<div class="scoreboard-versus"><b>{{ 'FINAL' if game.completed else 'VS' }}</b><span>{{ game.game_time or 'TBD' }}</span></div>{% endif %}
@@ -143,7 +143,7 @@
             <h3><a href="{{ url_for('nfl.player_page', player_id=item.player_id, season=game.season) }}">{{ item.player_name }}</a> from the {{ item.alignment }}</h3>
             <div><span><b>{{ item.alignment_rate|cell('pct') }}</b>{{ item.alignment }} rate</span><span><b>{{ item.route_grade|cell('f1') }}</b>route grade</span><span><b>{{ item.yprr|cell('f2') }}</b>yards / route</span><span><b>{{ item.target_share|cell('rate') }}</b>target share</span></div>
             <p class="interaction-read">{{ item.interaction }}</p>
-            {% if item.zone_matchups %}<div class="multi-zone-matchups"><header><span>Primary usage zones</span><b>{{ item.offense }}</b><b>{{ item.defense }} allowed</b></header>{% for zone in item.zone_matchups %}<div><span><b>{{ zone.depth_bucket|title }} {{ zone.pass_location }}</b><small>{{ zone.receptions|cell('int') }}/{{ zone.targets|cell('int') }} &middot; {{ zone.receiving_yards|cell('int') }} yd &middot; {{ zone.target_share|cell('rate') }} targets</small></span><strong>{{ zone.offense_epa|cell('signed2') }} EPA/tgt</strong><strong>{{ zone.defense_epa|cell('signed2') }} EPA/att<small>{{ zone.defense_attempts|cell('int') }} att</small></strong></div>{% endfor %}</div>{% endif %}
+            {% if item.zone_matchups %}<div class="multi-zone-matchups"><header><span>Primary usage zones</span><b>{{ item.offense }}</b><b>{{ item.defense }} allowed</b></header>{% for zone in item.zone_matchups %}<div><span><b>{{ zone.depth_bucket|title }} {{ zone.pass_location }}</b><small>{{ zone.receptions|cell('int') }}/{{ zone.targets|cell('int') }} &middot; {{ zone.receiving_yards|cell('int') }} yd &middot; {{ zone.target_share|cell('rate') }} targets</small></span><strong>{{ zone.offense_epa|cell('signed2') }}<small>EPA/tgt</small></strong><strong>{{ zone.defense_epa|cell('signed2') }}<small>EPA/att &middot; {{ zone.defense_attempts|cell('int') }} att</small></strong></div>{% endfor %}</div>{% endif %}
             {% if item.preferred_zone %}<div class="zone-interaction"><span><small>Receiver usage</small><b>{{ item.preferred_zone.depth_bucket }} {{ item.preferred_zone.pass_location }}</b><em>{{ item.preferred_zone.receptions|cell('int') }}/{{ item.preferred_zone.targets|cell('int') }} · {{ item.preferred_zone_share|cell('rate') }} of charted targets · {{ item.preferred_zone.epa_per_target|cell('signed2') }} EPA/tgt</em></span><strong>→</strong><span><small>{{ item.defense }} allowed</small><b>Same field section</b><em>{% if item.exact_allowed_zone %}{{ item.exact_allowed_zone.completions|cell('int') }}/{{ item.exact_allowed_zone.attempts|cell('int') }} · {{ item.exact_allowed_zone.epa_per_attempt|cell('signed2') }} EPA/att{% else %}No qualifying sample{% endif %}</em></span></div>{% endif %}
             {% if item.defender %}<p>Primary stored slot sample: <b>{{ item.defender.player_name }}</b> ({{ item.defender.coverage_snaps|cell('int') }} slot coverage snaps, {{ item.defender.qb_rating_against|cell('f1') }} rating allowed).</p>{% endif %}
             {% if item.vulnerable_zone %}<p>{{ item.defense }}’s highest-EPA qualifying allowed zone: <b>{{ item.vulnerable_zone.depth_bucket }} {{ item.vulnerable_zone.pass_location }}</b> ({{ item.vulnerable_zone.epa_per_attempt|cell('signed2') }} EPA/att).</p>{% endif %}
@@ -190,5 +190,6 @@
     {% endif %}
 </main>
 <script src="{{ url_for('static', filename='nfl_tabs.js') }}"></script>
+<script src="{{ url_for('static', filename='table_sort.js') }}"></script>
 </body>
 </html>

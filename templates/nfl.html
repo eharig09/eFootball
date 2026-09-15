@@ -59,7 +59,7 @@
         </aside>
     </section>
 
-    <section class="section" id="schedule"><div class="section-head"><div><p class="eyebrow">Games</p><h2>Current slate</h2></div><form method="get" class="inline-filter"><input type="hidden" name="season" value="{{ season }}"><label>Leader week<select name="week" onchange="this.form.submit()">{% for week in available_weeks %}<option value="{{ week }}"{{ ' selected' if week == selected_week }}>Week {{ week }}</option>{% endfor %}</select></label></form></div>
+    <section class="section" id="schedule"><div class="section-head"><div><p class="eyebrow">Games</p><h2>Current slate</h2></div><div style="display:flex;align-items:end;gap:14px"><a class="section-action" href="{{ url_for('nfl.scoreboard', season=season) }}">Full scoreboard</a><form method="get" class="inline-filter"><input type="hidden" name="season" value="{{ season }}"><label>Leader week<select name="week" onchange="this.form.submit()">{% for week in available_weeks %}<option value="{{ week }}"{{ ' selected' if week == selected_week }}>Week {{ week }}</option>{% endfor %}</select></label></form></div></div>
         <div class="matchup-grid">
         {% for matchup in matchups %}<a class="matchup-card" href="{{ url_for('nfl.game_page', game_id=matchup.game_id) }}#tab-{{ matchup.destination }}">
             <header><span>Week {{ matchup.week }}</span><time>{{ 'Final' if matchup.completed else matchup.date ~ (' · ' ~ matchup.time if matchup.time else '') }}</time></header>
@@ -137,5 +137,6 @@
     </section>
 </main>
 {{ tabs_script() }}
+<script src="{{ url_for('static', filename='table_sort.js') }}"></script>
 </body>
 </html>

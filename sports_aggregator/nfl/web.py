@@ -26,10 +26,10 @@ from sports_aggregator.nfl.trenches import trench_matchups
 from sports_aggregator.nfl.usage import returning_player_usage
 from sports_aggregator.nfl.views import (
     current_games, depth_chart_table, efficiency_table, game_stat_tables, game_stats_table,
-    leaders_table, movement_tables, player_game_log, player_game_log_tables, player_headline_stats,
-    pff_leaders_table, player_totals_table, power_table, roster_table, schedule_table,
-    snap_usage_table, source_coverage_table, team_source_coverage_table, usage_table,
-    standings_tables,
+    leaders_table, matchup_cards, movement_tables, player_game_log, player_game_log_tables,
+    player_headline_stats, pff_leaders_table, player_totals_table, power_table, roster_table,
+    schedule_table, snap_usage_table, source_coverage_table, team_source_coverage_table,
+    usage_table, standings_tables,
 )
 
 
@@ -67,7 +67,8 @@ def _content() -> NFLContentRepository:
 
 
 def _pff() -> NFLPFFService:
-    return NFLPFFService(_repository(), current_app.config["NFL_PFF_SOURCE_ROOT"])
+    return NFLPFFService(_repository(), current_app.config["NFL_PFF_SOURCE_ROOT"],
+                         current_app.config.get("NFL_PFF_UPLOAD_ROOT"))
 
 
 def _pff_season(season: int) -> int | None:
@@ -299,29 +300,18 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
                                 minimum_metric="deep_attempts", minimum_value=20),
             caption="Deep passing grade", season=analysis_season,
         ),
+        "deep_receiving": pff_leaders_table(
+            pff_service.leaders(analysis_season, "receiving_depth",
+                                "deep_grades_pass_route", limit=10,
+                                minimum_metric="deep_targets", minimum_value=15),
+            caption="Deep receiving grade", season=analysis_season,
+        ),
     }
     slate = current_games(all_games)
     # Games to Watch is deliberately constrained to the same current-week
     # slate shown below it; it must not drift into future weeks to fill space.
     watch_pool = [game for game in slate if not game["completed"]]
-    matchups = []
-    for game in slate:
-        sides = []
-        for role in ("away", "home"):
-            code = game[f"{role}_team"]
-            identity = identities.get(code, {})
-            sides.append({
-                "role": role, "team": code, "name": identity.get("name", code),
-                "logo_url": identity.get("logo_url"), "color": identity.get("color", "#0b5aa5"),
-                "record": records.get(code, {}).get("record", "0-0"),
-                "score": game.get(f"{role}_score"),
-                "epa_per_play": all_efficiency.get(code, {}).get("epa_per_play"),
-                "elo": round(elo.get(code, 1500)),
-            })
-        matchups.append({"game_id": game["game_id"], "week": game["week"],
-                         "date": game["game_date"], "time": game["game_time"],
-                         "completed": bool(game["completed"]), "sides": sides,
-                         "destination": "review" if game["completed"] else "overview"})
+    matchups = matchup_cards(slate, identities, records, all_efficiency, elo)
     content_items = _content().latest(60)
     source_coverage = _content().source_coverage(_directory_sources())
     return {
@@ -377,6 +367,36 @@ def search_api():
     season = _season(); query = (request.args.get("q") or "").strip()
     limit = min(max(request.args.get("limit", 10, type=int) or 10, 1), 40)
     return jsonify(search_entities(_repository(), _content(), query, season=season, limit=limit))
+
+
+@nfl_pages.get("/nfl/scoreboard/")
+def scoreboard():
+    season = _season()
+    repository = _repository()
+    all_games = repository.schedule(season)
+    weeks = sorted({game["week"] for game in all_games})
+    if not weeks:
+        return render_template("nfl_scoreboard.html", league=get_league("nfl"), season=season,
+                               week=None, weeks=[], previous_week=None, next_week=None, games=[])
+    requested = request.args.get("week", type=int)
+    if requested not in weeks:
+        # Land on the same "current" week the dashboard slate uses, rather
+        # than always defaulting to week 1, so the page opens somewhere
+        # relevant to what is actually being played right now.
+        current = current_games(all_games)
+        requested = current[0]["week"] if current else weeks[-1]
+    identities = {team["abbreviation"]: team for team in repository.list_teams()}
+    records = {row["abbreviation"]: row for row in repository.standings(season)}
+    elo = {row["team"]: row["rating"] for row in repository.elo_ratings()}
+    efficiency = {row["team"]: row for row in repository.league_efficiency(season)}
+    week_games = [game for game in all_games if game["week"] == requested]
+    index = weeks.index(requested)
+    return render_template(
+        "nfl_scoreboard.html", league=get_league("nfl"), season=season, week=requested,
+        weeks=weeks, previous_week=weeks[index - 1] if index > 0 else None,
+        next_week=weeks[index + 1] if index < len(weeks) - 1 else None,
+        games=matchup_cards(week_games, identities, records, efficiency, elo),
+    )
 
 
 @nfl_pages.get("/api/v1/nfl")
@@ -680,6 +700,7 @@ def game_api(game_id: str):
                         for group in packet["stat_groups"]],
         "efficiency": packet["efficiency"].as_dict(),
         "efficiency_rows": packet["efficiency_rows"], "records": packet["records"],
+        "elo": packet["elo"],
         "profiles": packet["profiles"], "unit_cards": packet["unit_cards"],
         "baseline_season": packet["baseline_season"],
         "matchup_watches": packet["matchup_watches"],

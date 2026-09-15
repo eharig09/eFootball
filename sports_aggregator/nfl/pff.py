@@ -52,6 +52,14 @@ PFF_EXPLORER_METRICS = {
         ("deep_attempts_percent", "Deep attempt rate"),
         ("avg_depth_of_target", "Average depth of target"),
     ),
+    "receiving_depth": (
+        ("deep_grades_pass_route", "Deep route grade"),
+        ("medium_grades_pass_route", "Intermediate route grade"),
+        ("short_grades_pass_route", "Short route grade"),
+        ("behind_los_grades_pass_route", "Behind-LOS route grade"),
+        ("deep_yprr", "Deep yards / route"),
+        ("deep_targets", "Deep targets"),
+    ),
 }
 PFF_ROOTS = (Path("nfl/pff"), Path("pff_coverage_data"))
 IDENTITY_COLUMNS = {"player", "player_id", "position", "team_name", "player_game_count",
@@ -76,9 +84,14 @@ def _pff_id(value: Any) -> str | None:
 class NFLPFFService:
     """Catalog sibling-repo exports and persist normalized, queryable metrics."""
 
-    def __init__(self, repository: NFLRepository, source_root: str | Path) -> None:
+    def __init__(self, repository: NFLRepository, source_root: str | Path,
+                upload_root: str | Path | None = None) -> None:
         self.repository = repository
         self.source_root = Path(source_root).resolve()
+        # A second, flat root for files uploaded through the browser, so a
+        # deploy with no sibling scouting_report checkout (Render) can still
+        # ingest PFF exports without one.
+        self.upload_root = Path(upload_root).resolve() if upload_root else None
 
     def _paths(self) -> list[Path]:
         seen: set[Path] = set()
@@ -88,6 +101,11 @@ class NFLPFFService:
             if not root.is_dir():
                 continue
             for path in sorted(root.rglob("*.csv")):
+                resolved = path.resolve()
+                if resolved not in seen:
+                    seen.add(resolved); output.append(resolved)
+        if self.upload_root and self.upload_root.is_dir():
+            for path in sorted(self.upload_root.rglob("*.csv")):
                 resolved = path.resolve()
                 if resolved not in seen:
                     seen.add(resolved); output.append(resolved)

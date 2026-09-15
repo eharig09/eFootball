@@ -901,3 +901,41 @@ PFF remains a read-only authorized-data boundary. No licensed exports are commit
 to the public application repository. Production points `NFL_PFF_SOURCE_ROOT` at
 `/var/data/nfl_pff`; an operator must transfer an allowed snapshot there before the
 PFF seed stage can run.
+
+## 2026-09-14 injury tooltip fix, shared-axis form charts, scoreboard, and PFF upload
+
+- The depth-chart injury badge/tooltip described in the staff and availability pass
+  was wired but not actually functional: `position_rooms` attached the raw
+  `injury_reports` row, which has no `designation_class`/`detail_line`/
+  `designation_label` fields, so the badge rendered without its severity color and the
+  tooltip body was blank; and the badge markup sat nested inside `<b>`, so it was never
+  a DOM sibling of `.injury-tooltip` and the `:hover ~` CSS never matched. Both
+  `availability_packet` and `position_rooms` now share one `annotate_injury()` helper
+  (`sports_aggregator/nfl/availability.py`) that derives those fields, and the
+  depth-chart markup (`templates/nfl_team.html`) puts the badge as a true sibling of
+  the tooltip so hover and keyboard focus reveal it.
+- `sports_aggregator/nfl/charts.py`'s weekly-form charts (team and player pages) used
+  to scale every metric to its own min/max, so e.g. points scored and points allowed
+  each stretched to fill the full plot height independently, making their relative
+  magnitude uncomparable. `_charts()` now tags each metric definition with a unit
+  (`points`, `epa`, `rate`, `yards`, `count`) and widens same-unit metrics within one
+  chart set to a shared domain before scaling, so directly comparable stats read on
+  one axis.
+- Added `/nfl/scoreboard/`: a week-scoped schedule page (prev/next week navigation
+  plus a week `<select>`), mirroring CFB's day-scoped `/college-football/scoreboard/`.
+  The dashboard's inline matchup-card builder moved to `views.matchup_cards()` so both
+  pages share it instead of duplicating the away/home side-shaping loop.
+- Added `/nfl/data-import/`: a browser upload page for PFF export CSVs, gated behind
+  the same admin PIN/refresh-token check CFB's `data-import` page uses. Uploaded files
+  land in `NFL_PFF_UPLOAD_ROOT` (a flat, persistent directory; on Render,
+  `/var/data/nfl_pff_uploads`), which `NFLPFFService` now scans in addition to the
+  sibling-repo folder tree, so a deploy with no scouting_report checkout can still
+  ingest PFF data. Family/season identification is unchanged: still the roster
+  fingerprint match against synchronized players, not filename or an admin-picked
+  season.
+- `receiving_depth` was already one of the nine synced PFF families but was dark:
+  no explorer entry, no dashboard leaders card, and no use in WR/TE grading, unlike
+  its QB analog `passing_depth`. Added a `PFF_EXPLORER_METRICS["receiving_depth"]`
+  entry, a "Deep receiving grade" dashboard leaders card, and wired
+  `deep/medium/short/behind_los_grades_pass_route` into `personnel._relevant_grades`
+  for `WR`/`TE` position-room grading, alongside the existing overall route grade.

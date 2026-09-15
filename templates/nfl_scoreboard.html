@@ -1,0 +1,55 @@
+{% from '_nfl_nav.html' import nfl_nav %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>{{ season }} NFL Scoreboard{% if week %} · Week {{ week }}{% endif %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+</head>
+<body class="nfl-scoreboard-page">
+{{ nfl_nav('scoreboard', season) }}
+<main>
+    <section class="nfl-hero compact-hero">
+        <p class="eyebrow">{{ season }} season</p>
+        <h1>Scoreboard</h1>
+        <p>Every game for the selected week, with live and final scores.</p>
+    </section>
+
+    <section class="section">
+        <div class="section-head">
+            <div><p class="eyebrow">Week</p><h2>{{ 'Week ' ~ week if week else 'No schedule yet' }}</h2></div>
+            {% if weeks %}
+            <nav class="board-week-nav" aria-label="Week navigation">
+                <a href="{{ url_for('nfl.scoreboard', season=season, week=previous_week) if previous_week else '#' }}"
+                   class="{{ 'is-disabled' if not previous_week }}"
+                   aria-disabled="{{ 'true' if not previous_week else 'false' }}">&larr; Prev week</a>
+                <form method="get" action="{{ url_for('nfl.scoreboard') }}">
+                    <input type="hidden" name="season" value="{{ season }}">
+                    <select name="week" onchange="this.form.submit()">
+                        {% for option in weeks %}<option value="{{ option }}"{{ ' selected' if option == week }}>Week {{ option }}</option>{% endfor %}
+                    </select>
+                    <noscript><button type="submit">Go</button></noscript>
+                </form>
+                <a href="{{ url_for('nfl.scoreboard', season=season, week=next_week) if next_week else '#' }}"
+                   class="{{ 'is-disabled' if not next_week }}"
+                   aria-disabled="{{ 'true' if not next_week else 'false' }}">Next week &rarr;</a>
+            </nav>
+            {% endif %}
+        </div>
+        <div class="matchup-grid">
+        {% for matchup in games %}<a class="matchup-card" href="{{ url_for('nfl.game_page', game_id=matchup.game_id) }}#tab-{{ matchup.destination }}">
+            <header><span>Week {{ matchup.week }}</span><time>{{ 'Final' if matchup.completed else matchup.date ~ (' · ' ~ matchup.time if matchup.time else '') }}</time></header>
+            {% for side in matchup.sides %}<div class="matchup-team" style="--club:{{ side.color }}">
+                {% if side.logo_url %}<img src="{{ side.logo_url }}" alt="" loading="lazy">{% endif %}
+                <span><b>{{ side.team }}</b><small>{{ side.record }} · {{ side.epa_per_play|cell('signed2') }} EPA/play</small></span>
+                <strong>{{ side.score if side.score is not none else '—' }}</strong>
+            </div>{% endfor %}
+        </a>{% else %}<div class="empty">No games are scheduled for this week.</div>{% endfor %}
+        </div>
+    </section>
+</main>
+</body>
+</html>

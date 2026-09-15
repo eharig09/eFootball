@@ -444,6 +444,31 @@ def current_games(games: list[dict], *, today: date | None = None, limit: int = 
     return [game for game in games if game["week"] == last_week][:limit]
 
 
+def matchup_cards(games: list[dict], identities: dict[str, dict], records: dict[str, dict],
+                  efficiency: dict[str, dict], elo: dict[str, float]) -> list[dict]:
+    """Shape a week's games into the away/home side cards the dashboard and
+    scoreboard both render: logo, record, live score, EPA, and Elo."""
+    matchups = []
+    for game in games:
+        sides = []
+        for role in ("away", "home"):
+            code = game[f"{role}_team"]
+            identity = identities.get(code, {})
+            sides.append({
+                "role": role, "team": code, "name": identity.get("name", code),
+                "logo_url": identity.get("logo_url"), "color": identity.get("color", "#0b5aa5"),
+                "record": records.get(code, {}).get("record", "0-0"),
+                "score": game.get(f"{role}_score"),
+                "epa_per_play": efficiency.get(code, {}).get("epa_per_play"),
+                "elo": round(elo.get(code, 1500)),
+            })
+        matchups.append({"game_id": game["game_id"], "week": game["week"],
+                         "date": game["game_date"], "time": game["game_time"],
+                         "completed": bool(game["completed"]), "sides": sides,
+                         "destination": "review" if game["completed"] else "overview"})
+    return matchups
+
+
 def source_coverage_table(rows: list[dict]) -> Table:
     def short_stamp(value):
         return str(value)[:16].replace("T", " ") if value else None

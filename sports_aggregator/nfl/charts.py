@@ -16,15 +16,21 @@ def _path(values: list[dict[str, Any]], key: str = "y") -> str:
 
 
 def series(rows: Iterable[dict[str, Any]], key: str, label: str, *,
-           value_format: str = "f1", limit: int = 10, color: str | None = None) -> dict[str, Any]:
+           value_format: str = "f1", limit: int = 10, color: str | None = None,
+           domain: tuple[float, float] | None = None) -> dict[str, Any]:
     values = [{"week": row.get("week"), "value": row.get(key),
                "opponent": row.get("opponent") or row.get("opponent_team"),
                "game_id": row.get("game_id")}
               for row in list(rows)[-limit:] if row.get(key) is not None]
     if not values:
         return {"key": key, "label": label, "format": value_format, "path": "", "values": []}
-    raw_low = min(item["value"] for item in values)
-    raw_high = max(item["value"] for item in values)
+    own_low = min(item["value"] for item in values)
+    own_high = max(item["value"] for item in values)
+    # A caller passes `domain` to lock several metrics of the same unit (e.g.
+    # points scored and points allowed) to one shared range, so their charted
+    # magnitudes stay comparable instead of each independently stretching to
+    # fill the plot.
+    raw_low, raw_high = domain if domain is not None else (own_low, own_high)
     padding = max((raw_high - raw_low) * .12, abs(raw_high) * .04, .01)
     low, high = raw_low - padding, raw_high + padding
     spread = high - low or 1
@@ -41,10 +47,27 @@ def series(rows: Iterable[dict[str, Any]], key: str, label: str, *,
             "high": raw_high, "ticks": ticks, "baseline": baseline, "color": color}
 
 
-def _charts(rows: list[dict[str, Any]], definitions: tuple[tuple[str, str, str], ...]) -> list[dict[str, Any]]:
+def _own_domain(rows: list[dict[str, Any]], key: str, limit: int) -> tuple[float, float] | None:
+    values = [row.get(key) for row in rows[-limit:] if row.get(key) is not None]
+    return (min(values), max(values)) if values else None
+
+
+def _charts(rows: list[dict[str, Any]],
+            definitions: tuple[tuple[str, str, str, str], ...], *, limit: int = 10) -> list[dict[str, Any]]:
+    # First pass: each metric's own range. Second pass: metrics that share a
+    # unit are widened to the union of their group's range, so e.g. points
+    # scored and points allowed plot on one shared axis instead of two.
+    domains: dict[str, tuple[float, float]] = {}
+    for key, _label, _format, unit in definitions:
+        own = _own_domain(rows, key, limit)
+        if own is None:
+            continue
+        low, high = domains.get(unit, own)
+        domains[unit] = (min(low, own[0]), max(high, own[1]))
     output = []
-    for index, (key, label, value_format) in enumerate(definitions):
-        chart = series(rows, key, label, value_format=value_format, color=COLORS[index % len(COLORS)])
+    for index, (key, label, value_format, unit) in enumerate(definitions):
+        chart = series(rows, key, label, value_format=value_format, limit=limit,
+                       color=COLORS[index % len(COLORS)], domain=domains.get(unit))
         if chart["values"]:
             output.append(chart)
     return output
@@ -52,30 +75,42 @@ def _charts(rows: list[dict[str, Any]], definitions: tuple[tuple[str, str, str],
 
 def team_charts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _charts(rows, (
-        ("point_margin", "Point margin", "signed"), ("points", "Points scored", "f1"),
-        ("points_allowed", "Points allowed", "f1"), ("epa_per_play", "EPA per play", "signed2"),
-        ("success_rate", "Success rate", "rate"), ("pass_epa_per_play", "Dropback EPA", "signed2"),
-        ("rush_epa_per_play", "Rush EPA", "signed2"), ("explosive_rate", "Explosive rate", "rate"),
+        ("point_margin", "Point margin", "signed", "points"),
+        ("points", "Points scored", "f1", "points"),
+        ("points_allowed", "Points allowed", "f1", "points"),
+        ("epa_per_play", "EPA per play", "signed2", "epa"),
+        ("success_rate", "Success rate", "rate", "rate"),
+        ("pass_epa_per_play", "Dropback EPA", "signed2", "epa"),
+        ("rush_epa_per_play", "Rush EPA", "signed2", "epa"),
+        ("explosive_rate", "Explosive rate", "rate", "rate"),
     ))
 
 
 def player_charts(rows: list[dict[str, Any]], position: str | None) -> list[dict[str, Any]]:
     position = (position or "").upper()
     if position == "QB":
-        definitions = (("passing_yards", "Passing yards", "big"), ("passing_epa", "Passing EPA", "signed2"),
-                       ("passing_air_yards", "Air yards", "big"), ("attempts", "Attempts", "int"),
-                       ("completions", "Completions", "int"))
+        definitions = (("passing_yards", "Passing yards", "big", "yards"),
+                       ("passing_epa", "Passing EPA", "signed2", "epa"),
+                       ("passing_air_yards", "Air yards", "big", "yards"),
+                       ("attempts", "Attempts", "int", "count"),
+                       ("completions", "Completions", "int", "count"))
     elif position in {"RB", "FB"}:
-        definitions = (("rushing_yards", "Rushing yards", "big"), ("carries", "Carries", "int"),
-                       ("targets", "Targets", "int"), ("receiving_yards", "Receiving yards", "big"),
-                       ("rushing_epa", "Rushing EPA", "signed2"))
+        definitions = (("rushing_yards", "Rushing yards", "big", "yards"),
+                       ("carries", "Carries", "int", "count"),
+                       ("targets", "Targets", "int", "count"),
+                       ("receiving_yards", "Receiving yards", "big", "yards"),
+                       ("rushing_epa", "Rushing EPA", "signed2", "epa"))
     elif position in {"WR", "TE"}:
-        definitions = (("receiving_yards", "Receiving yards", "big"), ("targets", "Targets", "int"),
-                       ("receptions", "Receptions", "int"), ("receiving_air_yards", "Air yards", "big"),
-                       ("receiving_yards_after_catch", "Yards after catch", "big"),
-                       ("receiving_epa", "Receiving EPA", "signed2"))
+        definitions = (("receiving_yards", "Receiving yards", "big", "yards"),
+                       ("targets", "Targets", "int", "count"),
+                       ("receptions", "Receptions", "int", "count"),
+                       ("receiving_air_yards", "Air yards", "big", "yards"),
+                       ("receiving_yards_after_catch", "Yards after catch", "big", "yards"),
+                       ("receiving_epa", "Receiving EPA", "signed2", "epa"))
     else:
-        definitions = (("def_tackles_solo", "Solo tackles", "int"), ("def_qb_hits", "QB hits", "int"),
-                       ("def_sacks", "Sacks", "f1"), ("def_tackles_for_loss", "Tackles for loss", "f1"),
-                       ("def_interceptions", "Interceptions", "int"))
+        definitions = (("def_tackles_solo", "Solo tackles", "int", "count"),
+                       ("def_qb_hits", "QB hits", "int", "count"),
+                       ("def_sacks", "Sacks", "f1", "count"),
+                       ("def_tackles_for_loss", "Tackles for loss", "f1", "count"),
+                       ("def_interceptions", "Interceptions", "int", "count"))
     return _charts(rows, definitions)

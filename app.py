@@ -16,6 +16,7 @@ from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.nflverse import current_season as current_nfl_season
 from sports_aggregator.nfl.web import nfl_pages
+from sports_aggregator.nfl.data_import import nfl_data_import_pages
 from sports_aggregator.cfb.web import cfb_pages
 from sports_aggregator.cfb.data_status import data_status_pages
 from sports_aggregator.cfb.data_import import data_import_pages
@@ -110,6 +111,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         ),
         NFL_PFF_SOURCE_ROOT=os.getenv(
             "NFL_PFF_SOURCE_ROOT", r"C:\Users\ehari\Desktop\scouting_report"
+        ),
+        # A flat, persistent landing spot for PFF exports uploaded through the
+        # browser, so a deploy with no sibling scouting_report checkout can
+        # still ingest PFF data without one.
+        NFL_PFF_UPLOAD_ROOT=os.getenv(
+            "NFL_PFF_UPLOAD_ROOT", os.path.join(app.instance_path, "nfl_pff_uploads")
         ),
         # Existing Render services are not guaranteed to re-sync Blueprint
         # environment additions on deploy. Render itself is therefore the safe
@@ -308,6 +315,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     app.register_blueprint(league_pages)
     app.register_blueprint(nfl_pages)
+    app.register_blueprint(nfl_data_import_pages)
     app.register_blueprint(cfb_pages)
     app.register_blueprint(data_status_pages)
     app.register_blueprint(data_import_pages)
@@ -414,6 +422,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         from sports_aggregator.nfl.pff import NFLPFFService
         result = NFLPFFService(
             app.extensions["nfl_repository"], app.config["NFL_PFF_SOURCE_ROOT"],
+            app.config.get("NFL_PFF_UPLOAD_ROOT"),
         ).sync(year, force_scan=force_scan)
         click.echo("nfl_pff: " + json.dumps(result, sort_keys=True))
         cache.clear()

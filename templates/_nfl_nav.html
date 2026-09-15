@@ -7,6 +7,7 @@
         </a>
         <nav class="primary-nav" aria-label="NFL navigation">
             <a class="{{ 'active' if active == 'dashboard' }}" href="{{ url_for('nfl.dashboard', season=season) }}">Dashboard</a>
+            <a class="{{ 'active' if active == 'scoreboard' }}" href="{{ url_for('nfl.scoreboard', season=season) }}">Scoreboard</a>
             <a href="{{ url_for('nfl.dashboard', season=season, _anchor='standings') }}">Standings</a>
             <a href="{{ url_for('nfl.dashboard', season=season, _anchor='teams') }}">Teams</a>
             <a class="{{ 'active' if active == 'pff' }}" href="{{ url_for('nfl.pff_explorer', season=(season - 1 if season and season > 2025 else season)) }}">PFF</a>
