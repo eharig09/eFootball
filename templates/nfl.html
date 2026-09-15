@@ -24,7 +24,15 @@
     {% endif %}
     <section class="nfl-hero">
         <div class="hero-intro">
-            <p class="eyebrow"><i></i>{{ season }} season</p>
+            <form class="season-select" action="{{ url_for('nfl.dashboard') }}" method="get">
+                <p class="eyebrow"><i></i><label for="nfl-season-select">Season</label></p>
+                <select id="nfl-season-select" name="season" onchange="this.form.submit()">
+                    {% for option in available_seasons %}
+                    <option value="{{ option }}"{% if option == season %} selected{% endif %}>{{ option }}</option>
+                    {% endfor %}
+                </select>
+                <noscript><button type="submit">Go</button></noscript>
+            </form>
             <h1>NFL news and analytics</h1>
             <p>League reporting, canonical schedules and rosters, weekly production, and curated sources in one NFL-specific data vertical.</p>
         </div>

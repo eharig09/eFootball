@@ -376,7 +376,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             app.extensions["nfl_repository"], app.config["NFLVERSE_RAW_CACHE_PATH"],
             year, force=force,
         )
-        click.echo(f"nfl_context: success (staff={context['staff']}, injuries={context['injuries']})")
+        click.echo(f"nfl_context: success (staff={context['staff']}, scheme_rates={context['scheme_rates']}, pressure_rates={context['pressure_rates']}, injuries={context['injuries']})")
         from sports_aggregator.nfl.source_directory import DEFAULT_PATH, import_directory
         if DEFAULT_PATH.exists():
             sources = import_directory(app.extensions["source_registry"], DEFAULT_PATH)
@@ -419,7 +419,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             app.extensions["nfl_repository"], app.config["NFLVERSE_RAW_CACHE_PATH"],
             year, force=force,
         )
-        click.echo(f"nfl_context: success (staff={context['staff']}, injuries={context['injuries']})")
+        click.echo(f"nfl_context: success (staff={context['staff']}, scheme_rates={context['scheme_rates']}, pressure_rates={context['pressure_rates']}, injuries={context['injuries']})")
 
     @app.cli.command("sync-nfl-context")
     @click.option("--year", type=int, default=current_nfl_season)
@@ -431,7 +431,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             app.extensions["nfl_repository"], app.config["NFLVERSE_RAW_CACHE_PATH"],
             year, force=force,
         )
-        click.echo(f"nfl_context: success (staff={result['staff']}, injuries={result['injuries']})")
+        click.echo(f"nfl_context: success (staff={result['staff']}, scheme_rates={result['scheme_rates']}, pressure_rates={result['pressure_rates']}, injuries={result['injuries']})")
         cache.clear()
 
     @app.cli.command("sync-nfl-pff")

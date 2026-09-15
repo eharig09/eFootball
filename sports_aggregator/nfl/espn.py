@@ -14,11 +14,14 @@ from typing import Any
 import requests
 
 from sports_aggregator.nfl.naming import canon_team
+from sports_aggregator.nfl.pressure_rates import pressure_rate_rows
 from sports_aggregator.nfl.repository import NFLRepository
 
 
 INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
 STAFF_PATH = Path(__file__).resolve().parents[2] / "data" / "nfl" / "team_staff_2026.csv"
+SCHEME_RATE_PATH = (Path(__file__).resolve().parents[2] / "data" / "nfl"
+                    / "Blitz+Box Rate - Sheet1.csv")
 INJURY_TTL_SECONDS = 30 * 60
 INACTIVE_DESIGNATIONS = {"", "A", "ACTIVE", "HEALTHY"}
 
@@ -101,12 +104,40 @@ def staff_rows(path: str | Path = STAFF_PATH) -> list[dict[str, Any]]:
                 for row in csv.DictReader(handle)]
 
 
+def scheme_rate_rows(path: str | Path = SCHEME_RATE_PATH) -> list[dict[str, Any]]:
+    """Manually-curated blitz/box/sub-package tendency rates, one snapshot per
+    team with no season column of its own -- the caller stamps whichever
+    season it is currently syncing, same as the ESPN injury feed."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = []
+        for row in csv.DictReader(handle):
+            team = canon_team(row.get("Team"))
+            if not team:
+                continue
+            rows.append({
+                "team": team,
+                "blitz_rate": row.get("Blitz Rate"),
+                "light_box_rate": row.get("Light Box Rate"),
+                "heavy_box_rate": row.get("Heavy Box Rate"),
+                "sub_package_rate": row.get("Sub Package Rate"),
+            })
+        return rows
+
+
 def sync_espn_context(repository: NFLRepository, cache_path: str | os.PathLike[str],
                       season: int, *, force: bool = False,
                       client: ESPNNFLClient | None = None) -> dict[str, int]:
     client = client or ESPNNFLClient(cache_path)
     staff = [row for row in staff_rows() if row["season"] == season]
     staff_count = repository.replace_team_staff(season, staff)
+    scheme_rate_count = repository.replace_team_scheme_rates(season, scheme_rate_rows())
+    pressure_rate_count = repository.replace_team_pressure_rates(
+        season, pressure_rate_rows(repository),
+    )
     injuries = injury_rows(client.load_injuries(force=force), season)
     injury_count = repository.replace_injuries(season, injuries)
-    return {"staff": staff_count, "injuries": injury_count}
+    return {"staff": staff_count, "scheme_rates": scheme_rate_count,
+            "pressure_rates": pressure_rate_count, "injuries": injury_count}

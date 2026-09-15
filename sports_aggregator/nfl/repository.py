@@ -88,6 +88,19 @@ CREATE TABLE IF NOT EXISTS team_staff (
  PRIMARY KEY(season,team,role)
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_staff_team ON team_staff(season,team);
+CREATE TABLE IF NOT EXISTS team_scheme_rates (
+ season INTEGER NOT NULL, team TEXT NOT NULL,
+ blitz_rate REAL, light_box_rate REAL, heavy_box_rate REAL, sub_package_rate REAL,
+ PRIMARY KEY(season,team)
+);
+CREATE TABLE IF NOT EXISTS team_pressure_rates (
+ season INTEGER NOT NULL, team TEXT NOT NULL, games REAL,
+ dadot REAL, air_yards REAL, yards_after_catch REAL,
+ blitzes REAL, blitz_rate REAL, hurries REAL, hurry_rate REAL,
+ qb_knockdowns REAL, knockdown_rate REAL, sacks REAL,
+ pressures REAL, pressure_rate REAL, missed_tackles REAL,
+ PRIMARY KEY(season,team)
+);
 CREATE TABLE IF NOT EXISTS injury_reports (
  season INTEGER NOT NULL,team TEXT NOT NULL,injury_id TEXT NOT NULL,espn_id TEXT NOT NULL,
  gsis_id TEXT,player_name TEXT NOT NULL,position TEXT,designation TEXT NOT NULL,status TEXT,
@@ -610,6 +623,38 @@ class NFLRepository:
             connection.execute("DELETE FROM team_staff WHERE season=?", (season,))
             connection.executemany(
                 "INSERT OR REPLACE INTO team_staff VALUES (?,?,?,?,?,?,?)", values,
+            )
+            connection.commit()
+        return len(values)
+
+    def replace_team_scheme_rates(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
+        self.initialize()
+        values = [(season, canon_team(row.get("team")), optional_float(row.get("blitz_rate")),
+                   optional_float(row.get("light_box_rate")), optional_float(row.get("heavy_box_rate")),
+                   optional_float(row.get("sub_package_rate")))
+                  for row in rows if canon_team(row.get("team"))]
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM team_scheme_rates WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO team_scheme_rates VALUES (?,?,?,?,?,?)", values,
+            )
+            connection.commit()
+        return len(values)
+
+    def replace_team_pressure_rates(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
+        columns = ("games", "dadot", "air_yards", "yards_after_catch", "blitzes", "blitz_rate",
+                  "hurries", "hurry_rate", "qb_knockdowns", "knockdown_rate", "sacks",
+                  "pressures", "pressure_rate", "missed_tackles")
+        self.initialize()
+        values = [(season, canon_team(row.get("team")), *(optional_float(row.get(key)) for key in columns))
+                  for row in rows if canon_team(row.get("team"))]
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM team_pressure_rates WHERE season=?", (season,))
+            connection.executemany(
+                f"INSERT OR REPLACE INTO team_pressure_rates VALUES ({','.join('?' * (2 + len(columns)))})",
+                values,
             )
             connection.commit()
         return len(values)
@@ -1351,6 +1396,28 @@ class NFLRepository:
             ).fetchone()
         return int(row[0]) if row and row[0] is not None else None
 
+    def season_has_data(self, season: int) -> bool:
+        """Cheap presence check, used to decide whether the real current season
+        is usable as a default before falling back to whatever season is
+        actually the most complete."""
+        self.initialize()
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """SELECT 1 FROM games WHERE season=?
+                    UNION SELECT 1 FROM players WHERE season=? LIMIT 1""",
+                (season, season),
+            ).fetchone()
+        return row is not None
+
+    def available_seasons(self) -> list[int]:
+        """Every season with a stored schedule, most recent first -- backs the
+        season selector rather than assuming a fixed range."""
+        self.initialize()
+        with closing(self._connect()) as connection:
+            return [int(row[0]) for row in connection.execute(
+                "SELECT DISTINCT season FROM games ORDER BY season DESC"
+            )]
+
     def list_teams(self) -> list[dict[str, Any]]:
         self.initialize()
         with closing(self._connect()) as connection:
@@ -1932,6 +1999,24 @@ class NFLRepository:
                 f"SELECT * FROM team_staff WHERE season=? AND team=? ORDER BY {order}",
                 (season, canon_team(team)),
             )]
+
+    def team_scheme_rate(self, season: int, team: str) -> dict[str, Any] | None:
+        self.initialize()
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM team_scheme_rates WHERE season=? AND team=?",
+                (season, canon_team(team)),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def team_pressure_rate(self, season: int, team: str) -> dict[str, Any] | None:
+        self.initialize()
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM team_pressure_rates WHERE season=? AND team=?",
+                (season, canon_team(team)),
+            ).fetchone()
+        return dict(row) if row else None
 
     def team_injuries(self, season: int, team: str) -> list[dict[str, Any]]:
         """Latest non-active ESPN designation per athlete for a team."""

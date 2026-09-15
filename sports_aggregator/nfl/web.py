@@ -224,7 +224,18 @@ def _player_pff(player_id: str, season: int, position: str | None) -> dict:
 
 def _season() -> int:
     requested = request.args.get("season", type=int)
-    season = requested or _repository().latest_season() or current_season()
+    if requested is None:
+        # The real current season wins whenever it actually has any data --
+        # only defer to whatever season is most complete when the current
+        # one hasn't been synced at all yet (a fresh deploy before this
+        # season's schedule has landed), so the site doesn't silently sit on
+        # last season once real games exist for this one.
+        current = current_season()
+        repository = _repository()
+        season = current if repository.season_has_data(current) else (
+            repository.latest_season() or current)
+    else:
+        season = requested
     if season < 1920 or season > current_season() + 2:
         abort(400)
     return season
@@ -412,6 +423,7 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
     source_coverage = _content().source_coverage(_directory_sources())
     return {
         "season": season, "analysis_season": analysis_season,
+        "available_seasons": sorted({*repository.available_seasons(), season}, reverse=True),
         "production_seed": _production_seed_status(),
         "selected_week": selected_week,
         "available_weeks": list(range(1, (repository.latest_stat_week(season) or 0) + 1)),
@@ -717,8 +729,11 @@ def team_page(abbreviation: str):
     staff_packet = staff_tendencies(
         _repository(), _pff(), season, code, pff_season, context["efficiency"],
     )
+    scheme_rate = (_repository().team_scheme_rate(season, code)
+                   or _repository().team_scheme_rate(season - 1, code))
     return render_template(
         "nfl_team.html", league=get_league("nfl"), season=season, team=team,
+        scheme_rate=scheme_rate,
         schedule=schedule_table(
             _repository().schedule(season, team=code), team=code,
             identities={row["abbreviation"]: row for row in _repository().list_teams()},
@@ -774,6 +789,8 @@ def team_api(abbreviation: str):
         ).as_dict(),
         "efficiency": context["efficiency"], "team_context": context,
         "form_charts": team_charts(form_rows),
+        "scheme_rate": (_repository().team_scheme_rate(season, code)
+                        or _repository().team_scheme_rate(season - 1, code)),
         "record": _repository().team_record(season, code),
         "sources": _sources(team=team["name"]),
         "movements": movements, "content": _content().for_team(code),

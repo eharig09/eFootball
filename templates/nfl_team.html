@@ -74,11 +74,19 @@
             </article>
             <article class="staff-tendency defense-tendency">
                 <header><span>Defensive coordinator</span><b>{{ staff_packet.defense.coach.coach_name if staff_packet.defense.coach else 'Not available' }}</b></header>
-                {% set cov = staff_packet.defense.coverage %}{% set pressure = staff_packet.defense.pressure %}
+                {% set cov = staff_packet.defense.coverage %}{% set pressure = staff_packet.defense.pressure %}{% set pr = staff_packet.defense.pressure_rate %}
                 <div class="tendency-rows">
                     <div><span>Man / zone</span><b>{{ cov.man_rate|cell('rate') }} / {{ cov.zone_rate|cell('rate') }}</b><small>{{ cov.season or season }} PFF player-snap proxy</small></div>
                     <div><span>EPA allowed</span><b>{{ staff_packet.defense.epa_allowed|cell('signed2') }}</b><small>{{ season }} defense</small></div>
-                    <div><span>Blitz rate</span><b>Not charted</b><small>Current feeds do not identify rush count</small></div>
+                    {% if pr %}
+                    <div><span>Blitz rate</span><b>{{ pr.blitz_rate|cell('f1') }}%</b><small>{{ pr.blitzes|cell('int') }} blitzes{% if pr.season != season %} &middot; {{ pr.season }}{% endif %}</small></div>
+                    <div><span>Pressure rate</span><b>{{ pr.pressure_rate|cell('f1') }}%</b><small>{{ pr.pressures|cell('int') }} pressures &middot; {{ pr.sacks|cell('int') }} sacks</small></div>
+                    <div><span>Hurry / knockdown rate</span><b>{{ pr.hurry_rate|cell('f1') }}% / {{ pr.knockdown_rate|cell('f1') }}%</b><small>{{ pr.hurries|cell('int') }} hurries &middot; {{ pr.qb_knockdowns|cell('int') }} knockdowns</small></div>
+                    <div><span>Depth of target allowed</span><b>{{ pr.dadot|cell('f1') }} yd</b><small>{{ pr.air_yards|cell('int') }} air yd &middot; {{ pr.yards_after_catch|cell('int') }} YAC allowed</small></div>
+                    <div><span>Missed tackles</span><b>{{ pr.missed_tackles|cell('int') }}</b><small>{{ pr.games|cell('int') }} games charted</small></div>
+                    {% else %}
+                    <div><span>Blitz rate</span><b>Not charted</b><small>Drop a Pro-Football-Reference pass-rush export in data/nfl/ and re-run the sync</small></div>
+                    {% endif %}
                     {% for group in pressure.groups %}<div><span>{{ group.label }} pressure share</span><b>{{ group.share|cell('rate') }}</b><small>{{ group.events|cell('f1') }} sacks + QB hits</small></div>{% endfor %}
                 </div>
             </article>
@@ -97,6 +105,15 @@
         </div>
         <h3 class="subsection-title">Production leaders</h3>
         <div class="team-leader-row">{% for leader in team_context.leaders %}<a href="{{ leader.url }}"><small>{{ leader.category }} &middot; {{ leader.stat_season }}</small><b>{{ leader.player_name }}</b><span>{{ leader.value|cell('big') }} {{ leader.value_label }}</span></a>{% else %}<p class="empty">Player leaders will populate with weekly statistics.</p>{% endfor %}</div>
+        {% if scheme_rate %}
+        <h3 class="subsection-title">Defensive scheme tendencies{% if scheme_rate.season != season %} <small>({{ scheme_rate.season }})</small>{% endif %}</h3>
+        <div class="profile-strip team-profile-ranked">
+            <article><span>Blitz rate</span><b>{{ scheme_rate.blitz_rate|cell('f1') }}%</b></article>
+            <article><span>Light box rate</span><b>{{ scheme_rate.light_box_rate|cell('f1') }}%</b></article>
+            <article><span>Heavy box rate</span><b>{{ scheme_rate.heavy_box_rate|cell('f1') }}%</b></article>
+            <article><span>Sub package rate</span><b>{{ scheme_rate.sub_package_rate|cell('f1') }}%</b></article>
+        </div>
+        {% endif %}
     </section>
 
     {% if form_charts %}

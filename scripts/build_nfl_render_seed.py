@@ -19,6 +19,8 @@ FILTERS = {
     "snap_counts": "season >= 2025",
     "depth_chart_snapshots": "season >= 2025 AND snapshot_at = (SELECT MAX(d2.snapshot_at) FROM source.depth_chart_snapshots d2 WHERE d2.season=depth_chart_snapshots.season AND d2.team=depth_chart_snapshots.team)",
     "team_staff": "season >= 2025",
+    "team_scheme_rates": "season >= 2025",
+    "team_pressure_rates": "season >= 2025",
     "injury_reports": "season >= 2026",
     "player_master": "1",
     "player_external_ids": "1",

@@ -68,6 +68,7 @@ def staff_tendencies(repository: NFLRepository, pff: NFLPFFService, season: int,
             "coverage": coverage,
             "pressure": _pressure_sources(repository, season, team),
             "epa_allowed": efficiency.get("defensive_epa_allowed") if efficiency else None,
-            "blitz_rate": None,
+            "pressure_rate": (repository.team_pressure_rate(season, team)
+                              or repository.team_pressure_rate(season - 1, team)),
         },
     }
