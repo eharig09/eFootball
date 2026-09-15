@@ -14,7 +14,7 @@ from sports_aggregator.nfl.naming import canon_team
 from sports_aggregator.nfl.matchups import matchup_context
 from sports_aggregator.nfl.landing import draft_projection, games_to_watch
 from sports_aggregator.nfl.nflverse import current_season
-from sports_aggregator.nfl.pff import NFLPFFService, PFF_EXPLORER_METRICS
+from sports_aggregator.nfl.pff import NFLPFFService, PFF_EXPLORER_METRICS, season_scaled_minimum
 from sports_aggregator.nfl.personnel import position_rooms, significant_movements
 from sports_aggregator.nfl.passing import pass_matchup_packet, pass_zone_packet
 from sports_aggregator.nfl.postgame import postgame_packet
@@ -92,7 +92,9 @@ def _team_pff(team: str, season: int) -> dict:
     if pff_season is None:
         return {"season": None, "cards": [], "counts": {}}
     service = _pff()
-    current_ids = {row["player_id"] for row in _repository().team_roster(season, team)}
+    repository = _repository()
+    current_ids = {row["player_id"] for row in repository.team_roster(season, team)}
+    pff_weeks = repository.latest_stat_week(pff_season) or 0
     cards = []
     for label, family, metric, sample_metric, sample_minimum in (
         ("Route grade", "receiving_summary", "grades_pass_route", "routes", 50),
@@ -101,7 +103,8 @@ def _team_pff(team: str, season: int) -> dict:
         ("Man coverage", "defense_coverage_scheme", "man_grades_coverage_defense", "man_snap_counts_coverage", 50),
     ):
         rows = service.leaders(pff_season, family, metric, team=team, limit=100,
-                               minimum_metric=sample_metric, minimum_value=sample_minimum)
+                               minimum_metric=sample_metric,
+                               minimum_value=season_scaled_minimum(sample_minimum, pff_weeks))
         if pff_season != season:
             rows = [row for row in rows if row.get("gsis_id") in current_ids]
         for row in rows[:3]:
@@ -253,65 +256,72 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
         ),
     }
     pff_service = _pff()
+    # Full-season "qualified" floors (100 routes, 100 snaps, ...) exclude
+    # every player early in a season, when a fresh PFF upload has only a
+    # game or two of accumulation. Scale each one to how much of the season
+    # has actually been played so real, freshly synced data still surfaces.
+    pff_weeks = repository.latest_stat_week(analysis_season) or 0
+    def _min(value: float) -> float:
+        return season_scaled_minimum(value, pff_weeks)
     pff_features = {
         "route": pff_leaders_table(
             pff_service.leaders(analysis_season, "receiving_summary", "grades_pass_route", limit=10,
-                                minimum_metric="routes", minimum_value=100),
+                                minimum_metric="routes", minimum_value=_min(100)),
             caption="Route grade", season=analysis_season,
         ),
         "rushing": pff_leaders_table(
             pff_service.leaders(analysis_season, "rushing_summary", "grades_run", limit=10,
-                                minimum_metric="attempts", minimum_value=100),
+                                minimum_metric="attempts", minimum_value=_min(100)),
             caption="Rushing grade", season=analysis_season,
         ),
         "blocking": pff_leaders_table(
             pff_service.leaders(analysis_season, "offense_blocking", "grades_pass_block", limit=10,
-                                minimum_metric="snap_counts_pass_block", minimum_value=200),
+                                minimum_metric="snap_counts_pass_block", minimum_value=_min(200)),
             caption="Pass-block grade", season=analysis_season,
         ),
         "coverage": pff_leaders_table(
             pff_service.leaders(analysis_season, "defense_coverage_scheme",
                                 "man_grades_coverage_defense", limit=10,
-                                minimum_metric="man_snap_counts_coverage", minimum_value=100),
+                                minimum_metric="man_snap_counts_coverage", minimum_value=_min(100)),
             caption="Man coverage grade", season=analysis_season,
         ),
         "receiving_efficiency": pff_leaders_table(
             pff_service.leaders(analysis_season, "receiving_summary", "yprr", limit=10,
-                                minimum_metric="routes", minimum_value=100),
+                                minimum_metric="routes", minimum_value=_min(100)),
             caption="Yards per route", season=analysis_season,
         ),
         "elusive": pff_leaders_table(
             pff_service.leaders(analysis_season, "rushing_summary", "elusive_rating", limit=10,
-                                minimum_metric="attempts", minimum_value=75),
+                                minimum_metric="attempts", minimum_value=_min(75)),
             caption="Elusive rating", season=analysis_season,
         ),
         "run_blocking": pff_leaders_table(
             pff_service.leaders(analysis_season, "offense_blocking", "grades_run_block", limit=10,
-                                minimum_metric="snap_counts_run_block", minimum_value=150),
+                                minimum_metric="snap_counts_run_block", minimum_value=_min(150)),
             caption="Run-block grade", season=analysis_season,
         ),
         "zone_coverage": pff_leaders_table(
             pff_service.leaders(analysis_season, "defense_coverage_scheme",
                                 "zone_grades_coverage_defense", limit=10,
-                                minimum_metric="zone_snap_counts_coverage", minimum_value=100),
+                                minimum_metric="zone_snap_counts_coverage", minimum_value=_min(100)),
             caption="Zone coverage grade", season=analysis_season,
         ),
         "slot_coverage": pff_leaders_table(
             pff_service.leaders(analysis_season, "slot_coverage",
                                 "yards_per_coverage_snap", limit=10, lower=True,
-                                minimum_metric="coverage_snaps", minimum_value=75),
+                                minimum_metric="coverage_snaps", minimum_value=_min(75)),
             caption="Slot yards allowed / snap", season=analysis_season,
         ),
         "deep_passing": pff_leaders_table(
             pff_service.leaders(analysis_season, "passing_depth",
                                 "deep_grades_pass", limit=10,
-                                minimum_metric="deep_attempts", minimum_value=20),
+                                minimum_metric="deep_attempts", minimum_value=_min(20)),
             caption="Deep passing grade", season=analysis_season,
         ),
         "deep_receiving": pff_leaders_table(
             pff_service.leaders(analysis_season, "receiving_depth",
                                 "deep_grades_pass_route", limit=10,
-                                minimum_metric="deep_targets", minimum_value=15),
+                                minimum_metric="deep_targets", minimum_value=_min(15)),
             caption="Deep receiving grade", season=analysis_season,
         ),
     }

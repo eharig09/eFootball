@@ -66,6 +66,22 @@ IDENTITY_COLUMNS = {"player", "player_id", "position", "team_name", "player_game
                     "franchise_id", "team", "games"}
 MIN_CONFIDENCE = 0.80
 MIN_MARGIN = 0.15
+FULL_SEASON_WEEKS = 18
+MIN_SAMPLE_FRACTION = 0.12
+
+
+def season_scaled_minimum(base: float, weeks_played: int | None) -> float:
+    """Scale a full-season "qualified" sample floor down early in the season.
+
+    Thresholds like 100 routes or 100 combined snaps assume a full season of
+    accumulation. Applied unscaled against a database that only has one or
+    two weeks of PFF data synced so far, they exclude every player who has
+    actually played, so a freshly uploaded snapshot looks empty rather than
+    thin. `MIN_SAMPLE_FRACTION` keeps a single unusual game from qualifying
+    as a "leader" outright.
+    """
+    fraction = max(MIN_SAMPLE_FRACTION, min(1.0, (weeks_played or 0) / FULL_SEASON_WEEKS))
+    return base * fraction
 
 
 def _family(path: Path) -> str:

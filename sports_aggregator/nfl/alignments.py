@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from sports_aggregator.nfl.pff import NFLPFFService
+from sports_aggregator.nfl.pff import NFLPFFService, season_scaled_minimum
 from sports_aggregator.nfl.repository import NFLRepository
 
 
 def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                        game: dict[str, Any], roster_season: int,
                        pff_season: int, defense_profiles: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    # Full-season sample floors (100 routes, 40 slot-coverage snaps) exclude
+    # every player early in a season; scale them to what's actually synced.
+    weeks_played = repository.latest_stat_week(pff_season)
+    minimum_routes = season_scaled_minimum(100, weeks_played)
+    minimum_slot_snaps = season_scaled_minimum(40, weeks_played)
     cards = []
     for offense, defense in ((game["away_team"], game["home_team"]),
                              (game["home_team"], game["away_team"])):
@@ -21,7 +26,7 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
             pff_season, "receiving_summary", offense,
             ("routes", "grades_pass_route", "yprr", "avg_depth_of_target",
              "slot_rate", "wide_rate"),
-        ) if row.get("gsis_id") in offense_ids and (row.get("routes") or 0) >= 100]
+        ) if row.get("gsis_id") in offense_ids and (row.get("routes") or 0) >= minimum_routes]
         receivers.sort(key=lambda row: (
             -(usage.get(row.get("gsis_id"), {}).get("targets") or 0),
             -(row.get("routes") or 0),
@@ -29,7 +34,7 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
         slot_defenders = [row for row in pff.family_profiles(
             pff_season, "slot_coverage", defense,
             ("coverage_snaps", "qb_rating_against", "yards_per_coverage_snap"),
-        ) if row.get("gsis_id") in defense_ids and (row.get("coverage_snaps") or 0) >= 40]
+        ) if row.get("gsis_id") in defense_ids and (row.get("coverage_snaps") or 0) >= minimum_slot_snaps]
         slot_defenders.sort(key=lambda row: -(row.get("coverage_snaps") or 0))
         allowed_zones = [zone for zone in defense_profiles.get(defense, {}).get("zones", [])
                          if (zone.get("attempts") or 0) >= 20]

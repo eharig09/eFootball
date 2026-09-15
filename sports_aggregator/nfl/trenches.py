@@ -1,7 +1,7 @@
 """Offensive-line versus defensive-front matchup context."""
 from __future__ import annotations
 from typing import Any
-from sports_aggregator.nfl.pff import NFLPFFService
+from sports_aggregator.nfl.pff import NFLPFFService, season_scaled_minimum
 from sports_aggregator.nfl.repository import NFLRepository
 
 FRONT = {"EDGE", "DE", "DT", "DL", "NT", "LB", "OLB"}
@@ -15,6 +15,9 @@ def _weighted(rows: list[dict[str, Any]], metric: str, weight: str) -> float | N
 def trench_matchups(repository: NFLRepository, pff: NFLPFFService, game: dict[str, Any],
                     roster_season: int, pff_season: int, stats_season: int,
                     profiles: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    # A full season of snaps is the assumption behind "100 combined snaps";
+    # early in a season that excludes every lineman who has actually played.
+    minimum_snaps = season_scaled_minimum(100, repository.latest_stat_week(stats_season))
     cards = []
     for offense, defense in ((game["away_team"], game["home_team"]),
                              (game["home_team"], game["away_team"])):
@@ -26,7 +29,8 @@ def trench_matchups(repository: NFLRepository, pff: NFLPFFService, game: dict[st
             ("grades_pass_block", "grades_run_block", "pbe", "pressures_allowed",
              "snap_counts_pass_block", "snap_counts_run_block"),
         ) if row.get("gsis_id") in current_offense
-             and ((row.get("snap_counts_pass_block") or 0) + (row.get("snap_counts_run_block") or 0)) >= 100]
+             and ((row.get("snap_counts_pass_block") or 0) +
+                  (row.get("snap_counts_run_block") or 0)) >= minimum_snaps]
         hit_rows = repository.player_leaders(stats_season, "def_qb_hits", team=defense, limit=100)
         sacks = {row["player_id"]: row["value"] for row in repository.player_leaders(
             stats_season, "def_sacks", team=defense, limit=100)}
