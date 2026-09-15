@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 from typing import Any
 
 from sports_aggregator.nfl.nflverse import current_season
@@ -65,8 +66,11 @@ def maybe_launch(*, database_path: str | os.PathLike[str], season: int | None = 
         return False
 
     state_path = database.parent / STATE_NAME
-    last = _parse_stamp(_read_json(state_path).get("started_at"))
-    if last and datetime.now(timezone.utc) - last < timedelta(seconds=max(60, retry_seconds)):
+    prior_state = _read_json(state_path)
+    deploy = os.getenv("RENDER_GIT_COMMIT", "").strip()[:16]
+    last = _parse_stamp(prior_state.get("started_at"))
+    if (last and prior_state.get("deploy") == deploy and
+            datetime.now(timezone.utc) - last < timedelta(seconds=max(60, retry_seconds))):
         return False
 
     lock_path = database.parent / LOCK_NAME
@@ -77,7 +81,8 @@ def maybe_launch(*, database_path: str | os.PathLike[str], season: int | None = 
         # A killed process cannot own a lock forever.  Its state timestamp is
         # the retry throttle; an old orphan can be replaced safely here.
         try:
-            if datetime.now(timezone.utc).timestamp() - lock_path.stat().st_mtime <= retry_seconds:
+            if (prior_state.get("deploy") == deploy and
+                    datetime.now(timezone.utc).timestamp() - lock_path.stat().st_mtime <= retry_seconds):
                 return False
             lock_path.unlink()
             descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -87,7 +92,8 @@ def maybe_launch(*, database_path: str | os.PathLike[str], season: int | None = 
         handle.write(json.dumps({"pid": os.getpid(), "created_at": _stamp()}))
 
     state_path.write_text(json.dumps({
-        "status": "launching", "season": season, "started_at": _stamp(), "stages": [],
+        "status": "launching", "season": season, "deploy": deploy,
+        "started_at": _stamp(), "stages": [],
     }), encoding="utf-8")
     environment = os.environ.copy()
     environment["NFL_AUTO_SEED_CHILD"] = "1"
@@ -97,7 +103,7 @@ def maybe_launch(*, database_path: str | os.PathLike[str], season: int | None = 
         with log_path.open("a", encoding="utf-8") as log:
             subprocess.Popen(
                 [sys.executable, "-m", "sports_aggregator.nfl.production_seed",
-                 "--season", str(season)],
+                 "--season", str(season), "--delay", "30"],
                 cwd=str(root), env=environment, stdout=log, stderr=subprocess.STDOUT,
                 close_fds=True,
             )
@@ -161,7 +167,11 @@ def run(season: int) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Populate an empty production NFL database")
     parser.add_argument("--season", type=int, default=current_season())
+    parser.add_argument("--delay", type=int, default=0,
+                        help="Let the web process bind before loading data libraries.")
     args = parser.parse_args(argv)
+    if args.delay:
+        time.sleep(max(0, min(args.delay, 120)))
     report = run(args.season)
     print(json.dumps(report, sort_keys=True), flush=True)
     return 0 if report["status"] in {"success", "degraded"} else 1

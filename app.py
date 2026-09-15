@@ -498,9 +498,22 @@ def create_app(test_config: dict | None = None) -> Flask:
         from reds.reds import reds
         app.register_blueprint(reds, url_prefix="/reds")
         app.register_blueprint(bengals, url_prefix="/bengals")
-    if app.config["NFL_AUTO_SEED"]:
-        from sports_aggregator.nfl.production_seed import maybe_launch
-        maybe_launch(database_path=app.config["NFL_DATABASE_PATH"])
+    # Do not compete with Gunicorn while Render is deciding whether the new
+    # worker is healthy. The first completed request arms a delayed seed, and
+    # population failures can never prevent the web process from binding.
+    nfl_seed_checked = False
+
+    @app.after_request
+    def launch_nfl_seed_after_health(response):
+        nonlocal nfl_seed_checked
+        if app.config["NFL_AUTO_SEED"] and not nfl_seed_checked:
+            nfl_seed_checked = True
+            try:
+                from sports_aggregator.nfl.production_seed import maybe_launch
+                maybe_launch(database_path=app.config["NFL_DATABASE_PATH"])
+            except Exception:
+                app.logger.exception("could not launch NFL production seed")
+        return response
     return app
 
 

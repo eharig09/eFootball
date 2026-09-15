@@ -875,6 +875,9 @@ pre-deploy commands. Production therefore uses a runtime initializer:
 - An atomic disk lock prevents worker recycling or overlapping deploys from starting
   duplicate population processes; failed attempts become eligible for retry after a
   bounded cooldown.
+- The launcher runs only after the first successful web response and gives Gunicorn a
+  short grace period before importing data libraries. Seed errors are logged but can
+  never block Render's health check or prevent the service from binding its port.
 - Essentials run without play-by-play first, so schedules, teams, rosters, weekly
   production, snap counts, depth charts, IDs, staff, injuries, sources, and Elo become
   usable before the largest parquet file is loaded.
