@@ -8,13 +8,16 @@ import unittest
 from unittest.mock import patch
 
 from sports_aggregator.catalog import get_league
-from sports_aggregator.models import Article
+from sports_aggregator.models import Article, FeedConfig
 from sports_aggregator.nfl.content import NFLContentRepository
+from sports_aggregator.providers.base import ProviderFetchError
 from sports_aggregator.nfl.models import Game, Player, Team
 from sports_aggregator.nfl.data_sources import free_sources, load_data_sources
 from sports_aggregator.nfl.espn import injury_rows, staff_rows
 from sports_aggregator.nfl.naming import canon_position, canon_team, normalize_name
+from sports_aggregator.nfl.alignments import alignment_matchups
 from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.nfl.rss_directory import national_feeds, team_feeds
 from sports_aggregator.nfl.source_directory import import_directory, load_directory
 from sports_aggregator.nfl.sync import NFLDataSync
 from sports_aggregator.nfl.teams import unit_continuity
@@ -22,11 +25,14 @@ from sports_aggregator.nfl.nflverse import NflverseClient, NflverseError, curren
 from sports_aggregator.nfl.charts import player_charts, team_charts
 from sports_aggregator.nfl.explorer import scatter_plot
 from sports_aggregator.nfl.passing import pass_matchup_packet, pass_zone_packet
+from sports_aggregator.nfl.rushing import run_direction_packet, run_matchup_packet
 from sports_aggregator.nfl.personnel import _score
 from sports_aggregator.nfl.postgame import postgame_packet
 from sports_aggregator.nfl.production_seed import LOCK_NAME, STATE_NAME, maybe_launch
 from sports_aggregator.nfl.search import search_entities as search_nfl_entities
-from sports_aggregator.nfl.views import current_games, schedule_table
+from sports_aggregator.nfl.views import (
+    current_games, ingestion_runs_table, schedule_table, zone_matchup_table,
+)
 from sports_aggregator.social.models import SourceProfile
 from sports_aggregator.social.registry import SourceRegistry
 
@@ -615,7 +621,8 @@ class NFLPassingProfileTests(unittest.TestCase):
                  "receiver_player_id": "wr-2", "receiver_player_name": "R Two",
                  "air_yards": 12, "pass_location": "middle", "complete_pass": 0,
                  "passing_yards": 0, "receiving_yards": 0, "epa": -0.4, "pass_touchdown": 0,
-                 "interception": 0, "cpoe": -12.0},
+                 "interception": 1, "cpoe": -12.0,
+                 "interception_player_id": "db-1", "interception_player_name": "D One"},
                 {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
                  "pass_attempt": 1, "passer_player_id": "qb-1", "air_yards": None,
                  "pass_location": None},
@@ -634,6 +641,194 @@ class NFLPassingProfileTests(unittest.TestCase):
                               deep_right["receptions"], deep_right["receiving_yards"],
                               deep_right["touchdowns"]), ("R One", 1, 1, 31, 1))
             self.assertEqual(deep_right["adot"], 22)
+
+            # The interception is an honest, already-attributed defensive
+            # credit inside the same zone -- shown alongside the offense's
+            # recipients, not instead of them.
+            defenders = repository.pass_zone_defenders(2025, defense_team="NO")
+            intermediate_middle = next(row for row in defenders
+                                       if row["depth_bucket"] == "intermediate"
+                                       and row["pass_location"] == "middle")
+            self.assertEqual((intermediate_middle["defender_name"], intermediate_middle["event"],
+                              intermediate_middle["count"]), ("D One", "interception", 1))
+
+
+class NFLRushDirectionAndSituationalTests(unittest.TestCase):
+    def test_run_direction_classifies_the_standard_seven_cell_chart(self):
+        classify = NFLRepository._run_direction
+        self.assertEqual(classify("left", "end"), "left end")
+        self.assertEqual(classify("right", "tackle"), "right tackle")
+        self.assertEqual(classify("middle", None), "middle")
+        self.assertIsNone(classify(None, None))
+        self.assertIsNone(classify("left", None))  # no gap on a non-middle run is unclassifiable
+
+    def test_rush_direction_profiles_are_queryable_by_rusher_and_defense(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            rows = [
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "rush": 1, "rusher_player_id": "rb-1", "rusher_player_name": "R One",
+                 "run_location": "left", "run_gap": "tackle", "yards_gained": 6, "epa": .4,
+                 "rush_touchdown": 0, "solo_tackle_1_player_id": "lb-1",
+                 "solo_tackle_1_player_name": "L One"},
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "rush": 1, "rusher_player_id": "rb-2", "rusher_player_name": "R Two",
+                 "run_location": "left", "run_gap": "tackle", "yards_gained": 3, "epa": -.1,
+                 "rush_touchdown": 0, "tackle_with_assist_1_player_id": "lb-1",
+                 "tackle_with_assist_1_player_name": "L One"},
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "rush": 1, "rusher_player_id": "rb-1", "rusher_player_name": "R One",
+                 "run_location": "middle", "run_gap": None, "yards_gained": 2, "epa": -.3,
+                 "rush_touchdown": 0},
+                # Unclassifiable (no gap on a non-middle run) -- excluded, not "unknown".
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "rush": 1, "rusher_player_id": "rb-1", "run_location": "right", "run_gap": None,
+                 "yards_gained": 1, "epa": -.9},
+            ]
+            self.assertEqual(repository.replace_rush_direction_profiles(2025, rows), 3)
+            runner = repository.rusher_direction_profile(2025, "rb-1")
+            self.assertEqual(runner["total"]["attempts"], 2)
+            self.assertEqual({d["direction"] for d in runner["directions"]}, {"left tackle", "middle"})
+            defense = repository.defense_rush_direction_profile(2025, "NO")
+            self.assertEqual(defense["total"]["attempts"], 3)
+            left_tackle = next(d for d in defense["directions"] if d["direction"] == "left tackle")
+            self.assertAlmostEqual(left_tackle["epa_per_attempt"], .15)  # (.4 + -.1) / 2
+
+            # Full team run game -- both rushers, not just the lead back.
+            team = repository.team_rush_direction_profile(2025, "ARI")
+            self.assertEqual(team["total"]["attempts"], 3)
+            contributors = repository.rush_direction_contributors(2025, offense_team="ARI")
+            left_tackle_rushers = {row["rusher_name"] for row in contributors if row["direction"] == "left tackle"}
+            self.assertEqual(left_tackle_rushers, {"R One", "R Two"})
+
+            # Both a solo tackle and an assisted tackle credit the same
+            # primary tackler (solo wins when both are recorded on separate
+            # plays) -- an honest, already-attributed defensive side, not a
+            # fabricated coverage assignment.
+            defenders = repository.rush_direction_defenders(2025, defense_team="NO")
+            tackler = next(row for row in defenders if row["direction"] == "left tackle")
+            self.assertEqual((tackler["defender_name"], tackler["tackles"]), ("L One", 2))
+
+    def test_situational_pass_profiles_split_red_zone_and_end_zone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            rows = [
+                # Inside the 20, target reaches the end zone -> counts for both.
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "pass_attempt": 1, "passer_player_id": "qb-1", "passer_player_name": "Q One",
+                 "receiver_player_id": "wr-1", "receiver_player_name": "R One",
+                 "yardline_100": 8, "air_yards": 8, "complete_pass": 1, "passing_yards": 8,
+                 "receiving_yards": 8, "epa": 2.1, "pass_touchdown": 1, "interception": 0},
+                # Inside the 20, target short of the end zone -> red zone only.
+                # Broken up by a defender -- the honest defensive credit.
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "pass_attempt": 1, "passer_player_id": "qb-1", "passer_player_name": "Q One",
+                 "receiver_player_id": "wr-1", "receiver_player_name": "R One",
+                 "yardline_100": 15, "air_yards": 5, "complete_pass": 0, "passing_yards": 0,
+                 "receiving_yards": 0, "epa": -.6, "pass_touchdown": 0, "interception": 0,
+                 "pass_defense_1_player_id": "cb-1", "pass_defense_1_player_name": "C One"},
+                # Outside the 20 entirely -> neither situation.
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "pass_attempt": 1, "passer_player_id": "qb-1", "passer_player_name": "Q One",
+                 "receiver_player_id": "wr-1", "receiver_player_name": "R One",
+                 "yardline_100": 55, "air_yards": 10, "complete_pass": 1, "passing_yards": 10,
+                 "receiving_yards": 10, "epa": .3, "pass_touchdown": 0, "interception": 0},
+            ]
+            # 3 plays collapse into 2 (game, passer, situation) buckets: row 1
+            # counts toward both red_zone and end_zone (same passer/game), so
+            # those share one red_zone bucket with row 2; row 3 (outside the
+            # 20) contributes to neither.
+            self.assertEqual(repository.replace_situational_pass_profiles(2025, rows), 2)
+            passer = repository.qb_situational_profile(2025, "qb-1")
+            self.assertEqual(passer["red_zone"]["attempts"], 2)
+            self.assertEqual(passer["end_zone"]["attempts"], 1)
+            self.assertEqual(passer["end_zone"]["touchdowns"], 1)
+            defense = repository.defense_situational_profile(2025, "NO")
+            self.assertEqual(defense["red_zone"]["attempts"], 2)
+            with closing(repository._connect()) as connection:
+                receiver_rows = list(connection.execute(
+                    "SELECT situation,targets FROM receiver_situational_profiles WHERE receiver_player_id='wr-1'"
+                ))
+            self.assertEqual({row["situation"]: row["targets"] for row in receiver_rows},
+                             {"red_zone": 2, "end_zone": 1})
+
+            contributors = repository.situational_pass_contributors(2025, passer_player_id="qb-1")
+            self.assertEqual(contributors["red_zone"][0]["targets"], 2)
+            defenders = repository.situational_pass_defenders(2025, defense_team="NO")
+            self.assertEqual(defenders["red_zone"][0]["defender_name"], "C One")
+            self.assertEqual(defenders["red_zone"][0]["event"], "pass_defended")
+
+    def test_rush_situational_profiles_are_the_full_run_game_not_one_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            rows = [
+                # Inside the 20 -- counts.
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "rush": 1, "rusher_player_id": "rb-1", "rusher_player_name": "R One",
+                 "yardline_100": 12, "yards_gained": 5, "epa": .5, "rush_touchdown": 1,
+                 "solo_tackle_1_player_id": "lb-1", "solo_tackle_1_player_name": "L One"},
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "rush": 1, "rusher_player_id": "rb-2", "rusher_player_name": "R Two",
+                 "yardline_100": 5, "yards_gained": 2, "epa": -.2, "rush_touchdown": 0},
+                # Outside the 20 -- excluded.
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "rush": 1, "rusher_player_id": "rb-1", "yardline_100": 60,
+                 "yards_gained": 4, "epa": .1, "rush_touchdown": 0},
+            ]
+            self.assertEqual(repository.replace_rush_situational_profiles(2025, rows), 2)
+            team = repository.team_rush_situational_profile(2025, "ARI")
+            self.assertEqual(team["attempts"], 2)  # both backs, not just one
+            defense = repository.defense_rush_situational_profile(2025, "NO")
+            self.assertEqual(defense["attempts"], 2)
+            contributors = repository.rush_situational_contributors(2025, offense_team="ARI")
+            self.assertEqual({row["rusher_name"] for row in contributors}, {"R One", "R Two"})
+            defenders = repository.rush_situational_defenders(2025, defense_team="NO")
+            self.assertEqual((defenders[0]["defender_name"], defenders[0]["tackles"]), ("L One", 1))
+
+    def test_defender_position_is_never_none_to_avoid_crashing_jinja_groupby(self):
+        """Regression test: a mixed None/string `position` column crashes
+        Jinja's `groupby` filter (it sorts by the key first, and Python
+        cannot order None against a string) -- the query methods must
+        normalize a missing position before a template ever sees it."""
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            rows = [
+                {"game_id": "2025_01_ARI_NO", "week": 1, "posteam": "ARI", "defteam": "NO",
+                 "rush": 1, "rusher_player_id": "rb-1", "rusher_player_name": "R One",
+                 "run_location": "middle", "run_gap": None, "yards_gained": 3, "epa": .2,
+                 "rush_touchdown": 0, "solo_tackle_1_player_id": "lb-unrostered",
+                 "solo_tackle_1_player_name": "No Roster Match"},
+            ]
+            repository.replace_rush_direction_profiles(2025, rows)
+            defenders = repository.rush_direction_defenders(2025, defense_team="NO")
+            self.assertEqual(defenders[0]["position"], "UNK")
+
+
+class RunDirectionPacketTests(unittest.TestCase):
+    def test_run_matchup_edge_combines_offense_and_defense_additively(self):
+        offense = run_direction_packet({"directions": [
+            {"direction": "left end", "attempts": 5, "rushing_yards": 20, "epa_per_attempt": .3},
+        ], "total": {}})
+        defense = run_direction_packet({"directions": [
+            {"direction": "left end", "attempts": 9, "rushing_yards": 40, "epa_per_attempt": .5},
+        ], "total": {}}, lower_is_better=True)
+        matchup = run_matchup_packet(offense, defense)
+        cell = next(c for c in matchup["cells"] if c["direction"] == "left end")
+        # Same offense-relative sign convention as the pass matchup: a good
+        # offense (+.3) against a defense that's leaky there (+.5 allowed)
+        # combines to a strong offense edge, not a canceled-out one.
+        self.assertAlmostEqual(cell["edge"], .8)
+        self.assertEqual(cell["lean"], "offense")
+
+    def test_run_direction_packet_covers_all_seven_cells_even_when_sparse(self):
+        profile = run_direction_packet({"directions": [
+            {"direction": "middle", "attempts": 3, "rushing_yards": 9, "epa_per_attempt": .1},
+        ], "total": {}})
+        self.assertEqual(len(profile["cells"]), 7)
+        middle = next(c for c in profile["cells"] if c["direction"] == "middle")
+        self.assertEqual(middle["tone"], "good")
+        empty = next(c for c in profile["cells"] if c["direction"] == "left guard")
+        self.assertEqual(empty["tone"], "neutral")
 
 
 class NFLSourceDirectoryTests(unittest.TestCase):
@@ -655,6 +850,54 @@ class NFLSourceDirectoryTests(unittest.TestCase):
             {tag[2] for profile in profiles for tag in profile.tags},
             {"overview", "wire", "analysis", "personnel", "players", "beats"},
         )
+
+    def test_real_rss_directory_covers_every_team_and_national_feed(self):
+        national = national_feeds()
+        # 15 National RSS rows + 9 Other Communities rows, minus 2 URLs
+        # (r/nfl, r/NFL_Draft) listed in both sheets.
+        self.assertEqual(len(national), 22)
+        self.assertEqual(len({feed.url for feed in national}), 22)
+        self.assertIn("ESPN NFL Headlines", {feed.name for feed in national})
+
+        teams = team_feeds()
+        self.assertEqual(len(teams), 32)
+        # Every team has a subreddit, a PFF feed, and a blog feed.
+        self.assertTrue(all(len(feeds) == 3 for feeds in teams.values()))
+        self.assertEqual({feed.source_type for feeds in teams.values() for feed in feeds
+                          if "reddit.com" in feed.url}, {"reddit"})
+        cin = {feed.name: feed.url for feed in teams["CIN"]}
+        self.assertEqual(cin["r/bengals"], "https://www.reddit.com/r/bengals/.rss")
+        # "TB" in the workbook canonicalizes to the same code the rest of the
+        # app uses for Tampa Bay.
+        self.assertIn("TAM", teams)
+
+    def test_ingest_rss_feeds_stores_articles_and_biases_team_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            repository.initialize()
+            repository.replace_teams((
+                Team("CHI", "Chicago Bears", "Bears", "NFC", "NFC North", None, None, None),
+            ))
+            content = NFLContentRepository(repository)
+            good_feed = FeedConfig(name="Windy City Gridiron", url="https://example.com/chi.xml")
+            bad_feed = FeedConfig(name="Broken Feed", url="https://example.com/broken.xml")
+
+            def fake_fetch(feed, _timeout):
+                if feed is bad_feed:
+                    raise ProviderFetchError("boom")
+                return [Article(title="Bears roster news", url="https://example.com/a1",
+                                source="Windy City Gridiron",
+                                published_at=datetime(2026, 9, 12, tzinfo=timezone.utc))]
+
+            with patch.object(NFLContentRepository, "_fetch_feed", staticmethod(fake_fetch)):
+                result = content.ingest_rss_feeds(
+                    [(good_feed, "CHI"), (bad_feed, None)], 2026, workers=2,
+                )
+            self.assertEqual(result, {"feeds": 2, "succeeded": 1, "seen": 1, "stored": 1,
+                                      "errors": [{"feed": "Broken Feed",
+                                                  "url": "https://example.com/broken.xml",
+                                                  "error": "boom"}]})
+            self.assertEqual(len(content.for_team("CHI")), 1)
 
     def test_import_preserves_existing_cfb_metadata_and_routes_nfl_sections(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -686,6 +929,202 @@ class NFLSourceDirectoryTests(unittest.TestCase):
             self.assertEqual(specialties, {"college_football", "analysis"})
             self.assertEqual(teams, {"Sample University"})
             self.assertEqual(identity, ("Existing name", "Existing org"))
+
+
+class _FakeAlignmentRepository:
+    """Duck-typed stand-in for NFLRepository -- alignment_matchups only calls
+    these four methods, so a real sqlite-backed repository (with PFF fixture
+    families synced through it) isn't needed to exercise the pure logic."""
+
+    def __init__(self, *, weeks_played, rosters, usage=None, receiver_profiles=None):
+        self._weeks_played = weeks_played
+        self._rosters = rosters
+        self._usage = usage or {}
+        self._receiver_profiles = receiver_profiles or {}
+
+    def latest_stat_week(self, season):
+        return self._weeks_played[season]
+
+    def team_roster(self, _season, team):
+        return [{"player_id": player_id} for player_id in self._rosters.get(team, ())]
+
+    def team_player_usage(self, _season, team):
+        return self._usage.get(team, [])
+
+    def receiver_pass_profile(self, _season, player_id):
+        return self._receiver_profiles.get(player_id, {"zones": [], "total": {}})
+
+
+class _FakeAlignmentPFF:
+    def __init__(self, receivers=None, slot_defenders=None):
+        self._receivers = receivers or {}
+        self._slot_defenders = slot_defenders or {}
+
+    def family_profiles(self, _season, family, team, _fields):
+        if family == "receiving_summary":
+            return self._receivers.get(team, [])
+        if family == "slot_coverage":
+            return self._slot_defenders.get(team, [])
+        return []
+
+
+class AlignmentMatchupTests(unittest.TestCase):
+    def test_weak_zone_threshold_scales_off_the_defense_zones_own_season_not_pff_season(self):
+        """Regression test for a real bug caught by live-server verification:
+        defense zones come from the CURRENT live season (often just 1-2 weeks
+        in), while pff_season/receiver data can lag a full season behind and
+        so have a much higher week count. Scaling the zone-attempts floor off
+        pff_season's week count against defense zones from a nearly-empty
+        current season silently zeroed every weak-zone hit -- each zone had
+        3 attempts against an unscaled 20-attempt floor."""
+        game = {"away_team": "AAA", "home_team": "BBB", "season": 2026}
+        repository = _FakeAlignmentRepository(
+            weeks_played={2025: 22, 2026: 1},  # pff_season=2025 (lagging, full); live season=2026 (week 1)
+            rosters={"AAA": ("r1", "r2"), "BBB": ()},
+            usage={"AAA": [{"player_id": "r1", "targets": 20, "target_share": .3},
+                           {"player_id": "r2", "targets": 15, "target_share": .2}]},
+            receiver_profiles={
+                "r1": {"zones": [
+                    {"depth_bucket": "short", "pass_location": "left", "targets": 5,
+                     "epa_per_target": .4, "receptions": 4, "receiving_yards": 40},
+                    {"depth_bucket": "short", "pass_location": "middle", "targets": 3,
+                     "epa_per_target": .1, "receptions": 2, "receiving_yards": 15},
+                ], "total": {"targets": 8}},
+                "r2": {"zones": [
+                    {"depth_bucket": "short", "pass_location": "right", "targets": 4,
+                     "epa_per_target": -.2, "receptions": 3, "receiving_yards": 20},
+                ], "total": {"targets": 4}},
+            },
+        )
+        pff = _FakeAlignmentPFF(receivers={"AAA": [
+            # pff_season=2025 is a full 22-week season, so the 100-route
+            # floor is unscaled -- both receivers need to clear it outright.
+            {"gsis_id": "r1", "player_name": "Receiver One", "routes": 150,
+             "grades_pass_route": 80.0, "yprr": 2.1, "slot_rate": 10, "wide_rate": 90},
+            {"gsis_id": "r2", "player_name": "Receiver Two", "routes": 120,
+             "grades_pass_route": 70.0, "yprr": 1.5, "slot_rate": 10, "wide_rate": 90},
+        ]})
+        # BBB's own defense zones this season: only 3 attempts each -- would
+        # fail a hardcoded (or pff_season-scaled) 20-attempt floor entirely.
+        defense_profiles = {"BBB": {"season": 2026, "zones": [
+            {"depth_bucket": "short", "pass_location": "left", "attempts": 3,
+             "epa_per_attempt": .5, "completion_rate": .8},
+            {"depth_bucket": "short", "pass_location": "middle", "attempts": 3,
+             "epa_per_attempt": 0.0, "completion_rate": .6},
+            {"depth_bucket": "short", "pass_location": "right", "attempts": 3,
+             "epa_per_attempt": -.5, "completion_rate": .4},
+        ]}}
+
+        cards = alignment_matchups(repository, pff, game, 2026, 2025, defense_profiles)
+        by_player = {card["player_name"]: card for card in cards}
+
+        r1 = by_player["Receiver One"]
+        # short/left sits above BBB's own zone median (0.0) -> flagged weak;
+        # short/middle sits exactly at the median -> not weak (ties don't count).
+        self.assertEqual(r1["weak_zone_hits"], 1)
+        weak_flags = {(zone["depth_bucket"], zone["pass_location"]): zone["is_weak_zone"]
+                     for zone in r1["zone_matchups"]}
+        self.assertEqual(weak_flags, {("short", "left"): True, ("short", "middle"): False})
+        self.assertAlmostEqual(r1["vulnerable_zone"]["epa_per_attempt"], .5)
+
+        r2 = by_player["Receiver Two"]
+        self.assertEqual(r2["weak_zone_hits"], 0)
+
+        # A receiver hitting a weak zone ranks ahead of one who doesn't, even
+        # though Receiver Two isn't behind Receiver One on raw target volume.
+        self.assertEqual([card["player_name"] for card in cards if card["offense"] == "AAA"],
+                         ["Receiver One", "Receiver Two"])
+
+    def test_widened_candidate_pool_reorders_by_matchup_fit_not_raw_volume(self):
+        game = {"away_team": "AAA", "home_team": "BBB", "season": 2026}
+        repository = _FakeAlignmentRepository(
+            weeks_played={2026: 10},
+            rosters={"AAA": ("r1", "r2", "r3"), "BBB": ()},
+            usage={"AAA": [{"player_id": "r1", "targets": 40, "target_share": .35},
+                           {"player_id": "r2", "targets": 30, "target_share": .25},
+                           {"player_id": "r3", "targets": 10, "target_share": .1}]},
+            receiver_profiles={
+                # Highest-volume receiver: all his targets land in a zone
+                # this defense is actually good in (negative EPA allowed).
+                "r1": {"zones": [{"depth_bucket": "deep", "pass_location": "right", "targets": 10,
+                                  "epa_per_target": .3, "receptions": 4, "receiving_yards": 90}],
+                      "total": {"targets": 10}},
+                # Lower-volume receiver: concentrated in the defense's worst zone.
+                "r3": {"zones": [{"depth_bucket": "short", "pass_location": "left", "targets": 8,
+                                  "epa_per_target": .2, "receptions": 6, "receiving_yards": 50}],
+                      "total": {"targets": 8}},
+            },
+        )
+        pff = _FakeAlignmentPFF(receivers={"AAA": [
+            {"gsis_id": "r1", "player_name": "Volume Guy", "routes": 100,
+             "grades_pass_route": 75.0, "yprr": 1.8, "slot_rate": 5, "wide_rate": 95},
+            {"gsis_id": "r2", "player_name": "No Zone Data", "routes": 80,
+             "grades_pass_route": 65.0, "yprr": 1.2, "slot_rate": 5, "wide_rate": 95},
+            {"gsis_id": "r3", "player_name": "Weak Spot Exploiter", "routes": 60,
+             "grades_pass_route": 72.0, "yprr": 2.4, "slot_rate": 5, "wide_rate": 95},
+        ]})
+        defense_profiles = {"BBB": {"season": 2026, "zones": [
+            {"depth_bucket": "short", "pass_location": "left", "attempts": 15,
+             "epa_per_attempt": .6, "completion_rate": .8},
+            {"depth_bucket": "deep", "pass_location": "right", "attempts": 15,
+             "epa_per_attempt": -.6, "completion_rate": .3},
+            {"depth_bucket": "short", "pass_location": "right", "attempts": 15,
+             "epa_per_attempt": 0.0, "completion_rate": .5},
+        ]}}
+
+        cards = alignment_matchups(repository, pff, game, 2026, 2026, defense_profiles)
+        offense_cards = [card for card in cards if card["offense"] == "AAA"]
+        # All three qualifying receivers are selected (pool widened past 2)...
+        self.assertEqual({card["player_name"] for card in offense_cards},
+                         {"Volume Guy", "No Zone Data", "Weak Spot Exploiter"})
+        # ...but the receiver who actually exploits the defense's weak zone
+        # is ranked first despite lower raw target volume.
+        self.assertEqual(offense_cards[0]["player_name"], "Weak Spot Exploiter")
+        self.assertEqual(offense_cards[0]["weak_zone_hits"], 1)
+        self.assertEqual(offense_cards[1]["weak_zone_hits"], 0)
+
+
+class ViewTableHelperTests(unittest.TestCase):
+    def test_zone_matchup_table_columns_align_via_real_table_not_css_grid(self):
+        item = {
+            "offense": "CAR", "defense": "ATL",
+            "zone_matchups": [
+                {"depth_bucket": "short", "pass_location": "right", "targets": 14,
+                 "receptions": 9, "receiving_yards": 56, "offense_epa": .14,
+                 "target_share": .206, "defense_attempts": 6, "defense_epa": .52,
+                 "is_weak_zone": True},
+                {"depth_bucket": "intermediate", "pass_location": "middle", "targets": 7,
+                 "receptions": 4, "receiving_yards": 68, "offense_epa": .89,
+                 "target_share": .103, "defense_attempts": 1, "defense_epa": 2.20,
+                 "is_weak_zone": False},
+            ],
+        }
+        table = zone_matchup_table(item)
+        self.assertEqual([column.label for column in table.columns],
+                         ["Zone", "CAR EPA/tgt", "ATL allowed"])
+        self.assertEqual(table.rows[0]["zone"], "Short right")
+        self.assertEqual(table.rows[0]["zone_class"], "weak-zone")
+        self.assertIn("9/14", table.rows[0]["zone_sub"])
+        self.assertIsNone(table.rows[1]["zone_class"])
+
+    def test_zone_matchup_table_empty_state_when_no_zones(self):
+        table = zone_matchup_table({"offense": "CAR", "defense": "ATL", "zone_matchups": []})
+        self.assertEqual(table.rows, [])
+        self.assertIn("Not enough", table.empty)
+
+    def test_ingestion_runs_table_counts_errors_per_run(self):
+        table = ingestion_runs_table([
+            {"platform": "rss_directory", "season": 2026, "finished_at": "2026-09-15T12:00:00",
+             "attempted": 118, "succeeded": 117, "seen": 900, "stored": 850,
+             "errors_json": '[{"feed": "Reddit r/nfl", "error": "429"}]'},
+            {"platform": "bluesky", "season": 2026, "finished_at": "2026-09-15T12:05:00",
+             "attempted": 158, "succeeded": 158, "seen": 400, "stored": 400,
+             "errors_json": "[]"},
+        ])
+        self.assertEqual(table.rows[0]["errors"], 1)
+        self.assertEqual(table.rows[0]["errors_class"], "error")
+        self.assertEqual(table.rows[1]["errors"], 0)
+        self.assertIsNone(table.rows[1]["errors_class"])
 
 
 if __name__ == "__main__":

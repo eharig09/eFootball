@@ -1,0 +1,74 @@
+{% from '_tables.html' import data_table %}
+{% from '_nfl_nav.html' import nfl_nav with context %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>NFL data status | {{ season }}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+</head>
+<body class="nfl-data-status-page">
+{{ nfl_nav('data-status', season, 'Data status') }}
+<main>
+    <section class="nfl-hero compact-hero">
+        <p class="eyebrow">Sync + ingestion &middot; {{ season }}</p>
+        <h1>NFL data status</h1>
+        <p>Production seed state, core dataset counts, and the reporting/social ingestion ledger in one place.</p>
+        <div class="metrics">
+            <span><b>{{ counts.teams }}</b><small>Teams</small></span>
+            <span><b>{{ counts.games }}</b><small>Games</small></span>
+            <span><b>{{ counts.players }}</b><small>Players</small></span>
+            <span><b>{{ pff_counts.metrics|cell('big') }}</b><small>PFF metrics ({{ pff_season }})</small></span>
+            <span><b>{{ latest_week or '—' }}</b><small>Latest week synced</small></span>
+            <span><b>{{ content_counts['items']|cell('big') }}</b><small>Stored content items</small></span>
+        </div>
+    </section>
+
+    {% if issues %}
+    <section class="section" id="needs-attention">
+        <div class="section-head"><div><p class="eyebrow">{{ issues|length }} item{{ 's' if issues|length != 1 }}</p><h2>Needs attention</h2></div></div>
+        <div class="status-issue-list">{% for issue in issues %}<article><b>{{ issue.label }}</b><span>{{ issue.detail }}</span></article>{% endfor %}</div>
+    </section>
+    {% else %}
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">All clear</p><h2>No attention items</h2></div></div>
+        <p class="section-note">Production seed status, team/game coverage, and configured-source error counts all look healthy.</p>
+    </section>
+    {% endif %}
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">{{ seed.status or 'unknown' }}{% if seed.season %} &middot; season {{ seed.season }}{% endif %}</p><h2>Production seed</h2></div></div>
+        {% if seed.status %}
+        <div class="game-shape-grid">
+            <article><small>Status</small><b>{{ seed.status }}</b></article>
+            <article><small>Started</small><b>{{ seed.started_at[:16]|replace('T',' ') if seed.started_at else '—' }}</b></article>
+            <article><small>Finished</small><b>{{ seed.finished_at[:16]|replace('T',' ') if seed.finished_at else '—' }}</b></article>
+            <article><small>Deploy</small><b>{{ seed.deploy or '—' }}</b></article>
+        </div>
+        {% if seed.stages %}<div class="source-run-grid">{% for stage in seed.stages %}<article class="{{ 'has-errors' if stage.status == 'failed' }}"><header><b>{{ stage.stage }}</b><time>{{ (stage.finished_at or '')[:16]|replace('T',' ') }}</time></header><div><span><b>{{ stage.status }}</b>status</span>{% if stage.tables is defined %}<span><b>{{ stage.tables }}</b>tables</span><span><b>{{ stage.rows }}</b>rows</span>{% endif %}</div></article>{% endfor %}</div>{% endif %}
+        {% if seed.error %}<p class="section-note">{{ seed.error }}</p>{% endif %}
+        {% else %}<p class="empty">No production seed run is recorded for this environment (normal for a local dev database that was never empty).</p>{% endif %}
+    </section>
+
+    {% if coverage_summary.configured %}
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Reporting + social accounts</p><h2>Source coverage summary</h2></div><a class="section-action" href="{{ url_for('nfl.source_audit', season=season) }}">Full source audit &rarr;</a></div>
+        <div class="game-shape-grid">
+            <article><small>Configured</small><b>{{ coverage_summary.configured }}</b></article>
+            <article><small>Producing</small><b>{{ coverage_summary.producing }}</b></article>
+            <article><small>Checked</small><b>{{ coverage_summary.checked }}</b></article>
+            <article><small>Silent</small><b>{{ coverage_summary.silent }}</b></article>
+            <article><small>No eligible items</small><b>{{ coverage_summary.no_eligible }}</b></article>
+            <article><small>Errors</small><b>{{ coverage_summary.errors }}</b></article>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="section"><div class="section-head"><div><p class="eyebrow">Every sync-nfl-content invocation</p><h2>Ingestion runs</h2></div></div>{{ data_table(runs_table) }}</section>
+</main>
+</body>
+</html>

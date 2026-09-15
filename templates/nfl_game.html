@@ -1,7 +1,8 @@
 {% from '_tables.html' import data_table %}
-{% from '_nfl_nav.html' import nfl_nav %}
+{% from '_nfl_nav.html' import nfl_nav with context %}
 {% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
 {% from '_nfl_passing.html' import pass_matchup_grid, pass_zone_grid %}
+{% from '_nfl_rushing.html' import run_matchup_grid %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -76,6 +77,29 @@
     </section>
     {% endif %}
 
+    {% if rush_defense_profiles[game.away_team].has_data or rush_defense_profiles[game.home_team].has_data %}
+    <section class="section" id="rush-defense" data-nfl-panel="matchups">
+        <div class="section-head"><div><p class="eyebrow">{{ pass_profile_season }} rushing usage vs opponent results{% if pass_profile_season != game.season %} &middot; prior-season baseline{% endif %}</p><h2>Charted rushing: offense against defense</h2></div></div>
+        <p class="section-note">One grid per offense joins the leading rusher's results to what the opposing defense allowed by the same run direction (the standard left end/tackle/guard &middot; middle &middot; right guard/tackle/end broadcast chart). Positive edge favors the offense; negative edge favors the defense.</p>
+        <div class="passing-comparison-stack">{% for comparison in run_direction_comparisons %}{% if comparison.matchup.has_data %}{{ run_matchup_grid(comparison) }}{% else %}<div class="empty pass-comparison-empty">No qualifying offense/defense comparison is stored for {{ comparison.offense }}.</div>{% endif %}{% endfor %}</div>
+    </section>
+    {% endif %}
+
+    <section class="section" id="high-volume-interactions" data-nfl-panel="matchups">
+        <div class="section-head"><div><p class="eyebrow">PFF alignment + usage + play-by-play</p><h2>Likely high-volume interactions</h2></div></div>
+        <p class="section-note">These cards identify where usage and alignment are likely to intersect. They do not claim a specific shadow assignment; exact coverage responsibility is not available in the stored data.</p>
+        <div class="alignment-card-grid">{% for item in player_matchups %}<article>
+            <header><span>{{ item.offense }} offense vs {{ item.defense }} defense</span><small>{{ item.confidence }}</small></header>
+            <h3><a href="{{ url_for('nfl.player_page', player_id=item.player_id, season=game.season) }}">{{ item.player_name }}</a> from the {{ item.alignment }}</h3>
+            <div><span><b>{{ item.alignment_rate|cell('pct') }}</b>{{ item.alignment }} rate</span><span><b>{{ item.route_grade|cell('f1') }}</b>route grade</span><span><b>{{ item.yprr|cell('f2') }}</b>yards / route</span><span><b>{{ item.target_share|cell('rate') }}</b>target share</span></div>
+            {% if item.weak_zone_hits %}<p class="weak-zone-badge">{{ item.weak_zone_hits }} zone{{ 's' if item.weak_zone_hits != 1 }} below {{ item.defense }}’s own zone average</p>{% endif %}
+            <p class="interaction-read">{{ item.interaction }}</p>
+            {{ data_table(item.zone_table, 'zone-matchup-table') }}
+            {% if item.defender %}<p>Primary stored slot sample: <b>{{ item.defender.player_name }}</b> ({{ item.defender.coverage_snaps|cell('int') }} slot coverage snaps, {{ item.defender.qb_rating_against|cell('f1') }} rating allowed).</p>{% endif %}
+            {% if item.vulnerable_zone %}<p>{{ item.defense }}’s highest-EPA qualifying allowed zone: <b>{{ item.vulnerable_zone.depth_bucket }} {{ item.vulnerable_zone.pass_location }}</b> ({{ item.vulnerable_zone.epa_per_attempt|cell('signed2') }} EPA/att).</p>{% endif %}
+        </article>{% else %}<p class="empty">Alignment cards will populate when linked current-roster PFF samples are available.</p>{% endfor %}</div>
+    </section>
+
     <section class="section" id="matchups" data-nfl-panel="matchups">
         <div class="section-head"><div><p class="eyebrow">Strength against resistance</p><h2>Unit matchups</h2></div></div>
         <p class="section-note">{{ baseline_season }} offensive production against what the opposing defense allowed{% if baseline_season != game.season %}; the prior-season baseline is used until both teams have a {{ game.season }} pregame sample{% endif %}. Ranks are descriptive, not a projection.</p>
@@ -144,18 +168,7 @@
     </section>
 
     <section class="section" id="players" data-nfl-panel="players">
-        <div class="section-head"><div><p class="eyebrow">PFF alignment + usage + play-by-play</p><h2>Likely high-volume interactions</h2></div></div>
-        <p class="section-note">These cards identify where usage and alignment are likely to intersect. They do not claim a specific shadow assignment; exact coverage responsibility is not available in the stored data.</p>
-        <div class="alignment-card-grid">{% for item in player_matchups %}<article>
-            <header><span>{{ item.offense }} offense vs {{ item.defense }} defense</span><small>{{ item.confidence }}</small></header>
-            <h3><a href="{{ url_for('nfl.player_page', player_id=item.player_id, season=game.season) }}">{{ item.player_name }}</a> from the {{ item.alignment }}</h3>
-            <div><span><b>{{ item.alignment_rate|cell('pct') }}</b>{{ item.alignment }} rate</span><span><b>{{ item.route_grade|cell('f1') }}</b>route grade</span><span><b>{{ item.yprr|cell('f2') }}</b>yards / route</span><span><b>{{ item.target_share|cell('rate') }}</b>target share</span></div>
-            <p class="interaction-read">{{ item.interaction }}</p>
-            {% if item.zone_matchups %}<div class="multi-zone-matchups"><header><span>Primary usage zones</span><b>{{ item.offense }}</b><b>{{ item.defense }} allowed</b></header>{% for zone in item.zone_matchups %}<div><span><b>{{ zone.depth_bucket|title }} {{ zone.pass_location }}</b><small>{{ zone.receptions|cell('int') }}/{{ zone.targets|cell('int') }} &middot; {{ zone.receiving_yards|cell('int') }} yd &middot; {{ zone.target_share|cell('rate') }} targets</small></span><strong>{{ zone.offense_epa|cell('signed2') }}<small>EPA/tgt</small></strong><strong>{{ zone.defense_epa|cell('signed2') }}<small>EPA/att &middot; {{ zone.defense_attempts|cell('int') }} att</small></strong></div>{% endfor %}</div>{% endif %}
-            {% if item.preferred_zone %}<div class="zone-interaction"><span><small>Receiver usage</small><b>{{ item.preferred_zone.depth_bucket }} {{ item.preferred_zone.pass_location }}</b><em>{{ item.preferred_zone.receptions|cell('int') }}/{{ item.preferred_zone.targets|cell('int') }} · {{ item.preferred_zone_share|cell('rate') }} of charted targets · {{ item.preferred_zone.epa_per_target|cell('signed2') }} EPA/tgt</em></span><strong>→</strong><span><small>{{ item.defense }} allowed</small><b>Same field section</b><em>{% if item.exact_allowed_zone %}{{ item.exact_allowed_zone.completions|cell('int') }}/{{ item.exact_allowed_zone.attempts|cell('int') }} · {{ item.exact_allowed_zone.epa_per_attempt|cell('signed2') }} EPA/att{% else %}No qualifying sample{% endif %}</em></span></div>{% endif %}
-            {% if item.defender %}<p>Primary stored slot sample: <b>{{ item.defender.player_name }}</b> ({{ item.defender.coverage_snaps|cell('int') }} slot coverage snaps, {{ item.defender.qb_rating_against|cell('f1') }} rating allowed).</p>{% endif %}
-            {% if item.vulnerable_zone %}<p>{{ item.defense }}’s highest-EPA qualifying allowed zone: <b>{{ item.vulnerable_zone.depth_bucket }} {{ item.vulnerable_zone.pass_location }}</b> ({{ item.vulnerable_zone.epa_per_attempt|cell('signed2') }} EPA/att).</p>{% endif %}
-        </article>{% else %}<p class="empty">Alignment cards will populate when linked current-roster PFF samples are available.</p>{% endfor %}</div>
+        <div class="section-head"><div><p class="eyebrow">Season production + workload</p><h2>Player production</h2></div></div>
         <h3 class="subsection-title">Production leaders entering the game</h3>
         <div class="leader-team-grid expanded-leaders">{% for code in [game.away_team, game.home_team] %}<article class="leader-team"><h3>{{ code }} <small>{{ baseline_season }} through Week {{ game.week - 1 }}</small></h3><div class="leader-rank-table">{% for pair in leaders[code]|batch(2) %}<div class="leader-rank-row"><strong>{{ pair[0].category }}</strong><span>{% for leader in pair %}<a href="{{ leader.player_url }}"><i>#{{ leader.category_rank }}</i><span><b>{{ leader.player_name }}</b><small>{{ leader.value|cell('big') }} {{ leader.value_label|lower }}</small></span></a>{% endfor %}</span></div>{% else %}<p class="empty">No player production is available.</p>{% endfor %}</div></article>{% endfor %}</div>
         <h3 class="subsection-title">Opportunity concentration</h3>

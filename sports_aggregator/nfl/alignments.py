@@ -2,20 +2,46 @@
 
 from __future__ import annotations
 
+from statistics import median
 from typing import Any
 
 from sports_aggregator.nfl.pff import NFLPFFService, season_scaled_minimum
 from sports_aggregator.nfl.repository import NFLRepository
 
 
+def _weak_zones(zones: list[dict[str, Any]], minimum_attempts: float) -> set[tuple[str, str]]:
+    """Zones a defense allows more value in than its own other zones.
+
+    Self-relative on purpose: early in a season there are only a handful of
+    qualifying zones, not enough for an honest league-wide baseline, but
+    "worse than this defense's own median zone" only needs the defense's own
+    sample. Fewer than three qualifying zones isn't enough to call any of
+    them relatively weak, so none are flagged rather than guessing.
+    """
+    qualifying = [zone for zone in zones if (zone.get("attempts") or 0) >= minimum_attempts
+                  and zone.get("epa_per_attempt") is not None]
+    if len(qualifying) < 3:
+        return set()
+    baseline = median(zone["epa_per_attempt"] for zone in qualifying)
+    return {(zone["depth_bucket"], zone["pass_location"]) for zone in qualifying
+            if zone["epa_per_attempt"] > baseline}
+
+
 def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                        game: dict[str, Any], roster_season: int,
                        pff_season: int, defense_profiles: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    # Full-season sample floors (100 routes, 40 slot-coverage snaps) exclude
-    # every player early in a season; scale them to what's actually synced.
+    # Full-season sample floors (100 routes, 40 slot-coverage snaps, 20 zone
+    # attempts) exclude every player/zone early in a season; scale them to
+    # what's actually synced. Receiver zones and PFF roles come from
+    # `pff_season` (which often lags a year behind, so it can already be a
+    # full season deep); defense zones come from whatever season the caller
+    # actually built `defense_profiles` against -- usually the live current
+    # season, which is why that floor is scaled separately per defense below
+    # rather than off `pff_season`'s own week count.
     weeks_played = repository.latest_stat_week(pff_season)
     minimum_routes = season_scaled_minimum(100, weeks_played)
     minimum_slot_snaps = season_scaled_minimum(40, weeks_played)
+    minimum_zone_targets = max(2, round(season_scaled_minimum(3, weeks_played)))
     cards = []
     for offense, defense in ((game["away_team"], game["home_team"]),
                              (game["home_team"], game["away_team"])):
@@ -36,11 +62,20 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
             ("coverage_snaps", "qb_rating_against", "yards_per_coverage_snap"),
         ) if row.get("gsis_id") in defense_ids and (row.get("coverage_snaps") or 0) >= minimum_slot_snaps]
         slot_defenders.sort(key=lambda row: -(row.get("coverage_snaps") or 0))
-        allowed_zones = [zone for zone in defense_profiles.get(defense, {}).get("zones", [])
-                         if (zone.get("attempts") or 0) >= 20]
+        defense_zones = defense_profiles.get(defense, {}).get("zones", [])
+        defense_zone_season = defense_profiles.get(defense, {}).get("season") or pff_season
+        defense_weeks_played = repository.latest_stat_week(defense_zone_season)
+        minimum_zone_attempts = season_scaled_minimum(20, defense_weeks_played)
+        allowed_zones = [zone for zone in defense_zones if (zone.get("attempts") or 0) >= minimum_zone_attempts]
         vulnerable = max(allowed_zones, key=lambda row: row.get("epa_per_attempt") or -99,
                          default=None)
-        for receiver in receivers[:2]:
+        weak_zones = _weak_zones(defense_zones, minimum_zone_attempts)
+        # Widen the candidate pool beyond the two most-used receivers so a
+        # receiver whose routes concentrate in this defense's weak zones can
+        # outrank a higher-volume teammate who doesn't, then cut back down --
+        # selection stays grounded in real usage, ranking reflects matchup fit.
+        candidates = []
+        for receiver in receivers[:4]:
             role = usage.get(receiver.get("gsis_id"), {})
             slot_rate = receiver.get("slot_rate") or 0
             defender = slot_defenders[0] if slot_rate >= 50 and slot_defenders else None
@@ -49,7 +84,7 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                 pff_season, receiver.get("gsis_id") or "",
             )
             receiver_zones = [zone for zone in receiver_profile.get("zones", [])
-                              if (zone.get("targets") or 0) >= 3]
+                              if (zone.get("targets") or 0) >= minimum_zone_targets]
             receiver_zones.sort(key=lambda row: (
                 -(row.get("targets") or 0), -(row.get("epa_per_target") or -99),
             ))
@@ -59,29 +94,55 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
             exact_allowed = None
             if preferred:
                 exact_allowed = next((
-                    zone for zone in defense_profiles.get(defense, {}).get("zones", [])
+                    zone for zone in defense_zones
                     if zone.get("depth_bucket") == preferred.get("depth_bucket")
                     and zone.get("pass_location") == preferred.get("pass_location")
                 ), None)
             total_targets = receiver_profile.get("total", {}).get("targets") or 0
             zone_share = ((preferred.get("targets") or 0) / total_targets
                           if preferred and total_targets else None)
+            # Every zone the receiver has real volume in, not just the top
+            # one -- a receiver who touches several of this defense's weak
+            # zones is a bigger matchup edge than one whose volume is
+            # concentrated in a single (even if very weak) cell.
             zone_matchups = []
-            for zone in receiver_zones[:3]:
-                allowed = next((item for item in defense_profiles.get(defense, {}).get("zones", [])
+            exploit_score = 0.0
+            weak_hits = []
+            for zone in receiver_zones[:5]:
+                allowed = next((item for item in defense_zones
                                 if item.get("depth_bucket") == zone.get("depth_bucket")
                                 and item.get("pass_location") == zone.get("pass_location")), None)
+                share = (zone.get("targets") or 0) / total_targets if total_targets else None
+                is_weak = (zone["depth_bucket"], zone["pass_location"]) in weak_zones
+                if is_weak:
+                    weak_hits.append(zone)
+                if share and allowed and allowed.get("epa_per_attempt") is not None:
+                    exploit_score += share * allowed["epa_per_attempt"]
                 zone_matchups.append({
                     "depth_bucket": zone["depth_bucket"], "pass_location": zone["pass_location"],
                     "targets": zone.get("targets"), "receptions": zone.get("receptions"),
                     "receiving_yards": zone.get("receiving_yards"),
-                    "offense_epa": zone.get("epa_per_target"),
-                    "target_share": ((zone.get("targets") or 0) / total_targets if total_targets else None),
+                    "offense_epa": zone.get("epa_per_target"), "target_share": share,
                     "defense_attempts": allowed.get("attempts") if allowed else None,
                     "defense_epa": allowed.get("epa_per_attempt") if allowed else None,
                     "defense_completion_rate": allowed.get("completion_rate") if allowed else None,
+                    "is_weak_zone": is_weak,
                 })
-            if preferred and exact_allowed:
+            if len(weak_hits) >= 2:
+                labels = ", ".join(f"{zone['depth_bucket'].title()} {zone['pass_location']}"
+                                   for zone in weak_hits[:3])
+                interaction = (
+                    f"{receiver['player_name']} has measured volume in {len(weak_hits)} zones "
+                    f"where {defense} allows more value than its own zone average, led by {labels}."
+                )
+            elif weak_hits:
+                zone = weak_hits[0]
+                interaction = (
+                    f"{zone['depth_bucket'].title()} {zone['pass_location']} is a zone "
+                    f"{receiver['player_name']} has real volume in and {defense} allows more "
+                    f"value than its own zone average there."
+                )
+            elif preferred and exact_allowed:
                 interaction = (
                     f"{preferred['depth_bucket'].title()} {preferred['pass_location']} is "
                     f"{receiver['player_name']}’s highest-volume stored target area and the "
@@ -91,7 +152,7 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                 interaction = "The receiver’s preferred target zone is measured, but the defense lacks a qualifying result in that exact cell."
             else:
                 interaction = "Alignment and route volume are available; receiver-level target-location data is not yet available."
-            cards.append({
+            candidates.append({
                 "offense": offense, "defense": defense, "player_name": receiver["player_name"],
                 "player_id": receiver.get("gsis_id"), "alignment": alignment,
                 "alignment_rate": slot_rate if alignment == "slot" else receiver.get("wide_rate"),
@@ -100,10 +161,13 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                 "defender": defender, "vulnerable_zone": vulnerable,
                 "preferred_zone": preferred, "exact_allowed_zone": exact_allowed,
                 "preferred_zone_share": zone_share, "interaction": interaction,
-                "zone_matchups": zone_matchups,
+                "zone_matchups": zone_matchups, "weak_zone_hits": len(weak_hits),
+                "exploit_score": exploit_score,
                 "confidence": "High-volume interaction" if (receiver.get("routes") or 0) >= 350 else "Rotation interaction",
                 "season": pff_season,
             })
+        candidates.sort(key=lambda card: (-card["weak_zone_hits"], -card["exploit_score"]))
+        cards.extend(candidates[:3])
     return cards
 
 

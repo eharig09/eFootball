@@ -200,6 +200,96 @@ CREATE INDEX IF NOT EXISTS idx_nfl_zone_receiver_passer
  ON pass_zone_receivers(season,passer_player_id,depth_bucket,pass_location);
 CREATE INDEX IF NOT EXISTS idx_nfl_zone_receiver_defense
  ON pass_zone_receivers(season,defense_team,depth_bucket,pass_location);
+CREATE TABLE IF NOT EXISTS rush_direction_profiles (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
+ offense_team TEXT NOT NULL, defense_team TEXT NOT NULL,
+ rusher_player_id TEXT NOT NULL, rusher_name TEXT NOT NULL,
+ direction TEXT NOT NULL,
+ attempts INTEGER NOT NULL, rushing_yards REAL NOT NULL, total_epa REAL NOT NULL,
+ touchdowns INTEGER NOT NULL,
+ PRIMARY KEY (game_id,rusher_player_id,direction)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_rush_direction_player ON rush_direction_profiles(season,rusher_player_id,week);
+CREATE INDEX IF NOT EXISTS idx_nfl_rush_direction_defense ON rush_direction_profiles(season,defense_team,week);
+CREATE TABLE IF NOT EXISTS rush_direction_defenders (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
+ offense_team TEXT NOT NULL, defense_team TEXT NOT NULL, direction TEXT NOT NULL,
+ defender_player_id TEXT NOT NULL, defender_name TEXT NOT NULL,
+ tackles INTEGER NOT NULL,
+ PRIMARY KEY (game_id,direction,defender_player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_rush_direction_defenders_defense
+ ON rush_direction_defenders(season,defense_team,direction);
+CREATE TABLE IF NOT EXISTS pass_zone_defenders (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
+ offense_team TEXT NOT NULL, defense_team TEXT NOT NULL, passer_player_id TEXT NOT NULL,
+ depth_bucket TEXT NOT NULL, pass_location TEXT NOT NULL,
+ defender_player_id TEXT NOT NULL, defender_name TEXT NOT NULL, event TEXT NOT NULL,
+ count INTEGER NOT NULL,
+ PRIMARY KEY (game_id,passer_player_id,depth_bucket,pass_location,defender_player_id,event)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_pass_zone_defenders_defense
+ ON pass_zone_defenders(season,defense_team,depth_bucket,pass_location);
+CREATE TABLE IF NOT EXISTS rush_situational_profiles (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
+ offense_team TEXT NOT NULL, defense_team TEXT NOT NULL,
+ rusher_player_id TEXT NOT NULL, rusher_name TEXT NOT NULL,
+ attempts INTEGER NOT NULL, rushing_yards REAL NOT NULL, total_epa REAL NOT NULL,
+ touchdowns INTEGER NOT NULL,
+ PRIMARY KEY (game_id,rusher_player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_rush_situational_offense ON rush_situational_profiles(season,offense_team);
+CREATE INDEX IF NOT EXISTS idx_nfl_rush_situational_defense ON rush_situational_profiles(season,defense_team);
+CREATE TABLE IF NOT EXISTS rush_situational_defenders (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
+ offense_team TEXT NOT NULL, defense_team TEXT NOT NULL,
+ defender_player_id TEXT NOT NULL, defender_name TEXT NOT NULL, tackles INTEGER NOT NULL,
+ PRIMARY KEY (game_id,defender_player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_rush_situational_defenders_defense
+ ON rush_situational_defenders(season,defense_team);
+CREATE TABLE IF NOT EXISTS qb_situational_profiles (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
+ offense_team TEXT NOT NULL, defense_team TEXT NOT NULL,
+ passer_player_id TEXT NOT NULL, passer_name TEXT NOT NULL, situation TEXT NOT NULL,
+ attempts INTEGER NOT NULL, completions INTEGER NOT NULL,
+ passing_yards REAL NOT NULL, total_epa REAL NOT NULL,
+ touchdowns INTEGER NOT NULL, interceptions INTEGER NOT NULL,
+ PRIMARY KEY (game_id,passer_player_id,situation)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_qb_situational_player ON qb_situational_profiles(season,passer_player_id,week);
+CREATE INDEX IF NOT EXISTS idx_nfl_qb_situational_defense ON qb_situational_profiles(season,defense_team,week);
+CREATE TABLE IF NOT EXISTS receiver_situational_profiles (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
+ offense_team TEXT NOT NULL, defense_team TEXT NOT NULL,
+ receiver_player_id TEXT NOT NULL, receiver_name TEXT NOT NULL, situation TEXT NOT NULL,
+ targets INTEGER NOT NULL, receptions INTEGER NOT NULL,
+ receiving_yards REAL NOT NULL, total_epa REAL NOT NULL, touchdowns INTEGER NOT NULL,
+ PRIMARY KEY (game_id,receiver_player_id,situation)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_receiver_situational_player ON receiver_situational_profiles(season,receiver_player_id,week);
+CREATE INDEX IF NOT EXISTS idx_nfl_receiver_situational_defense ON receiver_situational_profiles(season,defense_team,week);
+CREATE TABLE IF NOT EXISTS situational_pass_receivers (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
+ offense_team TEXT NOT NULL, defense_team TEXT NOT NULL, passer_player_id TEXT NOT NULL,
+ receiver_player_id TEXT NOT NULL, receiver_name TEXT NOT NULL, situation TEXT NOT NULL,
+ targets INTEGER NOT NULL, receptions INTEGER NOT NULL,
+ receiving_yards REAL NOT NULL, touchdowns INTEGER NOT NULL,
+ PRIMARY KEY (game_id,passer_player_id,receiver_player_id,situation)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_situational_receivers_passer
+ ON situational_pass_receivers(season,passer_player_id,situation);
+CREATE INDEX IF NOT EXISTS idx_nfl_situational_receivers_defense
+ ON situational_pass_receivers(season,defense_team,situation);
+CREATE TABLE IF NOT EXISTS situational_pass_defenders (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
+ offense_team TEXT NOT NULL, defense_team TEXT NOT NULL, passer_player_id TEXT NOT NULL,
+ situation TEXT NOT NULL, defender_player_id TEXT NOT NULL, defender_name TEXT NOT NULL,
+ event TEXT NOT NULL, count INTEGER NOT NULL,
+ PRIMARY KEY (game_id,passer_player_id,situation,defender_player_id,event)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_situational_defenders_defense
+ ON situational_pass_defenders(season,defense_team,situation);
 CREATE TABLE IF NOT EXISTS nfl_content_items (
  content_id INTEGER PRIMARY KEY AUTOINCREMENT, platform TEXT NOT NULL,
  external_id TEXT NOT NULL, canonical_url TEXT NOT NULL, title TEXT NOT NULL,
@@ -789,6 +879,11 @@ class NFLRepository:
         """
         self.initialize()
         profiles: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        # Coverage assignment isn't in this data, but who broke up or picked
+        # off a specific target is -- that's an honest, already-attributed
+        # defensive event, not a fabricated one, so it rides along with the
+        # same zone classification as the attempt itself.
+        defenders: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
         for row in rows:
             if optional_float(row.get("pass_attempt")) != 1:
                 continue
@@ -821,18 +916,40 @@ class NFLRepository:
             cpoe = optional_float(row.get("cpoe"))
             if cpoe is not None:
                 item["cpoe_total"] += cpoe; item["cpoe_plays"] += 1
+            for event, id_field, name_field in (
+                ("pass_defended", "pass_defense_1_player_id", "pass_defense_1_player_name"),
+                ("interception", "interception_player_id", "interception_player_name"),
+            ):
+                defender_id = str(row.get(id_field) or "").strip()
+                if not defender_id:
+                    continue
+                defender_key = (game_id, passer_id, depth, location, defender_id, event)
+                defender = defenders.setdefault(defender_key, {
+                    "week": int(row.get("week") or 0), "offense": offense, "defense": defense,
+                    "name": str(row.get(name_field) or defender_id), "count": 0,
+                })
+                defender["count"] += 1
         values = [(
             season, item["week"], game_id, item["offense"], item["defense"], passer_id,
             item["name"], depth, location, item["attempts"], item["completions"],
             item["yards"], item["air_yards"], item["epa"], item["touchdowns"],
             item["interceptions"], item["cpoe_total"], item["cpoe_plays"],
         ) for (game_id, passer_id, depth, location), item in profiles.items()]
+        defender_values = [(
+            season, item["week"], game_id, item["offense"], item["defense"], passer_id,
+            depth, location, defender_id, item["name"], event, item["count"],
+        ) for (game_id, passer_id, depth, location, defender_id, event), item in defenders.items()]
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM qb_pass_profiles WHERE season=?", (season,))
             connection.executemany(
                 "INSERT OR REPLACE INTO qb_pass_profiles VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 values,
+            )
+            connection.execute("DELETE FROM pass_zone_defenders WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO pass_zone_defenders VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                defender_values,
             )
             connection.commit()
         return len(values)
@@ -909,6 +1026,281 @@ class NFLRepository:
             )
             connection.commit()
         return len(values)
+
+    @staticmethod
+    def _run_direction(location: Any, gap: Any) -> str | None:
+        """Classify a rush into the standard 7-cell run-direction chart.
+
+        nflfastR's `run_location` (left/middle/right) and `run_gap`
+        (end/tackle/guard, null for middle runs) combine into the same
+        left end/tackle/guard - middle - right guard/tackle/end buckets an
+        NFL broadcast run chart uses, rather than the coarser 3-way split
+        `pass_location` alone gives passing zones.
+        """
+        location = str(location or "").strip().casefold()
+        gap = str(gap or "").strip().casefold()
+        if location == "middle":
+            return "middle"
+        if location in {"left", "right"} and gap in {"end", "tackle", "guard"}:
+            return f"{location} {gap}"
+        return None
+
+    def replace_rush_direction_profiles(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
+        """Persist carries by rusher and run direction (the broadcast run-chart cells).
+
+        Runs without a classifiable location/gap (kneels, laterals, older
+        seasons with partial charting) are excluded rather than bucketed as
+        "unknown" -- an unclassified cell would not be comparable across
+        games the way every other zone here is.
+        """
+        self.initialize()
+        profiles: dict[tuple[str, str, str], dict[str, Any]] = {}
+        # The ball carrier is who a "run direction" chart is normally read
+        # for, but the tackler is the honest, already-attributed defensive
+        # side of the same play (nflfastR records who made the stop, not
+        # who was assigned to that gap) -- solo tackle wins over an assisted
+        # one when both are recorded, matching how a broadcast box score
+        # credits one primary tackler.
+        defenders: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for row in rows:
+            if optional_float(row.get("rush")) != 1:
+                continue
+            rusher_id = str(row.get("rusher_player_id") or "").strip()
+            game_id = str(row.get("game_id") or "").strip()
+            direction = self._run_direction(row.get("run_location"), row.get("run_gap"))
+            offense = canon_team(row.get("posteam")); defense = canon_team(row.get("defteam"))
+            if not game_id or not rusher_id or not direction or not offense or not defense:
+                continue
+            key = (game_id, rusher_id, direction)
+            item = profiles.setdefault(key, {
+                "week": int(row.get("week") or 0), "offense": offense, "defense": defense,
+                "name": str(row.get("rusher_player_name") or rusher_id),
+                "attempts": 0, "yards": 0.0, "epa": 0.0, "touchdowns": 0,
+            })
+            item["attempts"] += 1
+            item["yards"] += optional_float(row.get("yards_gained")) or 0.0
+            item["epa"] += optional_float(row.get("epa")) or 0.0
+            item["touchdowns"] += int(optional_float(row.get("rush_touchdown")) == 1)
+            tackler_id = str(row.get("solo_tackle_1_player_id")
+                             or row.get("tackle_with_assist_1_player_id") or "").strip()
+            if tackler_id:
+                tackler_name = str(row.get("solo_tackle_1_player_name")
+                                   or row.get("tackle_with_assist_1_player_name") or tackler_id)
+                defender = defenders.setdefault((game_id, direction, tackler_id), {
+                    "week": int(row.get("week") or 0), "offense": offense, "defense": defense,
+                    "name": tackler_name, "tackles": 0,
+                })
+                defender["tackles"] += 1
+        values = [(
+            season, item["week"], game_id, item["offense"], item["defense"], rusher_id,
+            item["name"], direction, item["attempts"], item["yards"], item["epa"],
+            item["touchdowns"],
+        ) for (game_id, rusher_id, direction), item in profiles.items()]
+        defender_values = [(
+            season, item["week"], game_id, item["offense"], item["defense"], direction,
+            defender_id, item["name"], item["tackles"],
+        ) for (game_id, direction, defender_id), item in defenders.items()]
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM rush_direction_profiles WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO rush_direction_profiles VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                values,
+            )
+            connection.execute("DELETE FROM rush_direction_defenders WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO rush_direction_defenders VALUES (?,?,?,?,?,?,?,?,?)",
+                defender_values,
+            )
+            connection.commit()
+        return len(values)
+
+    def replace_rush_situational_profiles(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
+        """Persist red-zone carries -- the same "high-value opportunity" split
+        the passing situational tables track, for the run game."""
+        self.initialize()
+        profiles: dict[tuple[str, str], dict[str, Any]] = {}
+        defenders: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in rows:
+            if optional_float(row.get("rush")) != 1:
+                continue
+            yardline = optional_float(row.get("yardline_100"))
+            if yardline is None or yardline > 20:
+                continue
+            rusher_id = str(row.get("rusher_player_id") or "").strip()
+            game_id = str(row.get("game_id") or "").strip()
+            offense = canon_team(row.get("posteam")); defense = canon_team(row.get("defteam"))
+            if not game_id or not rusher_id or not offense or not defense:
+                continue
+            key = (game_id, rusher_id)
+            item = profiles.setdefault(key, {
+                "week": int(row.get("week") or 0), "offense": offense, "defense": defense,
+                "name": str(row.get("rusher_player_name") or rusher_id),
+                "attempts": 0, "yards": 0.0, "epa": 0.0, "touchdowns": 0,
+            })
+            item["attempts"] += 1
+            item["yards"] += optional_float(row.get("yards_gained")) or 0.0
+            item["epa"] += optional_float(row.get("epa")) or 0.0
+            item["touchdowns"] += int(optional_float(row.get("rush_touchdown")) == 1)
+            tackler_id = str(row.get("solo_tackle_1_player_id")
+                             or row.get("tackle_with_assist_1_player_id") or "").strip()
+            if tackler_id:
+                tackler_name = str(row.get("solo_tackle_1_player_name")
+                                   or row.get("tackle_with_assist_1_player_name") or tackler_id)
+                defender = defenders.setdefault((game_id, tackler_id), {
+                    "week": int(row.get("week") or 0), "offense": offense, "defense": defense,
+                    "name": tackler_name, "tackles": 0,
+                })
+                defender["tackles"] += 1
+        values = [(
+            season, item["week"], game_id, item["offense"], item["defense"], rusher_id,
+            item["name"], item["attempts"], item["yards"], item["epa"], item["touchdowns"],
+        ) for (game_id, rusher_id), item in profiles.items()]
+        defender_values = [(
+            season, item["week"], game_id, item["offense"], item["defense"],
+            defender_id, item["name"], item["tackles"],
+        ) for (game_id, defender_id), item in defenders.items()]
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM rush_situational_profiles WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO rush_situational_profiles VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                values,
+            )
+            connection.execute("DELETE FROM rush_situational_defenders WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO rush_situational_defenders VALUES (?,?,?,?,?,?,?,?)",
+                defender_values,
+            )
+            connection.commit()
+        return len(values)
+
+    def replace_situational_pass_profiles(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
+        """Persist red-zone and end-zone splits for passers and targeted receivers.
+
+        Red zone: the play started at or inside the defense's 20 (the
+        standard definition). End zone: the target depth reaches or crosses
+        the goal line (`yardline_100 - air_yards <= 0`), which catches
+        incompletions and interceptions thrown into the end zone as well as
+        touchdowns -- a target, not just a score. A play can count toward
+        both, or neither.
+        """
+        self.initialize()
+        passers: dict[tuple[str, str, str], dict[str, Any]] = {}
+        receivers: dict[tuple[str, str, str], dict[str, Any]] = {}
+        contributors: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        defenders: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
+        for row in rows:
+            if optional_float(row.get("pass_attempt")) != 1:
+                continue
+            game_id = str(row.get("game_id") or "").strip()
+            passer_id = str(row.get("passer_player_id") or "").strip()
+            offense = canon_team(row.get("posteam")); defense = canon_team(row.get("defteam"))
+            if not game_id or not passer_id or not offense or not defense:
+                continue
+            yardline = optional_float(row.get("yardline_100"))
+            air_yards = optional_float(row.get("air_yards"))
+            situations = []
+            if yardline is not None and yardline <= 20:
+                situations.append("red_zone")
+            if yardline is not None and air_yards is not None and (yardline - air_yards) <= 0:
+                situations.append("end_zone")
+            if not situations:
+                continue
+            complete = optional_float(row.get("complete_pass")) == 1
+            epa = optional_float(row.get("epa")) or 0.0
+            touchdown = int(optional_float(row.get("pass_touchdown")) == 1)
+            interception = int(optional_float(row.get("interception")) == 1)
+            passing_yards = optional_float(row.get("passing_yards")) or 0.0
+            receiver_id = str(row.get("receiver_player_id") or "").strip()
+            for situation in situations:
+                item = passers.setdefault((game_id, passer_id, situation), {
+                    "week": int(row.get("week") or 0), "offense": offense, "defense": defense,
+                    "name": str(row.get("passer_player_name") or passer_id),
+                    "attempts": 0, "completions": 0, "yards": 0.0, "epa": 0.0,
+                    "touchdowns": 0, "interceptions": 0,
+                })
+                item["attempts"] += 1; item["completions"] += int(complete)
+                item["yards"] += passing_yards; item["epa"] += epa
+                item["touchdowns"] += touchdown; item["interceptions"] += interception
+                if receiver_id:
+                    target = receivers.setdefault((game_id, receiver_id, situation), {
+                        "week": int(row.get("week") or 0), "offense": offense, "defense": defense,
+                        "name": str(row.get("receiver_player_name") or receiver_id),
+                        "targets": 0, "receptions": 0, "yards": 0.0, "epa": 0.0, "touchdowns": 0,
+                    })
+                    target["targets"] += 1
+                    target["receptions"] += int(complete)
+                    target["yards"] += optional_float(row.get("receiving_yards")) or 0.0
+                    target["epa"] += epa
+                    target["touchdowns"] += touchdown
+                    contributor = contributors.setdefault(
+                        (game_id, passer_id, receiver_id, situation), {
+                            "week": int(row.get("week") or 0), "offense": offense,
+                            "defense": defense,
+                            "name": str(row.get("receiver_player_name") or receiver_id),
+                            "targets": 0, "receptions": 0, "yards": 0.0, "touchdowns": 0,
+                        })
+                    contributor["targets"] += 1
+                    contributor["receptions"] += int(complete)
+                    contributor["yards"] += optional_float(row.get("receiving_yards")) or 0.0
+                    contributor["touchdowns"] += touchdown
+                for event, id_field, name_field in (
+                    ("pass_defended", "pass_defense_1_player_id", "pass_defense_1_player_name"),
+                    ("interception", "interception_player_id", "interception_player_name"),
+                ):
+                    defender_id = str(row.get(id_field) or "").strip()
+                    if not defender_id:
+                        continue
+                    defender_key = (game_id, passer_id, situation, defender_id, event)
+                    defender = defenders.setdefault(defender_key, {
+                        "week": int(row.get("week") or 0), "offense": offense, "defense": defense,
+                        "name": str(row.get(name_field) or defender_id), "count": 0,
+                    })
+                    defender["count"] += 1
+        passer_values = [(
+            season, item["week"], game_id, item["offense"], item["defense"], passer_id,
+            item["name"], situation, item["attempts"], item["completions"], item["yards"],
+            item["epa"], item["touchdowns"], item["interceptions"],
+        ) for (game_id, passer_id, situation), item in passers.items()]
+        receiver_values = [(
+            season, item["week"], game_id, item["offense"], item["defense"], receiver_id,
+            item["name"], situation, item["targets"], item["receptions"], item["yards"],
+            item["epa"], item["touchdowns"],
+        ) for (game_id, receiver_id, situation), item in receivers.items()]
+        contributor_values = [(
+            season, item["week"], game_id, item["offense"], item["defense"], passer_id,
+            receiver_id, item["name"], situation, item["targets"], item["receptions"],
+            item["yards"], item["touchdowns"],
+        ) for (game_id, passer_id, receiver_id, situation), item in contributors.items()]
+        defender_values = [(
+            season, item["week"], game_id, item["offense"], item["defense"], passer_id,
+            situation, defender_id, item["name"], event, item["count"],
+        ) for (game_id, passer_id, situation, defender_id, event), item in defenders.items()]
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM qb_situational_profiles WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO qb_situational_profiles VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                passer_values,
+            )
+            connection.execute("DELETE FROM receiver_situational_profiles WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO receiver_situational_profiles VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                receiver_values,
+            )
+            connection.execute("DELETE FROM situational_pass_receivers WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO situational_pass_receivers VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                contributor_values,
+            )
+            connection.execute("DELETE FROM situational_pass_defenders WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO situational_pass_defenders VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                defender_values,
+            )
+            connection.commit()
+        return len(passer_values)
 
     def record_sync(self, report: SyncReport) -> None:
         details = [vars(item) if hasattr(item, "__dict__") else {
@@ -1954,6 +2346,258 @@ class NFLRepository:
         })
         return {"season": season, "zones": zones, "total": total}
 
+    #: Field-left-to-right order for the standard 7-cell run-direction chart.
+    RUN_DIRECTIONS = ("left end", "left tackle", "left guard", "middle",
+                      "right guard", "right tackle", "right end")
+
+    @staticmethod
+    def _rush_profile_rates(row: dict[str, Any]) -> dict[str, Any]:
+        attempts = row.get("attempts") or 0
+        row["yards_per_attempt"] = row.get("rushing_yards", 0) / attempts if attempts else None
+        row["epa_per_attempt"] = row.get("total_epa", 0) / attempts if attempts else None
+        return row
+
+    def _rush_direction_profile(self, season: int, field: str, value: str) -> dict[str, Any]:
+        if field not in {"rusher_player_id", "defense_team", "offense_team"}:
+            raise ValueError("unsupported rush-direction-profile field")
+        self.initialize()
+        aggregate = """SUM(attempts) attempts,SUM(rushing_yards) rushing_yards,
+                         SUM(total_epa) total_epa,SUM(touchdowns) touchdowns"""
+        order = "CASE direction " + " ".join(
+            f"WHEN '{name}' THEN {index}" for index, name in enumerate(self.RUN_DIRECTIONS)
+        ) + " END"
+        with closing(self._connect()) as connection:
+            directions = [self._rush_profile_rates(dict(row)) for row in connection.execute(
+                f"""SELECT direction,{aggregate} FROM rush_direction_profiles
+                    WHERE season=? AND {field}=? GROUP BY direction ORDER BY {order}""",
+                (season, value),
+            )]
+        total = self._rush_profile_rates({key: sum(row.get(key, 0) or 0 for row in directions)
+                                          for key in ("attempts", "rushing_yards", "total_epa", "touchdowns")})
+        return {"season": season, "directions": directions, "total": total}
+
+    def rusher_direction_profile(self, season: int, player_id: str) -> dict[str, Any]:
+        return self._rush_direction_profile(season, "rusher_player_id", player_id)
+
+    def team_rush_direction_profile(self, season: int, team: str) -> dict[str, Any]:
+        """Every rusher on the team combined -- the full run game, not just its lead back."""
+        return self._rush_direction_profile(season, "offense_team", canon_team(team))
+
+    def defense_rush_direction_profile(self, season: int, team: str) -> dict[str, Any]:
+        return self._rush_direction_profile(season, "defense_team", canon_team(team))
+
+    def rush_direction_contributors(self, season: int, *, offense_team: str | None = None,
+                                    defense_team: str | None = None,
+                                    game_id: str | None = None) -> list[dict[str, Any]]:
+        """Every rusher's outcomes inside each run-direction cell, for hover detail."""
+        if bool(offense_team) == bool(defense_team):
+            raise ValueError("pass exactly one contributor scope")
+        field = "offense_team" if offense_team else "defense_team"
+        value = canon_team(offense_team) if offense_team else canon_team(defense_team)
+        game_filter = " AND game_id=?" if game_id else ""
+        parameters = (season, value, game_id) if game_id else (season, value)
+        with closing(self._connect()) as connection:
+            rows = [self._rush_profile_rates(dict(row)) for row in connection.execute(
+                f"""SELECT direction,rusher_player_id,MAX(rusher_name) rusher_name,
+                           SUM(attempts) attempts,SUM(rushing_yards) rushing_yards,
+                           SUM(total_epa) total_epa,SUM(touchdowns) touchdowns,
+                           (SELECT position FROM players
+                            WHERE season=? AND player_id=rusher_player_id LIMIT 1) position
+                    FROM rush_direction_profiles WHERE season=? AND {field}=?{game_filter}
+                    GROUP BY direction,rusher_player_id
+                    ORDER BY direction,attempts DESC,rushing_yards DESC""",
+                (season, *parameters),
+            )]
+        for row in rows:
+            row["player_url"] = f"/nfl/players/{row['rusher_player_id']}/?season={season}"
+            row["position"] = row.get("position") or "UNK"
+            row["detail"] = (f"{row['attempts']:g} att · {row['rushing_yards']:g} yd · "
+                             f"{row['touchdowns']:g} TD · {row['epa_per_attempt']:+.2f} EPA/att")
+        return rows
+
+    def rush_direction_defenders(self, season: int, *, defense_team: str,
+                                 game_id: str | None = None) -> list[dict[str, Any]]:
+        """Tacklers credited inside each run-direction cell -- the honest, already
+        play-by-play-attributed defensive side (who stopped it, not who was assigned
+        to that gap)."""
+        game_filter = " AND game_id=?" if game_id else ""
+        parameters = (season, canon_team(defense_team), game_id) if game_id else (season, canon_team(defense_team))
+        with closing(self._connect()) as connection:
+            rows = [dict(row) for row in connection.execute(
+                f"""SELECT direction,defender_player_id,MAX(defender_name) defender_name,
+                           SUM(tackles) tackles,
+                           (SELECT position FROM players
+                            WHERE season=? AND player_id=defender_player_id LIMIT 1) position
+                    FROM rush_direction_defenders WHERE season=? AND defense_team=?{game_filter}
+                    GROUP BY direction,defender_player_id
+                    ORDER BY direction,tackles DESC""",
+                (season, *parameters),
+            )]
+        for row in rows:
+            row["player_url"] = f"/nfl/players/{row['defender_player_id']}/?season={season}"
+            row["position"] = row.get("position") or "UNK"
+            row["detail"] = f"{row['tackles']:g} tkl"
+        return rows
+
+    def _rush_situational_profile(self, season: int, field: str, value: str) -> dict[str, Any]:
+        if field not in {"offense_team", "defense_team"}:
+            raise ValueError("unsupported rush-situational field")
+        self.initialize()
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                f"""SELECT SUM(attempts) attempts,SUM(rushing_yards) rushing_yards,
+                           SUM(total_epa) total_epa,SUM(touchdowns) touchdowns
+                    FROM rush_situational_profiles WHERE season=? AND {field}=?""",
+                (season, value),
+            ).fetchone()
+        return self._rush_profile_rates(dict(row))
+
+    def team_rush_situational_profile(self, season: int, team: str) -> dict[str, Any]:
+        """Red-zone carries for the whole run game, not just one back."""
+        return self._rush_situational_profile(season, "offense_team", canon_team(team))
+
+    def defense_rush_situational_profile(self, season: int, team: str) -> dict[str, Any]:
+        """Red-zone carries allowed by one defense."""
+        return self._rush_situational_profile(season, "defense_team", canon_team(team))
+
+    def rush_situational_contributors(self, season: int, *, offense_team: str | None = None,
+                                      defense_team: str | None = None,
+                                      game_id: str | None = None) -> list[dict[str, Any]]:
+        """Every rusher's red-zone carries, for hover detail.
+
+        `offense_team` scopes to that team's own backs (this game's run
+        game); `defense_team` scopes to every opponent who has carried the
+        ball against that defense in the red zone all season -- "what
+        positions beat this defense here", not just this one game's backs.
+        """
+        if bool(offense_team) == bool(defense_team):
+            raise ValueError("pass exactly one contributor scope")
+        field = "offense_team" if offense_team else "defense_team"
+        value = canon_team(offense_team) if offense_team else canon_team(defense_team)
+        game_filter = " AND game_id=?" if game_id else ""
+        parameters = (season, value, game_id) if game_id else (season, value)
+        with closing(self._connect()) as connection:
+            rows = [self._rush_profile_rates(dict(row)) for row in connection.execute(
+                f"""SELECT rusher_player_id,MAX(rusher_name) rusher_name,
+                           SUM(attempts) attempts,SUM(rushing_yards) rushing_yards,
+                           SUM(total_epa) total_epa,SUM(touchdowns) touchdowns,
+                           (SELECT position FROM players
+                            WHERE season=? AND player_id=rusher_player_id LIMIT 1) position
+                    FROM rush_situational_profiles WHERE season=? AND {field}=?{game_filter}
+                    GROUP BY rusher_player_id ORDER BY attempts DESC,rushing_yards DESC""",
+                (season, *parameters),
+            )]
+        for row in rows:
+            row["player_url"] = f"/nfl/players/{row['rusher_player_id']}/?season={season}"
+            row["position"] = row.get("position") or "UNK"
+            row["detail"] = f"{row['attempts']:g} att · {row['rushing_yards']:g} yd · {row['touchdowns']:g} TD"
+        return rows
+
+    def rush_situational_defenders(self, season: int, *, defense_team: str,
+                                   game_id: str | None = None) -> list[dict[str, Any]]:
+        """Tacklers credited on red-zone runs -- the honest defensive side."""
+        game_filter = " AND game_id=?" if game_id else ""
+        parameters = (season, canon_team(defense_team), game_id) if game_id else (season, canon_team(defense_team))
+        with closing(self._connect()) as connection:
+            rows = [dict(row) for row in connection.execute(
+                f"""SELECT defender_player_id,MAX(defender_name) defender_name,SUM(tackles) tackles,
+                           (SELECT position FROM players
+                            WHERE season=? AND player_id=defender_player_id LIMIT 1) position
+                    FROM rush_situational_defenders WHERE season=? AND defense_team=?{game_filter}
+                    GROUP BY defender_player_id ORDER BY tackles DESC""",
+                (season, *parameters),
+            )]
+        for row in rows:
+            row["player_url"] = f"/nfl/players/{row['defender_player_id']}/?season={season}"
+            row["position"] = row.get("position") or "UNK"
+            row["detail"] = f"{row['tackles']:g} tkl"
+        return rows
+
+    @staticmethod
+    def _situational_rates(row: dict[str, Any]) -> dict[str, Any]:
+        attempts = row.get("attempts") or 0
+        row["completion_rate"] = row.get("completions", 0) / attempts if attempts else None
+        row["yards_per_attempt"] = row.get("passing_yards", 0) / attempts if attempts else None
+        row["epa_per_attempt"] = row.get("total_epa", 0) / attempts if attempts else None
+        return row
+
+    def _situational_pass_profile(self, season: int, field: str, value: str) -> dict[str, dict[str, Any]]:
+        if field not in {"passer_player_id", "defense_team"}:
+            raise ValueError("unsupported situational-profile field")
+        self.initialize()
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                f"""SELECT situation,SUM(attempts) attempts,SUM(completions) completions,
+                          SUM(passing_yards) passing_yards,SUM(total_epa) total_epa,
+                          SUM(touchdowns) touchdowns,SUM(interceptions) interceptions
+                   FROM qb_situational_profiles WHERE season=? AND {field}=?
+                   GROUP BY situation""",
+                (season, value),
+            )
+            return {row["situation"]: self._situational_rates(dict(row)) for row in rows}
+
+    def qb_situational_profile(self, season: int, player_id: str) -> dict[str, dict[str, Any]]:
+        """Red-zone and end-zone splits for one passer, keyed by situation."""
+        return self._situational_pass_profile(season, "passer_player_id", player_id)
+
+    def defense_situational_profile(self, season: int, team: str) -> dict[str, dict[str, Any]]:
+        """Red-zone and end-zone splits allowed by one defense, keyed by situation."""
+        return self._situational_pass_profile(season, "defense_team", canon_team(team))
+
+    def situational_pass_contributors(self, season: int, *, passer_player_id: str | None = None,
+                                      defense_team: str | None = None,
+                                      game_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Receiver outcomes inside each red-zone/end-zone split, keyed by situation."""
+        if bool(passer_player_id) == bool(defense_team):
+            raise ValueError("pass exactly one contributor scope")
+        field = "passer_player_id" if passer_player_id else "defense_team"
+        value = passer_player_id or canon_team(defense_team)
+        game_filter = " AND game_id=?" if game_id else ""
+        parameters = (season, value, game_id) if game_id else (season, value)
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        with closing(self._connect()) as connection:
+            rows = [dict(row) for row in connection.execute(
+                f"""SELECT situation,receiver_player_id,MAX(receiver_name) receiver_name,
+                           SUM(targets) targets,SUM(receptions) receptions,
+                           SUM(receiving_yards) receiving_yards,SUM(touchdowns) touchdowns,
+                           (SELECT position FROM players
+                            WHERE season=? AND player_id=receiver_player_id LIMIT 1) position
+                    FROM situational_pass_receivers WHERE season=? AND {field}=?{game_filter}
+                    GROUP BY situation,receiver_player_id
+                    ORDER BY situation,targets DESC,receiving_yards DESC""",
+                (season, *parameters),
+            )]
+        for row in rows:
+            row["player_url"] = f"/nfl/players/{row['receiver_player_id']}/?season={season}"
+            row["position"] = row.get("position") or "UNK"
+            row["detail"] = f"{row['receptions']:g}/{row['targets']:g} · {row['receiving_yards']:g} yd · {row['touchdowns']:g} TD"
+            grouped.setdefault(row["situation"], []).append(row)
+        return grouped
+
+    def situational_pass_defenders(self, season: int, *, defense_team: str,
+                                   game_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Pass-defended and interception credits inside each red-zone/end-zone split."""
+        game_filter = " AND game_id=?" if game_id else ""
+        parameters = (season, canon_team(defense_team), game_id) if game_id else (season, canon_team(defense_team))
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        with closing(self._connect()) as connection:
+            rows = [dict(row) for row in connection.execute(
+                f"""SELECT situation,defender_player_id,MAX(defender_name) defender_name,
+                           event,SUM(count) count,
+                           (SELECT position FROM players
+                            WHERE season=? AND player_id=defender_player_id LIMIT 1) position
+                    FROM situational_pass_defenders WHERE season=? AND defense_team=?{game_filter}
+                    GROUP BY situation,defender_player_id,event
+                    ORDER BY situation,count DESC""",
+                (season, *parameters),
+            )]
+        for row in rows:
+            row["player_url"] = f"/nfl/players/{row['defender_player_id']}/?season={season}"
+            row["position"] = row.get("position") or "UNK"
+            row["detail"] = f"{row['count']:g} {'INT' if row['event'] == 'interception' else 'PD'}"
+            grouped.setdefault(row["situation"], []).append(row)
+        return grouped
+
     def pass_zone_contributors(self, season: int, *, passer_player_id: str | None = None,
                                defense_team: str | None = None,
                                game_id: str | None = None) -> list[dict[str, Any]]:
@@ -1969,15 +2613,41 @@ class NFLRepository:
                 f"""SELECT depth_bucket,pass_location,receiver_player_id,
                            MAX(receiver_name) receiver_name,SUM(targets) targets,
                            SUM(receptions) receptions,SUM(receiving_yards) receiving_yards,
-                           SUM(air_yards) air_yards,SUM(touchdowns) touchdowns
+                           SUM(air_yards) air_yards,SUM(touchdowns) touchdowns,
+                           (SELECT position FROM players
+                            WHERE season=? AND player_id=receiver_player_id LIMIT 1) position
                     FROM pass_zone_receivers WHERE season=? AND {field}=?{game_filter}
                     GROUP BY depth_bucket,pass_location,receiver_player_id
                     ORDER BY depth_bucket,pass_location,targets DESC,receiving_yards DESC""",
-                parameters,
+                (season, *parameters),
             )]
         for row in rows:
             row["adot"] = row["air_yards"] / row["targets"] if row["targets"] else None
             row["player_url"] = f"/nfl/players/{row['receiver_player_id']}/?season={season}"
+            row["position"] = row.get("position") or "UNK"
+            row["detail"] = f"{row['receptions']:g}/{row['targets']:g} · {row['receiving_yards']:g} yd · {row['touchdowns']:g} TD · {row['adot']:.1f} aDOT" if row["adot"] is not None else f"{row['receptions']:g}/{row['targets']:g} · {row['receiving_yards']:g} yd · {row['touchdowns']:g} TD"
+        return rows
+
+    def pass_zone_defenders(self, season: int, *, defense_team: str,
+                            game_id: str | None = None) -> list[dict[str, Any]]:
+        """Pass-defended and interception credits inside each charted pass zone."""
+        game_filter = " AND game_id=?" if game_id else ""
+        parameters = (season, canon_team(defense_team), game_id) if game_id else (season, canon_team(defense_team))
+        with closing(self._connect()) as connection:
+            rows = [dict(row) for row in connection.execute(
+                f"""SELECT depth_bucket,pass_location,defender_player_id,
+                           MAX(defender_name) defender_name,event,SUM(count) count,
+                           (SELECT position FROM players
+                            WHERE season=? AND player_id=defender_player_id LIMIT 1) position
+                    FROM pass_zone_defenders WHERE season=? AND defense_team=?{game_filter}
+                    GROUP BY depth_bucket,pass_location,defender_player_id,event
+                    ORDER BY depth_bucket,pass_location,count DESC""",
+                (season, *parameters),
+            )]
+        for row in rows:
+            row["player_url"] = f"/nfl/players/{row['defender_player_id']}/?season={season}"
+            row["position"] = row.get("position") or "UNK"
+            row["detail"] = f"{row['count']:g} {'INT' if row['event'] == 'interception' else 'PD'}"
         return rows
 
     def player_weekly(self, season: int, player_id: str) -> list[dict[str, Any]]:

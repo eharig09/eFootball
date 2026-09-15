@@ -28,6 +28,16 @@ nfl_data_import_pages = Blueprint("nfl_data_import", __name__)
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 
 
+@nfl_data_import_pages.context_processor
+def _inject_nfl_data_freshness() -> dict:
+    # This is a separate blueprint from nfl_pages, so its own copy of the
+    # nav's health pill needs its own context processor -- the pill markup
+    # in _nfl_nav.html is shared, but Flask only injects a blueprint's
+    # context processor into that blueprint's own routes.
+    from sports_aggregator.nfl.web import _nfl_data_freshness
+    return {"nfl_data_freshness": _nfl_data_freshness()}
+
+
 def _repository():
     return current_app.extensions["nfl_repository"]
 

@@ -11,8 +11,9 @@ from typing import Any, Iterable
 
 import requests
 
-from sports_aggregator.models import Article
+from sports_aggregator.models import Article, FeedConfig
 from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.providers.rss import RSSNewsProvider
 
 
 GAME_LANGUAGE = re.compile(
@@ -235,20 +236,64 @@ class NFLContentRepository:
             connection.commit()
         return len(values)
 
-    def ingest_articles(self, articles: Iterable[Article], season: int) -> int:
+    def ingest_articles(self, articles: Iterable[Article], season: int, *,
+                        source_team: str | None = None) -> int:
         count = 0
         for article in articles:
             published = (article.published_at or datetime.now(timezone.utc)).isoformat()
             self.store(
                 platform="rss", external_id=article.identity, url=article.url,
                 title=article.title, body=article.summary, source_name=article.source,
-                published_at=published, season=season,
+                source_team=source_team, published_at=published, season=season,
                 raw={"author": article.author, "discovered_via": article.discovered_via,
                      "reliability": article.reliability, "source_type": article.source_type,
                      "content_kind": article.content_kind},
             )
             count += 1
         return count
+
+    @staticmethod
+    def _fetch_feed(feed: FeedConfig, timeout: float) -> list[Article]:
+        return RSSNewsProvider(feed, timeout_seconds=timeout).fetch()
+
+    def ingest_rss_feeds(self, tasks: Iterable[tuple[FeedConfig, str | None]], season: int, *,
+                         workers: int = 8, timeout: float = 20) -> dict[str, Any]:
+        """Fetch a batch of team/national/community RSS feeds and store their articles.
+
+        `tasks` pairs each feed with the team it's scoped to (or None for a
+        league-wide feed) -- the same team-biasing `ingest_bluesky` gives
+        Bluesky posts via `source_team`, just for RSS sources instead.
+        """
+        task_list = list(tasks)
+        started = datetime.now(timezone.utc)
+        stored = 0; seen = 0; succeeded = 0; errors = []; checks = []
+        with ThreadPoolExecutor(max_workers=max(1, min(int(workers), 12))) as pool:
+            futures = {pool.submit(self._fetch_feed, feed, timeout): (feed, team)
+                      for feed, team in task_list}
+            for future in as_completed(futures):
+                feed, team = futures[future]
+                try:
+                    articles = future.result()
+                    succeeded += 1; seen += len(articles)
+                    source_stored = self.ingest_articles(articles, season, source_team=team)
+                    stored += source_stored
+                    checks.append({"platform": "rss", "source_key": feed.url,
+                                   "display_name": feed.name, "team": team, "success": True,
+                                   "seen": len(articles), "stored": source_stored, "error": None})
+                except Exception as exc:
+                    message = str(exc)
+                    errors.append({"feed": feed.name, "url": feed.url, "error": message})
+                    checks.append({"platform": "rss", "source_key": feed.url,
+                                   "display_name": feed.name, "team": team, "success": False,
+                                   "seen": 0, "stored": 0, "error": message})
+        finished = datetime.now(timezone.utc)
+        self.record_source_checks(checks, checked_at=finished)
+        self.record_ingestion_run(
+            "rss_directory", season, started, finished, len(task_list), succeeded,
+            seen, stored, errors,
+        )
+        return {"feeds": len(task_list), "succeeded": succeeded, "seen": seen,
+                "stored": stored, "errors": errors}
 
     @staticmethod
     def _fetch_source(source: dict, posts_per_source: int, timeout: float) -> tuple[dict, list[dict]]:
@@ -355,6 +400,17 @@ class NFLContentRepository:
                  succeeded, seen, stored, json.dumps(errors, separators=(",", ":"))),
             )
             connection.commit()
+
+    def latest_ingestion_run(self) -> dict | None:
+        """Most recent content sync across every platform -- the cheap signal
+        the nav health pill uses; the full per-platform history lives on the
+        data-status page via `source_coverage()["latest_runs"]`."""
+        self.repository.initialize()
+        with closing(self.repository._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM nfl_content_ingestion_runs ORDER BY run_id DESC LIMIT 1"
+            ).fetchone()
+        return dict(row) if row else None
 
     def _items(self, join: str = "", where: str = "", parameters: tuple = (),
                limit: int = 30) -> list[dict]:

@@ -104,6 +104,30 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.get_json()["league"]["slug"], "nfl")
         self.assertEqual(response.get_json()["count"], 1)
 
+    def test_nfl_data_status_page_and_nav_pill_render(self):
+        page = self.client.get("/nfl/")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'class="data-pill', page.data)
+        self.assertIn(b'href="/nfl/data-status/', page.data)
+
+        status = self.client.get("/nfl/data-status/")
+        self.assertEqual(status.status_code, 200)
+        self.assertIn(b"NFL data status", status.data)
+        self.assertIn(b"Production seed", status.data)
+        self.assertIn(b"Ingestion runs", status.data)
+        # Regression check: `content_counts.items` in a Jinja template calls
+        # dict.items() (a real attribute) instead of the "items" key --
+        # bracket access is required. An empty database with zero stored
+        # items must render "0", not a Python method repr.
+        self.assertIn(b"<b>0</b><small>Stored content items</small>", status.data)
+
+        api = self.client.get("/api/v1/nfl/data-status")
+        self.assertEqual(api.status_code, 200)
+        payload = api.get_json()
+        self.assertIn("counts", payload)
+        self.assertIn("runs_table", payload)
+        self.assertIsInstance(payload["runs_table"]["rows"], list)
+
     def test_nfl_surface_loads_explicit_dark_theme(self):
         page = self.client.get("/nfl/")
         self.assertIn(b"/static/nfl.css", page.data)

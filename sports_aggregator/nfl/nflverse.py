@@ -41,7 +41,13 @@ PBP_ANALYTICS_COLUMNS = (
     "pass_touchdown", "interception", "cpoe", "receiver_player_id", "receiver_player_name",
     "receiving_yards", "yards_after_catch", "third_down_converted", "yardline_100",
     "score_differential", "qtr", "drive", "game_seconds_remaining",
-    "shotgun", "no_huddle",
+    "shotgun", "no_huddle", "run_location", "run_gap", "rusher_player_id",
+    "rusher_player_name", "rush_touchdown",
+    "solo_tackle_1_player_id", "solo_tackle_1_player_name",
+    "tackle_with_assist_1_player_id", "tackle_with_assist_1_player_name",
+    "pass_defense_1_player_id", "pass_defense_1_player_name",
+    "interception_player_id", "interception_player_name",
+    "sack_player_id", "sack_player_name",
 )
 
 

@@ -1,6 +1,7 @@
 """Repository-backed NFL dashboard, team pages, and structured APIs."""
 
 from __future__ import annotations
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
@@ -23,6 +24,7 @@ from sports_aggregator.nfl.nflverse import current_season
 from sports_aggregator.nfl.pff import NFLPFFService, PFF_EXPLORER_METRICS, season_scaled_minimum
 from sports_aggregator.nfl.personnel import position_rooms, significant_movements
 from sports_aggregator.nfl.passing import pass_matchup_packet, pass_zone_packet
+from sports_aggregator.nfl.rushing import run_direction_packet, run_matchup_packet
 from sports_aggregator.nfl.postgame import postgame_packet
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.search import search_entities
@@ -34,8 +36,8 @@ from sports_aggregator.nfl.views import (
     current_games, depth_chart_table, efficiency_table, game_stat_tables, game_stats_table,
     leaders_table, matchup_cards, movement_tables, player_game_log, player_game_log_tables,
     player_headline_stats, pff_leaders_table, player_totals_table, power_table, roster_table,
-    schedule_table, snap_usage_table, source_coverage_table, team_source_coverage_table,
-    usage_table, standings_tables,
+    ingestion_runs_table, schedule_table, snap_usage_table, source_coverage_table,
+    team_source_coverage_table, usage_table, standings_tables, zone_matchup_table,
 )
 
 
@@ -62,6 +64,62 @@ def _production_seed_status() -> dict:
         return value if isinstance(value, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _relative_time(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    seconds = max(0, (datetime.now(timezone.utc) - stamp).total_seconds())
+    if seconds < 90:
+        return "just now"
+    minutes = seconds / 60
+    if minutes < 90:
+        return f"{round(minutes)}m ago"
+    hours = minutes / 60
+    if hours < 48:
+        return f"{round(hours)}h ago"
+    return f"{round(hours / 24)}d ago"
+
+
+def _nfl_data_freshness() -> dict:
+    """Cheap, page-load-safe rollup for the nav pill -- the full breakdown
+    (per-platform run history, source coverage) lives on the data-status
+    page, computed once there rather than on every request."""
+    seed = _production_seed_status()
+    if seed.get("status") in ("launching", "running"):
+        return {"status": "running", "running": True, "relative": None, "attention_count": 0}
+    repository = _repository()
+    season = repository.latest_season() or current_season()
+    try:
+        counts = repository.counts(season)
+    except Exception:
+        counts = {}
+    issues = 0
+    if seed.get("status") == "failed":
+        issues += 1
+    if (counts.get("teams") or 0) < 32:
+        issues += 1
+    if not counts.get("games"):
+        issues += 1
+    try:
+        latest_run = _content().latest_ingestion_run()
+    except Exception:
+        latest_run = None
+    relative = _relative_time(latest_run.get("finished_at") if latest_run else None) or \
+        _relative_time(seed.get("finished_at"))
+    status = "failed" if seed.get("status") == "failed" else ("degraded" if issues else "success")
+    return {"status": status, "running": False, "relative": relative, "attention_count": issues}
+
+
+@nfl_pages.context_processor
+def _inject_nfl_data_freshness() -> dict:
+    return {"nfl_data_freshness": _nfl_data_freshness()}
 
 
 def _repository() -> NFLRepository:
@@ -591,6 +649,55 @@ def source_audit_api():
                     "team_table": packet["team_table"].as_dict()})
 
 
+def _data_status_packet() -> dict:
+    season = _season()
+    repository = _repository()
+    content = _content()
+    seed = _production_seed_status()
+    counts = repository.counts(season)
+    pff_service = _pff()
+    pff_season = _pff_season(season) or season
+    pff_counts = pff_service.counts(pff_season)
+    coverage = content.source_coverage(_directory_sources())
+    issues = []
+    if seed.get("status") == "failed":
+        issues.append({"label": "Production seed failed",
+                       "detail": seed.get("error") or "See nfl_production_seed.log."})
+    if seed.get("status") == "degraded":
+        issues.append({"label": "Production seed finished degraded",
+                       "detail": "Some stages did not reach a full sync; counts below may be partial."})
+    if (counts.get("teams") or 0) < 32:
+        issues.append({"label": "Team catalog incomplete",
+                       "detail": f"{counts.get('teams') or 0}/32 teams stored for {season}."})
+    if not counts.get("games"):
+        issues.append({"label": "No schedule stored", "detail": f"0 games stored for {season}."})
+    if coverage["errors"]:
+        issues.append({"label": f"{coverage['errors']} configured source(s) erroring",
+                       "detail": "See the source audit page for which accounts and their last error."})
+    return {
+        "season": season, "pff_season": pff_season, "seed": seed,
+        "counts": counts, "pff_counts": pff_counts,
+        "content_counts": content.counts(),
+        "coverage_summary": {key: coverage[key] for key in
+                             ("configured", "producing", "checked", "errors", "silent", "no_eligible")},
+        "runs_table": ingestion_runs_table(coverage["latest_runs"]),
+        "latest_season": repository.latest_season(),
+        "latest_week": repository.latest_stat_week(season),
+        "issues": issues,
+    }
+
+
+@nfl_pages.get("/nfl/data-status/")
+def data_status():
+    return render_template("nfl_data_status.html", league=get_league("nfl"), **_data_status_packet())
+
+
+@nfl_pages.get("/api/v1/nfl/data-status")
+def data_status_api():
+    packet = _data_status_packet()
+    return jsonify({**packet, "runs_table": packet["runs_table"].as_dict()})
+
+
 @nfl_pages.get("/nfl/teams/<abbreviation>/")
 def team_page(abbreviation: str):
     season = _season(); code = canon_team(abbreviation)
@@ -705,7 +812,8 @@ def _game_packet(game_id: str) -> dict:
     defense_profiles = {code: pass_zone_packet(
         profile, contributors=repository.pass_zone_contributors(
             profile_season, defense_team=code,
-        ), lower_is_better=True) for code, profile in defense_profiles.items()}
+        ), defenders=repository.pass_zone_defenders(profile_season, defense_team=code),
+        lower_is_better=True) for code, profile in defense_profiles.items()}
     passing_comparisons = []
     for offense, defense in ((game["away_team"], game["home_team"]),
                              (game["home_team"], game["away_team"])):
@@ -726,10 +834,84 @@ def _game_packet(game_id: str) -> dict:
                     profile_season, passer_player_id=quarterback["player_id"],
                 ),
             )
+        offense_situational = (repository.qb_situational_profile(profile_season, quarterback["player_id"])
+                               if quarterback else {})
+        defense_situational = repository.defense_situational_profile(profile_season, defense)
+        offense_situational_contributors = (repository.situational_pass_contributors(
+            profile_season, passer_player_id=quarterback["player_id"])
+            if quarterback else {})
+        defense_situational_defenders = repository.situational_pass_defenders(
+            profile_season, defense_team=defense,
+        )
+        # Season-wide, every-passer receivers this defense has allowed in
+        # this situation -- "what positions beat this defense here", not
+        # just this one game's specific opposing targets.
+        defense_situational_allowed = repository.situational_pass_contributors(
+            profile_season, defense_team=defense,
+        )
+        situational = [
+            {"key": key, "label": label, "offense": offense_situational.get(key),
+             "defense": defense_situational.get(key),
+             "contributors": offense_situational_contributors.get(key, [])[:8],
+             "defenders": defense_situational_defenders.get(key, [])[:8],
+             "defense_allowed": defense_situational_allowed.get(key, [])[:8]}
+            for key, label in (("red_zone", "Red zone"), ("end_zone", "End zone"))
+            if offense_situational.get(key) or defense_situational.get(key)
+        ]
         passing_comparisons.append({
             "offense": offense, "defense": defense, "quarterback": quarterback,
             "quarterback_profile": qb_profile, "defense_profile": defense_profiles[defense],
             "matchup": pass_matchup_packet(qb_profile, defense_profiles[defense]),
+            "situational": situational,
+            "offense_identity": identities.get(offense, {}),
+            "defense_identity": identities.get(defense, {}),
+        })
+    rush_defense_profiles = {code: run_direction_packet(
+        repository.defense_rush_direction_profile(profile_season, code),
+        # Season-wide, every-opponent rushers this defense has allowed by
+        # direction -- "what positions beat this defense here".
+        contributors=repository.rush_direction_contributors(profile_season, defense_team=code),
+        defenders=repository.rush_direction_defenders(profile_season, defense_team=code),
+        lower_is_better=True) for code in (game["away_team"], game["home_team"])}
+    run_direction_comparisons = []
+    for offense, defense in ((game["away_team"], game["home_team"]),
+                             (game["home_team"], game["away_team"])):
+        # The full run game, not just the lead back -- every rusher who
+        # touched the ball for this team shows up as hover detail per cell.
+        offense_profile = run_direction_packet(
+            repository.team_rush_direction_profile(profile_season, offense),
+            contributors=repository.rush_direction_contributors(profile_season, offense_team=offense),
+        )
+        candidates = repository.player_leaders_for_metrics(
+            profile_season, ("carries",), team=offense,
+        )
+        if profile_season != game["season"]:
+            current_ids = {row["player_id"] for row in
+                           repository.team_roster(game["season"], offense)}
+            candidates = [row for row in candidates if row["player_id"] in current_ids]
+        leading_runner = candidates[0] if candidates else None
+        # High-value carries, same "situational" shape and hover-contributor
+        # format as the passing red zone/end zone strip.
+        offense_red_zone = repository.team_rush_situational_profile(profile_season, offense)
+        defense_red_zone = repository.defense_rush_situational_profile(profile_season, defense)
+        situational = []
+        if offense_red_zone.get("attempts") or defense_red_zone.get("attempts"):
+            situational.append({
+                "key": "red_zone", "label": "Red zone",
+                "offense": offense_red_zone if offense_red_zone.get("attempts") else None,
+                "defense": defense_red_zone if defense_red_zone.get("attempts") else None,
+                "contributors": repository.rush_situational_contributors(
+                    profile_season, offense_team=offense)[:8],
+                "defenders": repository.rush_situational_defenders(
+                    profile_season, defense_team=defense)[:8],
+                "defense_allowed": repository.rush_situational_contributors(
+                    profile_season, defense_team=defense)[:8],
+            })
+        run_direction_comparisons.append({
+            "offense": offense, "defense": defense, "leading_runner": leading_runner,
+            "offense_profile": offense_profile, "defense_profile": rush_defense_profiles[defense],
+            "matchup": run_matchup_packet(offense_profile, rush_defense_profiles[defense]),
+            "situational": situational,
             "offense_identity": identities.get(offense, {}),
             "defense_identity": identities.get(defense, {}),
         })
@@ -737,6 +919,8 @@ def _game_packet(game_id: str) -> dict:
     player_matchups = alignment_matchups(
         repository, _pff(), game, game["season"], pff_season, defense_profiles,
     )
+    for item in player_matchups:
+        item["zone_table"] = zone_matchup_table(item)
     run_matchups = rushing_matchups(
         repository, _pff(), game, game["season"], pff_season, context["profiles"],
     )
@@ -762,6 +946,8 @@ def _game_packet(game_id: str) -> dict:
             "efficiency_rows": {row["team"]: row for row in efficiency_rows},
             "pass_profile_season": profile_season, "defense_pass_profiles": defense_profiles,
             "passing_comparisons": passing_comparisons,
+            "rush_defense_profiles": rush_defense_profiles,
+            "run_direction_comparisons": run_direction_comparisons,
             "player_matchups": player_matchups, "player_watches": player_watches,
             "pff_season": pff_season,
             "run_matchups": run_matchups,
@@ -802,7 +988,11 @@ def game_api(game_id: str):
         "pass_profile_season": packet["pass_profile_season"],
         "defense_pass_profiles": packet["defense_pass_profiles"],
         "passing_comparisons": packet["passing_comparisons"],
-        "player_matchups": packet["player_matchups"], "player_watches": packet["player_watches"],
+        "rush_defense_profiles": packet["rush_defense_profiles"],
+        "run_direction_comparisons": packet["run_direction_comparisons"],
+        "player_matchups": [{**item, "zone_table": item["zone_table"].as_dict()}
+                            for item in packet["player_matchups"]],
+        "player_watches": packet["player_watches"],
         "pff_season": packet["pff_season"],
         "run_matchups": packet["run_matchups"],
         "trenches": packet["trenches"],

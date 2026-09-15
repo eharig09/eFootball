@@ -131,7 +131,11 @@ class NFLDataSync:
             playcalling = self.repository.replace_game_playcalling(season, rows)
             profiles = self.repository.replace_qb_pass_profiles(season, rows)
             receivers = self.repository.replace_receiver_pass_profiles(season, rows)
-            return efficiency + situational + playcalling + profiles + receivers
+            rush_direction = self.repository.replace_rush_direction_profiles(season, rows)
+            situational_pass = self.repository.replace_situational_pass_profiles(season, rows)
+            rush_situational = self.repository.replace_rush_situational_profiles(season, rows)
+            return (efficiency + situational + playcalling + profiles + receivers
+                   + rush_direction + situational_pass + rush_situational)
 
         jobs: list[tuple[str, Callable[[], int]]] = [
             ("teams", store_teams), ("games", store_games), ("elo", store_elo),
@@ -166,7 +170,8 @@ class NFLDataSync:
             games_by_season.setdefault(int(row["season"]), []).append(row)
         totals = {"seasons": 0, "games": 0, "weekly_metrics": 0,
                   "team_metrics": 0, "efficiency": 0, "situational": 0,
-                  "playcalling": 0, "pass_zones": 0, "receiver_zones": 0}
+                  "playcalling": 0, "pass_zones": 0, "receiver_zones": 0,
+                  "rush_direction": 0, "situational_pass": 0, "rush_situational": 0}
         for season in seasons:
             totals["seasons"] += 1
             game_rows = games_by_season.get(season, [])
@@ -191,6 +196,9 @@ class NFLDataSync:
                 totals["playcalling"] += self.repository.replace_game_playcalling(season, pbp)
                 totals["pass_zones"] += self.repository.replace_qb_pass_profiles(season, pbp)
                 totals["receiver_zones"] += self.repository.replace_receiver_pass_profiles(season, pbp)
+                totals["rush_direction"] += self.repository.replace_rush_direction_profiles(season, pbp)
+                totals["situational_pass"] += self.repository.replace_situational_pass_profiles(season, pbp)
+                totals["rush_situational"] += self.repository.replace_rush_situational_profiles(season, pbp)
         # Rebuild Elo once, after all canonical games are available.
         build_elo(self.repository, schedules)
         return totals

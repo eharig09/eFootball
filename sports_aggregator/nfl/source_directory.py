@@ -13,6 +13,7 @@ from sports_aggregator.social.models import LeagueSourceProfile, SourceProfile
 
 DEFAULT_PATH = Path("data/nfl/NFL_Bluesky_Directory.xlsx")
 NS = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 REQUIRED_COLUMNS = {
     "Name", "Handle", "Scope", "Conference", "Division", "Team",
@@ -61,13 +62,37 @@ def _split(value: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(part.strip() for part in value.split(";") if part.strip()))
 
 
-def _sheet_rows(path: str | Path) -> list[list[str]]:
+def _sheet_target(archive: zipfile.ZipFile, sheet: str) -> str:
+    """Resolve a worksheet name (e.g. "National RSS") to its xl/worksheets/*.xml path.
+
+    A workbook's tab order doesn't reliably match its sheetN.xml numbering --
+    this walks workbook.xml -> the sheet's relationship id -> workbook.xml.rels
+    -> the actual target, rather than assuming tab order.
+    """
+    workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+    relationship_id = next(
+        (node.attrib.get(f"{{{_REL_NS}}}id") for node in workbook.findall(".//x:sheets/x:sheet", NS)
+         if node.attrib.get("name") == sheet), None,
+    )
+    if relationship_id is None:
+        raise NFLSourceDirectoryError(f"workbook has no sheet named {sheet!r}")
+    rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+    target = next((node.attrib.get("Target") for node in rels.findall("{*}Relationship")
+                   if node.attrib.get("Id") == relationship_id), None)
+    if not target:
+        raise NFLSourceDirectoryError(f"workbook relationship {relationship_id!r} not found")
+    return target.lstrip("/")
+
+
+def _sheet_rows(path: str | Path, sheet: str | None = None) -> list[list[str]]:
+    """Read a worksheet's cells into rows. `sheet=None` reads the first tab."""
     try:
         archive = zipfile.ZipFile(path)
     except (OSError, zipfile.BadZipFile) as exc:
         raise NFLSourceDirectoryError(f"cannot read NFL source directory: {exc}") from exc
     with archive:
-        root = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+        target = _sheet_target(archive, sheet) if sheet else "xl/worksheets/sheet1.xml"
+        root = ET.fromstring(archive.read(target))
     rows: list[list[str]] = []
     for row in root.findall(".//x:sheetData/x:row", NS):
         cells: dict[int, str] = {}

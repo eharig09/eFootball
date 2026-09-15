@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 from urllib.parse import quote
 
-from sports_aggregator.tables import Column, Table
+from sports_aggregator.tables import Column, Table, format_value
 
 
 def _score(value):
@@ -510,6 +511,68 @@ def source_coverage_table(rows: list[dict]) -> Table:
         prepared, caption="Configured source audit",
         note="Stored counts are cumulative. Check status reflects the latest instrumented fetch.",
         empty="No NFL reporting sources are configured.", dense=True,
+    )
+
+
+def zone_matchup_table(item: dict) -> Table:
+    """One receiver's usage-zone grid as a real `<table>`.
+
+    This used to be hand-rolled CSS grid rows, each an independent grid
+    formatting context sizing its own columns off its own row's content --
+    so a long unbroken label like "Intermediate middle" widened that one
+    row's first column without widening its neighbors, and the EPA numbers
+    landed at different x-positions row to row. A table's column widths are
+    computed once across every row, which is the actual fix, not a
+    CSS tweak: alignment is the table framework's job everywhere else on
+    this site, and this grid is presentation-identical to it.
+    """
+    columns = (
+        Column("zone", "Zone"),
+        Column("offense_epa", f"{item.get('offense', 'Offense')} EPA/tgt", "signed2"),
+        Column("defense_epa", f"{item.get('defense', 'Defense')} allowed", "signed2"),
+    )
+    rows = []
+    for zone in item.get("zone_matchups") or ():
+        rows.append({
+            "zone": f"{(zone.get('depth_bucket') or '').title()} {zone.get('pass_location') or ''}".strip(),
+            "zone_sub": (f"{format_value(zone.get('receptions'), 'int')}/"
+                        f"{format_value(zone.get('targets'), 'int')} · "
+                        f"{format_value(zone.get('receiving_yards'), 'int')} yd · "
+                        f"{format_value(zone.get('target_share'), 'rate')} targets"),
+            "zone_class": "weak-zone" if zone.get("is_weak_zone") else None,
+            "offense_epa": zone.get("offense_epa"),
+            "defense_epa": zone.get("defense_epa"),
+            "defense_epa_sub": f"{format_value(zone.get('defense_attempts'), 'int')} att",
+        })
+    return Table(
+        columns, rows, dense=True, sortable=False,
+        empty="Not enough zone-level target and allowed sample yet to compare.",
+    )
+
+
+def ingestion_runs_table(rows: list[dict]) -> Table:
+    """Recent `sync-nfl-content` invocations, across every platform it ran."""
+    prepared = []
+    for row in rows:
+        try:
+            error_count = len(json.loads(row.get("errors_json") or "[]"))
+        except (TypeError, ValueError):
+            error_count = 0
+        prepared.append({
+            "platform": row.get("platform"), "season": row.get("season"),
+            "finished_at": row.get("finished_at"), "attempted": row.get("attempted"),
+            "succeeded": row.get("succeeded"), "seen": row.get("seen"),
+            "stored": row.get("stored"), "errors": error_count,
+            "errors_class": "error" if error_count else None,
+        })
+    return Table(
+        (Column("platform", "Platform"), Column("season", "Season", "int"),
+         Column("finished_at", "Finished"), Column("attempted", "Attempted", "int"),
+         Column("succeeded", "Succeeded", "int"), Column("seen", "Seen", "big"),
+         Column("stored", "Stored", "big", emphasis=True), Column("errors", "Errors", "int")),
+        rows=prepared, caption="Recent ingestion runs",
+        note="One row per sync-nfl-content invocation. Errors counts failed feeds/sources within that run, not stored items.",
+        empty="No content ingestion runs are recorded yet.", dense=True, sortable=False,
     )
 
 

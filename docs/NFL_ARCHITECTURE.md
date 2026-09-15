@@ -1118,3 +1118,274 @@ PFF seed stage can run.
   metric keys already present in `player_weekly()`'s wide row (the same
   `player_weekly_stats` vocabulary `sports_aggregator.nfl.explorer.METRICS`
   already catalogs for the explorer), not new queries.
+
+## 2026-09-15 RSS/community source directory wired into live ingestion
+
+- `data/nfl/` held three curated workbooks, but only `NFL_Bluesky_Directory.xlsx`
+  was ever actually read by the app; `NFL_RSS_and_Community_Directory.xlsx`
+  (32 team subreddit/PFF/blog trios, 15 national/specialist RSS feeds, 9
+  cross-team subreddits -- ~118 real feed URLs) sat completely unreferenced.
+  `NFL_Data_Sources_Directory.xlsx` remains a reference-only catalog of
+  candidate structured-data APIs, not a content source, and is unaffected.
+- `source_directory._sheet_rows()` only ever read `xl/worksheets/sheet1.xml`;
+  the RSS workbook has four sheets ("Overview", "Team Sources", "National
+  RSS", "Other Communities"). Generalized it to accept a sheet name, resolved
+  via workbook.xml's relationship id rather than assumed tab order.
+- New `sports_aggregator/nfl/rss_directory.py` shapes those three data sheets
+  into `FeedConfig`s: `national_feeds()` (National RSS + Other Communities,
+  deduped by URL -- both sheets list r/nfl and r/NFL_Draft) and
+  `team_feeds()` (keyed by `canon_team()`-normalized code, so the workbook's
+  "TB" lines up with the rest of the app's "TAM").
+  `NFLContentRepository.ingest_rss_feeds()` fetches a batch of
+  `(FeedConfig, team_or_None)` tasks concurrently (mirroring
+  `ingest_bluesky`'s thread-pool/per-source-error-isolation shape) and
+  stores through the existing platform-agnostic `ingest_articles()`, which
+  gained an optional `source_team` bias so team-scoped feeds link to their
+  team even before text-matching runs. `sync-nfl-content` now ingests the
+  directory by default (`--no-directory-rss` to skip, `--rss-workers` to
+  tune concurrency); no new cron needed, since the existing 3-hour
+  `nfl-content-refresh-trigger` already calls this command.
+- Live-verified against real feeds (ESPN, PFF, and Cincinnati's subreddit +
+  PFF + blog feeds all stored articles); Reddit's own rate limiting 429'd
+  one sampled feed, which is recorded as an isolated per-feed error rather
+  than failing the batch -- expected given Reddit's anti-scraping posture,
+  not something worth over-building around for a curated ~118-feed batch.
+
+## 2026-09-15 landing hero redesign, multi-zone matchup exploitation
+
+- Redesigned the dashboard's `.nfl-hero`: the flat single-gradient box with a
+  wrapped strip of tiny inline "32 teams" pills read as generic chrome, not a
+  crafted page. Replaced it with a bordered accent bar (red-to-blue gradient,
+  echoing the two brand colors already tokenized in `nfl.css`), a subtle
+  radial glow + hairline texture in the corner, a pill-badge eyebrow with a
+  live-status dot, and the 11 counts reshaped into a proper stat-tile grid
+  (`<span><b>32</b><small>Teams</small></span>`, big number over a muted
+  label) instead of inline "32 teams" text in a bordered strip -- the same
+  number-over-label tile language `.team-facts`/`.game-shape-grid` already
+  use elsewhere on the site, just applied to the hero.
+- The "Likely high-volume interactions" cards (game page, Players tab) had
+  two real problems, not one: most cards showed only a single usage zone
+  (receiver_zones was capped at `[:3]` display but nearly every receiver
+  this early in a season only had ONE zone clear the flat 3-target floor at
+  all), and the cards carried no cross-referencing -- a reader had to
+  manually compare each row against the defense's zone list themselves to
+  spot whether a receiver's volume actually lined up with a weak spot.
+  `alignment_matchups()` (`sports_aggregator/nfl/alignments.py`) now:
+  - Scales the per-zone receiver-target floor with season progress (same
+    `season_scaled_minimum` pattern used elsewhere), and shows up to 5 zones
+    per card instead of 3, so cards actually reflect a receiver's real
+    target distribution instead of one lonely qualifying cell.
+  - Computes `_weak_zones()`: zones where a defense allows more value than
+    its *own* other zones (median-relative, since there usually aren't
+    enough qualifying zones this early for an honest league-wide
+    baseline) -- self-relative rather than fabricated, in keeping with the
+    file's no-coverage-assignment stance. Each zone row is tagged
+    `is_weak_zone`, and each card gets a `weak_zone_hits` count and an
+    `exploit_score` (target-share-weighted sum of defense EPA allowed
+    across the receiver's own zones) -- a genuine "does this receiver's
+    usage pattern overlap this defense's soft spots" read, not just raw
+    zone data side by side.
+  - Widens the candidate pool per side from the top 2 receivers by volume to
+    the top 4, then ranks by `weak_zone_hits`/`exploit_score` and keeps the
+    top 3 -- selection still requires real usage, but display order now
+    answers "who actually exploits this defense" instead of just "who gets
+    the most targets." A high-target receiver whose volume happens to sit
+    in a defense's *strong* zones can rank behind a lower-volume teammate
+    who doesn't.
+  - Caught by live-server verification, not by the unit tests alone: the
+    zone-attempts floor was initially scaled off `pff_season`'s week count,
+    but defense zones come from whichever season the caller actually built
+    `defense_profiles` against -- normally the *live* current season, which
+    lags PFF data and so has a much lower week count. Scaling off the wrong
+    season's week count meant a nearly-empty current season's 3-attempt
+    zones were measured against a nearly-unscaled ~20-attempt floor, and
+    every weak-zone hit silently came back zero. Fixed to scale off
+    `defense_profiles[defense]["season"]`'s own week count instead; a
+    regression test locks in the fix (`test_weak_zone_threshold_scales_off_
+    the_defense_zones_own_season_not_pff_season`).
+  - Template/CSS: every card now renders the same `.multi-zone-matchups`
+    skeleton (a "not enough sample yet" placeholder row when a receiver has
+    no qualifying zones, instead of omitting the block and producing a much
+    shorter card) so the 2-column card grid doesn't look ragged next to
+    cards that do have zone data. Weak zones get a left-accent highlight and
+    a small "Weak spot" tag; cards with `weak_zone_hits > 0` get a badge
+    under the stat row. The redundant single-arrow "receiver usage → same
+    field section" block was removed -- it always duplicated the first row
+    of the zone grid it sat below.
+
+## 2026-09-15 zone-matchup table framework, matchups-tab move, NFL data status
+
+- The usage-zone grid inside each "Likely high-volume interactions" card was
+  still misaligned after the previous pass's CSS work, because the real bug
+  was structural: `.multi-zone-matchups>div` was `display:grid` on EVERY
+  row independently, so each row computed its own column widths from its
+  own content -- a row whose zone label was "Intermediate middle" sized its
+  first column differently than a sibling row whose label was "Short right",
+  and the EPA numbers landed at different x-positions row to row. No amount
+  of `minmax()` tuning fixes that; only sharing one set of column tracks
+  across every row does, which is exactly what an HTML `<table>` guarantees
+  and hand-rolled grid divs do not. New `views.zone_matchup_table()` renders
+  each card's zone list through the same `Table`/`data_table()` framework
+  every other tabular data on the site already uses, instead of one-off CSS.
+  Weak zones get a `weak-zone` state class (the same `_class`/`_sub`
+  convention the table framework already supports) instead of bespoke markup.
+- Moved "Likely high-volume interactions" from the Players tab to the
+  Matchups tab, directly under "Charted passing: offense against defense" --
+  it's a zone-vs-zone matchup read like the section above it, not a
+  players/production section. The Players tab's remaining content (leaders,
+  opportunity concentration, opponent history) picked up its own `<h2>`
+  ("Player production") since it no longer inherited one from the section
+  that moved out.
+- Added an NFL data-health pill and `/nfl/data-status/` audit page, mirroring
+  the CFB side's `.data-pill`/`cfb_data_status.html` pattern but scoped to
+  what NFL's simpler seed/sync model actually produces (NFL sync never wrote
+  to CFB's shared `refresh_health` rollup, and building that shared
+  infrastructure out for NFL was disproportionate to the ask). The pill
+  (`_nfl_nav.html`) reads a new `_nfl_data_freshness()` rollup in `web.py`:
+  running while `nfl_production_seed.json` says launching/running, degraded
+  or failed on seed failure or incomplete team/game counts, otherwise a
+  relative "Updated Xm ago" from whichever is more recent of the latest
+  `nfl_content_ingestion_runs` row or the seed's own finish time. The audit
+  page adds production-seed stage detail, core dataset counts, PFF counts,
+  the source-coverage summary (linking to the existing `/nfl/sources/` page
+  for the full per-account breakdown), and every ingestion run via the new
+  `views.ingestion_runs_table()`.
+  - Bug caught by the new page's own request path, not by a unit test in
+    isolation: `{{ content_counts.items }}` in Jinja resolves to `dict.items`
+    (a real bound method) via attribute lookup *before* Jinja falls back to
+    key access, so it silently printed a method's repr instead of the stored
+    item count. `nfl.html` already knew to write `content_counts['items']`
+    for this exact reason; the new template didn't, until a end-to-end
+    request against a real (zero-count) database showed a method repr where
+    "0" belonged. Fixed to bracket access; a regression test now asserts the
+    literal `<b>0</b>` renders against an empty test database.
+  - Second bug from the same live pass: `nfl_nav()` lives in a separate
+    template (`_nfl_nav.html`) imported via `{% from ... import nfl_nav %}`;
+    Jinja macros imported that way do NOT see the importing template's
+    context (including context-processor-injected variables like the new
+    `nfl_data_freshness`) unless imported `with context`. Every NFL template
+    importing `nfl_nav` needed that keyword added, or the pill's variables
+    raised `UndefinedError` under strict undefined (the same handling the
+    test suite already runs with) and would have rendered blank/wrong in
+    production. Both were live/request-path bugs invisible to code review or
+    to unit tests that construct `Table`/dict fixtures directly -- the
+    lesson repeated from earlier phases: render the real page before calling
+    a template-facing change done.
+
+## 2026-09-15 run-direction charting, red-zone splits, honest defender credit
+
+- New "Charted rushing: offense against defense" section (Matchups tab,
+  under Charted passing), the run-game counterpart to the existing pass
+  zone matchup grid. `run_location`/`run_gap`/`rusher_player_id`/
+  `rush_touchdown` weren't in `PBP_ANALYTICS_COLUMNS` at all before this;
+  added them (nflfastR has carried them since the dataset's start, so no
+  historical gap). `NFLRepository._run_direction()` combines location and
+  gap into the standard 7-cell broadcast run chart (left end/tackle/guard,
+  middle, right guard/tackle/end) -- runs without a classifiable
+  location/gap are excluded, not bucketed as "unknown", matching the same
+  policy the pass-zone classifier already uses. New
+  `sports_aggregator/nfl/rushing.py` mirrors `passing.py`'s packet shape
+  (`run_direction_packet`/`run_matchup_packet`, same additive offense+defense
+  EPA edge, same tone/strength scale) over this new dimension.
+- The offense side is the **whole run game**, not one back:
+  `team_rush_direction_profile()` aggregates every rusher on the team, and
+  `rush_direction_contributors()` supplies the per-rusher hover breakdown
+  inside each direction cell -- the initial version showed only the single
+  leading rusher's own zones, which undersold a team's actual ground game
+  the same way `alignment_matchups`' original 2-receiver cap did.
+- Red-zone/end-zone splits, the same "high-value opportunity" read now
+  applies to both phases: `qb_situational_profiles`/
+  `receiver_situational_profiles` (new tables, additive -- no changes to
+  the existing `qb_pass_profiles`/`receiver_pass_profiles` schema or their
+  callers) split passing by `red_zone` (`yardline_100<=20`) and `end_zone`
+  (`yardline_100-air_yards<=0`, i.e. the target depth reaches the goal
+  line -- catches incompletions/INTs thrown into the end zone, not just
+  scores). `rush_situational_profiles` does the same for red-zone carries
+  (no end-zone equivalent for a rush attempt). Both render as a small tile
+  strip under their respective matchup grid.
+- Honest defensive credit, not fabricated coverage: nflfastR already
+  attributes who broke up a pass (`pass_defense_1_player_id`), who picked
+  it off (`interception_player_id`), and who made the tackle
+  (`solo_tackle_1_player_id`, falling back to `tackle_with_assist_1_player_id`)
+  on every play -- this is a real, already-recorded defensive event, not an
+  assigned coverage responsibility the data doesn't support (the
+  distinction `alignment_matchups`' docstring already draws). New
+  `pass_zone_defenders`/`situational_pass_defenders`/
+  `rush_direction_defenders`/`rush_situational_defenders` tables track
+  these events at the same zone/direction/situation granularity as the
+  offensive side, joined to `players.position` by a correlated subquery so
+  a hover tooltip can show "S.Rankins DL · 1 PD" alongside the receiver who
+  was targeted, not instead of them. A shared `defender_breakdown()` Jinja
+  macro (`_nfl_passing.html`, imported by `_nfl_rushing.html`) renders a
+  position-grouped summary line (`DB 2 · LB 1`) above the per-player list in
+  every one of these tooltips -- position is normalized to `"UNK"` rather
+  than left `None` at the repository layer, because Jinja's `groupby`
+  sorts by the key first and Python cannot order `None` against a string;
+  a live page load with an unrostered tackler's ID actually hit this and
+  crashed the render before the fix (regression test added).
+- Root-caused and fixed a real tooltip bug live testing surfaced once the
+  page had enough dense hover targets to make it visible: `position: fixed`
+  (the prior tooltip fix, see 2026-09-15 "tooltip escape hatch" above)
+  escapes clipping ancestors, but NOT a z-index stacking context -- a grid
+  cell that also gets `z-index` on hover/focus (to paint over its
+  neighbors) becomes a stacking context itself, and a fixed-position
+  descendant is still ordered inside THAT context, not the page's root
+  one. With only a handful of hoverable cells this was rarely visible;
+  with dozens (zone charts, run direction, situational strips, all now
+  carrying both offense and defense hover data) it reliably reproduced as
+  tooltips painting behind other elements, and, combined with a leftover
+  redundant CSS-only `:hover` rule this pass had added for the new
+  situational strip tiles (unnecessary -- the shared JS already handles
+  any `.pass-zone-tooltip` generically), occasionally more than one
+  visible at once. Fixed `static/nfl_tooltips.js` to the standard "portal"
+  pattern: a shown tooltip is moved onto `<body>` itself (escaping every
+  ancestor stacking context, not just clipping), and moved back to its
+  original DOM position on hide so the server-rendered structure and the
+  trigger→tooltip lookup stay correct between shows. `show()` also now
+  force-clears every matching tooltip in the DOM, not just the one JS
+  itself was last tracking, as a defensive backstop against the same class
+  of drift regardless of cause. Removed the redundant per-element CSS
+  hover rule.
+
+## 2026-09-15 correction: the tooltip bug's actual cause was CSS, not JS
+
+- The portal-pattern rewrite above was a genuine improvement but did
+  **not** fix the reported bug -- persistent/overlapping/backgrounded
+  tooltips were still reproducible after it shipped. Reasoning about the
+  DOM from server-rendered markup and code reading had produced a
+  plausible-but-wrong diagnosis twice in a row, so this time the bug was
+  chased with a real browser instead of more reading: a throwaway
+  Playwright + Chromium script (already available on this machine,
+  outside the repo, in the session scratchpad) loaded the actual game
+  page, hovered every tooltip trigger in turn, and read back each
+  tooltip's *computed* `display`/`position`/`z-index` plus, critically,
+  which CSS rule was winning for `display` on the ones that stayed
+  visible.
+- That last check found the real bug immediately: this pass's own
+  `.situational-pass-strip>article>div{display:grid;...}` rule, added to
+  lay out the offense/defense stat pair in each situational tile, is a
+  bare child-combinator selector -- it matches **every** direct `<div>`
+  child of that `<article>`, and the tooltip (`.pass-zone-tooltip`, also
+  a direct `<div>` child of the same `<article>`) is one of them. Its
+  specificity (0,1,2) beats `.pass-zone-tooltip{display:none}`'s
+  (0,1,0), so every situational-strip tooltip was permanently
+  `display:grid` in the cascade regardless of what the JS did to it --
+  JS was toggling a property that CSS had already won on. This is why
+  the portal rewrite (a JS-only change) couldn't have fixed it: the bug
+  was never in JS.
+- Fix: renamed the layout rule to a real class,
+  `.situational-pass-strip-stats`, in `static/nfl_components.css`, and
+  applied that class explicitly to the intended stat-pair `<div>` in both
+  `_nfl_passing.html` and `_nfl_rushing.html`, leaving the tooltip `<div>`
+  unmatched by it. Re-ran the same Playwright script: 0 tooltips visible
+  on load and on tab switch, exactly 1 visible per hover across 10
+  sequential trigger cells with distinct correct content each time, 0
+  visible after moving the mouse away -- the first time this bug's fix
+  has been checked against actual interactive behavior rather than
+  markup or log inspection. Full pytest suite re-confirmed green
+  (1203 passed, 2 skipped) since the fix touches no Python.
+- Lesson for this codebase: a bare `parent>child` or `parent>*>child`
+  selector is dangerous in a template that stacks several unrelated
+  direct-child `<div>`s (a stat block, a tooltip, etc.) under the same
+  wrapper -- prefer a real class on the element you actually mean to
+  style, every time, even for one-off layout tweaks.

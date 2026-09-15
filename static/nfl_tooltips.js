@@ -8,14 +8,29 @@
     // corner and horizontal-scroll styling -- so a tooltip wide enough to
     // reach that edge gets silently clipped no matter its z-index. z-index
     // only orders paint among unclipped elements; it cannot undo an
-    // ancestor's overflow clipping. The fix is `position: fixed`, which
-    // escapes every scrolling/clipping ancestor by being positioned against
-    // the viewport instead -- but a fixed element needs real coordinates,
-    // which only JS can compute from the trigger's actual on-screen position.
+    // ancestor's overflow clipping. `position: fixed` escapes the clipping,
+    // but NOT an ancestor's z-index stacking context: a dense grid cell
+    // that also gets `z-index` on hover/focus (to paint over its neighbors)
+    // becomes a stacking context itself, and a fixed-position descendant is
+    // still ordered inside THAT context, not the page's root one -- so a
+    // tooltip could still paint behind some other, later-in-the-DOM
+    // hovered/focused element's own stacking context, even when sized and
+    // positioned correctly. The only way to guarantee it always paints
+    // above everything is to move it out of the tree entirely, onto
+    // <body>, for as long as it's shown (the standard "portal" pattern),
+    // then move it back to its original spot on hide -- both so the
+    // server-rendered structure stays intact between shows, and so a
+    // trigger's own child-lookup keeps working the next time it's opened.
     var SELECTOR = ".injury-tooltip, .pass-zone-tooltip";
     var MARGIN = 10;
     var active = null;
     var hideTimer = null;
+    //: tooltip -> {trigger, parent, next}, captured once at bind time.
+    var homes = new WeakMap();
+    //: trigger -> tooltip, captured once at bind time so a tooltip currently
+    //: moved onto <body> (re-hovering the cell that's already open) can
+    //: still be found without depending on its current DOM position.
+    var tooltipByTrigger = new WeakMap();
 
     // The tooltip now renders wherever place() puts it on screen, not
     // necessarily touching the trigger -- so leaving the trigger to move
@@ -50,20 +65,39 @@
         style.setProperty("top", top + "px", "important");
         style.setProperty("right", "auto", "important");
         style.setProperty("bottom", "auto", "important");
-        style.setProperty("z-index", "999", "important");
+        style.setProperty("z-index", "99999", "important");
     }
 
-    function findTooltip(trigger) {
-        for (var i = 0; i < trigger.children.length; i++) {
-            if (trigger.children[i].matches(SELECTOR)) return trigger.children[i];
+    function clear(tooltip) {
+        var style = tooltip.style;
+        ["display", "position", "left", "top", "right", "bottom", "z-index"].forEach(function (prop) {
+            style.removeProperty(prop);
+        });
+        var home = homes.get(tooltip);
+        if (home && tooltip.parentNode === document.body) {
+            home.parent.insertBefore(tooltip, home.next);
         }
-        return null;
+    }
+
+    // Dense grids (zone charts, run direction, situational strips) made a
+    // real gap visible: the single `active` pointer only ever tracks what
+    // THIS module last opened, so a tooltip left visible by any other path
+    // (a stale reference after a fast mouse trail across adjacent cells, a
+    // focus event racing a hide timer) never got cleared. Clearing every
+    // match in the DOM, not just the tracked one, is the only way to
+    // guarantee at most one is ever visible at a time regardless of how
+    // state drifted.
+    function hideAll(except) {
+        document.querySelectorAll(SELECTOR).forEach(function (tooltip) {
+            if (tooltip !== except) clear(tooltip);
+        });
     }
 
     function show(trigger) {
-        var tooltip = findTooltip(trigger);
+        var tooltip = tooltipByTrigger.get(trigger);
         if (!tooltip) return;
-        if (active && active.tooltip !== tooltip) hide();
+        hideAll(tooltip);
+        document.body.appendChild(tooltip);
         var display = tooltip.classList.contains("injury-tooltip") ? "flex" : "block";
         tooltip.style.setProperty("display", display, "important");
         active = { trigger: trigger, tooltip: tooltip };
@@ -72,10 +106,7 @@
 
     function hide() {
         if (!active) return;
-        var style = active.tooltip.style;
-        ["display", "position", "left", "top", "right", "bottom", "z-index"].forEach(function (prop) {
-            style.removeProperty(prop);
-        });
+        clear(active.tooltip);
         active = null;
     }
 
@@ -83,6 +114,8 @@
         var trigger = tooltip.parentElement;
         if (!trigger || trigger.dataset.tooltipBound) return;
         trigger.dataset.tooltipBound = "true";
+        tooltipByTrigger.set(trigger, tooltip);
+        homes.set(tooltip, { trigger: trigger, parent: tooltip.parentNode, next: tooltip.nextSibling });
         trigger.addEventListener("mouseenter", function () { cancelHide(); show(trigger); });
         trigger.addEventListener("mouseleave", scheduleHide);
         tooltip.addEventListener("mouseenter", cancelHide);
@@ -90,7 +123,7 @@
         trigger.addEventListener("focusin", function () { cancelHide(); show(trigger); });
         trigger.addEventListener("focusout", function (event) {
             if (active && active.trigger === trigger && !trigger.contains(event.relatedTarget) &&
-                    !tooltip.contains(event.relatedTarget)) hide();
+                    !(active.tooltip.contains && active.tooltip.contains(event.relatedTarget))) hide();
         });
     });
 

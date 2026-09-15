@@ -13,6 +13,7 @@ LOCATIONS = ("left", "middle", "right")
 
 def pass_zone_packet(profile: dict[str, Any], *, receiver: bool = False,
                      contributors: list[dict[str, Any]] | None = None,
+                     defenders: list[dict[str, Any]] | None = None,
                      lower_is_better: bool = False) -> dict[str, Any]:
     indexed = {(row["depth_bucket"], row["pass_location"]): row
                for row in profile.get("zones", [])}
@@ -21,13 +22,22 @@ def pass_zone_packet(profile: dict[str, Any], *, receiver: bool = False,
         contributor_index.setdefault(
             (contributor["depth_bucket"], contributor["pass_location"]), []
         ).append(contributor)
+    # Coverage assignment isn't in the data, but who broke up or picked off a
+    # target in this zone is -- an honest defensive credit, shown alongside
+    # the offensive contributors rather than instead of them.
+    defender_index: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for defender in defenders or ():
+        defender_index.setdefault(
+            (defender["depth_bucket"], defender["pass_location"]), []
+        ).append(defender)
     rows = []
     for depth, label in DEPTHS:
         cells = []
         for location in LOCATIONS:
             item = indexed.get((depth, location))
             cells.append({"location": location.title(), **(item or {}),
-                          "contributors": contributor_index.get((depth, location), [])[:8]})
+                          "contributors": contributor_index.get((depth, location), [])[:8],
+                          "defenders": defender_index.get((depth, location), [])[:8]})
         rows.append({"depth": depth, "label": label, "cells": cells})
     sample_key = "targets" if receiver else "attempts"
     metric_key = "epa_per_target" if receiver else "epa_per_attempt"
@@ -90,6 +100,11 @@ def pass_matchup_packet(offense: dict[str, Any] | None,
                 "defense_epa": defense_epa, "edge": edge, "lean": lean,
                 "strength": strength, "interaction_share": interaction,
                 "contributors": attack.get("contributors", []),
+                "defenders": resist.get("defenders", []),
+                # Season-wide, every-opponent receivers this defense has
+                # allowed in this exact zone -- "what positions beat this
+                # defense here", not this one game's specific recipients.
+                "defense_allowed": resist.get("contributors", []),
             })
         rows.append({"depth": depth, "label": label, "cells": cells})
     return {"rows": rows,

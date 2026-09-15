@@ -15,7 +15,17 @@
             <a class="{{ 'active' if active == 'sources' }}" href="{{ url_for('nfl.source_audit', season=season) }}">Sources</a>
             <a href="{{ url_for('nfl.dashboard', season=season, _anchor='news') }}">News</a>
         </nav>
-        <div class="nfl-nav-tools">{% if context %}<span class="nav-context">{{ context }}</span>{% endif %}<form class="nfl-header-search" action="{{ url_for('nfl.search_page') }}" method="get" role="search"><input type="hidden" name="season" value="{{ season or '' }}"><input type="search" name="q" placeholder="Search NFL" aria-label="Search NFL teams, players, games, and reporting"></form></div>
+        <div class="nfl-nav-tools">{% if context %}<span class="nav-context">{{ context }}</span>{% endif %}
+            <a class="data-pill{% if nfl_data_freshness.status == 'failed' %} data-pill-bad{% elif nfl_data_freshness.status == 'degraded' %} data-pill-warn{% endif %}"
+               href="{{ url_for('nfl.data_status', season=season) }}{% if nfl_data_freshness.attention_count %}#needs-attention{% endif %}"
+               title="Open NFL data status">
+                {%- if nfl_data_freshness.running %}&#9679; Refreshing data
+                {%- elif nfl_data_freshness.attention_count %}&#9679; {{ nfl_data_freshness.attention_count }} issue{{ 's' if nfl_data_freshness.attention_count != 1 }} need attention
+                {%- elif nfl_data_freshness.relative %}&#9679; Updated {{ nfl_data_freshness.relative }}
+                {%- else %}&#9679; Data status{% endif -%}
+            </a>
+            <form class="nfl-header-search" action="{{ url_for('nfl.search_page') }}" method="get" role="search"><input type="hidden" name="season" value="{{ season or '' }}"><input type="search" name="q" placeholder="Search NFL" aria-label="Search NFL teams, players, games, and reporting"></form>
+        </div>
     </div>
 </header>
 {% endmacro %}

@@ -1,5 +1,5 @@
 {% from '_tables.html' import data_table, tabbed_tables, tabs_script %}
-{% from '_nfl_nav.html' import nfl_nav %}
+{% from '_nfl_nav.html' import nfl_nav with context %}
 {% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
 <!DOCTYPE html>
 <html lang="en">
@@ -23,17 +23,23 @@
     </aside>
     {% endif %}
     <section class="nfl-hero">
-        <p class="eyebrow">{{ season }} season</p>
-        <h1>NFL news and analytics</h1>
-        <p>League reporting, canonical schedules and rosters, weekly production, and curated sources in one NFL-specific data vertical.</p>
+        <div class="hero-intro">
+            <p class="eyebrow"><i></i>{{ season }} season</p>
+            <h1>NFL news and analytics</h1>
+            <p>League reporting, canonical schedules and rosters, weekly production, and curated sources in one NFL-specific data vertical.</p>
+        </div>
         <div class="metrics">
-            <span><b>{{ counts.teams }}</b> teams</span><span><b>{{ counts.games }}</b> games</span>
-            <span><b>{{ counts.players }}</b> players</span><span><b>{{ counts.weekly_metrics }}</b> weekly measurements</span>
-            <span><b>{{ counts.snap_counts }}</b> snap records</span><span><b>{{ counts.depth_snapshots }}</b> depth records</span>
-            <span><b>{{ counts.player_master }}</b> master players</span><span><b>{{ counts.external_ids }}</b> external IDs</span>
-            <span><b>{{ counts.game_efficiency }}</b> team-game profiles</span>
-            <span><b>{{ counts.elo_games|cell('big') }}</b> Elo games since 2010</span>
-            <span><b>{{ pff_counts.metrics|cell('big') }}</b> PFF metrics</span>
+            <span><b>{{ counts.teams }}</b><small>Teams</small></span>
+            <span><b>{{ counts.games }}</b><small>Games</small></span>
+            <span><b>{{ counts.players }}</b><small>Players</small></span>
+            <span><b>{{ counts.weekly_metrics|cell('big') }}</b><small>Weekly measurements</small></span>
+            <span><b>{{ counts.snap_counts|cell('big') }}</b><small>Snap records</small></span>
+            <span><b>{{ counts.depth_snapshots|cell('big') }}</b><small>Depth records</small></span>
+            <span><b>{{ counts.player_master|cell('big') }}</b><small>Master players</small></span>
+            <span><b>{{ counts.external_ids|cell('big') }}</b><small>External IDs</small></span>
+            <span><b>{{ counts.game_efficiency }}</b><small>Team-game profiles</small></span>
+            <span><b>{{ counts.elo_games|cell('big') }}</b><small>Elo games since 2010</small></span>
+            <span><b>{{ pff_counts.metrics|cell('big') }}</b><small>PFF metrics</small></span>
         </div>
     </section>
 

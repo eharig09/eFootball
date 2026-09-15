@@ -477,10 +477,15 @@ def create_app(test_config: dict | None = None) -> Flask:
     @click.option("--posts-per-source", type=click.IntRange(1, 20), default=4, show_default=True)
     @click.option("--max-sources", type=click.IntRange(1, 500), default=158, show_default=True)
     @click.option("--no-social", is_flag=True, help="Ingest league RSS without Bluesky feeds.")
+    @click.option("--no-directory-rss", is_flag=True,
+                  help="Skip the team/national/community RSS directory "
+                       "(data/nfl/NFL_RSS_and_Community_Directory.xlsx).")
+    @click.option("--rss-workers", type=click.IntRange(1, 12), default=8, show_default=True)
     def sync_nfl_content(year: int, posts_per_source: int, max_sources: int,
-                         no_social: bool) -> None:
+                         no_social: bool, no_directory_rss: bool, rss_workers: int) -> None:
         """Ingest NFL reporting and public Bluesky posts, then link entities."""
         from sports_aggregator.catalog import get_league
+        from sports_aggregator.nfl import rss_directory
         from sports_aggregator.nfl.content import NFLContentRepository
         content = NFLContentRepository(app.extensions["nfl_repository"])
         league = get_league("nfl"); rss_started = datetime.now(timezone.utc)
@@ -505,6 +510,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         click.echo(f"nfl_articles: success ({article_count})")
         if result.errors:
             click.echo(f"nfl_article_errors: {len(result.errors)}")
+        if not no_directory_rss:
+            tasks = [(feed, None) for feed in rss_directory.national_feeds()]
+            for team, feeds in rss_directory.team_feeds().items():
+                tasks.extend((feed, team) for feed in feeds)
+            directory = content.ingest_rss_feeds(tasks, year, workers=rss_workers)
+            click.echo(f"nfl_rss_directory: stored ({directory['stored']}) from {directory['feeds']} feeds")
+            if directory["errors"]:
+                click.echo(f"nfl_rss_directory_errors: {len(directory['errors'])}")
+                for error in directory["errors"][:20]:
+                    click.echo(f"  {error['feed']}: {error['error']}")
         if not no_social:
             sources = app.extensions["source_registry"].list_league_sources(
                 "nfl", limit=max_sources,
