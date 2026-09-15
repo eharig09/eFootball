@@ -1,0 +1,37 @@
+{% macro nfl_content_grid(items, empty='No linked NFL coverage is stored yet.') %}
+<div class="nfl-content-grid">
+    {% for item in items %}<article class="nfl-content-card {{ item.platform }}">
+        <div><span>{{ item.source_type_label }}</span><time>{{ item.published_relative }}</time></div>
+        <a href="{{ item.canonical_url }}" target="_blank" rel="noopener"><h3>{{ item.title }}</h3></a>
+        {% if item.body_text and item.body_text != item.title %}<p>{{ item.body_text|truncate(220) }}</p>{% endif %}
+        <footer>{{ item.source_name }}{% if item.source_handle %} &middot; @{{ item.source_handle }}{% endif %}</footer>
+    </article>{% else %}<p class="empty">{{ empty }}</p>{% endfor %}
+</div>
+{% endmacro %}
+
+{% macro nfl_reporting_streams(streams, empty='No linked NFL coverage is stored yet.') %}
+<div class="nfl-reporting-streams">
+    {% for stream in streams %}
+    <section class="reporting-stream" data-stream="{{ stream.key }}">
+        <header><div><h3>{{ stream.label }}</h3><p>{{ stream.description }}</p></div><span>{{ stream.count }}</span></header>
+        <div class="reporting-list">
+        {% for item in stream['items'] %}<article class="reporting-item">
+            <div class="reporting-item-meta">
+                {% if item.source_profile_url %}<a href="{{ item.source_profile_url }}" target="_blank" rel="noopener">{{ item.source_name }}</a>{% else %}<span>{{ item.source_name }}</span>{% endif %}
+                <time datetime="{{ item.published_at }}">{{ item.published_relative }} · {{ item.editorial_score|cell('int') }}</time>
+            </div>
+            <a class="reporting-headline" href="{{ item.canonical_url }}" target="_blank" rel="noopener">{{ item.title }}</a>
+            <small class="article-grade" title="{{ item.score_reasons|join(' · ') }}">{{ item.content_type|title }} · editorial {{ item.editorial_score|cell('int') }}</small>
+            {% if item.body_text and item.body_text != item.title %}<p>{{ item.body_text|truncate(150) }}</p>{% endif %}
+            {% if item.teams or item.players or item.games %}<footer>
+                {% for team in item.teams[:3] %}<a href="{{ url_for('nfl.team_page', abbreviation=team.team) }}">{{ team.nickname or team.team }}</a>{% endfor %}
+                {% for player in item.players[:2] %}<a href="{{ url_for('nfl.player_page', player_id=player.player_id, season=player.season) }}">{{ player.player_name or player.player_id }}</a>{% endfor %}
+                {% for game in item.games[:1] %}<a href="{{ url_for('nfl.game_page', game_id=game.game_id) }}">Matchup</a>{% endfor %}
+            </footer>{% endif %}
+        </article>{% else %}<p class="empty stream-empty">No items in this displayed window.</p>{% endfor %}
+        </div>
+    </section>
+    {% endfor %}
+    {% if not streams %}<p class="empty">{{ empty }}</p>{% endif %}
+</div>
+{% endmacro %}

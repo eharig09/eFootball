@@ -12,7 +12,7 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app import create_app
 from sports_aggregator.models import Article
@@ -46,7 +46,8 @@ class StoryProvenanceTests(unittest.TestCase):
         os.unlink(self.path)
 
     @staticmethod
-    def _article(title, publisher, url, *, when="2026-08-20T14:00:00+00:00"):
+    def _article(title, publisher, url, *, when=None):
+        when = when or datetime.now(timezone.utc).isoformat()
         return Article(
             title=title, url=url, source=publisher, publisher=publisher,
             original_url=url, summary="Boise State practice report.",

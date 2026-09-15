@@ -36,9 +36,9 @@ from sports_aggregator.scheduled_refresh import (
 
 CORE_DATASETS = ["teams", "games", "betting_lines", "media", "records", "coaches", "rankings"]
 STATS_DATASETS = ["team_stats", "advanced_stats", "core_ratings"]
-CONTENT_STEPS = ["articles", "bluesky", "reddit", "youtube", "podcasts", "retag", "cluster", "roles", "score"]
-ROSTER_STEPS = ["cfbd-roster-context", "cfbd-recruits", "transfer-grades"]
-MODEL_STEPS = ["cfbd-models", "cfbd-box-scores", "cfbd-lines", "weather"]
+CONTENT_STEPS = ["articles", "bluesky", "reddit", "youtube", "podcasts", "retag", "cluster", "roles", "score", "nfl-content"]
+ROSTER_STEPS = ["cfbd-roster-context", "cfbd-recruits", "transfer-grades", "nfl-rosters"]
+MODEL_STEPS = ["cfbd-models", "cfbd-box-scores", "cfbd-lines", "weather", "nfl-pff"]
 
 #: Refresh steps the core segment runs by name after the CORE_DATASETS pull.
 #: `pregame-snapshot` freezes each upcoming game's pregame state and belongs
@@ -62,7 +62,7 @@ CORE_STEPS = ["weather", "pregame-snapshot"]
 ANALYTICS_STEPS = [
     "pbp", "pbp-derive", "epa", "play-detail", "build-tendencies",
     "team-advanced", "win-probability", "passing-detail", "passing-qb",
-    "coordinators",
+    "coordinators", "nfl-core",
 ]
 
 #: The maintenance segments, which the hourly trigger reaches one at a time by

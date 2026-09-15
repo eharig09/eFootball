@@ -1,0 +1,159 @@
+{% from '_tables.html' import data_table %}
+{% from '_nfl_nav.html' import nfl_nav %}
+{% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
+{% from '_nfl_charts.html' import line_chart, chart_workbench %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="{{ team.color or '#101820' }}">
+    <title>{{ team.name }} | {{ season }} NFL Team Intelligence</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+</head>
+<body class="nfl-team-page" style="--team-primary:{{ team.color or '#0b5aa5' }};--team-secondary:{{ team.alternate_color or team.color or '#d50a0a' }}">
+{{ nfl_nav('team', season, team.abbreviation) }}
+<main>
+    <section class="nfl-hero team-hero" data-identity>
+        {% if team.logo_url %}<img src="{{ team.logo_url }}" alt="{{ team.name }} logo" class="hero-logo">{% endif %}
+        <div><p class="eyebrow">{{ team.conference }} &middot; {{ team.division }} &middot; {{ season }} team intelligence</p><h1>{{ team.name }}</h1><p>Schedule, performance, personnel movement, deployment, and connected reporting.</p></div>
+    </section>
+
+    <section class="team-facts" aria-label="Team summary">
+        <article><b>{{ record.record if record else '0-0' }}</b><span>Record</span></article>
+        <article><b>{{ team_context.roster_summary.players }}</b><span>In organization</span></article>
+        <article><b>{{ team_context.roster_summary.average_experience|cell('f1') }}</b><span>Avg. experience</span></article>
+        <article><b>{{ movement_packet.arrival_count }}</b><span>Total arrivals</span></article>
+        <article><b>{{ movement_packet.departure_count }}</b><span>Total departures</span></article>
+        <article><b>{{ '#' ~ team_context.efficiency_ranks.net_epa if team_context.efficiency_ranks.net_epa else '&mdash;'|safe }}</b><span>Net EPA rank</span></article>
+    </section>
+
+    <nav class="nfl-page-tabs" data-nfl-tabs role="tablist" aria-label="Team page sections"><button type="button" role="tab" data-nfl-tab="overview" aria-selected="true">Overview</button><button type="button" role="tab" data-nfl-tab="performance" aria-selected="false">Performance</button><button type="button" role="tab" data-nfl-tab="roster" aria-selected="false">Roster + depth</button><button type="button" role="tab" data-nfl-tab="usage" aria-selected="false">Usage</button><button type="button" role="tab" data-nfl-tab="schedule" aria-selected="false">Schedule</button><button type="button" role="tab" data-nfl-tab="coverage" aria-selected="false">Coverage</button></nav>
+
+    <section class="section" id="overview" data-nfl-panel="overview">
+        <div class="section-head"><div><p class="eyebrow">Current window</p><h2>Last and next</h2></div></div>
+        <div class="team-game-window">
+            {% for label, game in [('Last game', team_context.last_game), ('Next game', team_context.next_game)] %}
+            {% if game %}<a class="team-game-card" href="{{ game.url }}" style="--opponent-color:{{ game.opponent_identity.color or '#4d687a' }}">
+                <small>{{ label }} &middot; Week {{ game.week }}</small>
+                <div>{% if game.opponent_identity.logo_url %}<img src="{{ game.opponent_identity.logo_url }}" alt="" loading="lazy">{% endif %}<span><b>{{ game.site }} {{ game.opponent_identity.nickname or game.opponent }}</b><em>{{ game.game_date }}{% if game.game_time %} &middot; {{ game.game_time }}{% endif %}</em></span>{% if game.completed %}<strong class="{{ game.result|lower }}">{{ game.result }} {{ game.own_score }}-{{ game.opponent_score }}</strong>{% else %}<strong>Preview &rarr;</strong>{% endif %}</div>
+            </a>{% else %}<article class="team-game-card empty"><small>{{ label }}</small><p>No game is available.</p></article>{% endif %}
+            {% endfor %}
+        </div>
+        <div class="record-split-grid">{% for split in team_context.record_splits %}<article><span>{{ split.label }}</span><b>{{ split.record }}</b><small>{{ split.point_diff|cell('signed') }} point differential</small></article>{% endfor %}</div>
+    </section>
+
+    <section class="section staff-overview" id="staff" data-nfl-panel="overview">
+        <div class="section-head"><div><p class="eyebrow">{{ season }} football leadership</p><h2>Coach and coordinator structure</h2></div>{% if staff %}<a class="section-action" href="{{ staff[0].source_url }}" target="_blank" rel="noopener">ESPN staff source ↗</a>{% endif %}</div>
+        <div class="staff-grid">{% for member in staff %}<article class="staff-role{% if member.playcaller %} is-playcaller{% endif %}"><small>{{ member.role }}</small><h3>{{ member.coach_name }}</h3>{% if member.playcaller %}<span>Offensive playcaller</span>{% elif member.role == 'Defensive coordinator' %}<span>Defensive structure</span>{% elif member.role == 'General manager' %}<span>Personnel lead</span>{% else %}<span>{{ team.nickname }} staff</span>{% endif %}</article>{% else %}<p class="empty">Current staff roles have not been synchronized for this season.</p>{% endfor %}</div>
+        {% if staff %}<p class="section-note">Staff snapshot dated {{ staff[0].as_of }}. Results use stored NFL games; tendency rates use {{ season }} play-by-play unless explicitly marked as a prior-year PFF coverage baseline.</p>{% endif %}
+        <div class="staff-analysis">
+            <article class="staff-performance">
+                <header><span>Head coach performance</span><b>{{ staff_packet.head_coach.coach_name if staff_packet.head_coach else 'Not available' }}</b></header>
+                {% set hc = staff_packet.head_coach_performance %}
+                <div class="tendency-metrics">
+                    <span><small>Stored record</small><b>{{ hc.record if hc and hc.games else '—' }}</b></span>
+                    <span><small>Win rate</small><b>{{ hc.win_rate|cell('rate') if hc else '—' }}</b></span>
+                    <span><small>Point diff / game</small><b>{{ hc.point_diff_per_game|cell('signed') if hc else '—' }}</b></span>
+                    <span><small>Sample</small><b>{{ hc.games if hc else 0 }} games</b></span>
+                </div>
+            </article>
+            <article class="staff-tendency offense-tendency">
+                <header><span>Offensive playcaller</span><b>{{ staff_packet.offense.coach.coach_name if staff_packet.offense.coach else 'Not available' }}</b>{% if staff_packet.offense.coordinator and staff_packet.offense.coach and staff_packet.offense.coordinator.coach_name != staff_packet.offense.coach.coach_name %}<small>OC: {{ staff_packet.offense.coordinator.coach_name }}</small>{% endif %}</header>
+                {% set pc = staff_packet.offense.playcalling %}{% set sit = staff_packet.offense.situation %}
+                <div class="tendency-rows">
+                    <div><span>Run / pass</span><b>{{ (1 - pc.pass_rate)|cell('rate') if pc.pass_rate is not none else '—' }} / {{ pc.pass_rate|cell('rate') }}</b><small>{{ pc.plays or 0 }} plays</small></div>
+                    <div><span>Neutral pass</span><b>{{ sit.neutral_pass_rate|cell('rate') }}</b><small>{{ sit.neutral_plays or 0 }} neutral plays</small></div>
+                    <div><span>Early-down pass</span><b>{{ pc.early_down_pass_rate|cell('rate') }}</b><small>{{ pc.early_down_plays or 0 }} plays</small></div>
+                    <div><span>Pace</span><b>{{ sit.seconds_per_play|cell('f1') }} sec</b><small>{{ sit.plays_per_game|cell('f1') }} plays / game</small></div>
+                    <div><span>Shotgun / under center</span><b>{{ pc.shotgun_rate|cell('rate') }} / {{ (1 - pc.shotgun_rate)|cell('rate') if pc.shotgun_rate is not none else '—' }}</b><small>{{ pc.shotgun_known or 0 }} charted plays</small></div>
+                    <div><span>No huddle</span><b>{{ pc.no_huddle_rate|cell('rate') }}</b><small>{{ pc.no_huddle_known or 0 }} charted plays</small></div>
+                </div>
+            </article>
+            <article class="staff-tendency defense-tendency">
+                <header><span>Defensive coordinator</span><b>{{ staff_packet.defense.coach.coach_name if staff_packet.defense.coach else 'Not available' }}</b></header>
+                {% set cov = staff_packet.defense.coverage %}{% set pressure = staff_packet.defense.pressure %}
+                <div class="tendency-rows">
+                    <div><span>Man / zone</span><b>{{ cov.man_rate|cell('rate') }} / {{ cov.zone_rate|cell('rate') }}</b><small>{{ cov.season or season }} PFF player-snap proxy</small></div>
+                    <div><span>EPA allowed</span><b>{{ staff_packet.defense.epa_allowed|cell('signed2') }}</b><small>{{ season }} defense</small></div>
+                    <div><span>Blitz rate</span><b>Not charted</b><small>Current feeds do not identify rush count</small></div>
+                    {% for group in pressure.groups %}<div><span>{{ group.label }} pressure share</span><b>{{ group.share|cell('rate') }}</b><small>{{ group.events|cell('f1') }} sacks + QB hits</small></div>{% endfor %}
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <section class="section" id="performance" data-nfl-panel="performance">
+        <div class="section-head"><div><p class="eyebrow">{{ team_context.performance_season }} team quality{% if team_context.performance_season != season %} &middot; prior-season baseline{% endif %}</p><h2>Performance profile</h2></div></div>
+        {% if efficiency %}<div class="profile-strip team-profile-ranked">
+            {% for label, key, fmt in [('EPA / play','epa_per_play','signed2'),('Success rate','success_rate','rate'),('Dropback EPA','pass_epa_per_play','signed2'),('Rush EPA','rush_epa_per_play','signed2'),('EPA allowed','defensive_epa_allowed','signed2'),('Net EPA','net_epa','signed2')] %}
+            <article><span>{{ label }}</span><b>{{ efficiency[key]|cell(fmt) }}</b>{% if team_context.efficiency_ranks.get(key) %}<small>#{{ team_context.efficiency_ranks[key] }} NFL</small>{% endif %}</article>{% endfor %}
+        </div>{% else %}<div class="empty">Team efficiency will populate after charted 2026 plays are available.</div>{% endif %}
+        <p class="section-note">Efficiency uses the latest available complete comparison window. Production below is from {{ team_context.production_season }}{% if team_context.production_season != season %}, while the {{ season }} schedule is still establishing a sample{% endif %}.</p>
+        <div class="team-production-grid">
+            {% for label, key, fmt in [('Points / game','points_per_game','f1'),('Points allowed','points_allowed_per_game','f1'),('Pass yards / game','passing_yards_per_game','f1'),('Rush yards / game','rushing_yards_per_game','f1'),('Sacks allowed / game','sacks_allowed_per_game','f1'),('Turnovers / game','turnovers_per_game','f1')] %}<article><span>{{ label }}</span><b>{{ team_context.production[key]|cell(fmt) }}</b></article>{% endfor %}
+        </div>
+        <h3 class="subsection-title">Production leaders</h3>
+        <div class="team-leader-row">{% for leader in team_context.leaders %}<a href="{{ leader.url }}"><small>{{ leader.category }} &middot; {{ leader.stat_season }}</small><b>{{ leader.player_name }}</b><span>{{ leader.value|cell('big') }} {{ leader.value_label }}</span></a>{% else %}<p class="empty">Player leaders will populate with weekly statistics.</p>{% endfor %}</div>
+    </section>
+
+    {% if form_charts %}
+    <section class="section" id="form" data-nfl-panel="performance">
+        <div class="section-head"><div><p class="eyebrow">{{ form_season }} weekly trend{% if form_season != season %} &middot; latest complete baseline{% endif %}</p><h2>Recent team form</h2></div></div>
+        <p class="section-note">Each point links to the corresponding matchup. Series are scaled independently so direction and week-to-week movement remain legible.</p>
+        {{ chart_workbench(form_charts, 'team-form') }}
+    </section>
+    {% endif %}
+
+    <section class="section" id="pff" data-nfl-panel="performance">
+        <div class="section-head"><div><p class="eyebrow">{{ pff.season or season }} PFF grades{% if pff.season and pff.season != season %} &middot; current-roster baseline{% endif %}</p><h2>Player grading leaders</h2></div><a class="section-action" href="{{ url_for('nfl.pff_explorer', season=pff.season or season, team=team.abbreviation) }}">Open explorer &rarr;</a></div>
+        <p class="section-note">Prior-season cards include only players on the current {{ season }} organization roster. Grades are season aggregates sourced read-only from scouting_report.</p>
+        <div class="pff-team-grid">{% for card in pff.cards %}<article><h3>{{ card.label }}</h3>{% for player in card.rows %}{% if player.player_url %}<a href="{{ player.player_url }}">{% else %}<div>{% endif %}<span><b>{{ player.player_name }}</b><small>{{ player.position or '—' }}</small></span><strong>{{ player.value|cell('f1') }}</strong>{% if player.player_url %}</a>{% else %}</div>{% endif %}{% else %}<p class="empty">No linked current-roster grades.</p>{% endfor %}</article>{% endfor %}</div>
+    </section>
+
+    <section class="section" id="schedule" data-nfl-panel="schedule"><div class="section-head"><div><p class="eyebrow">{{ season }} season</p><h2>Schedule</h2></div></div>{{ data_table(schedule) }}</section>
+
+    <section class="section" id="personnel" data-nfl-panel="roster">
+        <div class="section-head"><div><p class="eyebrow">{{ season }} roster change</p><h2>Arrivals and departures</h2></div></div>
+        <p class="section-note">Headline cards include players scoring at least {{ movement_packet.threshold }} on prior participation, role-relevant PFF grades, and draft capital, plus all Round 1–2 selections. Complete GSIS-ID movement tables remain available below.</p>
+        <div class="movement-highlight-grid">
+            <article><h3>Key arrivals</h3>{% for player in movement_packet.arrivals %}<a href="{{ url_for('nfl.player_page', player_id=player.player_id, season=season) }}"><span><b>{{ player.full_name }}</b><small>{{ player.position or '—' }} · {{ player.significance_tier }} impact</small><small>{{ player.significance_evidence|join(' · ') }}</small></span><em>{{ player.detail }}</em></a>{% else %}<p class="empty">No arrival clears the significance threshold.</p>{% endfor %}</article>
+            <article><h3>Key departures</h3>{% for player in movement_packet.departures %}<a href="{{ url_for('nfl.player_page', player_id=player.player_id, season=movement_packet.prior_season) }}"><span><b>{{ player.full_name }}</b><small>{{ player.position or '—' }} · {{ player.significance_tier }} impact</small><small>{{ player.significance_evidence|join(' · ') }}</small></span><em>{{ player.detail }}</em></a>{% else %}<p class="empty">No departure clears the significance threshold.</p>{% endfor %}</article>
+        </div>
+        <details class="data-disclosure"><summary>View complete movement tables</summary><div class="movement-grid"><div>{{ data_table(movements.arrivals) }}</div><div>{{ data_table(movements.departures) }}</div></div></details>
+        <div class="roster-composition"><article><b>{{ team_context.roster_summary.offense }}</b><span>Offense</span></article><article><b>{{ team_context.roster_summary.defense }}</b><span>Defense</span></article><article><b>{{ team_context.roster_summary.specialists }}</b><span>Specialists / other</span></article>{% for status, count in team_context.roster_summary.statuses|dictsort %}<article class="roster-status"><b>{{ count }}</b><span>{{ status }}</span></article>{% endfor %}</div>
+        <h3 class="subsection-title">Unit continuity</h3>
+        <div class="unit-continuity-grid">{% for unit in team_context.unit_continuity %}<article><header><b>{{ unit.unit }}</b><strong>{{ unit.retention|cell('rate') }}</strong></header><div><span>{{ unit.returning_participation|cell('f1') }} of {{ unit.prior_participation|cell('f1') }} equivalent starts retained</span><span>{{ unit.additions }} new</span><span>{{ unit.departures }} out</span></div></article>{% endfor %}</div>
+        <h3 class="subsection-title">Position rooms and depth</h3>
+        <p class="section-note">The latest depth chart supplies exact offensive-line and defensive slots; roster-only players are appended. Ordering uses listed rank, then snap participation. PFF and draft context are shown where linked.</p>
+        <div class="depth-sections">{% for section in position_rooms %}<section class="depth-unit"><header><h4>{{ section.label }}</h4><span>{{ section.rooms|length }} position rooms</span></header><div class="position-room-grid">{% for room in section.rooms %}<details class="position-room" open><summary><b>{{ room.position }}</b><span>{{ room.players|length }} players · {{ room.starter_count }} first-team</span></summary><div>{% for player in room.players %}<a href="{{ url_for('nfl.player_page', player_id=player.player_id, season=season) }}"><strong>{{ player.depth_rank or '—' }}</strong><span><b>{{ player.full_name }}{% if player.injury %}<i class="injury-badge {{ player.injury.designation_class }}" tabindex="0">{{ player.injury.designation }}</i>{% endif %}</b><small>{{ player.depth_slot or player.depth_position or player.position }} · #{{ player.jersey_number or '—' }} · {{ player.status or 'status unknown' }}{% if player.draft.draft_round %} · R{{ player.draft.draft_round }}/P{{ player.draft.draft_pick }}{% endif %}</small>{% if player.injury %}<span class="injury-tooltip"><b>{{ player.injury.designation_label }}</b>{% if player.injury.detail_line %}<em>{{ player.injury.detail_line }}</em>{% endif %}{% if player.injury.short_comment %}<small>{{ player.injury.short_comment }}</small>{% endif %}{% if player.injury.return_date %}<small>Listed return: {{ player.injury.return_date }}</small>{% endif %}<small>Updated {{ player.injury.report_date or player.injury.fetched_at }}{% if player.injury.note_source %} · {{ player.injury.note_source }}{% endif %}</small></span>{% endif %}</span><em>{{ player.snap_participation|cell('rate') }} snaps<br>{{ player.pff_grade|cell('f1') }} PFF</em></a>{% endfor %}</div></details>{% endfor %}</div></section>{% endfor %}</div>
+        <details class="data-disclosure" open><summary>Full roster table</summary>{{ data_table(roster) }}</details>
+        <details class="data-disclosure"><summary>Provider depth-chart snapshot</summary>{{ data_table(depth_chart) }}</details>
+    </section>
+
+    <section class="section" id="usage" data-nfl-panel="usage">
+        <div class="section-head"><div><p class="eyebrow">{{ team_context.usage.season }} role evidence{% if team_context.usage.season != season %} &middot; returning-player baseline{% endif %}</p><h2>Touches, targets, and deployment</h2></div></div>
+        <p class="section-note">Prior-season usage includes only players on the current {{ season }} organization roster. Shares are calculated within the displayed team-season sample.</p>
+        <div class="usage-continuity-strip">
+            <article><span>Returning targets</span><b>{{ team_context.usage.returning_target_share|cell('rate') }}</b></article>
+            <article><span>Returning carries</span><b>{{ team_context.usage.returning_carry_share|cell('rate') }}</b></article>
+            <article><span>Returning opportunities</span><b>{{ team_context.usage.returning_opportunity_share|cell('rate') }}</b></article>
+        </div>
+        <div class="usage-leader-grid">
+            <article><h3>Target concentration</h3>{% for player in team_context.usage.target_leaders %}<a href="{{ player.player_url }}"><span><b>{{ player.player_name }}</b><small>{{ player.position or '—' }} &middot; {{ player.targets|cell('int') }} targets</small></span><strong>{{ player.target_share|cell('rate') }}</strong></a>{% else %}<p class="empty">No target workload is available.</p>{% endfor %}</article>
+            <article><h3>Rushing concentration</h3>{% for player in team_context.usage.carry_leaders %}<a href="{{ player.player_url }}"><span><b>{{ player.player_name }}</b><small>{{ player.position or '—' }} &middot; {{ player.carries|cell('int') }} carries</small></span><strong>{{ player.carry_share|cell('rate') }}</strong></a>{% else %}<p class="empty">No rushing workload is available.</p>{% endfor %}</article>
+        </div>
+        <details class="data-disclosure"><summary>View opportunity table</summary>{{ data_table(workload) }}</details>
+        <h3 class="subsection-title">Snap participation</h3>
+        <p class="section-note">Offense, defense, and special-teams participation from PFR via nflverse.</p>
+        <details class="data-disclosure"><summary>View snap usage table</summary>{{ data_table(snap_usage) }}</details>
+    </section>
+
+    <section class="section" id="coverage" data-nfl-panel="coverage"><div class="section-head"><div><p class="eyebrow">Connected news and social</p><h2>{{ team.nickname }} reporting by purpose</h2></div><a class="section-action" href="{{ url_for('nfl.source_audit', season=season, team=team.abbreviation) }}">Audit team sources &rarr;</a></div>{{ nfl_reporting_streams(content_streams, 'No stored coverage is linked to this team yet.') }}</section>
+    <section class="section" data-nfl-panel="coverage"><div class="section-head"><div><p class="eyebrow">Source directory</p><h2>{{ team.nickname }} sources</h2></div></div><div class="source-sections">{% for key, label in source_sections %}{% if sources[key] %}<article class="source-group"><h3>{{ label }}</h3>{% for source in sources[key] %}<a href="{{ source.profile_url }}" target="_blank" rel="noopener"><b>{{ source.display_name }}</b><span>@{{ source.handle }}</span><small>{{ source.scope }}</small></a>{% endfor %}</article>{% endif %}{% endfor %}</div></section>
+</main>
+<script src="{{ url_for('static', filename='nfl_tabs.js') }}"></script>
+</body>
+</html>

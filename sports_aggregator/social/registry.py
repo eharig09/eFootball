@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite3
 from typing import Iterable
 
-from sports_aggregator.social.models import IdentityResolution, SourceProfile
+from sports_aggregator.social.models import IdentityResolution, LeagueSourceProfile, SourceProfile
 
 
 SCHEMA = """
@@ -32,6 +32,24 @@ CREATE TABLE IF NOT EXISTS source_conferences (
  source_id INTEGER NOT NULL, conference TEXT NOT NULL, expertise REAL NOT NULL DEFAULT 1.0,
  PRIMARY KEY(source_id,conference), FOREIGN KEY(source_id) REFERENCES sources(source_id) ON DELETE CASCADE);
 CREATE INDEX IF NOT EXISTS idx_sources_did ON sources(did);
+CREATE TABLE IF NOT EXISTS source_league_scopes (
+ source_id INTEGER NOT NULL, league TEXT NOT NULL, scope TEXT NOT NULL,
+ conference TEXT, division TEXT, team TEXT, account_type TEXT NOT NULL,
+ directory_priority INTEGER NOT NULL, profile_url TEXT NOT NULL DEFAULT '',
+ notes TEXT NOT NULL DEFAULT '', verification TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY(source_id,league),
+ FOREIGN KEY(source_id) REFERENCES sources(source_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_source_league_team
+ ON source_league_scopes(league,team,directory_priority);
+CREATE TABLE IF NOT EXISTS source_league_tags (
+ source_id INTEGER NOT NULL, league TEXT NOT NULL, tag TEXT NOT NULL,
+ tag_type TEXT NOT NULL, section TEXT NOT NULL,
+ PRIMARY KEY(source_id,league,tag,tag_type),
+ FOREIGN KEY(source_id) REFERENCES sources(source_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_source_league_section
+ ON source_league_tags(league,section,source_id);
 """
 
 
@@ -68,6 +86,92 @@ class SourceRegistry:
                 db.executemany("INSERT INTO source_conferences VALUES(?,?,1.0)",[(source_id,x) for x in p.conferences])
             db.commit()
         return len(items)
+
+    def seed_league(self, profiles: Iterable[LeagueSourceProfile]) -> int:
+        """Upsert league scope without overwriting another sport's metadata."""
+        items = tuple(profiles); self.initialize(); now = datetime.now(timezone.utc).isoformat()
+        with closing(self._connect()) as db:
+            for item in items:
+                p = item.source
+                db.execute(
+                    """INSERT INTO sources(handle,display_name,organization,source_type,reliability,
+                       original_reporting_score,analysis_score,breaking_news_score,prospect_score,
+                       g5_score,priority,active,updated_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                       ON CONFLICT(handle) DO UPDATE SET
+                         priority=MAX(sources.priority,excluded.priority),active=1,
+                         updated_at=excluded.updated_at""",
+                    (p.handle, p.display_name, p.organization, p.source_type, p.reliability,
+                     p.original_reporting_score, p.analysis_score, p.breaking_news_score,
+                     p.prospect_score, p.g5_score, p.priority, int(p.active), now),
+                )
+                source_id = db.execute(
+                    "SELECT source_id FROM sources WHERE handle=?", (p.handle,)
+                ).fetchone()[0]
+                db.execute(
+                    """INSERT INTO source_league_scopes
+                       (source_id,league,scope,conference,division,team,account_type,
+                        directory_priority,profile_url,notes,verification)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                       ON CONFLICT(source_id,league) DO UPDATE SET
+                         scope=excluded.scope,conference=excluded.conference,
+                         division=excluded.division,team=excluded.team,
+                         account_type=excluded.account_type,
+                         directory_priority=excluded.directory_priority,
+                         profile_url=excluded.profile_url,notes=excluded.notes,
+                         verification=excluded.verification""",
+                    (source_id, item.league, item.scope, item.conference, item.division,
+                     item.team, item.account_type, item.directory_priority,
+                     item.profile_url, item.notes, item.verification),
+                )
+                db.execute(
+                    "DELETE FROM source_league_tags WHERE source_id=? AND league=?",
+                    (source_id, item.league),
+                )
+                db.executemany(
+                    "INSERT INTO source_league_tags VALUES(?,?,?,?,?)",
+                    [(source_id, item.league, tag, tag_type, section)
+                     for tag, tag_type, section in item.tags],
+                )
+            db.commit()
+        return len(items)
+
+    def list_league_sources(
+        self, league: str, *, section: str | None = None,
+        team: str | None = None, limit: int | None = None,
+    ) -> list[dict]:
+        self.initialize()
+        conditions = ["ls.league=?", "s.active=1"]
+        params: list[object] = [league]
+        if section:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM source_league_tags lt "
+                "WHERE lt.source_id=s.source_id AND lt.league=ls.league AND lt.section=?)"
+            )
+            params.append(section)
+        if team:
+            conditions.append("(ls.team=? OR ls.team IS NULL)")
+            params.append(team)
+        sql = f"""SELECT s.source_id,s.handle,s.did,s.display_name,s.organization,
+                   s.source_type,s.reliability,s.resolution_status,s.last_checked,
+                   s.verified_at,s.last_error,
+                   ls.scope,ls.conference,ls.division,ls.team,ls.account_type,
+                   ls.directory_priority,ls.profile_url,ls.notes,ls.verification
+                   FROM sources s JOIN source_league_scopes ls USING(source_id)
+                   WHERE {' AND '.join(conditions)}
+                   ORDER BY ls.directory_priority,s.display_name"""
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(max(0, int(limit)))
+        with closing(self._connect()) as db:
+            rows = [dict(row) for row in db.execute(sql, params)]
+            for row in rows:
+                row["tags"] = [dict(tag) for tag in db.execute(
+                    """SELECT tag,tag_type,section FROM source_league_tags
+                       WHERE source_id=? AND league=? ORDER BY tag_type,tag""",
+                    (row["source_id"], league),
+                )]
+        return rows
     def unresolved_handles(self, force=False):
         self.initialize()
         with closing(self._connect()) as db:

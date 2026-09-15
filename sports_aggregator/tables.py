@@ -14,7 +14,7 @@ from typing import Any, Iterable, Sequence
 
 #: Column formats. "pct" expects 0-100; "rate" expects a 0-1 fraction.
 NUMERIC_FORMATS = frozenset(
-    {"int", "big", "num", "f1", "f2", "f3", "pct", "rate", "rank", "signed"}
+    {"int", "big", "num", "f1", "f2", "f3", "pct", "rate", "rank", "signed", "signed2"}
 )
 
 

@@ -83,6 +83,10 @@ services:
         value: /var/data/cfb.sqlite3
       - key: CFBD_RAW_CACHE_PATH
         value: /var/data/cfbd_raw
+      - key: NFL_DATABASE_PATH
+        value: /var/data/nfl.sqlite3
+      - key: NFLVERSE_RAW_CACHE_PATH
+        value: /var/data/nflverse_raw
       - key: SPORTSDATAVERSE_CACHE_PATH
         value: /var/data/sportsdataverse
       - key: CFB_WEATHER_CACHE_PATH

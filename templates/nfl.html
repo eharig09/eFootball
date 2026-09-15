@@ -1,0 +1,135 @@
+{% from '_tables.html' import data_table, tabbed_tables, tabs_script %}
+{% from '_nfl_nav.html' import nfl_nav %}
+{% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>{{ season }} NFL | Sports News Aggregator</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+</head>
+<body class="nfl-dashboard-page">
+{{ nfl_nav('dashboard', season) }}
+<main>
+    <section class="nfl-hero">
+        <p class="eyebrow">{{ season }} season</p>
+        <h1>NFL news and analytics</h1>
+        <p>League reporting, canonical schedules and rosters, weekly production, and curated sources in one NFL-specific data vertical.</p>
+        <div class="metrics">
+            <span><b>{{ counts.teams }}</b> teams</span><span><b>{{ counts.games }}</b> games</span>
+            <span><b>{{ counts.players }}</b> players</span><span><b>{{ counts.weekly_metrics }}</b> weekly measurements</span>
+            <span><b>{{ counts.snap_counts }}</b> snap records</span><span><b>{{ counts.depth_snapshots }}</b> depth records</span>
+            <span><b>{{ counts.player_master }}</b> master players</span><span><b>{{ counts.external_ids }}</b> external IDs</span>
+            <span><b>{{ counts.game_efficiency }}</b> team-game profiles</span>
+            <span><b>{{ counts.elo_games|cell('big') }}</b> Elo games since 2010</span>
+            <span><b>{{ pff_counts.metrics|cell('big') }}</b> PFF metrics</span>
+        </div>
+    </section>
+
+    <nav class="section-nav" aria-label="NFL sections">
+        <a href="#briefing">Briefing</a><a href="#schedule">Schedule</a><a href="#standings">Standings</a><a href="#efficiency">Efficiency</a><a href="#leaders">Leaders</a><a href="#pff">PFF</a><a href="#teams">Teams</a>
+        <a href="#coverage">Coverage</a><a href="#sources">Sources</a><a href="#news">News</a>
+    </nav>
+
+    <section class="slate-rail" aria-label="Current NFL slate">
+        <header><div><p class="eyebrow">Week {{ matchups[0].week if matchups else '—' }}</p><h2>Live week</h2></div><span>{{ slate_counts.completed }} final &middot; {{ slate_counts.upcoming }} upcoming</span></header>
+        <div>{% for matchup in matchups %}<a href="{{ url_for('nfl.game_page',game_id=matchup.game_id) }}#tab-{{ matchup.destination }}" class="slate-game {{ 'is-final' if matchup.completed else 'is-upcoming' }}" style="--away:{{ matchup.sides[0].color }};--home:{{ matchup.sides[1].color }}"><small>{{ 'Final · breakdown' if matchup.completed else matchup.date ~ ' · ' ~ (matchup.time or 'TBD') }}</small>{% for side in matchup.sides %}<span>{% if side.logo_url %}<img src="{{ side.logo_url }}" alt="">{% endif %}<b>{{ side.team }}</b><strong>{{ side.score if side.score is not none else side.record }}</strong></span>{% endfor %}</a>{% else %}<p class="empty">No games are stored for the current week.</p>{% endfor %}</div>
+    </section>
+
+    <section class="landing-briefing" id="briefing">
+        <div class="landing-panel watch-board">
+            <header><div><p class="eyebrow">Current week · ratings · standings · division · players</p><h2>Games to watch</h2></div><span>Watch score</span></header>
+            {% for game in games_to_watch %}<a href="{{ url_for('nfl.game_page', game_id=game.game_id) }}" class="watch-row" style="--away:{{ game.sides[0].color }};--home:{{ game.sides[1].color }}"><time>W{{ game.week }}<small>{{ game.game_date }} · {{ game.game_time or 'TBD' }}</small></time><div class="watch-clubs">{% for side in game.sides %}<span>{% if side.logo_url %}<img src="{{ side.logo_url }}" alt="" loading="lazy">{% endif %}<b>{{ side.team }}</b><small>{{ side.record }} · {{ side.elo }} Elo</small></span>{% if loop.first %}<i>at</i>{% endif %}{% endfor %}</div><div class="watch-evidence">{% for player in game.players %}<span>{{ player.player_name }} <b>{{ player.grade|cell('f1') }}</b></span>{% endfor %}<small>{{ game.reasons|join(' · ') }}</small></div><strong>{{ game.watch_score|cell('f1') }}</strong></a>{% else %}<p class="empty">No current slate is available.</p>{% endfor %}
+        </div>
+        <aside class="landing-panel draft-board">
+            <header><div><p class="eyebrow">{{ draft_projection.draft_year }}</p><h2>Projected draft order</h2></div><a href="{{ url_for('cfb.draft_watch', season=season) }}">CFB board →</a></header>
+            <p class="panel-note">{{ draft_projection.note }}</p>
+            <div class="draft-projection-list">{% for pick in draft_projection.picks %}<div><strong>{{ pick.pick }}</strong><span class="draft-team" style="--club:{{ pick.team_color }}">{% if pick.team_logo %}<img src="{{ pick.team_logo }}" alt="">{% endif %}<b>{{ pick.team }}</b></span><span><b>{{ pick.player }}</b><small>{{ pick.position }} · {{ pick.school }} · board #{{ pick.board_rank }}</small></span><em title="{{ pick.reason }}">Need {{ pick.need_score }}</em></div>{% endfor %}</div>
+        </aside>
+    </section>
+
+    <section class="section" id="schedule"><div class="section-head"><div><p class="eyebrow">Games</p><h2>Current slate</h2></div><form method="get" class="inline-filter"><input type="hidden" name="season" value="{{ season }}"><label>Leader week<select name="week" onchange="this.form.submit()">{% for week in available_weeks %}<option value="{{ week }}"{{ ' selected' if week == selected_week }}>Week {{ week }}</option>{% endfor %}</select></label></form></div>
+        <div class="matchup-grid">
+        {% for matchup in matchups %}<a class="matchup-card" href="{{ url_for('nfl.game_page', game_id=matchup.game_id) }}#tab-{{ matchup.destination }}">
+            <header><span>Week {{ matchup.week }}</span><time>{{ 'Final' if matchup.completed else matchup.date ~ (' · ' ~ matchup.time if matchup.time else '') }}</time></header>
+            {% for side in matchup.sides %}<div class="matchup-team" style="--club:{{ side.color }}">
+                {% if side.logo_url %}<img src="{{ side.logo_url }}" alt="" loading="lazy">{% endif %}
+                <span><b>{{ side.team }}</b><small>{{ side.record }} · {{ side.epa_per_play|cell('signed2') }} EPA/play</small></span>
+                <strong>{{ side.score if side.score is not none else '—' }}</strong>
+            </div>{% endfor %}
+        </a>{% else %}<div class="empty">No current NFL games are available.</div>{% endfor %}
+        </div>
+        <details class="schedule-details"><summary>View sortable schedule</summary>{{ data_table(schedule) }}</details>
+    </section>
+
+    <section class="section" id="standings"><div class="section-head"><div><p class="eyebrow">Playoff race</p><h2>Division standings</h2></div></div>
+        <div class="standings-grid">{% for group in standings %}<article class="division-card {{ group.conference|lower }}">{{ data_table(group.table) }}</article>{% endfor %}</div>
+    </section>
+
+    <section class="section" id="efficiency"><div class="section-head"><div><p class="eyebrow">{{ analysis_season }} team quality{% if analysis_season != season %} &middot; prior-season baseline{% endif %}</p><h2>EPA power table</h2></div></div><p class="section-note">The league view moves to {{ season }} once at least 24 teams have a play-by-play profile; schedules, standings, rosters, and coverage are already {{ season }}.</p>{{ data_table(efficiency) }}</section>
+
+    <section class="section" id="leaders">
+        <div class="section-head"><div><p class="eyebrow">Production command center</p><h2>Season and weekly leaders</h2></div></div>
+        <div class="leader-window-grid">
+            <article><header><span>{{ analysis_season }}</span><h3>Season leaders{% if analysis_season != season %} <small>baseline</small>{% endif %}</h3></header><div class="compact-table-stack">{% for table in leaders.values() %}{{ data_table(table) }}{% endfor %}</div></article>
+            <article><header><span>{{ season }} &middot; Week {{ selected_week or '—' }}</span><h3>Weekly leaders</h3></header><div class="compact-table-stack">{% for table in weekly_leaders.values() %}{{ data_table(table) }}{% endfor %}</div></article>
+        </div>
+    </section>
+
+    <section class="section" id="pff">
+        <div class="section-head"><div><p class="eyebrow">{{ analysis_season }} local PFF workspace</p><h2>Grading leaders</h2></div><a class="section-action" href="{{ url_for('nfl.pff_explorer', season=analysis_season) }}">Explore all PFF data &rarr;</a></div>
+        <p class="section-note">{{ pff_counts.players }} players across {{ pff_counts.families }} imported families. Normalized from read-only exports in scouting_report.</p>
+        {{ tabbed_tables(pff_groups, 'nfl-pff-leaders', 'Ten qualified players per view. Use the tabs to change the grading lens.', 'PFF leader categories') }}
+    </section>
+
+    <section class="section" id="teams">
+        <div class="section-head"><div><p class="eyebrow">League map</p><h2>Teams</h2></div></div>
+        <div class="team-grid">
+        {% for team in teams %}
+            <a class="team-card" href="{{ url_for('nfl.team_page', abbreviation=team.abbreviation) }}" data-identity style="--team-primary:{{ team.color or '#0b5aa5' }};--team-secondary:{{ team.alternate_color or team.color or '#d50a0a' }}">
+                {% if team.logo_url %}<img src="{{ team.logo_url }}" alt="" loading="lazy">{% endif %}
+                <span><b>{{ team.name }}</b><small>{{ team.division }}</small></span>
+            </a>
+        {% else %}<p class="empty">Run <code>flask --app app sync-nfl</code> to populate canonical NFL data.</p>{% endfor %}
+        </div>
+    </section>
+
+    <section class="section" id="coverage">
+        <div class="section-head"><div><p class="eyebrow">Organized like the CFB desk</p><h2>NFL reporting by purpose</h2></div><a class="section-action" href="{{ url_for('nfl.source_audit', season=season) }}">Audit all sources &rarr;</a></div>
+        <p class="section-note">{{ content_counts['items'] }} stored items &middot; {{ content_counts.team_links }} team links &middot; {{ content_counts.player_links }} player links &middot; {{ content_counts.game_links }} matchup links</p>
+        {{ nfl_reporting_streams(content_streams, 'Run sync-nfl-content to populate connected NFL coverage.') }}
+    </section>
+
+    <section class="section" id="sources">
+        <div class="section-head"><div><p class="eyebrow">Curated Bluesky directory</p><h2>Follow by purpose</h2></div><a class="section-action" href="{{ url_for('nfl.source_audit', season=season) }}">{{ source_coverage.producing }}/{{ source_coverage.configured }} observed &rarr;</a></div>
+        <div class="source-sections">
+        {% for key, label in source_sections %}
+            <article class="source-group"><h3>{{ label }}</h3>
+                {% for source in sources[key][:8] %}
+                <a href="{{ source.profile_url }}" target="_blank" rel="noopener">
+                    <b>{{ source.display_name }}</b><span>@{{ source.handle }}</span>
+                    {% if source.team %}<small>{{ source.team }}</small>{% endif %}
+                </a>
+                {% else %}<p class="empty">No directory entries imported.</p>{% endfor %}
+            </article>
+        {% endfor %}
+        </div>
+    </section>
+
+    <section class="section" id="news">
+        <div class="section-head"><div><p class="eyebrow">National feed</p><h2>Latest reporting</h2></div></div>
+        <div class="news-grid">
+        {% for article in content if article.platform == 'rss' %}
+            <article class="news-card"><a href="{{ article.canonical_url }}" target="_blank" rel="noopener"><h3>{{ article.title }}</h3></a><p>{{ article.source_name }} · {{ article.published_relative }} · grade {{ article.editorial_score|cell('int') }}</p></article>
+        {% else %}<p class="empty">No stored NFL articles are available right now.</p>{% endfor %}
+        </div>
+    </section>
+</main>
+{{ tabs_script() }}
+</body>
+</html>

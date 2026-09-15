@@ -1,98 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#10151c">
-    <title>Sports News Aggregator</title>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta name="theme-color" content="#090f15"><title>Football Intelligence</title>
     <style>
-        /* The landing page carries its own palette because it sits outside the
-           college-football shell. Same dark values, so arriving here and then
-           following a link is one page rather than two. */
-        :root {
-            color-scheme: dark; --surface: #171e27; --ink: #e6ecf3; --muted: #93a1b3;
-            --accent: #6ea8f0; --accent-dark: #9cc4f6; --panel: #1e2732;
-            --shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
-        }
-        * { box-sizing: border-box; }
-        body {
-            margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: var(--ink);
-            background: radial-gradient(circle at top right, rgba(110, 168, 240, 0.13), transparent 32rem), #10151c;
-            min-height: 100vh;
-        }
-        main { max-width: 1060px; margin: 0 auto; padding: 48px 20px 64px; }
-        .hero, .card {
-            background: var(--surface); border: 1px solid #2a3542;
-            box-shadow: var(--shadow);
-        }
-        .hero { border-top: 5px solid var(--accent); padding: 32px; margin-bottom: 28px; }
-        .eyebrow, .section-label {
-            text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.75rem;
-            color: var(--accent-dark); margin: 0 0 12px; font-weight: 800;
-        }
-        h1, h2 { font-family: "Arial Narrow", "Segoe UI", Arial, sans-serif; letter-spacing: -.025em; }
-        h1 { font-size: clamp(2.2rem, 5vw, 4rem); line-height: 0.96; margin: 0 0 12px; }
-        .intro, .card p { color: var(--muted); line-height: 1.65; }
-        .intro { max-width: 52rem; margin: 0; }
-        .section-label { margin: 28px 2px 12px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 18px; }
-        .card { border-top: 4px solid var(--accent); padding: 24px; }
-        .card h2 { margin: 0 0 10px; font-size: 1.55rem; }
-        .card p { margin: 0 0 18px; }
-        .pill {
-            display: inline-block; background: var(--panel); color: var(--accent-dark);
-            padding: 6px 10px; font-size: 0.84rem; margin-bottom: 16px; font-weight: 800;
-        }
-        .cta {
-            display: inline-block; text-decoration: none; background: var(--accent); color: #07182c;
-            padding: 11px 16px; font-weight: bold;
-        }
-        .cta:hover { background: var(--accent-dark); }
-        .legacy { opacity: 0.9; }
+        /* Shared dark-surface contrast anchors: #e6ecf3 on #10151c. */
+        :root{color-scheme:dark;--ink:#f2f6f8;--muted:#94a4af;--line:#2c3b45}*{box-sizing:border-box}body{min-height:100vh;margin:0;background:radial-gradient(circle at 50% -10%,#1b2e3c 0,#090f15 42rem);color:var(--ink);font-family:"Segoe UI",Arial,sans-serif}main{width:min(1480px,100%);margin:auto;padding:clamp(28px,5vw,64px) clamp(16px,4vw,48px) 64px}.masthead{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.65fr);align-items:end;gap:40px;padding:22px 0 34px;border-bottom:1px solid var(--line)}.eyebrow{margin:0 0 9px;color:#81c9f3;font-size:.68rem;font-weight:900;letter-spacing:.15em;text-transform:uppercase}.masthead h1{max-width:850px;margin:0;font:750 clamp(2.8rem,6vw,6.4rem)/.9 "Arial Narrow","Segoe UI",sans-serif;letter-spacing:-.055em}.masthead p:last-child{margin:0;color:var(--muted);font-size:clamp(.9rem,1.4vw,1.08rem);line-height:1.65}.league-decision{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:24px;border:1px solid #354650;background:#354650;gap:1px}.league-choice{position:relative;display:flex;min-height:390px;flex-direction:column;padding:clamp(24px,4vw,48px);overflow:hidden;background:#101920;color:var(--ink);text-decoration:none}.league-choice:before{content:"";position:absolute;inset:0;background:linear-gradient(145deg,color-mix(in srgb,var(--league) 27%,#101920),#101920 64%);transition:opacity .2s}.league-choice:after{content:attr(data-mark);position:absolute;right:-.03em;bottom:-.22em;color:color-mix(in srgb,var(--league) 15%,transparent);font:900 clamp(9rem,20vw,19rem)/1 "Arial Narrow",sans-serif;letter-spacing:-.09em}.league-choice>*{position:relative;z-index:1}.league-choice.cfb{--league:#c7532d}.league-choice.nfl{--league:#2379b6}.league-choice:hover:before,.league-choice:focus-visible:before{opacity:.68}.league-choice:focus-visible{outline:3px solid #9bd8fb;outline-offset:-4px}.league-choice header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid color-mix(in srgb,var(--league) 45%,#3a4851);padding-bottom:14px}.league-choice header b{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase}.league-choice header span{color:#b9c7d0;font-size:.65rem;text-transform:uppercase}.league-choice h2{max-width:450px;margin:auto 0 12px;font:800 clamp(2.1rem,4vw,4.4rem)/.94 "Arial Narrow","Segoe UI",sans-serif;letter-spacing:-.045em}.league-choice p{max-width:520px;margin:0;color:#b0bec7;line-height:1.55}.league-choice footer{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:30px}.league-choice footer span{display:flex;flex-wrap:wrap;gap:6px}.league-choice footer i{padding:4px 7px;border:1px solid #40515b;color:#a9bac4;font-size:.6rem;font-style:normal;text-transform:uppercase}.league-choice footer strong{color:#b9e4fc;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em}.platform-line{display:flex;justify-content:space-between;gap:20px;padding:20px 2px;color:#82939f;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em}.legacy-drawer{margin-top:18px;border-top:1px solid var(--line);color:var(--muted)}.legacy-drawer summary{padding:15px 0;cursor:pointer;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em}.legacy-links{display:flex;gap:10px}.legacy-links a{padding:8px 11px;border:1px solid var(--line);color:#a9d8f5;text-decoration:none}@media(max-width:800px){.masthead{grid-template-columns:1fr;gap:20px}.league-decision{grid-template-columns:1fr}.league-choice{min-height:310px}.platform-line{align-items:flex-start;flex-direction:column}}@media(max-width:520px){.league-choice{padding:24px 20px}.league-choice footer{align-items:flex-start;flex-direction:column}.league-choice:after{font-size:10rem}}
     </style>
 </head>
-<body>
-    <main>
-        <section class="hero">
-            <p class="eyebrow">Sports News Aggregator</p>
-            <h1>Follow the leagues that matter.</h1>
-            <p class="intro">
-                College football is the first league on the shared aggregation platform. News providers,
-                league metadata, and delivery APIs are now separated so more leagues can plug into the same flow.
-            </p>
-        </section>
-
-        <p class="section-label">League feeds</p>
-        <section class="grid">
-            {% for league in leagues %}
-            <article class="card">
-                <span class="pill">{{ league.abbreviation }}</span>
-                <h2>{{ league.name }}</h2>
-                <p>{{ league.description }}</p>
-                <a class="cta" href="{{ url_for('leagues.league_page', league_slug=league.slug) }}">
-                    Open {{ league.abbreviation }} feed
-                </a>
-            </article>
-            {% endfor %}
-        </section>
-
-        {% if legacy_dashboards %}
-        <p class="section-label">Legacy team dashboards</p>
-        <section class="grid legacy">
-            <article class="card">
-                <span class="pill">MLB</span>
-                <h2>Cincinnati Reds</h2>
-                <p>News, social posts, schedule, leaderboards, and pitch analysis.</p>
-                <a class="cta" href="/reds/">Open Reds page</a>
-            </article>
-            <article class="card">
-                <span class="pill">NFL</span>
-                <h2>Cincinnati Bengals</h2>
-                <p>Team news and Bluesky posts from the original aggregator prototype.</p>
-                <a class="cta" href="/bengals/">Open Bengals page</a>
-            </article>
-        </section>
-        {% endif %}
-    </main>
-</body>
-</html>
+<body><main>
+    <header class="masthead"><div><p class="eyebrow">Sports News Aggregator</p><h1>One football desk. Two complete leagues.</h1></div><p>Choose a league workspace for current games, reporting, rosters, player development, matchup intelligence, and postgame analysis.</p></header>
+    <section class="league-decision" aria-label="Choose a football league">
+        {% for league in leagues %}{% set is_nfl=league.slug == 'nfl' %}<a class="league-choice {{ 'nfl' if is_nfl else 'cfb' }}" data-mark="{{ league.abbreviation }}" href="{{ url_for('nfl.dashboard') if is_nfl else url_for('leagues.league_page',league_slug=league.slug) }}"><header><b>{{ league.abbreviation }} intelligence</b><span>{{ 'Professional' if is_nfl else 'College' }} football</span></header><h2>{{ league.name }}</h2><p>{{ league.description }}</p><footer><span>{% if is_nfl %}<i>Current slate</i><i>PFF</i><i>Matchups</i><i>Draft</i>{% else %}<i>Today</i><i>Programs</i><i>Recruiting</i><i>Postgame</i>{% endif %}</span><strong>Enter workspace →</strong></footer></a>{% endfor %}
+    </section>
+    <div class="platform-line"><span>Shared reporting platform</span><span>League-specific statistics and analytical models</span></div>
+    {% if legacy_dashboards %}<details class="legacy-drawer"><summary>Legacy team dashboards</summary><div class="legacy-links"><a href="/reds/">Cincinnati Reds</a><a href="/bengals/">Cincinnati Bengals</a></div></details>{% endif %}
+</main></body></html>

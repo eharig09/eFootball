@@ -1,0 +1,19 @@
+{% macro nfl_nav(active='dashboard', season=None, context=None) %}
+<header class="nfl-header">
+    <div class="nfl-nav-shell">
+        <a class="nfl-brand" href="{{ url_for('nfl.dashboard', season=season) }}" aria-label="NFL home">
+            <span class="shield" aria-hidden="true">NFL</span>
+            <span><b>News + Analytics</b><small>{{ season or 'League hub' }}</small></span>
+        </a>
+        <nav class="primary-nav" aria-label="NFL navigation">
+            <a class="{{ 'active' if active == 'dashboard' }}" href="{{ url_for('nfl.dashboard', season=season) }}">Dashboard</a>
+            <a href="{{ url_for('nfl.dashboard', season=season, _anchor='standings') }}">Standings</a>
+            <a href="{{ url_for('nfl.dashboard', season=season, _anchor='teams') }}">Teams</a>
+            <a class="{{ 'active' if active == 'pff' }}" href="{{ url_for('nfl.pff_explorer', season=(season - 1 if season and season > 2025 else season)) }}">PFF</a>
+            <a class="{{ 'active' if active == 'sources' }}" href="{{ url_for('nfl.source_audit', season=season) }}">Sources</a>
+            <a href="{{ url_for('nfl.dashboard', season=season, _anchor='news') }}">News</a>
+        </nav>
+        <div class="nfl-nav-tools">{% if context %}<span class="nav-context">{{ context }}</span>{% endif %}<form class="nfl-header-search" action="{{ url_for('nfl.search_page') }}" method="get" role="search"><input type="hidden" name="season" value="{{ season or '' }}"><input type="search" name="q" placeholder="Search NFL" aria-label="Search NFL teams, players, games, and reporting"></form></div>
+    </div>
+</header>
+{% endmacro %}

@@ -486,6 +486,208 @@ server.
 
 ## Add another league
 
+The NFL is now the second cataloged league. Its dashboard is available at
+`/nfl/`, with linked team (`/nfl/teams/<abbr>/`), game
+(`/nfl/games/<game_id>/`), and player (`/nfl/players/<gsis_id>/`) pages.
+Matching JSON packets live under `/api/v1/nfl`, and headlines remain available
+at `/api/v1/nfl/articles`. Ongoing work is tracked in
+[`docs/NFL_ARCHITECTURE.md`](docs/NFL_ARCHITECTURE.md).
+
+Build or refresh the isolated NFL database with:
+
+```powershell
+flask --app app sync-nfl --year 2026
+```
+
+For a lightweight roster-only refresh between full data runs:
+
+```powershell
+flask --app app sync-nfl-rosters --year 2026
+```
+
+That lightweight command also refreshes the cached league-wide ESPN injury
+report and the versioned staff directory. To update only those context layers:
+
+```powershell
+flask --app app sync-nfl-context --year 2026
+```
+
+Import NFL PFF exports from the sibling `scouting_report` repository, then
+rebuild play-by-play analytics from the local nflverse cache with:
+
+```powershell
+flask --app app sync-nfl-pff --year 2025
+flask --app app sync-nfl-pbp-analytics --year 2025
+flask --app app sync-nfl-history --start-year 2010 --end-year 2025
+```
+
+The history command is a one-time/seeding operation, not part of every
+scheduled refresh. It processes seasons serially and reads only the PBP
+columns used by EPA, pace, situational, play-calling, and passing-location
+models. The PBP analytics command also rebuilds team run/pass, early-down pass,
+shotgun, and no-huddle rates; it does not add another scheduled process.
+
+`NFL_PFF_SOURCE_ROOT` defaults to
+`C:\Users\ehari\Desktop\scouting_report`. The importer reads that tree in
+place and writes normalized results into this project's NFL SQLite database;
+it does not copy or modify the source exports. The current 2025 import covers
+nine PFF families, 4,749 family/player rows, and 430,317 numeric metrics.
+
+Refresh league reporting and the curated public Bluesky feeds separately with:
+
+```powershell
+flask --app app sync-nfl-content --year 2026 --posts-per-source 4
+```
+
+Reporting is organized into Articles, News Wire, Analysis, Personnel,
+Players + Usage, and Team Beats using the sections carried by the curated NFL
+directory. The same organized streams appear on league, team, player, and
+matchup pages. `/nfl/sources/` reconciles every configured account against
+stored output and the latest instrumented fetch; filters expose producing,
+silent, failed, and not-yet-checked sources by team. Its JSON counterpart is
+`/api/v1/nfl/sources`.
+
+The content refresh uses Bluesky's unauthenticated public AppView reads. It
+stores NFL content and entity links in `nfl.sqlite3`, separate from CFB's
+integer team/game link tables. The first live 2026 refresh stored 23 RSS
+articles and 490 original Bluesky posts. After current-roster normalization,
+the latest instrumented refresh leaves 691 unique items, 673 team links, 510
+player links, and 107 matchup links; stale player links are pruned on roster
+replacement. All 158 configured Bluesky sources were attempted: 146 currently
+have historical stored output, six returned source errors, three returned empty
+feeds, and three returned posts with no eligible original item. The linked stream is available at
+`/api/v1/nfl/content`, with
+optional `team`, `player`, or `game` filters.
+Each refresh also writes per-account checks and an ingestion-run ledger with
+attempted, succeeded, seen, stored, and error counts. Historical content can
+show that an account has produced material before this ledger existed; running
+`sync-nfl-content` once populates the current fetch status for every attempted
+account.
+
+The command syncs nflverse teams, schedules, the latest roster row per
+player/team, the canonical nflverse player master and DynastyProcess ID map,
+long-form weekly statistics, game-level snap counts, and timestamped depth-chart
+history, current ESPN injury designations, the versioned coaching-staff
+snapshot, weekly team production, and compact play-by-play efficiency summaries
+into `instance/nfl.sqlite3` by default. Team pages expose
+the current depth snapshot, injury detail, staff structure, and season snap
+usage while retaining the underlying
+history. Set `NFL_DATABASE_PATH` and `NFLVERSE_RAW_CACHE_PATH` to relocate the
+database and raw parquet cache.
+
+The roster releases are normalized to the current organization by retaining
+active, reserve, developmental/practice-squad, inactive, and exempt players
+while excluding cut, retired, and traded-away rows. After this normalization,
+the live 2026 refresh on 2026-09-13 stored 2,524 current roster identities and
+272 scheduled games; the normalized 2025 comparison set contains 2,662.
+Team pages compare exact GSIS IDs against that 2025 release to
+label arrivals, rookies, prior NFL teams, departures, and known destination
+teams. A player missing from both adjacent team rosters is not guessed by name.
+
+The NFL dashboard ranks teams by net EPA, team pages summarize offensive and
+defensive efficiency, and game pages now build a full matchup briefing. During
+the opening slate, the dashboard keeps the current schedule, standings,
+rosters, and coverage but uses a labeled prior-season power table and leader
+board until at least 24 teams have current play-by-play profiles. Each
+game compares both offensive units with the opposing defense across overall,
+dropback, rushing, success-rate, and explosive-play efficiency; it also shows
+season production, the five games entering the matchup, team production
+leaders, market context, and a postgame review. During the opening weeks, the
+page uses a clearly labeled prior-season baseline until both teams have a
+current pregame sample. A transparent offense-versus-points-allowed scoring
+midpoint and ranked matchup watches make that baseline easier to interpret
+without presenting it as a predictive model. Player box scores are split into
+compact passing, rushing, receiving, and defense tables instead of one wide
+matrix. Schedule context adds rest, divisional status, venue conditions, and
+stored prior meetings. Player pages likewise replace the universal wide game
+log with only the passing, rushing, receiving, defensive, or kicking tables the
+player actually needs. Team and matchup pages also show current-roster target,
+carry, and combined opportunity shares, plus exact-ID retention across eight
+position units. Current player pages fall back to a labeled prior-season role
+profile when their new-season production has not started. These summaries use
+rushes and dropbacks only; special-teams events are
+excluded from the scrimmage efficiency denominator.
+
+Team overview pages pair the 2026 HC/OC/playcaller/DC directory with stored
+performance and tactical evidence. Offensive tendencies show run/pass mix,
+neutral and early-down pass rate, pace, shotgun, and no-huddle usage. Defensive
+tendencies show EPA allowed, PFF man/zone player-snap shares, and the position
+groups producing sacks plus quarterback hits. Exact blitz rate remains visibly
+unavailable until the configured feeds provide pass-rusher count data.
+
+The dashboard now separates season and selected-week leaders and includes
+minimum-sample PFF leaderboards. `/nfl/pff/` provides a filterable explorer;
+team and player pages surface linked grades, player pages preserve draft
+pedigree, and team/player form is rendered as dark, responsive weekly charts.
+The play-by-play layer stores quarterback attempts by behind/short/intermediate/
+deep depth and left/middle/right location. QB pages show the resulting passing
+map, while game pages invert the same data to show how each opposing defense
+has performed by zone. Matchup interaction cards combine current-roster PFF
+alignment, route grades, prior target share, slot-coverage samples, and those
+defensive PBP zones. They are labeled as likely interactions rather than exact
+coverage assignments.
+
+The dashboard also computes all eight division standings directly from completed
+regular-season games. Records, point differential, and streaks flow into team
+pages and JSON packets. NFL presentation is split between the base dark theme in
+`static/nfl.css` and the responsive navigation, standings, identity, and
+interaction components in `static/nfl_components.css`.
+Current games render as matchup cards with team identity, record, score, and EPA
+context, with the sortable schedule available directly below them.
+
+Every NFL page loads `static/nfl.css`, which declares a dark color scheme and
+explicit dark backgrounds for the document, shared data tables, alternating
+rows, empty states, and form controls. This prevents the shared CFB table layer
+or browser defaults from introducing light surfaces into the NFL section.
+
+NFL refreshes now participate in the same locked scheduled plan as CFB. The
+light profile refreshes NFL rosters and reporting; the heavy profile also
+refreshes schedules, weekly stats, snaps/depth, PBP analytics, and the local
+PFF baseline. Each segment runs serially in its own subprocess under the
+existing child-memory limit.
+
+Team pages now include significance-filtered personnel movement and full
+position rooms. Player and team charts support selectable normalized overlays
+plus undistorted absolute-value plots. Receiver pages include target/reception
+maps, while matchup pages connect those field sections to opponent results
+allowed and add highlighted unit edges, game-shape components, and trench
+analysis. Reporting is ordered by editorial grade with a modest freshness
+bonus; hover the displayed grade to see its reasons.
+
+The NFL landing desk also maintains a continuous Elo history from the 2010
+season onward, with every franchise entering at 1500. Elo quality/closeness,
+division and standings context, and PFF player quality feed the Games to Watch
+ranking. A provisional 2027 draft panel reads the CFB consensus board and
+matches it to current NFL order and roster need; established returning
+quarterbacks suppress quarterback selections. These rankings are navigation
+and context tools, not betting or draft-outcome models.
+
+The sync also imports the curated
+[`data/nfl/NFL_Bluesky_Directory.xlsx`](data/nfl/NFL_Bluesky_Directory.xlsx)
+when present. Validate or import that directory independently with:
+
+```powershell
+python -m sports_aggregator.nfl.sources_cli validate
+flask --app app import-nfl-sources
+```
+
+Its 158 accounts retain league, conference, division, team, account-type,
+coverage, specialty, priority, and recommended-list metadata. NFL scope lives
+beside the existing source graph, so a handle shared with CFB does not lose its
+college-football tags.
+
+The candidate data catalog in
+[`data/nfl/NFL_Data_Sources_Directory.xlsx`](data/nfl/NFL_Data_Sources_Directory.xlsx)
+can be validated and summarized without an Excel dependency:
+
+```powershell
+python -m sports_aggregator.nfl.data_sources
+```
+
+The current intake policy excludes paid/trial commercial APIs. Sources marked
+free for non-commercial use remain visible with their license restriction so
+they can be evaluated without being mistaken for unrestricted production data.
+
 For an RSS-backed league, add a `LeagueConfig` and its `FeedConfig` values to
 `sports_aggregator/catalog.py`. Discovery, the league page, caching, aggregation,
 and JSON endpoints are automatic.

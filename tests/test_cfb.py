@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import os
 import sqlite3
 import tempfile
@@ -45,7 +45,7 @@ TEAM_PAYLOAD = [
 GAME_PAYLOAD = [
     {
         "id": 100, "season": 2026, "week": 2, "seasonType": "regular",
-        "startDate": "2026-09-05T19:30:00Z", "startTimeTBD": False,
+        "startDate": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(), "startTimeTBD": False,
         "completed": False, "neutralSite": False, "conferenceGame": True,
         "venueId": 10, "venue": "Michigan Stadium", "homeId": 1,
         "homeTeam": "Michigan", "homeConference": "Big Ten", "homePoints": None,
@@ -179,7 +179,7 @@ class CFBRepositoryTests(unittest.TestCase):
         CFBDataSync(FakeCFBDClient(), self.repository).sync(2026)
         next_game = {
             **GAME_PAYLOAD[0], "id": 101, "week": 3,
-            "startDate": "2026-09-12T19:30:00Z",
+            "startDate": (datetime.now(timezone.utc) + timedelta(days=60)).isoformat(),
             "homePregameElo": 1768, "awayPregameElo": 1662,
         }
         self.repository.replace_games(
