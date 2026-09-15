@@ -1,0 +1,171 @@
+"""Restart-safe first-run population for the Render NFL data store.
+
+Render makes an attached disk available only to the running service, not to its
+build or pre-deploy instances.  The web worker therefore launches this bounded
+helper when the canonical NFL database is empty.  Each expensive phase runs in
+its own subprocess so pandas/Arrow memory is returned before the next phase.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+from typing import Any
+
+from sports_aggregator.nfl.nflverse import current_season
+from sports_aggregator.nfl.repository import NFLRepository
+
+
+LOCK_NAME = "nfl_production_seed.lock"
+STATE_NAME = "nfl_production_seed.json"
+LOG_NAME = "nfl_production_seed.log"
+DEFAULT_RETRY_SECONDS = 6 * 3600
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _stamp() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_stamp(value: object) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def needs_seed(repository: NFLRepository, season: int) -> bool:
+    """Return true until the public-data shell has teams, games, and players."""
+    repository.initialize()
+    counts = repository.counts(season)
+    return counts["teams"] < 32 or counts["games"] == 0 or counts["players"] == 0
+
+
+def maybe_launch(*, database_path: str | os.PathLike[str], season: int | None = None,
+                 retry_seconds: int = DEFAULT_RETRY_SECONDS) -> bool:
+    """Atomically launch a detached seed helper when a production DB is empty."""
+    if os.getenv("NFL_AUTO_SEED_CHILD", "").strip() == "1":
+        return False
+    season = int(season or current_season())
+    database = Path(database_path)
+    repository = NFLRepository(database)
+    if not needs_seed(repository, season):
+        return False
+
+    state_path = database.parent / STATE_NAME
+    last = _parse_stamp(_read_json(state_path).get("started_at"))
+    if last and datetime.now(timezone.utc) - last < timedelta(seconds=max(60, retry_seconds)):
+        return False
+
+    lock_path = database.parent / LOCK_NAME
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        # A killed process cannot own a lock forever.  Its state timestamp is
+        # the retry throttle; an old orphan can be replaced safely here.
+        try:
+            if datetime.now(timezone.utc).timestamp() - lock_path.stat().st_mtime <= retry_seconds:
+                return False
+            lock_path.unlink()
+            descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except (FileExistsError, OSError):
+            return False
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"pid": os.getpid(), "created_at": _stamp()}))
+
+    state_path.write_text(json.dumps({
+        "status": "launching", "season": season, "started_at": _stamp(), "stages": [],
+    }), encoding="utf-8")
+    environment = os.environ.copy()
+    environment["NFL_AUTO_SEED_CHILD"] = "1"
+    root = Path(__file__).resolve().parents[2]
+    log_path = database.parent / LOG_NAME
+    try:
+        with log_path.open("a", encoding="utf-8") as log:
+            subprocess.Popen(
+                [sys.executable, "-m", "sports_aggregator.nfl.production_seed",
+                 "--season", str(season)],
+                cwd=str(root), env=environment, stdout=log, stderr=subprocess.STDOUT,
+                close_fds=True,
+            )
+    except Exception:
+        lock_path.unlink(missing_ok=True)
+        raise
+    return True
+
+
+def _pff_available() -> bool:
+    root = Path(os.getenv("NFL_PFF_SOURCE_ROOT", "")).expanduser()
+    return any((root / relative).is_dir() for relative in ("nfl/pff", "pff_coverage_data"))
+
+
+def run(season: int) -> dict[str, Any]:
+    """Populate essentials first, then content and bounded historical context."""
+    database = Path(os.getenv("NFL_DATABASE_PATH", "instance/nfl.sqlite3"))
+    if not database.is_absolute():
+        database = Path(__file__).resolve().parents[2] / database
+    state_path = database.parent / STATE_NAME
+    lock_path = database.parent / LOCK_NAME
+    state: dict[str, Any] = {
+        "status": "running", "season": season, "started_at": _stamp(), "stages": [],
+    }
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    environment = os.environ.copy()
+    environment["NFL_AUTO_SEED_CHILD"] = "1"
+    root = Path(__file__).resolve().parents[2]
+
+    stages = ["essentials", "content", "history"]
+    if _pff_available():
+        stages.insert(2, "pff")
+    try:
+        for stage in stages:
+            started = _stamp()
+            completed = subprocess.run(
+                [sys.executable, "-m", "sports_aggregator.nfl.refresh_cli", stage,
+                 "--season", str(season)],
+                cwd=str(root), env=environment, check=False,
+            )
+            state["stages"].append({
+                "stage": stage, "started_at": started, "finished_at": _stamp(),
+                "exit_code": completed.returncode,
+                "status": "success" if completed.returncode == 0 else "failed",
+            })
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+        repository = NFLRepository(database)
+        ready = not needs_seed(repository, season)
+        state["status"] = "success" if ready else "degraded"
+        state["counts"] = repository.counts(season)
+    except Exception as exc:
+        state["status"] = "failed"
+        state["error"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        state["finished_at"] = _stamp()
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        lock_path.unlink(missing_ok=True)
+    return state
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Populate an empty production NFL database")
+    parser.add_argument("--season", type=int, default=current_season())
+    args = parser.parse_args(argv)
+    report = run(args.season)
+    print(json.dumps(report, sort_keys=True), flush=True)
+    return 0 if report["status"] in {"success", "degraded"} else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

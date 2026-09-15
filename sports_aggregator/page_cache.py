@@ -58,10 +58,16 @@ def data_version() -> str:
         return "0"
     database = Path(configured)
     bucket_seconds = data_version_seconds()
-    return "-".join(
-        _version_stamp(candidate, bucket_seconds)
-        for candidate in (database, database.with_name(database.name + "-wal"))
-    )
+    databases = [database]
+    nfl_configured = current_app.config.get("NFL_DATABASE_PATH") or ""
+    if nfl_configured:
+        nfl_database = Path(nfl_configured)
+        if nfl_database != database:
+            databases.append(nfl_database)
+    candidates = [candidate for item in databases for candidate in (
+        item, item.with_name(item.name + "-wal")
+    )]
+    return "-".join(_version_stamp(candidate, bucket_seconds) for candidate in candidates)
 
 
 def code_version() -> str:

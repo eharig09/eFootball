@@ -16,6 +16,12 @@
 <body class="nfl-dashboard-page">
 {{ nfl_nav('dashboard', season) }}
 <main>
+    {% if production_seed.status in ('launching', 'running', 'degraded', 'failed') and counts.teams == 0 %}
+    <aside class="seed-status" role="status">
+        <strong>NFL data initialization: {{ production_seed.status }}</strong>
+        <span>Schedules, rosters, reporting, and historical context are loading in bounded stages. This page fills in as each stage completes.</span>
+    </aside>
+    {% endif %}
     <section class="nfl-hero">
         <p class="eyebrow">{{ season }} season</p>
         <h1>NFL news and analytics</h1>

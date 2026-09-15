@@ -74,7 +74,8 @@ class NFLDataSync:
         )
         return self.repository.replace_players(season, current)
 
-    def sync(self, season: int, *, force: bool = False) -> SyncReport:
+    def sync(self, season: int, *, force: bool = False,
+             include_pbp: bool = True) -> SyncReport:
         started_at = datetime.now(timezone.utc)
         self.repository.initialize()
 
@@ -137,8 +138,10 @@ class NFLDataSync:
             ("players", store_players), ("weekly_stats", store_weekly),
             ("snap_counts", store_snap_counts), ("depth_charts", store_depth_charts),
             ("player_master", store_player_master), ("player_ids", store_player_ids),
-            ("team_weekly", store_team_weekly), ("pbp_efficiency", store_pbp),
+            ("team_weekly", store_team_weekly),
         ]
+        if include_pbp:
+            jobs.append(("pbp_efficiency", store_pbp))
         results: list[SyncDatasetResult] = []
         for name, job in jobs:
             try:

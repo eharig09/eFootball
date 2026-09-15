@@ -861,3 +861,34 @@ from.
   (`win_probability_v2.py`, `expected_points_v2.py`) is worth generalizing into
   a shared module once both leagues have pre-computed and derived variants to
   compare.
+## Render production initialization
+
+The deployed NFL UI and the NFL database have separate lifecycles. A code deploy can
+create the SQLite schema, but it cannot copy a developer workstation's data onto the
+attached Render disk. Render also does not expose a persistent disk to build or
+pre-deploy commands. Production therefore uses a runtime initializer:
+
+- `NFL_AUTO_SEED=1` asks the single web worker to inspect the current-season store.
+- Missing teams, games, or players launch `sports_aggregator.nfl.production_seed`.
+- An atomic disk lock prevents worker recycling or overlapping deploys from starting
+  duplicate population processes; failed attempts become eligible for retry after a
+  bounded cooldown.
+- Essentials run without play-by-play first, so schedules, teams, rosters, weekly
+  production, snap counts, depth charts, IDs, staff, injuries, sources, and Elo become
+  usable before the largest parquet file is loaded.
+- Reporting follows essentials, then a no-PBP 2010-through-prior-season backfill.
+  Current PBP and derived matchup analytics remain assigned to the low-traffic
+  analytics refresh segment.
+- `nfl_production_seed.json` and `nfl_production_seed.log` live beside
+  `NFL_DATABASE_PATH`, making first-run progress visible across deploys. The dashboard
+  API exposes the state as `production_seed`, and the empty-state page explains that
+  population is in progress.
+
+The rendered-page cache now versions against both the CFB and NFL SQLite files. NFL
+writes consequently invalidate NFL pages instead of leaving the initial empty page in
+the hour-long CFB cache bucket.
+
+PFF remains a read-only authorized-data boundary. No licensed exports are committed
+to the public application repository. Production points `NFL_PFF_SOURCE_ROOT` at
+`/var/data/nfl_pff`; an operator must transfer an allowed snapshot there before the
+PFF seed stage can run.

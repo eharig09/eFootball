@@ -1,6 +1,8 @@
 """Repository-backed NFL dashboard, team pages, and structured APIs."""
 
 from __future__ import annotations
+import json
+from pathlib import Path
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
 
 from sports_aggregator.catalog import get_league
@@ -45,6 +47,15 @@ REPORTING_STREAMS = (
     ("players", "Players + usage", "Player roles, health, and performance"),
     ("beats", "Team beats", "Reporting from team-focused accounts"),
 )
+
+
+def _production_seed_status() -> dict:
+    path = Path(current_app.config["NFL_DATABASE_PATH"]).parent / "nfl_production_seed.json"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 def _repository() -> NFLRepository:
@@ -315,6 +326,7 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
     source_coverage = _content().source_coverage(_directory_sources())
     return {
         "season": season, "analysis_season": analysis_season,
+        "production_seed": _production_seed_status(),
         "selected_week": selected_week,
         "available_weeks": list(range(1, (repository.latest_stat_week(season) or 0) + 1)),
         "counts": repository.counts(season),

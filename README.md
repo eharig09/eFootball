@@ -293,6 +293,21 @@ routine `bootstrap refresh` calls only update moving datasets. The CFB Render se
 uses one threaded Gunicorn worker and leaves the memory-heavy legacy dashboards off,
 which preserves headroom for an in-service refresh subprocess.
 
+The NFL store is initialized at runtime because Render does not mount persistent
+disks into build or pre-deploy instances. With `NFL_AUTO_SEED=1`, an empty
+`NFL_DATABASE_PATH` launches one lock-safe helper after the web worker starts. It
+loads current public essentials first, then reporting and a statistics-only
+2010-through-prior-season backfill. Each stage is a separate subprocess to release
+pandas/Arrow memory between datasets. State and logs are written beside the database
+as `nfl_production_seed.json` and `nfl_production_seed.log`; a successful populated
+database does not launch the helper again. Current play-by-play analytics continue on
+the scheduled analytics segment.
+
+PFF exports are intentionally not committed to this public repository. Render reads
+them from `NFL_PFF_SOURCE_ROOT=/var/data/nfl_pff` after an authorized export has been
+placed on the persistent disk. Until then, public nflverse data populates normally
+and PFF panels correctly remain unavailable.
+
 `initial` builds canonical teams first, prepares the source registry, and ingests
 national RSS before the more memory-intensive model and media work. It then adds
 current and prior-season games, coaches and production, models, roster lifecycle,

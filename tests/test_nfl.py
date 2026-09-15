@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from sports_aggregator.catalog import get_league
 from sports_aggregator.models import Article
@@ -21,6 +22,7 @@ from sports_aggregator.nfl.nflverse import NflverseClient, NflverseError, curren
 from sports_aggregator.nfl.passing import pass_matchup_packet, pass_zone_packet
 from sports_aggregator.nfl.personnel import _score
 from sports_aggregator.nfl.postgame import postgame_packet
+from sports_aggregator.nfl.production_seed import LOCK_NAME, STATE_NAME, maybe_launch
 from sports_aggregator.nfl.search import search_entities as search_nfl_entities
 from sports_aggregator.nfl.views import current_games, schedule_table
 from sports_aggregator.social.models import SourceProfile
@@ -99,6 +101,19 @@ class NFLNamingTests(unittest.TestCase):
         self.assertEqual(rookie["draft_weight"], 1.0)
         self.assertEqual(veteran["draft_weight"], 0.0)
         self.assertGreater(rookie["significance_score"], veteran["significance_score"])
+
+
+class NFLProductionSeedTests(unittest.TestCase):
+    def test_empty_database_launches_only_one_seed_process(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
+            database = Path(directory) / "nfl.sqlite3"
+            with patch("sports_aggregator.nfl.production_seed.subprocess.Popen") as popen:
+                self.assertTrue(maybe_launch(database_path=database, season=2026))
+                self.assertFalse(maybe_launch(database_path=database, season=2026))
+            self.assertEqual(popen.call_count, 1)
+            self.assertTrue((database.parent / LOCK_NAME).exists())
+            state = (database.parent / STATE_NAME).read_text(encoding="utf-8")
+            self.assertIn('"status": "launching"', state)
 
     def test_espn_injuries_keep_designations_and_drop_active_news_rows(self):
         payload = {"timestamp": "2026-09-14T20:56:24Z", "injuries": [{

@@ -111,6 +111,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         NFL_PFF_SOURCE_ROOT=os.getenv(
             "NFL_PFF_SOURCE_ROOT", r"C:\Users\ehari\Desktop\scouting_report"
         ),
+        NFL_AUTO_SEED=_env_flag("NFL_AUTO_SEED", False),
         CFBD_RAW_CACHE_PATH=os.getenv(
             "CFBD_RAW_CACHE_PATH", os.path.join(app.instance_path, "cfbd_raw")
         ),
@@ -327,12 +328,16 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.cli.command("sync-nfl")
     @click.option("--year", type=int, default=current_nfl_season)
     @click.option("--force", is_flag=True, help="Bypass cached nflverse release assets.")
-    def sync_nfl(year: int, force: bool) -> None:
+    @click.option("--skip-pbp", is_flag=True,
+                  help="Seed lighter schedule, roster, and box-score datasets first.")
+    def sync_nfl(year: int, force: bool, skip_pbp: bool) -> None:
         """Sync canonical NFL teams, games, rosters, and weekly statistics."""
         from sports_aggregator.nfl.nflverse import NflverseClient
         from sports_aggregator.nfl.sync import NFLDataSync
         client = NflverseClient(app.config["NFLVERSE_RAW_CACHE_PATH"])
-        report = NFLDataSync(client, app.extensions["nfl_repository"]).sync(year, force=force)
+        report = NFLDataSync(client, app.extensions["nfl_repository"]).sync(
+            year, force=force, include_pbp=not skip_pbp,
+        )
         for dataset in report.datasets:
             click.echo(f"{dataset.dataset}: {dataset.status} ({dataset.count})")
         from sports_aggregator.nfl.espn import sync_espn_context
@@ -490,6 +495,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         from reds.reds import reds
         app.register_blueprint(reds, url_prefix="/reds")
         app.register_blueprint(bengals, url_prefix="/bengals")
+    if app.config["NFL_AUTO_SEED"]:
+        from sports_aggregator.nfl.production_seed import maybe_launch
+        maybe_launch(database_path=app.config["NFL_DATABASE_PATH"])
     return app
 
 

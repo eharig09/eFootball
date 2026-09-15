@@ -87,6 +87,13 @@ services:
         value: /var/data/nfl.sqlite3
       - key: NFLVERSE_RAW_CACHE_PATH
         value: /var/data/nflverse_raw
+      # The disk is unavailable during Render build/pre-deploy commands. The
+      # live worker therefore launches a lock-safe, one-time population helper
+      # only while the NFL database is empty.
+      - key: NFL_AUTO_SEED
+        value: "1"
+      - key: NFL_PFF_SOURCE_ROOT
+        value: /var/data/nfl_pff
       - key: SPORTSDATAVERSE_CACHE_PATH
         value: /var/data/sportsdataverse
       - key: CFB_WEATHER_CACHE_PATH

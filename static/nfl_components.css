@@ -247,3 +247,4 @@ main{padding:24px 24px 64px}
 }
 @media(max-width:390px){.staff-grid{grid-template-columns:1fr}.nfl-header-search input[type=search]{width:88px}.team-facts{grid-template-columns:repeat(2,1fr)}.leader-card-grid,.team-leader-row{grid-template-columns:1fr}.matchup-scoreboard{gap:4px}.scoreboard-team img{width:46px;height:46px}}
 .staff-analysis>.defense-tendency>header{border-top-color:var(--team-secondary)}
+.seed-status{display:flex;align-items:center;gap:.8rem;margin:.8rem 0;padding:.75rem 1rem;border:1px solid #31506a;border-left:4px solid #4da3ff;background:#101d28;color:#dcecff;font-size:.92rem}.seed-status strong{color:#fff;white-space:nowrap}.seed-status span{color:#aebfd0}@media(max-width:700px){.seed-status{align-items:flex-start;flex-direction:column;gap:.25rem}.seed-status strong{white-space:normal}}
