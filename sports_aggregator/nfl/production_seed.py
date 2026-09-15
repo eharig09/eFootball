@@ -139,12 +139,23 @@ def restore_public_seed(database: Path, archive: Path = DEFAULT_SEED_ARCHIVE) ->
             "SELECT name FROM seed.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )]
         for name in names:
-            if connection.execute(
-                "SELECT 1 FROM main.sqlite_master WHERE type='table' AND name=?", (name,)
-            ).fetchone() is None:
+            dest_columns = [row[1] for row in connection.execute(f'PRAGMA main.table_info("{name}")')]
+            if not dest_columns:
                 continue
+            # Column order can drift between databases whose "games"-style
+            # tables picked up columns via different ALTER TABLE histories.
+            # Matching by name (not position) keeps a stray reorder from
+            # silently shifting values into the wrong column.
+            source_columns = {row[1] for row in connection.execute(f'PRAGMA seed.table_info("{name}")')}
+            shared = [column for column in dest_columns if column in source_columns]
+            if not shared:
+                continue
+            column_list = ",".join(f'"{column}"' for column in shared)
             before = connection.total_changes
-            connection.execute(f'INSERT OR IGNORE INTO main."{name}" SELECT * FROM seed."{name}"')
+            connection.execute(
+                f'INSERT OR IGNORE INTO main."{name}" ({column_list}) '
+                f'SELECT {column_list} FROM seed."{name}"'
+            )
             rows += connection.total_changes - before
             tables += 1
         connection.commit()

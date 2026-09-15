@@ -50,7 +50,18 @@ def build(source: Path, output: Path) -> None:
         connection.execute("PRAGMA synchronous=OFF")
         connection.execute("ATTACH DATABASE ? AS source", (str(source.resolve()),))
         for table, where in FILTERS.items():
-            connection.execute(f"INSERT OR IGNORE INTO main.{table} SELECT * FROM source.{table} WHERE {where}")
+            # Column order can drift between databases whose "games"-style
+            # tables picked up columns via different ALTER TABLE histories.
+            # Matching by name (not position) keeps a stray reorder from
+            # silently shifting values into the wrong column.
+            dest_columns = [row[1] for row in connection.execute(f'PRAGMA main.table_info("{table}")')]
+            source_columns = {row[1] for row in connection.execute(f'PRAGMA source.table_info("{table}")')}
+            shared = [column for column in dest_columns if column in source_columns]
+            column_list = ",".join(f'"{column}"' for column in shared)
+            connection.execute(
+                f"INSERT OR IGNORE INTO main.{table} ({column_list}) "
+                f"SELECT {column_list} FROM source.{table} WHERE {where}"
+            )
             connection.commit()
         connection.execute("DETACH DATABASE source")
         connection.execute("PRAGMA journal_mode=DELETE")
