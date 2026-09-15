@@ -102,7 +102,7 @@
     {% if form_charts %}
     <section class="section" id="form" data-nfl-panel="performance">
         <div class="section-head"><div><p class="eyebrow">{{ form_season }} weekly trend{% if form_season != season %} &middot; latest complete baseline{% endif %}</p><h2>Recent team form</h2></div></div>
-        <p class="section-note">Each point links to the corresponding matchup. Series are scaled independently so direction and week-to-week movement remain legible.</p>
+        <p class="section-note">Each point links to the corresponding matchup. Metrics sharing a unit (points, EPA, yards, counts) share one axis; different units still scale independently.</p>
         {{ chart_workbench(form_charts, 'team-form') }}
     </section>
     {% endif %}

@@ -92,8 +92,8 @@ def usage_table(rows: list[dict], *, caption: str = "Opportunity leaders") -> Ta
 def pff_leaders_table(rows: list[dict], *, caption: str, season: int) -> Table:
     for row in rows:
         if row.get("gsis_id"):
-            row["player_name_url"] = f"/nfl/players/{quote(str(row['gsis_id']), safe='')}/?season={season + 1}"
-        row["team_url"] = f"/nfl/teams/{row['team']}/?season={season + 1}"
+            row["player_name_url"] = f"/nfl/players/{quote(str(row['gsis_id']), safe='')}/?season={season}"
+        row["team_url"] = f"/nfl/teams/{row['team']}/?season={season}"
     return Table(
         (Column("player_name", "Player"), Column("team", "Team"),
          Column("position", "Pos."), Column("value", "Value", "f1", emphasis=True),
