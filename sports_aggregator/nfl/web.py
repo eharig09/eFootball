@@ -6,7 +6,7 @@ from pathlib import Path
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
 
 from sports_aggregator.catalog import get_league
-from sports_aggregator.nfl.charts import player_charts, team_charts
+from sports_aggregator.nfl.charts import player_charts, team_charts, with_last_season
 from sports_aggregator.nfl.alignments import alignment_matchups, rushing_matchups
 from sports_aggregator.nfl.availability import availability_packet
 from sports_aggregator.nfl.content import NFLContentRepository
@@ -69,6 +69,14 @@ def _content() -> NFLContentRepository:
 def _pff() -> NFLPFFService:
     return NFLPFFService(_repository(), current_app.config["NFL_PFF_SOURCE_ROOT"],
                          current_app.config.get("NFL_PFF_UPLOAD_ROOT"))
+
+
+def _team_form_rows(season: int, code: str) -> list[dict]:
+    """This season's weekly form, backfilled with last season's tail early on."""
+    repository = _repository()
+    current = repository.team_weekly_performance(season, code)
+    previous = repository.team_weekly_performance(season - 1, code)
+    return with_last_season(current, previous)
 
 
 def _pff_season(season: int) -> int | None:
@@ -506,11 +514,7 @@ def team_page(abbreviation: str):
     pff_season = _pff_season(season) or season - 1
     movements = significant_movements(_repository(), _pff(), season, code)
     context = team_context(_repository(), season, code)
-    form_season = season
-    form_rows = _repository().team_weekly_performance(form_season, code)
-    if not form_rows:
-        form_season = season - 1
-        form_rows = _repository().team_weekly_performance(form_season, code)
+    form_rows = _team_form_rows(season, code)
     content_items = _content().for_team(code, 60)
     availability = availability_packet(_repository(), season, code)
     rooms = position_rooms(
@@ -537,7 +541,7 @@ def team_page(abbreviation: str):
         position_rooms=rooms, availability=availability,
         staff=staff_packet["staff"], staff_packet=staff_packet,
         efficiency=context["efficiency"], team_context=context,
-        form_season=form_season, form_charts=team_charts(form_rows),
+        form_charts=team_charts(form_rows),
         record=_repository().team_record(season, code),
         sources=_sources(team=team["name"]),
         source_sections=SOURCE_SECTIONS,
@@ -557,11 +561,7 @@ def team_api(abbreviation: str):
     pff_season = _pff_season(season) or season - 1
     movements = significant_movements(_repository(), _pff(), season, code)
     context = team_context(_repository(), season, code)
-    form_season = season
-    form_rows = _repository().team_weekly_performance(form_season, code)
-    if not form_rows:
-        form_season = season - 1
-        form_rows = _repository().team_weekly_performance(form_season, code)
+    form_rows = _team_form_rows(season, code)
     availability = availability_packet(_repository(), season, code)
     staff_packet = staff_tendencies(
         _repository(), _pff(), season, code, pff_season, context["efficiency"],
@@ -580,7 +580,7 @@ def team_api(abbreviation: str):
             caption=f"{context['usage']['season']} opportunity leaders",
         ).as_dict(),
         "efficiency": context["efficiency"], "team_context": context,
-        "form_season": form_season, "form_charts": team_charts(form_rows),
+        "form_charts": team_charts(form_rows),
         "record": _repository().team_record(season, code),
         "sources": _sources(team=team["name"]),
         "movements": movements, "content": _content().for_team(code),
@@ -732,11 +732,7 @@ def _player_packet(player_id: str, season: int) -> dict:
     team_identity = repository.get_team(player["teams"][0]) if player.get("teams") else None
     weekly = repository.player_weekly(season, player_id)
     totals = repository.player_totals(season, player_id)
-    chart_season = season
-    chart_rows = weekly
-    if not chart_rows:
-        chart_season = season - 1
-        chart_rows = repository.player_weekly(chart_season, player_id)
+    chart_rows = with_last_season(weekly, repository.player_weekly(season - 1, player_id))
     passing_profile = pass_zone_packet(repository.qb_pass_profile(season, player_id))
     if player.get("position") == "QB" and not passing_profile["has_data"]:
         passing_profile = pass_zone_packet(repository.qb_pass_profile(season - 1, player_id))
@@ -762,7 +758,6 @@ def _player_packet(player_id: str, season: int) -> dict:
         "headline_stats": player_headline_stats(totals, player.get("position")),
         "game_log": player_game_log(weekly),
         "game_log_groups": player_game_log_tables(weekly),
-        "chart_season": chart_season,
         "performance_charts": player_charts(chart_rows, player.get("position")),
         "passing_profile": passing_profile,
         "receiving_profile": receiving_profile,

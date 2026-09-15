@@ -1413,18 +1413,20 @@ class NFLRepository:
                            "points": row["away_score"] + row["home_score"],
                            "total_line": row.get("total_line")})
         overall = grade(played)
+        # "Vs this number" is meant to read as current form, not a career
+        # tendency re-tested against today's line -- scoped to this season
+        # while every other split here stays career-wide.
+        this_season = [item for item in played if item["season"] == game["season"]]
         versus = None
         if current_spread is not None:
-            versus_rows = [{**item, "spread": current_spread} for item in played]
+            versus_rows = [{**item, "spread": current_spread} for item in this_season]
             versus = {**grade(versus_rows), "number": current_spread}
         versus_total = None
         if current_total is not None:
-            versus_total_rows = [{**item, "total_line": current_total} for item in played]
+            versus_total_rows = [{**item, "total_line": current_total} for item in this_season]
             versus_total = {**grade(versus_total_rows), "number": current_total}
         return {"coach": coach, **overall,
-                "season": {**grade([item for item in played
-                                     if item["season"] == game["season"]]),
-                           "year": game["season"]},
+                "season": {**grade(this_season), "year": game["season"]},
                 "favorite": grade([item for item in played if item["spread"] < 0]),
                 "underdog": grade([item for item in played if item["spread"] > 0]),
                 "home": grade([item for item in played if item["site"] == "home"]),
@@ -1933,7 +1935,7 @@ class NFLRepository:
             games: dict[str, dict[str, Any]] = {}
             for row in rows:
                 game = games.setdefault(row["game_id"], {
-                    "week": row["week"], "season_type": row["season_type"],
+                    "week": row["week"], "season": season, "season_type": row["season_type"],
                     "game_id": row["game_id"], "team": row["team"],
                     "opponent_team": row["opponent_team"],
                     "player_name": row["player_name"], "position": row["position"],

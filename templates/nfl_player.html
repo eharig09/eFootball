@@ -50,7 +50,7 @@
 
     {% if performance_charts %}
     <section class="section" id="form">
-        <div class="section-head"><div><p class="eyebrow">{{ chart_season }} weekly trend{% if chart_season != season %} &middot; latest complete baseline{% endif %}</p><h2>Recent performance</h2></div></div>
+        <div class="section-head"><div><p class="eyebrow">{{ season }} weekly trend</p><h2>Recent performance</h2></div></div>
         <p class="section-note">The series adapts to the player’s position and links every point back to the matchup.</p>
         {{ chart_workbench(performance_charts, 'player-form') }}
     </section>
