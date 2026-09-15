@@ -304,6 +304,12 @@ as `nfl_production_seed.json` and `nfl_production_seed.log`; a successful popula
 database does not launch the helper again. Current play-by-play analytics continue on
 the scheduled analytics segment.
 
+On the memory-constrained Render service, first-run essentials come from the compact
+`data/nfl/render_seed.sqlite3.gz` public-data snapshot. It contains no PFF tables or
+licensed exports and expands to roughly 100 MB, avoiding a second pandas/Arrow process
+beside Gunicorn. `python -m scripts.build_nfl_render_seed` rebuilds it from the local
+canonical store; current scheduled syncs take over after restoration.
+
 PFF exports are intentionally not committed to this public repository. Render reads
 them from `NFL_PFF_SOURCE_ROOT=/var/data/nfl_pff` after an authorized export has been
 placed on the persistent disk. Until then, public nflverse data populates normally

@@ -881,6 +881,10 @@ pre-deploy commands. Production therefore uses a runtime initializer:
 - Essentials run without play-by-play first, so schedules, teams, rosters, weekly
   production, snap counts, depth charts, IDs, staff, injuries, sources, and Elo become
   usable before the largest parquet file is loaded.
+- The memory-constrained deployment restores those essentials from a compressed,
+  public-only SQLite snapshot. The snapshot carries the latest depth-chart observation
+  per team rather than hundreds of historical duplicate releases, excludes every PFF
+  table, and merges through `INSERT OR IGNORE` so it cannot erase newer production rows.
 - Reporting follows essentials, then a no-PBP 2010-through-prior-season backfill.
   Current PBP and derived matchup analytics remain assigned to the low-traffic
   analytics refresh segment.

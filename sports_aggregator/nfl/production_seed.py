@@ -10,12 +10,15 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import argparse
+import gzip
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import time
+import shutil
+import sqlite3
 from typing import Any
 
 from sports_aggregator.nfl.nflverse import current_season
@@ -26,6 +29,7 @@ LOCK_NAME = "nfl_production_seed.lock"
 STATE_NAME = "nfl_production_seed.json"
 LOG_NAME = "nfl_production_seed.log"
 DEFAULT_RETRY_SECONDS = 6 * 3600
+DEFAULT_SEED_ARCHIVE = Path(__file__).resolve().parents[2] / "data" / "nfl" / "render_seed.sqlite3.gz"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -118,6 +122,39 @@ def _pff_available() -> bool:
     return any((root / relative).is_dir() for relative in ("nfl/pff", "pff_coverage_data"))
 
 
+def restore_public_seed(database: Path, archive: Path = DEFAULT_SEED_ARCHIVE) -> dict[str, int]:
+    """Merge a compressed, public-only SQLite snapshot without loading pandas."""
+    if not archive.is_file():
+        return {"tables": 0, "rows": 0}
+    temporary = database.parent / "nfl_render_seed.restore.sqlite3"
+    temporary.unlink(missing_ok=True)
+    with gzip.open(archive, "rb") as incoming, temporary.open("wb") as output:
+        shutil.copyfileobj(incoming, output, length=1024 * 1024)
+    connection = sqlite3.connect(database, timeout=60)
+    tables = rows = 0
+    try:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute("ATTACH DATABASE ? AS seed", (str(temporary),))
+        names = [row[0] for row in connection.execute(
+            "SELECT name FROM seed.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )]
+        for name in names:
+            if connection.execute(
+                "SELECT 1 FROM main.sqlite_master WHERE type='table' AND name=?", (name,)
+            ).fetchone() is None:
+                continue
+            before = connection.total_changes
+            connection.execute(f'INSERT OR IGNORE INTO main."{name}" SELECT * FROM seed."{name}"')
+            rows += connection.total_changes - before
+            tables += 1
+        connection.commit()
+        connection.execute("DETACH DATABASE seed")
+    finally:
+        connection.close()
+        temporary.unlink(missing_ok=True)
+    return {"tables": tables, "rows": rows}
+
+
 def run(season: int) -> dict[str, Any]:
     """Populate essentials first, then content and bounded historical context."""
     database = Path(os.getenv("NFL_DATABASE_PATH", "instance/nfl.sqlite3"))
@@ -126,12 +163,32 @@ def run(season: int) -> dict[str, Any]:
     state_path = database.parent / STATE_NAME
     lock_path = database.parent / LOCK_NAME
     state: dict[str, Any] = {
-        "status": "running", "season": season, "started_at": _stamp(), "stages": [],
+        "status": "running", "season": season,
+        "deploy": os.getenv("RENDER_GIT_COMMIT", "").strip()[:16],
+        "started_at": _stamp(), "stages": [],
     }
     state_path.write_text(json.dumps(state), encoding="utf-8")
     environment = os.environ.copy()
     environment["NFL_AUTO_SEED_CHILD"] = "1"
     root = Path(__file__).resolve().parents[2]
+
+    try:
+        restored = restore_public_seed(database)
+    except Exception as exc:
+        state.update(status="failed", error=f"public snapshot: {type(exc).__name__}: {exc}",
+                     finished_at=_stamp())
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        lock_path.unlink(missing_ok=True)
+        return state
+    if restored["rows"]:
+        state["stages"].append({"stage": "public_snapshot", "started_at": state["started_at"],
+                                "finished_at": _stamp(), "status": "success", **restored})
+        state["status"] = "success" if not needs_seed(NFLRepository(database), season) else "degraded"
+        state["counts"] = NFLRepository(database).counts(season)
+        state["finished_at"] = _stamp()
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        lock_path.unlink(missing_ok=True)
+        return state
 
     stages = ["essentials", "content", "history"]
     if _pff_available():
