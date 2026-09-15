@@ -12,6 +12,7 @@ import os
 import re
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
 from app import create_app
@@ -249,7 +250,7 @@ class ServedMetadataTests(unittest.TestCase):
         )])
         self.repository.replace_games(2026, [Game.from_cfbd({
             "id": 401, "season": 2026, "week": 3, "seasonType": "regular",
-            "startDate": "2026-09-12T19:30:00.000Z", "startTimeTBD": False,
+            "startDate": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(), "startTimeTBD": False,
             "completed": False, "neutralSite": False, "conferenceGame": True,
             "venue": "Snapdragon Stadium", "venueId": 1,
             "homeId": 21, "homeTeam": "San Diego State", "homeConference": "Mountain West",

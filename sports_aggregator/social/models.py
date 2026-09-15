@@ -31,6 +31,25 @@ class SourceProfile:
 
 
 @dataclass(frozen=True, slots=True)
+class LeagueSourceProfile:
+    """One source's league-specific editorial scope and routing metadata."""
+
+    source: SourceProfile
+    league: str
+    scope: str
+    conference: str | None = None
+    division: str | None = None
+    team: str | None = None
+    account_type: str = ""
+    directory_priority: int = 3
+    profile_url: str = ""
+    notes: str = ""
+    verification: str = ""
+    # (display tag, tag family, destination section)
+    tags: tuple[tuple[str, str, str], ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
 class IdentityResolution:
     requested_handle: str
     did: str | None

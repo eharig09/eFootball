@@ -53,6 +53,28 @@ _LEAGUES = MappingProxyType(
                 ),
             ),
         ),
+        "nfl": LeagueConfig(
+            slug="nfl",
+            name="National Football League",
+            sport="Football",
+            abbreviation="NFL",
+            description=(
+                "League-wide NFL reporting, with schedules, rosters, player statistics, "
+                "and analytics being added on top of the shared news platform."
+            ),
+            accent_color="#d50a0a",
+            feeds=(
+                FeedConfig(
+                    name="ESPN",
+                    url="https://www.espn.com/espn/rss/nfl/news",
+                    max_articles=40,
+                    source_type="national_reporting",
+                    reliability=4,
+                    source_entity_key="organization:espn",
+                    source_endpoint_key="rss:https://www.espn.com/espn/rss/nfl/news",
+                ),
+            ),
+        ),
     }
 )
 

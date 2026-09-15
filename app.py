@@ -1,6 +1,6 @@
 import os
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import secrets
@@ -13,6 +13,9 @@ from dotenv import load_dotenv
 
 from sports_aggregator.cfb.refresh_window import profile_for
 from sports_aggregator.cfb.repository import CFBRepository
+from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.nfl.nflverse import current_season as current_nfl_season
+from sports_aggregator.nfl.web import nfl_pages
 from sports_aggregator.cfb.web import cfb_pages
 from sports_aggregator.cfb.data_status import data_status_pages
 from sports_aggregator.cfb.data_import import data_import_pages
@@ -99,6 +102,15 @@ def create_app(test_config: dict | None = None) -> Flask:
         CFB_DATABASE_PATH=os.getenv(
             "CFB_DATABASE_PATH", os.path.join(app.instance_path, "cfb.sqlite3")
         ),
+        NFL_DATABASE_PATH=os.getenv(
+            "NFL_DATABASE_PATH", os.path.join(app.instance_path, "nfl.sqlite3")
+        ),
+        NFLVERSE_RAW_CACHE_PATH=os.getenv(
+            "NFLVERSE_RAW_CACHE_PATH", os.path.join(app.instance_path, "nflverse_raw")
+        ),
+        NFL_PFF_SOURCE_ROOT=os.getenv(
+            "NFL_PFF_SOURCE_ROOT", r"C:\Users\ehari\Desktop\scouting_report"
+        ),
         CFBD_RAW_CACHE_PATH=os.getenv(
             "CFBD_RAW_CACHE_PATH", os.path.join(app.instance_path, "cfbd_raw")
         ),
@@ -116,6 +128,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     ) or build_default_service()
     app.extensions["cfb_repository"] = app.config.get("CFB_REPOSITORY") or CFBRepository(
         app.config["CFB_DATABASE_PATH"]
+    )
+    app.extensions["nfl_repository"] = app.config.get("NFL_REPOSITORY") or NFLRepository(
+        app.config["NFL_DATABASE_PATH"]
     )
     # Reads share one connection for the life of a request; this is the end at
     # which it is closed. See CFBRepository._reader.
@@ -288,6 +303,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
 
     app.register_blueprint(league_pages)
+    app.register_blueprint(nfl_pages)
     app.register_blueprint(cfb_pages)
     app.register_blueprint(data_status_pages)
     app.register_blueprint(data_import_pages)
@@ -307,6 +323,167 @@ def create_app(test_config: dict | None = None) -> Flask:
             click.echo(f"{dataset.dataset}: {dataset.status} ({dataset.count})")
         if not report.succeeded:
             raise click.ClickException("One or more CFBD datasets failed; inspect application logs.")
+
+    @app.cli.command("sync-nfl")
+    @click.option("--year", type=int, default=current_nfl_season)
+    @click.option("--force", is_flag=True, help="Bypass cached nflverse release assets.")
+    def sync_nfl(year: int, force: bool) -> None:
+        """Sync canonical NFL teams, games, rosters, and weekly statistics."""
+        from sports_aggregator.nfl.nflverse import NflverseClient
+        from sports_aggregator.nfl.sync import NFLDataSync
+        client = NflverseClient(app.config["NFLVERSE_RAW_CACHE_PATH"])
+        report = NFLDataSync(client, app.extensions["nfl_repository"]).sync(year, force=force)
+        for dataset in report.datasets:
+            click.echo(f"{dataset.dataset}: {dataset.status} ({dataset.count})")
+        from sports_aggregator.nfl.espn import sync_espn_context
+        context = sync_espn_context(
+            app.extensions["nfl_repository"], app.config["NFLVERSE_RAW_CACHE_PATH"],
+            year, force=force,
+        )
+        click.echo(f"nfl_context: success (staff={context['staff']}, injuries={context['injuries']})")
+        from sports_aggregator.nfl.source_directory import DEFAULT_PATH, import_directory
+        if DEFAULT_PATH.exists():
+            sources = import_directory(app.extensions["source_registry"], DEFAULT_PATH)
+            click.echo(f"nfl_sources: success ({sources})")
+        if not report.succeeded:
+            raise click.ClickException("One or more nflverse datasets failed; inspect application logs.")
+
+    @app.cli.command("sync-nfl-history")
+    @click.option("--start-year", type=click.IntRange(1999, 2100), default=2010, show_default=True)
+    @click.option("--end-year", type=click.IntRange(1999, 2100), default=lambda: current_nfl_season() - 1)
+    @click.option("--force", is_flag=True, help="Bypass cached nflverse release assets.")
+    @click.option("--skip-pbp", is_flag=True, help="Load schedules and weekly stats without PBP analytics.")
+    def sync_nfl_history(start_year: int, end_year: int, force: bool, skip_pbp: bool) -> None:
+        """Backfill NFL schedule, player, team, and play-by-play history sequentially."""
+        if end_year < start_year:
+            raise click.ClickException("--end-year must be at least --start-year")
+        from sports_aggregator.nfl.nflverse import NflverseClient
+        from sports_aggregator.nfl.sync import NFLDataSync
+        client = NflverseClient(app.config["NFLVERSE_RAW_CACHE_PATH"])
+        result = NFLDataSync(client, app.extensions["nfl_repository"]).sync_history(
+            start_year, end_year, force=force, include_pbp=not skip_pbp,
+        )
+        click.echo("nfl_history: " + json.dumps(result, sort_keys=True))
+        cache.clear()
+
+    @app.cli.command("sync-nfl-rosters")
+    @click.option("--year", type=int, default=current_nfl_season)
+    @click.option("--force", is_flag=True, help="Bypass the cached nflverse roster release.")
+    def sync_nfl_rosters(year: int, force: bool) -> None:
+        """Refresh only the canonical current NFL roster for a season."""
+        from sports_aggregator.nfl.nflverse import NflverseClient
+        from sports_aggregator.nfl.sync import NFLDataSync
+        client = NflverseClient(app.config["NFLVERSE_RAW_CACHE_PATH"])
+        count = NFLDataSync(client, app.extensions["nfl_repository"]).sync_players(
+            year, force=force,
+        )
+        click.echo(f"players: success ({count})")
+        from sports_aggregator.nfl.espn import sync_espn_context
+        context = sync_espn_context(
+            app.extensions["nfl_repository"], app.config["NFLVERSE_RAW_CACHE_PATH"],
+            year, force=force,
+        )
+        click.echo(f"nfl_context: success (staff={context['staff']}, injuries={context['injuries']})")
+
+    @app.cli.command("sync-nfl-context")
+    @click.option("--year", type=int, default=current_nfl_season)
+    @click.option("--force", is_flag=True, help="Bypass the cached ESPN injury document.")
+    def sync_nfl_context(year: int, force: bool) -> None:
+        """Refresh current NFL staff and injury context without heavier datasets."""
+        from sports_aggregator.nfl.espn import sync_espn_context
+        result = sync_espn_context(
+            app.extensions["nfl_repository"], app.config["NFLVERSE_RAW_CACHE_PATH"],
+            year, force=force,
+        )
+        click.echo(f"nfl_context: success (staff={result['staff']}, injuries={result['injuries']})")
+        cache.clear()
+
+    @app.cli.command("sync-nfl-pff")
+    @click.option("--year", type=int, default=lambda: current_nfl_season() - 1)
+    @click.option("--force-scan", is_flag=True, help="Re-fingerprint unchanged PFF exports.")
+    def sync_nfl_pff(year: int, force_scan: bool) -> None:
+        """Scan sibling-repo NFL PFF exports and persist normalized metrics."""
+        from sports_aggregator.nfl.pff import NFLPFFService
+        result = NFLPFFService(
+            app.extensions["nfl_repository"], app.config["NFL_PFF_SOURCE_ROOT"],
+        ).sync(year, force_scan=force_scan)
+        click.echo("nfl_pff: " + json.dumps(result, sort_keys=True))
+        cache.clear()
+
+    @app.cli.command("sync-nfl-pbp-analytics")
+    @click.option("--year", type=int, default=lambda: current_nfl_season() - 1)
+    @click.option("--force", is_flag=True, help="Bypass the cached nflverse play-by-play asset.")
+    def sync_nfl_pbp_analytics(year: int, force: bool) -> None:
+        """Rebuild efficiency and QB pass-zone analytics from nflverse PBP."""
+        from sports_aggregator.nfl.nflverse import NflverseClient
+        client = NflverseClient(app.config["NFLVERSE_RAW_CACHE_PATH"])
+        rows = client.load_pbp([year], force=force).to_dict("records")
+        efficiency = app.extensions["nfl_repository"].replace_game_efficiency(year, rows)
+        situational = app.extensions["nfl_repository"].replace_game_situational(year, rows)
+        playcalling = app.extensions["nfl_repository"].replace_game_playcalling(year, rows)
+        profiles = app.extensions["nfl_repository"].replace_qb_pass_profiles(year, rows)
+        receivers = app.extensions["nfl_repository"].replace_receiver_pass_profiles(year, rows)
+        click.echo(f"pbp_analytics: success (efficiency={efficiency}, situational={situational}, playcalling={playcalling}, pass_zones={profiles}, receiver_zones={receivers})")
+        cache.clear()
+
+    @app.cli.command("import-nfl-sources")
+    @click.option("--input", "input_path", type=click.Path(exists=True, dir_okay=False),
+                  default="data/nfl/NFL_Bluesky_Directory.xlsx", show_default=True)
+    def import_nfl_sources(input_path: str) -> None:
+        """Import the curated NFL Bluesky directory into the shared registry."""
+        from sports_aggregator.nfl.source_directory import import_directory
+        count = import_directory(app.extensions["source_registry"], input_path)
+        click.echo(f"nfl_sources_imported={count}")
+
+    @app.cli.command("sync-nfl-content")
+    @click.option("--year", type=int, default=current_nfl_season)
+    @click.option("--posts-per-source", type=click.IntRange(1, 20), default=4, show_default=True)
+    @click.option("--max-sources", type=click.IntRange(1, 500), default=158, show_default=True)
+    @click.option("--no-social", is_flag=True, help="Ingest league RSS without Bluesky feeds.")
+    def sync_nfl_content(year: int, posts_per_source: int, max_sources: int,
+                         no_social: bool) -> None:
+        """Ingest NFL reporting and public Bluesky posts, then link entities."""
+        from sports_aggregator.catalog import get_league
+        from sports_aggregator.nfl.content import NFLContentRepository
+        content = NFLContentRepository(app.extensions["nfl_repository"])
+        league = get_league("nfl"); rss_started = datetime.now(timezone.utc)
+        result = app.extensions["league_aggregation_service"].aggregate(league)
+        article_count = content.ingest_articles(result.articles, year)
+        rss_finished = datetime.now(timezone.utc)
+        rss_errors = [{"source": error.source, "error": error.message} for error in result.errors]
+        failed_sources = {error["source"] for error in rss_errors}
+        articles_by_source = {feed.name: sum(article.source == feed.name for article in result.articles)
+                              for feed in league.feeds}
+        content.record_source_checks(({
+            "platform": "rss", "source_key": feed.url, "display_name": feed.name,
+            "success": feed.name not in failed_sources,
+            "seen": articles_by_source[feed.name], "stored": articles_by_source[feed.name],
+            "error": next((error["error"] for error in rss_errors
+                           if error["source"] == feed.name), None),
+        } for feed in league.feeds), checked_at=rss_finished)
+        content.record_ingestion_run(
+            "rss", year, rss_started, rss_finished, len(league.feeds),
+            len(league.feeds) - len(rss_errors), len(result.articles), article_count, rss_errors,
+        )
+        click.echo(f"nfl_articles: success ({article_count})")
+        if result.errors:
+            click.echo(f"nfl_article_errors: {len(result.errors)}")
+        if not no_social:
+            sources = app.extensions["source_registry"].list_league_sources(
+                "nfl", limit=max_sources,
+            )
+            social = content.ingest_bluesky(
+                sources, year, posts_per_source=posts_per_source,
+            )
+            click.echo(f"nfl_bluesky: stored ({social['stored']}) from {social['sources']} sources")
+            if social["errors"]:
+                click.echo(f"nfl_bluesky_errors: {len(social['errors'])}")
+                for error in social["errors"][:20]:
+                    click.echo(f"  {error['handle']}: {error['error']}")
+        rescored = content.rescore_all()
+        click.echo(f"nfl_content_scored: {rescored}")
+        click.echo("nfl_content_links: " + json.dumps(content.counts(), sort_keys=True))
+        cache.clear()
 
     if app.config["REGISTER_LEGACY_DASHBOARDS"]:
         from blueprints.bengals import bengals

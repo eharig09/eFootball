@@ -1,0 +1,28 @@
+{% macro pass_zone_grid(profile, title) %}
+<article class="pass-zone-card">
+    <header><div><small>{{ profile.season }} charted {{ 'targets' if profile.is_receiver else 'passes' }}</small><h3>{{ title }}</h3></div><span>{{ (profile.total.targets if profile.is_receiver else profile.total.attempts)|cell('int') }} {{ 'targets' if profile.is_receiver else 'attempts' }}</span></header>
+    <div class="pass-zone-head"><span>Depth</span><b>Left</b><b>Middle</b><b>Right</b></div>
+    {% for row in profile.rows %}<div class="pass-zone-row"><strong>{{ row.label }}</strong>{% for zone in row.cells %}
+        <div class="pass-zone-cell performance-{{ zone.tone }}-{{ zone.strength }}{% if not (zone.targets if profile.is_receiver else zone.attempts) %} empty-zone{% endif %}"{% if zone.contributors %} tabindex="0" aria-label="{{ row.label }} {{ zone.location }}; hover or focus for receiver breakdown"{% endif %}>
+            {% if profile.is_receiver and zone.targets %}<b>{{ zone.receptions|cell('int') }}/{{ zone.targets|cell('int') }}</b><span>receptions / targets</span><small>{{ zone.receiving_yards|cell('int') }} yd · {{ zone.epa_per_target|cell('signed2') }} EPA/tgt<br>{{ zone.yards_after_catch|cell('int') }} YAC · {{ zone.yards_per_reception|cell('f1') }} Y/R</small>
+            {% elif zone.attempts %}<b>{{ zone.epa_per_attempt|cell('signed2') }}</b><span>EPA / att</span><small>{{ zone.completion_rate|cell('rate') }} · {{ zone.completions|cell('int') }}/{{ zone.attempts|cell('int') }} comp/att</small>{% else %}<b>—</b><span>No sample</span>{% endif %}
+            {% if zone.contributors %}<div class="pass-zone-tooltip" role="tooltip"><strong>Recipients in this zone</strong>{% for player in zone.contributors %}<a href="{{ player.player_url }}"><b>{{ player.receiver_name }}</b><span>{{ player.receptions|cell('int') }}/{{ player.targets|cell('int') }} &middot; {{ player.receiving_yards|cell('int') }} yd &middot; {{ player.touchdowns|cell('int') }} TD &middot; {{ player.adot|cell('f1') }} aDOT</span></a>{% endfor %}</div>{% endif %}
+        </div>{% endfor %}</div>{% endfor %}
+    {% if profile.is_receiver %}<footer><span><b>{{ profile.total.receptions|cell('int') }}/{{ profile.total.targets|cell('int') }}</b> receptions / targets</span><span><b>{{ profile.total.yards_per_target|cell('f1') }}</b> yards / target</span><span><b>{{ profile.total.yac_per_reception|cell('f1') }}</b> YAC / reception</span></footer>
+    {% else %}<footer><span><b>{{ profile.total.average_depth|cell('f1') }}</b> avg depth</span><span><b>{{ profile.total.yards_per_attempt|cell('f1') }}</b> yards / att</span><span><b>{{ profile.total.cpoe|cell('signed') }}</b> CPOE</span></footer>{% endif %}
+    <p class="pass-zone-legend"><i class="legend-good"></i>{{ 'Better defense (lower EPA allowed)' if profile.lower_is_better else 'Better result' }} <i class="legend-bad"></i>{{ 'Worse defense (higher EPA allowed)' if profile.lower_is_better else 'Worse result' }} <span>Color strength = EPA performance, not volume</span></p>
+</article>
+{% endmacro %}
+
+{% macro pass_matchup_grid(comparison) %}
+<article class="pass-matchup-card" style="--offense-color:{{ comparison.offense_identity.color or '#3d8eb9' }};--defense-color:{{ comparison.defense_identity.color or '#a95757' }}">
+    <header><div><small>{{ comparison.offense }} offense</small><h3>{{ comparison.quarterback.player_name if comparison.quarterback else 'Quarterback sample unavailable' }}</h3></div><span>vs</span><div><small>{{ comparison.defense }} defense</small><h3>Results allowed</h3></div></header>
+    <div class="pass-matchup-legend"><span class="offense-key">{{ comparison.offense }} advantage</span><span>Edge = QB EPA/att minus defense EPA/att allowed</span><span class="defense-key">{{ comparison.defense }} advantage</span></div>
+    <div class="pass-zone-head"><span>Depth</span><b>Left</b><b>Middle</b><b>Right</b></div>
+    {% for row in comparison.matchup.rows %}<div class="pass-zone-row"><strong>{{ row.label }}</strong>{% for zone in row.cells %}
+        <div class="pass-matchup-cell edge-{{ zone.lean }}-{{ zone.strength }}{% if zone.edge is none %} empty-zone{% endif %}"{% if zone.contributors %} tabindex="0"{% endif %}>
+            {% if zone.edge is not none %}<b>{{ zone.edge|cell('signed2') }}</b><span>{{ comparison.offense if zone.lean == 'offense' else comparison.defense if zone.lean == 'defense' else 'Even' }} edge</span><small>O {{ zone.offense_epa|cell('signed2') }} · D {{ zone.defense_epa|cell('signed2') }} EPA/att<br>{{ zone.interaction_share|cell('rate') }} interaction · {{ zone.offense_attempts }}/{{ zone.defense_attempts }} att</small>{% else %}<b>—</b><span>No comparison</span><small>{{ zone.offense_attempts }}/{{ zone.defense_attempts }} O/D attempts</small>{% endif %}
+            {% if zone.contributors %}<div class="pass-zone-tooltip" role="tooltip"><strong>{{ comparison.offense }} recipients</strong>{% for player in zone.contributors %}<a href="{{ player.player_url }}"><b>{{ player.receiver_name }}</b><span>{{ player.receptions|cell('int') }}/{{ player.targets|cell('int') }} · {{ player.receiving_yards|cell('int') }} yd · {{ player.touchdowns|cell('int') }} TD · {{ player.adot|cell('f1') }} aDOT</span></a>{% endfor %}</div>{% endif %}
+        </div>{% endfor %}</div>{% endfor %}
+</article>
+{% endmacro %}

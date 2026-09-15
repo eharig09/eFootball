@@ -1,0 +1,103 @@
+{% from '_tables.html' import data_table %}
+{% from '_nfl_nav.html' import nfl_nav %}
+{% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
+{% from '_nfl_charts.html' import line_chart, chart_workbench %}
+{% from '_nfl_passing.html' import pass_zone_grid %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>{{ player.full_name }} | {{ season }} NFL</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+</head>
+<body class="nfl-player-page">
+{{ nfl_nav('player', season, player.position or 'Player') }}
+<main>
+    <section class="nfl-hero player-hero" data-identity style="--team-primary:{{ team_identity.color or '#0b5aa5' }};--team-secondary:{{ team_identity.alternate_color or team_identity.color or '#d50a0a' }}">
+        {% if player.headshot_url %}<img src="{{ player.headshot_url }}" alt="" class="hero-headshot">{% endif %}
+        <div><p class="eyebrow">{{ season }} &middot; {{ player.position or 'NFL player' }}</p><h1>{{ player.full_name }}</h1>
+        <p>{% for team in player.teams %}<a href="{{ url_for('nfl.team_page', abbreviation=team, season=season) }}">{{ team }}</a>{{ ', ' if not loop.last }}{% endfor %}
+            {% if player.jersey_number is not none %} &middot; No. {{ player.jersey_number }}{% endif %}{% if player.status %} &middot; {{ player.status }}{% endif %}</p>
+        <div class="metrics">
+            {% if player.years_experience is not none %}<span><b>{{ player.years_experience }}</b> years experience</span>{% endif %}
+            {% if player.college %}<span><b>{{ player.college }}</b> college</span>{% endif %}
+            {% if player.height %}<span><b>{{ player.height|round|int }}</b> inches</span>{% endif %}
+            {% if player.weight %}<span><b>{{ player.weight }}</b> lbs</span>{% endif %}
+            {% if player.draft.draft_year %}<span><b>{{ player.draft.draft_year }}</b> draft &middot; round {{ player.draft.draft_round or '&mdash;' }} &middot; pick {{ player.draft.draft_pick or '&mdash;' }}</span>{% endif %}
+        </div></div>
+    </section>
+
+    {% if player.draft.draft_year %}
+    <section class="draft-pedigree" aria-label="Draft pedigree">
+        <span><small>Draft year</small><b>{{ player.draft.draft_year }}</b></span>
+        <span><small>Round</small><b>{{ player.draft.draft_round or 'UDFA' }}</b></span>
+        <span><small>Overall pick</small><b>{{ player.draft.draft_pick or '—' }}</b></span>
+        <span><small>Drafted by</small><b>{{ player.draft.draft_team or '—' }}</b></span>
+    </section>
+    {% endif %}
+
+    {% if pff.highlights %}
+    <section class="section" id="pff">
+        <div class="section-head"><div><p class="eyebrow">{{ pff.season }} PFF profile{% if pff.season != season %} &middot; prior-season baseline{% endif %}</p><h2>Grading and alignment</h2></div><a class="section-action" href="{{ url_for('nfl.pff_explorer', season=pff.season) }}">Open explorer &rarr;</a></div>
+        <div class="player-pff-grid">{% for stat in pff.highlights %}<article><span>{{ stat.label }}</span><b>{{ stat.value|cell(stat.format) }}</b><small>{{ stat.family|replace('_',' ') }}</small></article>{% endfor %}</div>
+        <p class="section-note">PFF season aggregates are sourced read-only from scouting_report and joined to this page by the provider’s player ID.</p>
+    </section>
+    {% endif %}
+
+    {% if performance_charts %}
+    <section class="section" id="form">
+        <div class="section-head"><div><p class="eyebrow">{{ chart_season }} weekly trend{% if chart_season != season %} &middot; latest complete baseline{% endif %}</p><h2>Recent performance</h2></div></div>
+        <p class="section-note">The series adapts to the player’s position and links every point back to the matchup.</p>
+        {{ chart_workbench(performance_charts, 'player-form') }}
+    </section>
+    {% endif %}
+
+    {% if passing_profile.has_data %}
+    <section class="section" id="passing-zones">
+        <div class="section-head"><div><p class="eyebrow">Pass depth + location</p><h2>Quarterback throwing map</h2></div></div>
+        <p class="section-note">Targeted throws only; sacks and unchartable throws are excluded. Cells show EPA per attempt, completion rate, and sample size.</p>
+        {{ pass_zone_grid(passing_profile, player.full_name ~ ' passing profile') }}
+    </section>
+    {% endif %}
+
+    {% if receiving_profile.has_data %}
+    <section class="section" id="receiving-zones">
+        <div class="section-head"><div><p class="eyebrow">Target depth + location</p><h2>Reception breakdown</h2></div></div>
+        <p class="section-note">Highlighted cells show where targets concentrate. Each section includes catches, targets, yards, EPA, YAC, and yards per reception.</p>
+        {{ pass_zone_grid(receiving_profile, player.full_name ~ ' reception profile') }}
+    </section>
+    {% endif %}
+
+    {% if returning_usage %}
+    <section class="section" id="role">
+        <div class="section-head"><div><p class="eyebrow">{{ returning_usage.season }} {{ returning_usage.team }} workload{% if returning_usage.is_baseline %} &middot; returning-role baseline{% endif %}</p><h2>Opportunity profile</h2></div></div>
+        <p class="section-note">Targets plus carries define opportunities. Team shares use the player’s listed team in that season and are descriptive, not a playing-time projection.</p>
+        <div class="player-role-grid">
+            <article><span>Targets</span><b>{{ returning_usage.targets|cell('big') }}</b><small>{{ returning_usage.target_share|cell('rate') }} team share</small></article>
+            <article><span>Carries</span><b>{{ returning_usage.carries|cell('big') }}</b><small>{{ returning_usage.carry_share|cell('rate') }} team share</small></article>
+            <article><span>Opportunities</span><b>{{ returning_usage.opportunities|cell('big') }}</b><small>{{ returning_usage.opportunity_share|cell('rate') }} combined share</small></article>
+            <article><span>Scrimmage yards</span><b>{{ returning_usage.scrimmage_yards|cell('big') }}</b><small>{{ returning_usage.first_downs|cell('int') }} first downs</small></article>
+            <article><span>Air yards</span><b>{{ returning_usage.air_yards|cell('big') }}</b><small>{{ returning_usage.receptions|cell('big') }} receptions</small></article>
+            <article><span>Explosive touches</span><b>{{ returning_usage.explosive_touches|cell('big') }}</b><small>20+ yard rushes + receptions</small></article>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="section" id="production">
+        <div class="section-head"><div><p class="eyebrow">Summary</p><h2>Season production</h2></div></div>
+        <div class="player-stat-grid">{% for stat in headline_stats %}<article><span>{{ stat.label }}</span><b>{{ stat.value|cell(stat.format) }}</b></article>{% else %}<p class="empty">No season totals are available for this player.</p>{% endfor %}</div>
+    </section>
+
+    <section class="section" id="game-log">
+        <div class="section-head"><div><p class="eyebrow">By week</p><h2>Game log</h2></div></div>
+        <p class="section-note">Only stat families this player recorded are shown. Each week links to its matchup page.</p>
+        <div class="player-log-grid">{% for group in game_log_groups %}<div>{{ data_table(group.table) }}</div>{% else %}<div class="empty">No weekly statistics are available for this player.</div>{% endfor %}</div>
+    </section>
+    <section class="section" id="coverage"><div class="section-head"><div><p class="eyebrow">Connected reporting + social</p><h2>{{ player.full_name }} coverage</h2></div></div>{{ nfl_reporting_streams(content_streams, 'No stored coverage is linked to this player yet.') }}</section>
+</main>
+</body>
+</html>

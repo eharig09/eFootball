@@ -1,0 +1,22 @@
+{% from '_nfl_nav.html' import nfl_nav %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>{% if results.query %}{{ results.query }} · {% endif %}NFL Search</title>
+    <link rel="stylesheet" href="{{ url_for('static',filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static',filename='nfl_components.css') }}">
+</head>
+<body class="nfl-search-page">
+{{ nfl_nav('search',season,'Search') }}
+<main>
+    <section class="nfl-hero compact-hero"><p class="eyebrow">Teams · players · games · reporting</p><h1>Search the NFL desk</h1><form class="nfl-search-form" action="{{ url_for('nfl.search_page') }}" method="get" role="search"><input type="hidden" name="season" value="{{ season }}"><input type="search" name="q" value="{{ results.query }}" placeholder="Team, player, game, or story…" aria-label="Search" autofocus><button type="submit">Search</button></form></section>
+    {% if results.too_short %}<div class="search-empty">Enter at least two characters.</div>{% elif results.query and not results.total %}<div class="search-empty">Nothing matched “{{ results.query }}”.</div>{% endif %}
+    {% if results.teams %}<section class="nfl-result-group"><header><h2>Teams</h2><span>{{ results.teams|length }}</span></header>{% for team in results.teams %}<a class="nfl-result-row" href="{{ url_for('nfl.team_page',abbreviation=team.abbreviation,season=season) }}" style="--result-team:{{ team.color or '#287eb2' }}">{% if team.logo_url %}<img src="{{ team.logo_url }}" alt="">{% endif %}<span><b>{{ team.name }}</b><small>{{ team.reason }}</small></span><em>{{ team.division }}</em></a>{% endfor %}</section>{% endif %}
+    {% if results.players %}<section class="nfl-result-group"><header><h2>Players</h2><span>{{ results.players|length }}</span></header>{% for player in results.players %}<a class="nfl-result-row" href="{{ url_for('nfl.player_page',player_id=player.player_id,season=season) }}" style="--result-team:{{ player.color or '#287eb2' }}">{% if player.headshot_url %}<img src="{{ player.headshot_url }}" alt="">{% elif player.logo_url %}<img src="{{ player.logo_url }}" alt="">{% endif %}<span><b>{{ player.player_name }}</b><small>{{ player.reason }}</small></span><em>{{ player.team }}{% if player.position %} · {{ player.position }}{% endif %}</em></a>{% endfor %}</section>{% endif %}
+    {% if results.games %}<section class="nfl-result-group"><header><h2>Games</h2><span>{{ results.games|length }}</span></header>{% for game in results.games %}<a class="nfl-result-row no-mark" href="{{ url_for('nfl.game_page',game_id=game.game_id) }}#tab-{{ game.destination }}"><span><b>{{ game.away_team }} at {{ game.home_team }}</b><small>{{ game.reason }} · {{ game.game_date }}</small></span><em>{% if game.completed %}{{ game.away_score }}–{{ game.home_score }} · Breakdown{% else %}Week {{ game.week }} · Preview{% endif %}</em></a>{% endfor %}</section>{% endif %}
+    {% if results.stories %}<section class="nfl-result-group"><header><h2>Reporting</h2><span>{{ results.stories|length }}</span></header>{% for story in results.stories %}<a class="nfl-result-row no-mark" href="{{ story.canonical_url }}" target="_blank" rel="noopener"><span><b>{{ story.title }}</b><small>{{ story.source_name }} · {{ story.published_relative }} · {{ story.reason }}</small></span><em>Grade {{ story.editorial_score|cell('int') }}</em></a>{% endfor %}</section>{% endif %}
+</main>
+</body>
+</html>

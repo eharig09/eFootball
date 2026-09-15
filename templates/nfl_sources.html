@@ -1,0 +1,43 @@
+{% from '_tables.html' import data_table %}
+{% from '_nfl_nav.html' import nfl_nav %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>NFL source audit | {{ season }}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+</head>
+<body class="nfl-source-page">
+{{ nfl_nav('sources', season, 'Source audit') }}
+<main>
+    <section class="nfl-hero compact-hero">
+        <p class="eyebrow">Reporting operations &middot; {{ season }}</p>
+        <h1>NFL source audit</h1>
+        <p>Every configured reporting account reconciled against stored content and the latest instrumented fetch.</p>
+        <div class="metrics"><span><b>{{ coverage.configured }}</b> configured</span><span><b>{{ coverage.producing }}</b> with stored output</span><span><b>{{ coverage.checked }}</b> checked</span><span><b>{{ coverage.silent }}</b> empty feeds</span><span><b>{{ coverage.no_eligible }}</b> no eligible items</span><span><b>{{ coverage.errors }}</b> errors</span></div>
+    </section>
+
+    <section class="section source-audit-controls">
+        <form method="get" class="explorer-controls source-filter-controls">
+            <input type="hidden" name="season" value="{{ season }}">
+            <label>Status<select name="status"><option value="">All statuses</option>{% for status in ['producing','silent','no eligible items','error','not checked'] %}<option value="{{ status }}"{{ ' selected' if status == status_filter }}>{{ status|title }}</option>{% endfor %}</select></label>
+            <label>Team<select name="team"><option value="">All teams</option>{% for team in teams %}<option value="{{ team.abbreviation }}"{{ ' selected' if team.abbreviation == team_filter }}>{{ team.abbreviation }} &mdash; {{ team.nickname }}</option>{% endfor %}</select></label>
+            <button type="submit">Apply filters</button>
+            <a class="section-action" href="{{ url_for('nfl.source_audit', season=season) }}">Reset</a>
+        </form>
+    </section>
+
+    {% if coverage.latest_runs %}<section class="section">
+        <div class="section-head"><div><p class="eyebrow">Refresh ledger</p><h2>Latest ingestion runs</h2></div></div>
+        <div class="source-run-grid">{% for run in coverage.latest_runs %}<article class="{{ 'has-errors' if run.attempted != run.succeeded }}"><header><b>{{ run.platform|title }}</b><time>{{ run.finished_at[:16]|replace('T',' ') }}</time></header><div><span><b>{{ run.succeeded }}/{{ run.attempted }}</b> succeeded</span><span><b>{{ run.seen }}</b> seen</span><span><b>{{ run.stored }}</b> stored</span></div></article>{% endfor %}</div>
+    </section>{% endif %}
+
+    <section class="section"><div class="section-head"><div><p class="eyebrow">All 32 teams</p><h2>Team-account coverage</h2></div></div>{{ data_table(team_table) }}</section>
+    <section class="section"><div class="section-head"><div><p class="eyebrow">Directory reconciliation</p><h2>Configured accounts</h2></div></div>{{ data_table(source_table) }}</section>
+</main>
+</body>
+</html>
