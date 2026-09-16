@@ -55,8 +55,8 @@ def _child_memory_mb() -> int:
         return DEFAULT_CHILD_MEMORY_MB
 
 
-def _memory_limiter():
-    megabytes = _child_memory_mb()
+def _memory_limiter(memory_mb: int | None = None):
+    megabytes = memory_mb if memory_mb is not None else _child_memory_mb()
     if resource is None or not megabytes or sys.platform == "win32":
         return None
 
@@ -245,13 +245,13 @@ def _last_line(log, mark: int) -> str:
     return ""
 
 
-def _run_command(command: list[str], *, timeout: int, log) -> tuple[str, str, float]:
+def _run_command(command: list[str], *, timeout: int, log, memory_mb: int | None = None) -> tuple[str, str, float]:
     started = datetime.now(timezone.utc)
     mark = _log_end(log)
     try:
         completed = subprocess.run(
             [sys.executable, "-m", *command], stdout=log, stderr=subprocess.STDOUT,
-            text=True, timeout=timeout, preexec_fn=_memory_limiter(),
+            text=True, timeout=timeout, preexec_fn=_memory_limiter(memory_mb),
         )
         elapsed = (datetime.now(timezone.utc) - started).total_seconds()
         return ("success" if completed.returncode == 0 else "failed",
@@ -386,7 +386,8 @@ def _run_low_memory_phase(phase: str, season: int, *, root: Path,
             result = _run_player_stats_split(season, root=root, timeout=timeout, log=log,
                                              optional=step.optional, heartbeat=heartbeat)
         else:
-            status, message, seconds = _run_command(step.command, timeout=int(step.timeout_seconds or timeout), log=log)
+            status, message, seconds = _run_command(
+                step.command, timeout=int(step.timeout_seconds or timeout), log=log, memory_mb=step.memory_mb)
             result = {"step": step.name, "status": status, "message": message, "seconds": seconds,
                       "optional": step.optional, "parent_rss_mb": _rss_mb(), "child_peak_rss_mb": _children_rss_mb()}
         marker = {"success": "[ok]", "skipped": "[--]"}.get(result["status"], "[!!]")
@@ -479,7 +480,15 @@ def run_scheduled_refresh(season: int, *, profile: str = "heavy",
             print(f"scheduled refresh: profile={normalized_profile} season={season} pid={os.getpid()} parent_rss_mb={_rss_mb()}", file=log, flush=True)
             os.fsync(log.fileno())
             if normalized_profile == "news" and phase_runner is None:
-                result = _run_news_shard(season, timeout=600, log=log)
+                # local_reporting_shard.py's own budget is the fetch's 300s
+                # SHARD_DEADLINE plus up to four sequential postprocess steps
+                # (retag/cluster/roles/score), each falling back to a 600s
+                # per-step ceiling when it has no tighter one of its own --
+                # so the true worst case is nowhere near the 600s this outer
+                # wrapper used to allow, and content growth (this season's
+                # NFL sources included) was enough to reliably exceed it even
+                # on an ordinary run, not just a genuinely stuck one.
+                result = _run_news_shard(season, timeout=1500, log=log)
                 results = [result]
                 record_step(result)
             elif phase_runner is None:

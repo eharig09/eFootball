@@ -38,6 +38,13 @@ RESULT_HISTORY_FLOOR = 2015
 #: Seasons of box scores and player history, which are the expensive ones.
 DETAIL_HISTORY_SEASONS = 7
 
+#: Address-space ceiling for NFL segments, which all pay the cost of booting
+#: the full combined app (see Step.memory_mb) before doing their own work.
+#: Higher than the CFB default on purpose, not tunable per-deploy like
+#: CFB_REFRESH_CHILD_MB because it tracks that shared boot cost rather than
+#: any one host's memory budget.
+NFL_CHILD_MEMORY_MB = 380
+
 
 @dataclass
 class Step:
@@ -51,6 +58,14 @@ class Step:
     #: Seconds this step gets before the driver kills it. None uses the
     #: driver's own timeout, which is a backstop rather than a budget.
     timeout_seconds: float | None = None
+    #: Address-space ceiling (MB) for this step's child process. None uses
+    #: the driver's CFB_REFRESH_CHILD_MB default. NFL segments need a higher
+    #: one: every "nfl.refresh_cli" segment boots the full combined app (all
+    #: NFL and CFB blueprints, nflverse/pandas included) via create_app()
+    #: before doing any actual work, no matter how small that segment's own
+    #: job is -- so the same ceiling that safely bounds a lightweight CFB
+    #: step is not enough headroom just to finish importing for these.
+    memory_mb: int | None = None
 
 
 def steps(season: int, *, history_from: int | None = None,
@@ -74,16 +89,16 @@ def steps(season: int, *, history_from: int | None = None,
         # begins. That preserves the low-memory, one-child-at-a-time contract.
         Step("nfl-rosters", "Current NFL roster release",
              ["sports_aggregator.nfl.refresh_cli", "rosters", "--season", year],
-             ("initial", "refresh"), optional=True, timeout_seconds=900),
+             ("initial", "refresh"), optional=True, timeout_seconds=900, memory_mb=NFL_CHILD_MEMORY_MB),
         Step("nfl-content", "NFL reporting and curated Bluesky feeds",
              ["sports_aggregator.nfl.refresh_cli", "content", "--season", year],
-             ("initial", "refresh"), optional=True, timeout_seconds=900),
+             ("initial", "refresh"), optional=True, timeout_seconds=900, memory_mb=NFL_CHILD_MEMORY_MB),
         Step("nfl-core", "NFL schedules, stats, snaps, depth and play-by-play analytics",
              ["sports_aggregator.nfl.refresh_cli", "core", "--season", year],
-             ("initial", "refresh"), optional=True, timeout_seconds=1800),
+             ("initial", "refresh"), optional=True, timeout_seconds=1800, memory_mb=NFL_CHILD_MEMORY_MB),
         Step("nfl-pff", "Read-only completed-season NFL PFF baseline",
              ["sports_aggregator.nfl.refresh_cli", "pff", "--season", year],
-             ("initial", "refresh"), optional=True, timeout_seconds=900),
+             ("initial", "refresh"), optional=True, timeout_seconds=900, memory_mb=NFL_CHILD_MEMORY_MB),
         Step("cfbd-current-player-stats", "Current-season player production by conference",
              ["sports_aggregator.cfb.cli", "sync-player-stats", "--year", year],
              ("initial", "refresh"), optional=True, requires_env=("CFBD_API_KEY",)),
