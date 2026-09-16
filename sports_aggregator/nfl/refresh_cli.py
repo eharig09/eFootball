@@ -7,7 +7,7 @@ import sys
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "segment", choices=("rosters", "essentials", "core", "content", "pff", "history")
+        "segment", choices=("rosters", "essentials", "core", "content", "pff", "history", "weather")
     )
     parser.add_argument("--season", type=int, required=True)
     args = parser.parse_args(argv)
@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
         "pff": ["sync-nfl-pff", "--year", str(args.season - 1)],
         "history": ["sync-nfl-history", "--start-year", "2010", "--end-year",
                     str(args.season - 1), "--skip-pbp"],
+        "weather": ["sync-nfl-weather", "--year", str(args.season)],
     }[args.segment]
     result = app.test_cli_runner().invoke(args=command)
     if result.output:

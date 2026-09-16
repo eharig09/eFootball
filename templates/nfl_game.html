@@ -9,7 +9,7 @@
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#101820">
     <title>{{ game.away_team }} at {{ game.home_team }} | {{ game.season }} NFL</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
@@ -152,7 +152,34 @@
 
     <section class="section" id="situation" data-nfl-panel="overview">
         <div class="section-head"><div><p class="eyebrow">Schedule and setting</p><h2>Situation</h2></div></div>
+        <p class="section-note">A trap spot describes the calendar, not a prediction about the result.{% if weather and weather.live and weather.snapshots > 1 %} The forecast has been taken {{ weather.snapshots }} times; the change since the first is shown where it moved.{% endif %}</p>
+        {% if weather %}
+        <div class="situation-context">
+            <article class="situation-card weather-card">
+                <h3>{% if weather.indoor %}Indoor venue{% else %}{{ weather.condition or 'Conditions' }}{% endif %}</h3>
+                {% if weather.indoor %}
+                <p>{{ weather.venue or 'This venue' }} is enclosed, so conditions are not a factor.</p>
+                {% else %}
+                <p>{{ weather.temperature|cell('int') }}&deg;F &middot; wind {{ weather.wind|cell('int') }} mph{% if weather.gusts %}, gusting {{ weather.gusts|cell('int') }}{% endif %}{% if weather.precipitation_probability is not none %} &middot; {{ weather.precipitation_probability|cell('int') }}% precipitation{% endif %}</p>
+                <div class="meta">{{ weather.venue }} &middot; {{ 'live forecast' if weather.live else 'recorded at kickoff' }}{% for field, change in weather.movement.items() %} &middot; {{ field|replace('_', ' ') }} {{ change|cell('signed') }}{% endfor %}</div>
+                {% endif %}
+            </article>
+            {% for flag in weather.flags %}
+            <article class="situation-card weather-flag"><h3>{{ flag.flag|replace('_', ' ')|title }}</h3><p>{{ flag.detail }}.</p></article>
+            {% endfor %}
+        </div>
+        {% endif %}
         <div class="situation-grid">{% for item in situation %}<article><small>{{ item.label }}</small><b>{{ item.value }}</b><p>{{ item.detail }}</p></article>{% endfor %}</div>
+        {% if trap_spots or (travel and travel.notable) %}
+        <div class="situation-context">
+            {% for spot in trap_spots %}
+            <article class="situation-card"><h3>{{ spot.headline }}</h3><p>{{ spot.detail }}.</p><div class="meta">{{ spot.type|replace('_', ' ')|lower }}</div></article>
+            {% endfor %}
+            {% if travel and travel.notable %}
+            <article class="situation-card"><h3>Travel{% if travel.altitude %} &amp; altitude{% endif %}</h3><p>{{ travel.detail }}.</p><div class="meta">{{ travel.away_zone }} &rarr; {{ travel.home_zone }}{% if travel.dome %} &middot; indoor venue{% endif %}</div></article>
+            {% endif %}
+        </div>
+        {% endif %}
         <div class="history-panel">
             <div><p class="eyebrow">Stored series &middot; {{ history.coverage.from or '—' }}–{{ history.coverage.through or '—' }}</p><h3>Prior meetings</h3><p>{{ history.meetings }} completed meeting{{ '' if history.meetings == 1 else 's' }} before this game.</p></div>
             <div class="series-record"><span><b>{{ history.away_record.record }}</b>{{ game.away_team }} &middot; {{ history.away_record.ppg_for|cell('f1') }} PPG &middot; {{ history.away_record.streak or '—' }}</span><span><b>{{ history.home_record.record }}</b>{{ game.home_team }} &middot; {{ history.home_record.ppg_for|cell('f1') }} PPG</span></div>

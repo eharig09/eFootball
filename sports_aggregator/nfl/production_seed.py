@@ -120,7 +120,18 @@ def maybe_launch(*, database_path: str | os.PathLike[str], season: int | None = 
 
 def _pff_available() -> bool:
     root = Path(os.getenv("NFL_PFF_SOURCE_ROOT", "")).expanduser()
-    return any((root / relative).is_dir() for relative in ("nfl/pff", "pff_coverage_data"))
+    if any((root / relative).is_dir() for relative in ("nfl/pff", "pff_coverage_data")):
+        return True
+    # Render has no sibling scouting_report checkout (see render.yaml), so on
+    # that deploy PFF data only ever exists as flat CSVs uploaded through
+    # /nfl/data-import/ into NFL_PFF_UPLOAD_ROOT -- checking only source_root
+    # meant the "pff" stage could never fire there even with real uploads
+    # already sitting on the persistent disk.
+    upload_root = os.getenv("NFL_PFF_UPLOAD_ROOT", "").strip()
+    if not upload_root:
+        return False
+    upload_path = Path(upload_root).expanduser()
+    return upload_path.is_dir() and next(upload_path.rglob("*.csv"), None) is not None
 
 
 def _import_source_directory() -> int | None:

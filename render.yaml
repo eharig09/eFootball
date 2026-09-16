@@ -103,6 +103,8 @@ services:
         value: /var/data/sportsdataverse
       - key: CFB_WEATHER_CACHE_PATH
         value: /var/data/weather
+      - key: NFL_WEATHER_CACHE_PATH
+        value: /var/data/nfl_weather
       - key: CFB_REFRESH_TOKEN
         sync: false
       # Human admin actions can use a short PIN instead of exposing the refresh
@@ -144,6 +146,26 @@ services:
       "$NFL_REFRESH_URL"
     envVars:
       - key: NFL_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_TOKEN
+        sync: false
+
+  - type: cron
+    name: nfl-weather-refresh-trigger
+    runtime: python
+    # Open-Meteo's forecast moves as kickoff approaches, and CFB's own
+    # weather card only reads as "the forecast has been taken N times" if
+    # something actually keeps re-snapshotting it. Every 4 hours is frequent
+    # enough to catch meaningful movement without leaning on the free tier's
+    # daily request allowance (one request per venue per run, indoor/dome
+    # venues skipped entirely).
+    schedule: "40 */4 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      curl -fsS -X POST -H "Authorization: Bearer $CFB_REFRESH_TOKEN"
+      "$NFL_WEATHER_REFRESH_URL"
+    envVars:
+      - key: NFL_WEATHER_REFRESH_URL
         sync: false
       - key: CFB_REFRESH_TOKEN
         sync: false

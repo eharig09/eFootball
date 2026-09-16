@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+from contextlib import closing
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sports_aggregator.nfl.repository import NFLRepository
@@ -10,6 +11,31 @@ from sports_aggregator.nfl.pff import NFLPFFService
 from sports_aggregator.nfl.personnel import significant_movements
 from sports_aggregator.nfl.usage import team_usage_context
 from sports_aggregator.nfl.teams import unit_continuity
+from sports_aggregator.nfl.weather import kickoff_utc, weather_for_game
+from sports_aggregator.providers.geo import haversine_miles, timezone_for, zone_index
+
+
+#: Elo gaps that define "much weaker" and "much stronger" opponents -- the
+#: same calibration CFB's trap-spot detector uses, and NFL's own current
+#: rating spread (roughly 570 points top to bottom across 32 teams) sits in
+#: the same relative range, so the same thresholds carry over without
+#: needing a separate NFL-specific tuning pass.
+TRAP_OPPONENT_GAP = 250
+TRAP_NEXT_GAP = 150
+MAJOR_OPPONENT_GAP = 120
+
+#: A trip beyond this many miles is worth naming.
+LONG_TRIP_MILES = 1200
+#: Time-zone shifts of this size or more affect kickoff body clock.
+NOTABLE_TIMEZONE_SHIFT = 2
+#: Kickoffs at or before this local hour are early for a travelling team.
+EARLY_KICKOFF_HOUR = 13
+#: nflverse publishes venue elevation in feet already at the schedule level
+#: for most stadiums, but team_venues stores metres to match CFBD/CFB's
+#: convention; 1,500 m is roughly 4,900 feet, the conventional altitude
+#: threshold.
+ALTITUDE_METRES = 1500
+LOWLAND_METRES = 500
 
 
 UNIT_METRICS = (
@@ -293,6 +319,171 @@ def _situation(game: dict[str, Any], recent: dict[str, list[dict[str, Any]]]) ->
     return items
 
 
+def _trap_spots(repository: NFLRepository, game: dict[str, Any],
+                elo_ratings: dict[str, float]) -> list[dict[str, Any]]:
+    """Look-ahead, letdown, sandwich and revenge spots for either team.
+
+    Mirrors the CFB side's schedule_spot() -- same five signal types, same
+    Elo-gap calibration -- adapted to NFL's flat team-abbreviation schedule
+    rows instead of CFBD's team_id join.
+    """
+    season = game["season"]
+    signals: list[dict[str, Any]] = []
+    for team, opponent in ((game["away_team"], game["home_team"]),
+                           (game["home_team"], game["away_team"])):
+        schedule = repository.schedule(season, team=team)
+        index = next((position for position, row in enumerate(schedule)
+                      if row["game_id"] == game["game_id"]), None)
+        if index is None:
+            continue
+        previous = schedule[index - 1] if index > 0 else None
+        following = schedule[index + 1] if index + 1 < len(schedule) else None
+        own_elo = elo_ratings.get(team)
+        this_elo = elo_ratings.get(opponent)
+
+        def opponent_of(row: dict[str, Any]) -> str:
+            return row["home_team"] if row["away_team"] == team else row["away_team"]
+
+        next_elo = next_name = previous_elo = previous_name = None
+        if following:
+            next_name = opponent_of(following)
+            next_elo = elo_ratings.get(next_name)
+        if previous:
+            previous_name = opponent_of(previous)
+            previous_elo = elo_ratings.get(previous_name)
+
+        if None not in (own_elo, this_elo, next_elo):
+            if own_elo - this_elo >= TRAP_OPPONENT_GAP and next_elo - this_elo >= TRAP_NEXT_GAP:
+                signals.append({
+                    "type": "LOOK_AHEAD", "headline": f"{team} plays {next_name} next",
+                    "detail": (f"{opponent} rates {own_elo - this_elo:.0f} Elo below {team}, "
+                              f"while {next_name} rates {next_elo - this_elo:.0f} above "
+                              f"this week's opponent"),
+                })
+            if (previous_elo is not None and own_elo - this_elo >= TRAP_OPPONENT_GAP
+                    and previous_elo - this_elo >= TRAP_NEXT_GAP
+                    and next_elo - this_elo >= TRAP_NEXT_GAP):
+                signals.append({
+                    "type": "SANDWICH",
+                    "headline": f"{team} is sandwiched between {previous_name} and {next_name}",
+                    "detail": "a lesser opponent with a much harder game on either side",
+                })
+
+        if previous and previous["completed"]:
+            own_points = (previous["home_score"] if previous["home_team"] == team
+                         else previous["away_score"])
+            other_points = (previous["away_score"] if previous["home_team"] == team
+                           else previous["home_score"])
+            won = (own_points or 0) > (other_points or 0)
+            if won and previous_elo is not None and own_elo is not None:
+                if previous_elo - own_elo >= -MAJOR_OPPONENT_GAP:
+                    signals.append({
+                        "type": "LETDOWN",
+                        "headline": f"{team} is coming off a win over {previous_name}",
+                        "detail": (f"beat a team rated {previous_elo:.0f} Elo last week, "
+                                  f"then faces {opponent}"),
+                    })
+
+        with closing(repository._connect()) as connection:
+            prior = connection.execute(
+                """SELECT home_team,away_team,home_score,away_score,season
+                   FROM games WHERE season=? AND completed=1
+                   AND ((home_team=? AND away_team=?) OR (home_team=? AND away_team=?))
+                   ORDER BY game_date DESC LIMIT 1""",
+                (season - 1, team, opponent, opponent, team),
+            ).fetchone()
+        if prior:
+            own_points = prior["home_score"] if prior["home_team"] == team else prior["away_score"]
+            other_points = prior["away_score"] if prior["home_team"] == team else prior["home_score"]
+            if own_points is not None and other_points is not None and other_points > own_points:
+                signals.append({
+                    "type": "REVENGE", "headline": f"{team} lost this matchup last season",
+                    "detail": f"{opponent} won {other_points}-{own_points} in {prior['season']}",
+                })
+    return signals
+
+
+def _travel(repository: NFLRepository, game: dict[str, Any]) -> dict[str, Any] | None:
+    """Distance, time-zone change, altitude and kickoff timing for the visitor."""
+    venues = repository.team_venues()
+    home = venues.get(game["home_team"])
+    away = venues.get(game["away_team"])
+    if not home or not away:
+        return None
+    miles = round(haversine_miles(
+        (away["latitude"], away["longitude"]), (home["latitude"], home["longitude"])))
+    away_zone = timezone_for(away["longitude"])
+    home_zone = timezone_for(home["longitude"])
+    shift = None
+    if zone_index(away_zone) is not None and zone_index(home_zone) is not None:
+        shift = zone_index(home_zone) - zone_index(away_zone)
+
+    notes = [f"{game['away_team']} travels {miles:,} miles"]
+    if shift:
+        direction = "east" if shift > 0 else "west"
+        notes[0] += f" and {abs(shift)} time zone{'s' if abs(shift) != 1 else ''} {direction}"
+
+    body_clock = None
+    kickoff = kickoff_utc(game)
+    if kickoff and shift and shift > 0:
+        try:
+            local_hour = datetime.fromisoformat(kickoff).astimezone(timezone.utc).hour - 4
+        except ValueError:
+            local_hour = None
+        if local_hour is not None and local_hour <= EARLY_KICKOFF_HOUR:
+            body_clock = (f"kickoff is {abs(shift)} hour{'s' if abs(shift) != 1 else ''} "
+                          f"earlier on {game['away_team']}'s body clock")
+            notes.append(body_clock)
+
+    altitude = None
+    home_elevation = home.get("elevation_meters")
+    away_elevation = away.get("elevation_meters")
+    if (home_elevation is not None and home_elevation >= ALTITUDE_METRES
+            and (away_elevation is None or away_elevation <= LOWLAND_METRES)):
+        altitude = (f"{home.get('venue_name') or 'the venue'} sits at "
+                   f"{round(home_elevation * 3.28081):,} feet")
+        notes.append(altitude)
+
+    notable = (miles >= LONG_TRIP_MILES
+              or (shift is not None and abs(shift) >= NOTABLE_TIMEZONE_SHIFT)
+              or bool(altitude) or bool(body_clock))
+    return {
+        "miles": miles, "away_zone": away_zone, "home_zone": home_zone,
+        "timezone_shift": shift, "notable": notable, "detail": "; ".join(notes),
+        "body_clock": body_clock, "altitude": altitude,
+        "venue": home.get("venue_name"), "dome": bool(home.get("dome")),
+        "elevation_metres": home_elevation,
+    }
+
+
+def _weather(repository: NFLRepository, game: dict[str, Any]) -> dict[str, Any] | None:
+    """The live forecast if one has been fetched, otherwise nflverse's own
+    after-the-fact recorded temperature/wind for a completed game."""
+    venue = repository.team_venues().get(game["home_team"])
+    forecast = weather_for_game(repository, game["game_id"])
+    if forecast.get("available"):
+        latest = forecast["latest"]
+        return {
+            "available": True, "indoor": forecast["indoor"],
+            "condition": "Indoors" if forecast["indoor"] else latest.get("condition"),
+            "temperature": latest.get("temperature"), "wind": latest.get("sustained_wind"),
+            "gusts": latest.get("wind_gust"),
+            "precipitation_probability": latest.get("precipitation_probability"),
+            "venue": latest.get("venue"), "flags": forecast["flags"],
+            "snapshots": forecast["snapshots"], "movement": forecast["movement"],
+            "live": True,
+        }
+    if game.get("temperature") is not None or game.get("wind") is not None:
+        return {
+            "available": True, "indoor": (game.get("roof") or "").lower() in {"dome", "closed"},
+            "condition": None, "temperature": game.get("temperature"), "wind": game.get("wind"),
+            "gusts": None, "precipitation_probability": None,
+            "venue": venue.get("venue_name") if venue else game.get("stadium"),
+            "flags": [], "snapshots": 0, "movement": {}, "live": False,
+        }
+    return None
+
+
 def _market(repository: NFLRepository, game: dict[str, Any]) -> dict[str, Any]:
     line = game.get("spread_line")
     away_coach = repository.coach_against_numbers(
@@ -423,6 +614,9 @@ def matchup_context(repository: NFLRepository, game: dict[str, Any],
         },
         "market": _market(repository, game),
         "situation": _situation(game, recent),
+        "trap_spots": _trap_spots(repository, game, elo_ratings),
+        "travel": _travel(repository, game),
+        "weather": _weather(repository, game),
         "personnel": {away: _personnel(repository, pff, season, away),
                       home: _personnel(repository, pff, season, home)},
     }

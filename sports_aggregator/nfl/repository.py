@@ -173,6 +173,24 @@ CREATE TABLE IF NOT EXISTS nfl_elo_ratings (
  team TEXT PRIMARY KEY,rating REAL NOT NULL,games INTEGER NOT NULL,wins INTEGER NOT NULL,
  losses INTEGER NOT NULL,ties INTEGER NOT NULL,last_game_id TEXT,updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS team_venues (
+ team TEXT PRIMARY KEY, venue_name TEXT NOT NULL,
+ latitude REAL NOT NULL, longitude REAL NOT NULL,
+ elevation_meters REAL, dome INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS nfl_game_weather (
+ game_id TEXT NOT NULL, forecast_generated_at TEXT NOT NULL,
+ kickoff_time TEXT NOT NULL, forecast_hour TEXT NOT NULL,
+ temperature REAL, precipitation_probability REAL, precipitation_amount REAL,
+ sustained_wind REAL, wind_gust REAL, humidity REAL, visibility REAL,
+ weather_code INTEGER, condition TEXT NOT NULL DEFAULT '',
+ flags_json TEXT NOT NULL DEFAULT '[]', indoor INTEGER NOT NULL DEFAULT 0,
+ venue TEXT NOT NULL DEFAULT '', latitude REAL, longitude REAL,
+ source TEXT NOT NULL, imported_at TEXT NOT NULL,
+ PRIMARY KEY(game_id,forecast_generated_at)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_game_weather_game
+  ON nfl_game_weather(game_id,forecast_generated_at DESC);
 CREATE TABLE IF NOT EXISTS qb_pass_profiles (
  season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
  offense_team TEXT NOT NULL, defense_team TEXT NOT NULL,
@@ -448,6 +466,7 @@ class NFLRepository:
                 if name not in game_columns:
                     connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
             connection.commit()
+        self.seed_team_venues()
 
     def replace_teams(self, teams: Iterable[Team]) -> int:
         now = datetime.now(timezone.utc).isoformat()
@@ -1432,6 +1451,31 @@ class NFLRepository:
                 "SELECT * FROM teams WHERE abbreviation=?", (abbreviation,)
             ).fetchone()
         return dict(row) if row else None
+
+    def seed_team_venues(self) -> None:
+        """Upsert the static stadium geography -- idempotent, cheap, and
+        independent of replace_teams()'s full nflverse-driven replace so a
+        routine sync can never wipe it."""
+        from sports_aggregator.nfl.venues import TEAM_VENUES
+        with closing(self._connect()) as connection:
+            connection.executemany(
+                """INSERT INTO team_venues VALUES (?,?,?,?,?,?)
+                   ON CONFLICT(team) DO UPDATE SET
+                   venue_name=excluded.venue_name, latitude=excluded.latitude,
+                   longitude=excluded.longitude, elevation_meters=excluded.elevation_meters,
+                   dome=excluded.dome""",
+                [(team, venue_name, latitude, longitude, elevation, int(dome))
+                 for team, (venue_name, latitude, longitude, elevation, dome)
+                 in TEAM_VENUES.items()],
+            )
+            connection.commit()
+
+    def team_venues(self) -> dict[str, dict[str, Any]]:
+        self.initialize()
+        with closing(self._connect()) as connection:
+            return {row["team"]: dict(row) for row in connection.execute(
+                "SELECT * FROM team_venues"
+            )}
 
     def schedule(self, season: int, *, team: str | None = None) -> list[dict[str, Any]]:
         self.initialize()

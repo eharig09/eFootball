@@ -1127,5 +1127,142 @@ class ViewTableHelperTests(unittest.TestCase):
         self.assertIsNone(table.rows[1]["errors_class"])
 
 
+class NFLSituationContextTests(unittest.TestCase):
+    """Weather, travel and schedule-trap-spot context, mirroring the CFB
+    side's situational module -- see sports_aggregator/nfl/matchups.py and
+    sports_aggregator/nfl/weather.py."""
+
+    def test_team_venues_seed_automatically_and_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            repository.initialize()
+            venues = repository.team_venues()
+            self.assertEqual(len(venues), 32)
+            self.assertEqual(venues["SEA"]["venue_name"], "Lumen Field")
+            self.assertFalse(venues["SEA"]["dome"])
+            self.assertTrue(venues["MIN"]["dome"])
+
+    def test_travel_detects_long_haul_timezone_and_altitude(self):
+        from sports_aggregator.nfl.matchups import _travel
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            repository.initialize()
+            # Seattle (Pacific) at Miami (Eastern): a long, cross-country,
+            # three-time-zone trip -- notable on distance and shift alone.
+            game = {"away_team": "SEA", "home_team": "MIA",
+                    "game_date": "2026-11-01", "game_time": "13:00"}
+            travel = _travel(repository, game)
+            self.assertGreater(travel["miles"], 2500)
+            self.assertEqual(travel["timezone_shift"], 3)
+            self.assertTrue(travel["notable"])
+            self.assertIsNone(travel["altitude"])
+
+            # Same distance class, but the home venue is Denver's altitude --
+            # the away team is not from a lowland team here, so no altitude
+            # flag should fire (the CFB-mirrored rule only fires sea-level
+            # visitor vs. high-elevation host).
+            denver_game = {"away_team": "MIA", "home_team": "DEN",
+                           "game_date": "2026-11-01", "game_time": "13:00"}
+            denver_travel = _travel(repository, denver_game)
+            self.assertIsNotNone(denver_travel["altitude"])
+            self.assertIn("feet", denver_travel["altitude"])
+
+    def test_travel_is_not_notable_for_a_short_same_zone_trip(self):
+        from sports_aggregator.nfl.matchups import _travel
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            repository.initialize()
+            game = {"away_team": "CLE", "home_team": "TAM",
+                    "game_date": "2026-11-01", "game_time": "13:00"}
+            travel = _travel(repository, game)
+            self.assertEqual(travel["timezone_shift"], 0)
+            self.assertFalse(travel["notable"])
+
+    def test_trap_spots_detect_look_ahead_and_revenge(self):
+        from sports_aggregator.nfl.matchups import _trap_spots
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            repository.initialize()
+            common = dict(season=2026, season_type="REG", game_time="13:00",
+                         overtime=False, division_game=False, stadium=None, roof=None,
+                         surface=None, temperature=None, wind=None,
+                         spread_line=None, total_line=None)
+            repository.replace_games(2026, (
+                # This week: a big favorite (KAN) hosts a weak team (NYJ).
+                Game(game_id="this-week", week=5, game_date="2026-10-04",
+                     away_team="NYJ", home_team="KAN", away_score=None, home_score=None,
+                     **common),
+                # Next week KAN plays a much tougher opponent -- look-ahead.
+                Game(game_id="next-week", week=6, game_date="2026-10-11",
+                     away_team="KAN", home_team="BUF", away_score=None, home_score=None,
+                     **common),
+            ))
+            # Last season NYJ beat KAN -- this year's rematch is revenge for KAN.
+            last_season = {**common, "season": 2025}
+            repository.replace_games(2025, (
+                Game(game_id="last-season-meeting", week=5, game_date="2025-10-05",
+                     away_team="NYJ", home_team="KAN", away_score=27, home_score=20,
+                     **last_season),
+            ))
+            elo_ratings = {"KAN": 1700.0, "NYJ": 1300.0, "BUF": 1650.0}
+            game = repository.get_game("this-week")
+            signals = _trap_spots(repository, game, elo_ratings)
+            types = {signal["type"] for signal in signals}
+            self.assertIn("LOOK_AHEAD", types)
+            self.assertIn("REVENGE", types)
+            look_ahead = next(s for s in signals if s["type"] == "LOOK_AHEAD")
+            self.assertIn("KAN plays BUF next", look_ahead["headline"])
+            revenge = next(s for s in signals if s["type"] == "REVENGE")
+            self.assertIn("KAN lost this matchup last season", revenge["headline"])
+
+    def test_kickoff_utc_resolves_eastern_daylight_and_standard_time(self):
+        from sports_aggregator.nfl.weather import kickoff_utc
+        # Early September: Eastern Daylight Time, UTC-4.
+        september = kickoff_utc({"game_date": "2026-09-13", "game_time": "13:00"})
+        self.assertTrue(september.startswith("2026-09-13T17:00"))
+        # Mid-January: Eastern Standard Time, UTC-5 -- the whole reason this
+        # uses zoneinfo instead of a fixed offset guess.
+        january = kickoff_utc({"game_date": "2026-01-13", "game_time": "13:00"})
+        self.assertTrue(january.startswith("2026-01-13T18:00"))
+        self.assertIsNone(kickoff_utc({"game_date": None, "game_time": "13:00"}))
+
+    def test_weather_snapshots_accumulate_and_track_movement(self):
+        from sports_aggregator.providers.weather import Forecast
+        from sports_aggregator.nfl.weather import store_weather, weather_for_game
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            repository.initialize()
+            early = Forecast(kickoff="2026-10-11T17:00:00+00:00", forecast_hour="2026-10-11T17:00",
+                             temperature=60.0, precipitation_probability=10.0, precipitation=0.0,
+                             wind_speed=5.0, wind_gusts=8.0, humidity=50.0, visibility=10000.0,
+                             weather_code=1)
+            late = Forecast(kickoff="2026-10-11T17:00:00+00:00", forecast_hour="2026-10-11T17:00",
+                            temperature=45.0, precipitation_probability=70.0, precipitation=0.3,
+                            wind_speed=18.0, wind_gusts=28.0, humidity=80.0, visibility=6000.0,
+                            weather_code=61)
+            store_weather(repository, "2026_06_BUF_KAN", early, flags=[], venue="Arrowhead",
+                         latitude=39.05, longitude=-94.48, indoor=False,
+                         generated_at="2026-09-25T00:00:00+00:00")
+            store_weather(repository, "2026_06_BUF_KAN", late, flags=[{"flag": "RAIN_RISK", "detail": "70% chance"}],
+                         venue="Arrowhead", latitude=39.05, longitude=-94.48, indoor=False,
+                         generated_at="2026-10-11T00:00:00+00:00")
+            result = weather_for_game(repository, "2026_06_BUF_KAN")
+            self.assertTrue(result["available"])
+            self.assertEqual(result["snapshots"], 2)
+            self.assertEqual(result["latest"]["temperature"], 45.0)
+            self.assertAlmostEqual(result["movement"]["temperature"], -15.0)
+            self.assertAlmostEqual(result["movement"]["sustained_wind"], 13.0)
+            self.assertEqual(result["flags"][0]["flag"], "RAIN_RISK")
+
+    def test_weather_for_game_reports_unavailable_with_no_snapshots(self):
+        from sports_aggregator.nfl.weather import weather_for_game
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            repository.initialize()
+            result = weather_for_game(repository, "no-such-game")
+            self.assertFalse(result["available"])
+            self.assertEqual(result["snapshots"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

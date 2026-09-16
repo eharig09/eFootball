@@ -118,6 +118,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         NFL_PFF_UPLOAD_ROOT=os.getenv(
             "NFL_PFF_UPLOAD_ROOT", os.path.join(app.instance_path, "nfl_pff_uploads")
         ),
+        NFL_WEATHER_CACHE_PATH=os.getenv(
+            "NFL_WEATHER_CACHE_PATH", os.path.join(app.instance_path, "weather")
+        ),
         # Existing Render services are not guaranteed to re-sync Blueprint
         # environment additions on deploy. Render itself is therefore the safe
         # default; local/test processes remain opt-in and an explicit 0 wins.
@@ -261,8 +264,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         segment = (request.args.get("segment") or "content").strip().casefold()
         # "rosters" already refreshes injury/staff context alongside the
         # roster itself (sync-nfl-rosters calls sync_espn_context too).
-        if segment not in {"content", "rosters"}:
-            abort(400, description="segment must be one of content, rosters")
+        if segment not in {"content", "rosters", "weather"}:
+            abort(400, description="segment must be one of content, rosters, weather")
         season = app.config.get("CFB_DEFAULT_SEASON") or current_nfl_season()
         root = Path(__file__).resolve().parent
         subprocess.Popen(
@@ -445,6 +448,20 @@ def create_app(test_config: dict | None = None) -> Flask:
             app.config.get("NFL_PFF_UPLOAD_ROOT"),
         ).sync(year, force_scan=force_scan)
         click.echo("nfl_pff: " + json.dumps(result, sort_keys=True))
+        cache.clear()
+
+    @app.cli.command("sync-nfl-weather")
+    @click.option("--year", type=int, default=current_nfl_season)
+    @click.option("--force", is_flag=True, help="Bypass the on-disk per-venue forecast cache.")
+    def sync_nfl_weather(year: int, force: bool) -> None:
+        """Snapshot kickoff weather for every upcoming game inside Open-Meteo's horizon."""
+        from sports_aggregator.nfl.weather import sync_game_weather
+        from sports_aggregator.providers.weather import OpenMeteoClient
+        repository = app.extensions["nfl_repository"]
+        games = repository.schedule(year)
+        client = OpenMeteoClient(cache_path=app.config["NFL_WEATHER_CACHE_PATH"])
+        result = sync_game_weather(repository, games, client=client, force=force)
+        click.echo("nfl_weather: " + json.dumps(result, sort_keys=True))
         cache.clear()
 
     @app.cli.command("sync-nfl-pbp-analytics")
