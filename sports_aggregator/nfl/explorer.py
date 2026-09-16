@@ -17,8 +17,24 @@ from sports_aggregator.tables import Column, Table
 # (key, label, format, category). Category groups the metric picker; rate
 # metrics are derived after aggregation (see with_rates), not summed --
 # a per-game rate summed across weeks is not the season rate.
+#
+# This is nflverse's full weekly-stats metric set (player_weekly_stats
+# stores ~138 distinct metric names), minus a handful that a straight
+# SUM() across weeks would misrepresent and that don't have a clean
+# season-level recomputation from other stored sums:
+#   - passing_cpoe, target_share, air_yards_share, wopr: already
+#     per-game ratios/composites; nflverse computes them from play-level
+#     or team-level context this table doesn't retain, so there is no
+#     honest way to turn them into a season number here (a naive sum
+#     would just be wrong, not merely imprecise).
+#   - fg_made_list/fg_missed_list/fg_blocked_list and the *_distance
+#     variants: these carry one made/missed/blocked kick's distance per
+#     row, not a summable count or total -- "sum of distances across a
+#     season" isn't a real stat. fg_made_0_19..60_ (below) are the
+#     honest summable version: a count of kicks in that distance band.
 METRICS: tuple[tuple[str, str, str, str], ...] = (
     ("games", "Games", "int", "General"),
+
     ("attempts", "Att", "int", "Passing"),
     ("completions", "Cmp", "int", "Passing"),
     ("completion_pct", "Cmp %", "rate", "Passing"),
@@ -28,12 +44,29 @@ METRICS: tuple[tuple[str, str, str, str], ...] = (
     ("passing_interceptions", "Pass INT", "int", "Passing"),
     ("passing_epa", "Pass EPA", "signed2", "Passing"),
     ("passing_air_yards", "Pass air yds", "big", "Passing"),
+    ("passing_yards_after_catch", "Pass YAC", "big", "Passing"),
+    ("passing_first_downs", "Pass 1D", "int", "Passing"),
+    ("passing_2pt_conversions", "Pass 2PT", "int", "Passing"),
+    ("pacr", "PACR", "rate", "Passing"),
+    ("passing_10", "Pass 10+ yd", "int", "Passing"),
+    ("passing_16", "Pass 16+ yd", "int", "Passing"),
+    ("passing_20", "Pass 20+ yd", "int", "Passing"),
+    ("passing_40", "Pass 40+ yd", "int", "Passing"),
+
     ("carries", "Car", "int", "Rushing"),
     ("rushing_yards", "Rush yds", "big", "Rushing"),
     ("yards_per_carry", "Yds/car", "f1", "Rushing"),
     ("rushing_tds", "Rush TD", "int", "Rushing"),
     ("rushing_epa", "Rush EPA", "signed2", "Rushing"),
     ("rushing_first_downs", "Rush 1D", "int", "Rushing"),
+    ("rushing_fumbles", "Rush Fum", "int", "Rushing"),
+    ("rushing_fumbles_lost", "Rush Fum Lost", "int", "Rushing"),
+    ("rushing_2pt_conversions", "Rush 2PT", "int", "Rushing"),
+    ("rushing_10", "Rush 10+ yd", "int", "Rushing"),
+    ("rushing_12", "Rush 12+ yd", "int", "Rushing"),
+    ("rushing_20", "Rush 20+ yd", "int", "Rushing"),
+    ("rushing_40", "Rush 40+ yd", "int", "Rushing"),
+
     ("targets", "Tgt", "int", "Receiving"),
     ("receptions", "Rec", "int", "Receiving"),
     ("catch_rate", "Catch %", "rate", "Receiving"),
@@ -43,21 +76,109 @@ METRICS: tuple[tuple[str, str, str, str], ...] = (
     ("receiving_epa", "Rec EPA", "signed2", "Receiving"),
     ("receiving_air_yards", "Rec air yds", "big", "Receiving"),
     ("receiving_yards_after_catch", "YAC", "big", "Receiving"),
+    ("receiving_first_downs", "Rec 1D", "int", "Receiving"),
+    ("receiving_fumbles", "Rec Fum", "int", "Receiving"),
+    ("receiving_fumbles_lost", "Rec Fum Lost", "int", "Receiving"),
+    ("receiving_2pt_conversions", "Rec 2PT", "int", "Receiving"),
+    ("racr", "RACR", "rate", "Receiving"),
+    ("receiving_10", "Rec 10+ yd", "int", "Receiving"),
+    ("receiving_16", "Rec 16+ yd", "int", "Receiving"),
+    ("receiving_20", "Rec 20+ yd", "int", "Receiving"),
+    ("receiving_40", "Rec 40+ yd", "int", "Receiving"),
+
     ("def_tackles_solo", "Solo", "int", "Defense"),
     ("def_tackle_assists", "Ast", "int", "Defense"),
-    ("def_sacks", "Sacks", "f1", "Defense"),
-    ("def_interceptions", "Def INT", "int", "Defense"),
+    ("def_tackles_with_assist", "Tkl w/ Ast", "int", "Defense"),
     ("def_tackles_for_loss", "TFL", "int", "Defense"),
+    ("def_tackles_for_loss_yards", "TFL yds", "int", "Defense"),
+    ("def_sacks", "Sacks", "f1", "Defense"),
+    ("def_sack_yards", "Sack yds", "int", "Defense"),
     ("def_qb_hits", "QB hits", "int", "Defense"),
+    ("def_interceptions", "Def INT", "int", "Defense"),
+    ("def_interception_yards", "Def INT yds", "int", "Defense"),
     ("def_pass_defended", "PD", "int", "Defense"),
+    ("def_fumbles", "Def Fum", "int", "Defense"),
     ("def_fumbles_forced", "FF", "int", "Defense"),
+    ("def_tds", "Def TD", "int", "Defense"),
+    ("def_safeties", "Safeties", "int", "Defense"),
+    ("def_pat_blocks", "PAT Blk", "int", "Defense"),
+    ("def_fg_blocks", "FG Blk", "int", "Defense"),
+    ("def_punt_blocks", "Punt Blk", "int", "Defense"),
+    ("def_2pt_atts", "Def 2PT Att", "int", "Defense"),
+    ("def_2pt_made", "Def 2PT Made", "int", "Defense"),
+
     ("fg_made", "FGM", "int", "Kicking"),
     ("fg_att", "FGA", "int", "Kicking"),
+    ("fg_pct", "FG %", "rate", "Kicking"),
+    ("fg_missed", "FG Missed", "int", "Kicking"),
+    ("fg_blocked", "FG Blocked", "int", "Kicking"),
+    ("fg_long", "FG Long", "int", "Kicking"),
+    ("fg_made_0_19", "FGM 0-19", "int", "Kicking"),
+    ("fg_made_20_29", "FGM 20-29", "int", "Kicking"),
+    ("fg_made_30_39", "FGM 30-39", "int", "Kicking"),
+    ("fg_made_40_49", "FGM 40-49", "int", "Kicking"),
+    ("fg_made_50_59", "FGM 50-59", "int", "Kicking"),
+    ("fg_made_60_", "FGM 60+", "int", "Kicking"),
+    ("fg_missed_0_19", "FG Miss 0-19", "int", "Kicking"),
+    ("fg_missed_20_29", "FG Miss 20-29", "int", "Kicking"),
+    ("fg_missed_30_39", "FG Miss 30-39", "int", "Kicking"),
+    ("fg_missed_40_49", "FG Miss 40-49", "int", "Kicking"),
+    ("fg_missed_50_59", "FG Miss 50-59", "int", "Kicking"),
+    ("fg_missed_60_", "FG Miss 60+", "int", "Kicking"),
     ("pat_made", "XPM", "int", "Kicking"),
+    ("pat_att", "XPA", "int", "Kicking"),
+    ("pat_pct", "XP %", "rate", "Kicking"),
+    ("pat_missed", "XP Missed", "int", "Kicking"),
+    ("pat_blocked", "XP Blocked", "int", "Kicking"),
+    ("gwfg_att", "GW FGA", "int", "Kicking"),
+    ("gwfg_made", "GW FGM", "int", "Kicking"),
+    ("gwfg_missed", "GW FG Missed", "int", "Kicking"),
+    ("gwfg_blocked", "GW FG Blocked", "int", "Kicking"),
+
+    ("pt_att", "Punts", "int", "Punting"),
+    ("pt_yards", "Punt yds", "big", "Punting"),
+    ("pt_net_yards", "Punt Net yds", "big", "Punting"),
+    ("pt_long", "Punt Long", "int", "Punting"),
+    ("pt_inside_20", "Punt In-20", "int", "Punting"),
+    ("pt_touchback", "Punt TB", "int", "Punting"),
+    ("pt_downed", "Punt Downed", "int", "Punting"),
+    ("pt_fair_caught", "Punt Fair Caught", "int", "Punting"),
+    ("pt_out_of_bounds", "Punt OOB", "int", "Punting"),
+    ("pt_blocked", "Punt Blocked", "int", "Punting"),
+    ("pt_returned", "Punt Returned", "int", "Punting"),
+    ("pt_return_yards", "Punt Ret yds allowed", "int", "Punting"),
+    ("pt_return_tds", "Punt Ret TD allowed", "int", "Punting"),
+
+    ("kickoff_returns", "KR", "int", "Returns"),
+    ("kickoff_return_yards", "KR yds", "big", "Returns"),
+    ("punt_returns", "PR", "int", "Returns"),
+    ("punt_return_yards", "PR yds", "big", "Returns"),
+    ("special_teams_tds", "ST TD", "int", "Returns"),
+
+    ("fumbles_total", "Fumbles", "int", "Fumbles"),
+    ("fumbles_lost_total", "Fumbles Lost", "int", "Fumbles"),
+    ("fumbles_not_forced", "Fumbles Unforced", "int", "Fumbles"),
+    ("fumbles_out_of_bounds", "Fumbles OOB", "int", "Fumbles"),
+    ("fumbles_forced_by_opp", "Fumbles Forced (opp)", "int", "Fumbles"),
+    ("fumble_recovery_own", "Fum Rec (own)", "int", "Fumbles"),
+    ("fumble_recovery_opp", "Fum Rec (opp)", "int", "Fumbles"),
+    ("fumble_recovery_yards_own", "Fum Rec yds (own)", "int", "Fumbles"),
+    ("fumble_recovery_yards_opp", "Fum Rec yds (opp)", "int", "Fumbles"),
+    ("fumble_recovery_tds", "Fum Rec TD", "int", "Fumbles"),
+    ("sack_fumbles", "Sack Fum", "int", "Fumbles"),
+    ("sack_fumbles_lost", "Sack Fum Lost", "int", "Fumbles"),
+    ("sacks_suffered", "Sacks Taken", "int", "Fumbles"),
+    ("sack_yards_lost", "Sack yds Lost", "int", "Fumbles"),
+
+    ("penalties", "Penalties", "int", "General"),
+    ("penalty_yards", "Penalty yds", "int", "General"),
+    ("misc_yards", "Misc yds", "int", "General"),
+
+    ("fantasy_points", "Fantasy", "f1", "Fantasy"),
     ("fantasy_points_ppr", "Fantasy (PPR)", "f1", "Fantasy"),
 )
 _RATE_METRICS = {"completion_pct", "yards_per_attempt", "yards_per_carry",
-                 "yards_per_reception", "catch_rate"}
+                 "yards_per_reception", "catch_rate", "pacr", "racr", "fg_pct", "pat_pct"}
 #: Metrics fetched straight from the database via SUM(); rate metrics above
 #: are computed from these afterward.
 SUM_METRICS = tuple(key for key, *_ in METRICS if key not in _RATE_METRICS and key != "games")
@@ -94,6 +215,12 @@ def with_rates(row: dict[str, Any]) -> dict[str, Any]:
     row["yards_per_carry"] = _safe_divide(row.get("rushing_yards"), row.get("carries"))
     row["yards_per_reception"] = _safe_divide(row.get("receiving_yards"), row.get("receptions"))
     row["catch_rate"] = _safe_divide(row.get("receptions"), row.get("targets"))
+    # Recomputed from the season's own summed yardage rather than averaging
+    # nflverse's per-game ratios -- the same reasoning as every rate above.
+    row["pacr"] = _safe_divide(row.get("passing_yards"), row.get("passing_air_yards"))
+    row["racr"] = _safe_divide(row.get("receiving_yards"), row.get("receiving_air_yards"))
+    row["fg_pct"] = _safe_divide(row.get("fg_made"), row.get("fg_att"))
+    row["pat_pct"] = _safe_divide(row.get("pat_made"), row.get("pat_att"))
     return row
 
 
