@@ -7,6 +7,7 @@ from typing import Any
 
 from sports_aggregator.nfl.explorer import with_rates
 from sports_aggregator.nfl.pff import NFLPFFService, season_scaled_minimum
+from sports_aggregator.nfl.ranking import rank_lookup
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -21,6 +22,21 @@ def _ngs_season_lookup(repository: NFLRepository, season: int, team: str,
     """
     rows = repository.player_season_stats(season, metrics, team=team)
     return {row["player_id"]: with_rates(row) for row in rows}
+
+
+def _ngs_league_ranks(repository: NFLRepository, season: int, positions: tuple[str, ...],
+                      query_metrics: tuple[str, ...],
+                      rank_metrics: tuple[str, ...]) -> dict[str, dict[str, dict[str, int]]]:
+    """Where each candidate's NGS numbers stand against every qualifying
+    player at the same positions leaguewide, not just this game's two
+    rosters -- pooled across `positions` (e.g. WR+TE) into one leaderboard
+    rather than ranked position-by-position, since alignment/rushing cards
+    don't distinguish those sub-positions from each other."""
+    rows: list[dict[str, Any]] = []
+    for position in positions:
+        rows.extend(with_rates(row) for row in
+                    repository.player_season_stats(season, query_metrics, position=position))
+    return rank_lookup(rows, id_key="player_id", metrics=rank_metrics)
 
 
 def _weak_zones(zones: list[dict[str, Any]], minimum_attempts: float) -> set[tuple[str, str]]:
@@ -56,6 +72,13 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
     minimum_routes = season_scaled_minimum(100, weeks_played)
     minimum_slot_snaps = season_scaled_minimum(40, weeks_played)
     minimum_zone_targets = max(2, round(season_scaled_minimum(3, weeks_played)))
+    # Leaguewide, not per-team -- computed once since it doesn't depend on
+    # which offense/defense pairing is being built below.
+    receiving_ngs_ranks = _ngs_league_ranks(
+        repository, pff_season, ("WR", "TE"),
+        ("targets", "ngs_rec_separation_wtd", "ngs_rec_cushion_wtd"),
+        ("ngs_rec_separation", "ngs_rec_cushion"),
+    )
     cards = []
     for offense, defense in ((game["away_team"], game["home_team"]),
                              (game["home_team"], game["away_team"])):
@@ -186,6 +209,8 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                 "season": pff_season,
                 "ngs_separation": receiver_ngs.get("ngs_rec_separation"),
                 "ngs_cushion": receiver_ngs.get("ngs_rec_cushion"),
+                "ngs_separation_rank": receiving_ngs_ranks["ngs_rec_separation"].get(receiver.get("gsis_id")),
+                "ngs_cushion_rank": receiving_ngs_ranks["ngs_rec_cushion"].get(receiver.get("gsis_id")),
             })
         candidates.sort(key=lambda card: (-card["weak_zone_hits"], -card["exploit_score"]))
         cards.extend(candidates[:3])
@@ -197,6 +222,12 @@ def rushing_matchups(repository: NFLRepository, pff: NFLPFFService,
                      profiles: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Connect likely ball carriers to the opposing run-defense result."""
     output = []
+    rushing_ngs_ranks = _ngs_league_ranks(
+        repository, pff_season, ("RB", "FB"),
+        ("carries", "ngs_rush_efficiency_wtd", "ngs_rush_stacked_box_pct_wtd",
+         "ngs_rush_yards_over_expected"),
+        ("ngs_rush_efficiency", "ngs_rush_stacked_box_pct", "ngs_rush_yards_over_expected"),
+    )
     for offense, defense in ((game["away_team"], game["home_team"]),
                              (game["home_team"], game["away_team"])):
         current_ids = {row["player_id"] for row in repository.team_roster(roster_season, offense)}
@@ -230,6 +261,9 @@ def rushing_matchups(repository: NFLRepository, pff: NFLPFFService,
                 "ngs_efficiency": runner_ngs.get("ngs_rush_efficiency"),
                 "ngs_stacked_box_pct": runner_ngs.get("ngs_rush_stacked_box_pct"),
                 "ngs_yards_over_expected": runner_ngs.get("ngs_rush_yards_over_expected"),
+                "ngs_efficiency_rank": rushing_ngs_ranks["ngs_rush_efficiency"].get(runner.get("gsis_id")),
+                "ngs_yards_over_expected_rank": rushing_ngs_ranks["ngs_rush_yards_over_expected"].get(
+                    runner.get("gsis_id")),
             })
     return output
 

@@ -77,7 +77,7 @@
                 {% set cov = staff_packet.defense.coverage %}{% set pressure = staff_packet.defense.pressure %}{% set pr = staff_packet.defense.pressure_rate %}
                 <div class="tendency-rows">
                     <div><span>Man / zone</span><b>{{ cov.man_rate|cell('rate') }} / {{ cov.zone_rate|cell('rate') }}</b><small>{{ cov.season or season }} PFF player-snap proxy</small></div>
-                    <div><span>EPA allowed</span><b>{{ staff_packet.defense.epa_allowed|cell('signed2') }}</b><small>{{ season }} defense</small></div>
+                    <div><span>EPA allowed</span><b>{{ staff_packet.defense.epa_allowed|cell('signed2') }}</b><small>{{ season }} defense{% if staff_packet.defense.epa_allowed_rank %} &middot; #{{ staff_packet.defense.epa_allowed_rank }} NFL{% endif %}</small></div>
                     {% if pr %}
                     <div><span>Blitz rate</span><b>{{ pr.blitz_rate|cell('f1') }}%</b><small>{{ pr.blitzes|cell('int') }} blitzes{% if pr.season != season %} &middot; {{ pr.season }}{% endif %}</small></div>
                     <div><span>Pressure rate</span><b>{{ pr.pressure_rate|cell('f1') }}%</b><small>{{ pr.pressures|cell('int') }} pressures &middot; {{ pr.sacks|cell('int') }} sacks</small></div>

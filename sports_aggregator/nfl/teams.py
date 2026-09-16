@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from sports_aggregator.nfl.ranking import rank_within
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.usage import team_usage_context
 
@@ -108,14 +109,14 @@ def team_context(repository: NFLRepository, season: int, team: str) -> dict[str,
         performance_season = season - 1
         league = repository.league_efficiency(performance_season)
         profile = next((row for row in league if row["team"] == team), None)
-    ranks = {}
-    for key, lower in (("net_epa", False), ("epa_per_play", False),
-                       ("pass_epa_per_play", False), ("rush_epa_per_play", False),
-                       ("defensive_epa_allowed", True)):
-        ordered = sorted((row for row in league if row.get(key) is not None),
-                         key=lambda row: row[key], reverse=not lower)
-        ranks[key] = next((index for index, row in enumerate(ordered, 1)
-                           if row["team"] == team), None)
+    rank_keys = ("net_epa", "epa_per_play", "pass_epa_per_play", "rush_epa_per_play",
+                "defensive_epa_allowed")
+    lower_is_better = frozenset({"defensive_epa_allowed"})
+    ranks = {
+        key: rank_within(league, id_key="team", value_key=key,
+                         lower_is_better=key in lower_is_better).get(team, {}).get("rank")
+        for key in rank_keys
+    }
 
     production = repository.team_season_summary(season, team)
     production_season = season

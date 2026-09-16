@@ -31,10 +31,12 @@ from sports_aggregator.nfl.rushing import run_direction_packet, run_matchup_pack
 from sports_aggregator.nfl.personnel import _score
 from sports_aggregator.nfl.postgame import postgame_packet
 from sports_aggregator.nfl.production_seed import LOCK_NAME, STATE_NAME, maybe_launch
+from sports_aggregator.nfl.ranking import rank_lookup, rank_within
 from sports_aggregator.nfl.search import search_entities as search_nfl_entities
 from sports_aggregator.nfl.views import (
     current_games, ingestion_runs_table, schedule_table, zone_matchup_table,
 )
+from sports_aggregator.nfl.web import _headline_stats_with_rank
 from sports_aggregator.social.models import SourceProfile
 from sports_aggregator.social.registry import SourceRegistry
 
@@ -1386,6 +1388,77 @@ class NFLSituationContextTests(unittest.TestCase):
             result = weather_for_game(repository, "no-such-game")
             self.assertFalse(result["available"])
             self.assertEqual(result["snapshots"], 0)
+
+
+class RankingTests(unittest.TestCase):
+    def test_ties_share_a_rank_and_the_next_distinct_value_skips_ahead(self):
+        rows = [
+            {"id": "a", "yards": 100}, {"id": "b", "yards": 100},
+            {"id": "c", "yards": 90}, {"id": "d", "yards": 80},
+        ]
+        ranks = rank_within(rows, id_key="id", value_key="yards")
+        self.assertEqual(ranks["a"], {"rank": 1, "of": 4})
+        self.assertEqual(ranks["b"], {"rank": 1, "of": 4})
+        # Standard competition ranking: two people tied for 1st means the
+        # next distinct value is 3rd, not 2nd.
+        self.assertEqual(ranks["c"], {"rank": 3, "of": 4})
+        self.assertEqual(ranks["d"], {"rank": 4, "of": 4})
+
+    def test_lower_is_better_reverses_the_ordering(self):
+        rows = [{"id": "a", "int": 5}, {"id": "b", "int": 1}, {"id": "c", "int": 3}]
+        ranks = rank_within(rows, id_key="id", value_key="int", lower_is_better=True)
+        self.assertEqual(ranks["b"]["rank"], 1)
+        self.assertEqual(ranks["c"]["rank"], 2)
+        self.assertEqual(ranks["a"]["rank"], 3)
+
+    def test_rows_missing_the_metric_are_excluded_from_rank_and_count(self):
+        rows = [{"id": "a", "yards": 100}, {"id": "b", "yards": None}, {"id": "c"}]
+        ranks = rank_within(rows, id_key="id", value_key="yards")
+        self.assertEqual(ranks, {"a": {"rank": 1, "of": 1}})
+
+    def test_rank_lookup_computes_each_metric_against_its_own_ordering(self):
+        rows = [
+            {"id": "a", "yards": 100, "interceptions": 2},
+            {"id": "b", "yards": 50, "interceptions": 0},
+        ]
+        result = rank_lookup(rows, id_key="id", metrics=("yards", "interceptions"),
+                             lower_is_better=frozenset({"interceptions"}))
+        self.assertEqual(result["yards"]["a"]["rank"], 1)
+        # Fewer interceptions is better, so "b" (0 picks) ranks ahead of "a".
+        self.assertEqual(result["interceptions"]["b"]["rank"], 1)
+        self.assertEqual(result["interceptions"]["a"]["rank"], 2)
+
+
+class _FakePlayerRankRepository:
+    """Duck-typed stand-in exposing only what _headline_stats_with_rank calls."""
+
+    def __init__(self, rows_by_position: dict[str, list[dict]]):
+        self._rows_by_position = rows_by_position
+
+    def player_season_stats(self, _season, _metrics, *, position=None, **_kwargs):
+        return self._rows_by_position.get(position, [])
+
+
+class HeadlinePlayerRankTests(unittest.TestCase):
+    def test_headline_stats_carry_rank_among_the_same_position(self):
+        repository = _FakePlayerRankRepository({"QB": [
+            {"player_id": "qb1", "passing_yards": 4000, "passing_tds": 30},
+            {"player_id": "qb2", "passing_yards": 3000, "passing_tds": 20},
+        ]})
+        totals = {"passing_yards": 4000, "passing_tds": 30, "completions": 0, "attempts": 0,
+                  "passing_interceptions": 0, "rushing_yards": 0}
+        stats = _headline_stats_with_rank(repository, 2026, "QB", "qb1", totals)
+        by_label = {stat["label"]: stat for stat in stats}
+        self.assertEqual(by_label["Pass yards"]["rank"], 1)
+        self.assertEqual(by_label["Pass yards"]["of"], 2)
+
+    def test_headline_stats_have_no_rank_fields_without_a_peer_match(self):
+        repository = _FakePlayerRankRepository({})
+        totals = {"passing_yards": 4000, "completions": 0, "attempts": 0,
+                  "passing_tds": 0, "passing_interceptions": 0, "rushing_yards": 0}
+        stats = _headline_stats_with_rank(repository, 2026, "QB", "qb1", totals)
+        for stat in stats:
+            self.assertNotIn("rank", stat)
 
 
 if __name__ == "__main__":

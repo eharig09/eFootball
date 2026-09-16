@@ -27,6 +27,7 @@ from sports_aggregator.nfl.personnel import position_rooms, significant_movement
 from sports_aggregator.nfl.passing import pass_matchup_packet, pass_zone_packet
 from sports_aggregator.nfl.rushing import run_direction_packet, run_matchup_packet
 from sports_aggregator.nfl.postgame import postgame_packet
+from sports_aggregator.nfl.ranking import rank_lookup
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.search import search_entities
 from sports_aggregator.nfl.staff import staff_tendencies
@@ -731,6 +732,7 @@ def team_page(abbreviation: str):
     )
     staff_packet = staff_tendencies(
         _repository(), _pff(), season, code, pff_season, context["efficiency"],
+        context["efficiency_ranks"],
     )
     scheme_rate = (_repository().team_scheme_rate(season, code)
                    or _repository().team_scheme_rate(season - 1, code))
@@ -776,6 +778,7 @@ def team_api(abbreviation: str):
     availability = availability_packet(_repository(), season, code)
     staff_packet = staff_tendencies(
         _repository(), _pff(), season, code, pff_season, context["efficiency"],
+        context["efficiency_ranks"],
     )
     return jsonify({
         "season": season, "team": team,
@@ -1024,6 +1027,25 @@ def game_api(game_id: str):
     })
 
 
+#: Headline stats where a smaller season total is the better outcome --
+#: everything else on the headline cards is "more is better".
+_HEADLINE_LOWER_IS_BETTER = frozenset({"passing_interceptions"})
+
+
+def _headline_stats_with_rank(repository: NFLRepository, season: int, position: str | None,
+                              player_id: str, totals: dict[str, float]) -> list[dict]:
+    stats = player_headline_stats(totals, position)
+    if not stats:
+        return stats
+    metrics = [stat["key"] for stat in stats]
+    peers = repository.player_season_stats(season, metrics, position=(position or "").upper())
+    ranks = rank_lookup(peers, id_key="player_id", metrics=metrics,
+                        lower_is_better=_HEADLINE_LOWER_IS_BETTER)
+    for stat in stats:
+        stat.update(ranks[stat["key"]].get(player_id, {}))
+    return stats
+
+
 def _player_packet(player_id: str, season: int) -> dict:
     repository = _repository()
     player = repository.get_player(season, player_id)
@@ -1057,7 +1079,8 @@ def _player_packet(player_id: str, season: int) -> dict:
         "season": season, "player": player, "career_view": career_view,
         "team_identity": team_identity or {},
         "totals": player_totals_table(totals),
-        "headline_stats": player_headline_stats(totals, player.get("position")),
+        "headline_stats": _headline_stats_with_rank(
+            repository, season, player.get("position"), player_id, totals),
         "game_log": player_game_log(weekly),
         "game_log_groups": player_game_log_tables(log_rows, show_season=career_view),
         "performance_charts": player_charts(chart_rows, player.get("position")),

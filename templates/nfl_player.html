@@ -89,7 +89,7 @@
 
     <section class="section" id="production">
         <div class="section-head"><div><p class="eyebrow">Summary</p><h2>Season production</h2></div></div>
-        <div class="player-stat-grid">{% for stat in headline_stats %}<article><span>{{ stat.label }}</span><b>{{ stat.value|cell(stat.format) }}</b></article>{% else %}<p class="empty">No season totals are available for this player.</p>{% endfor %}</div>
+        <div class="player-stat-grid">{% for stat in headline_stats %}<article><span>{{ stat.label }}</span><b>{{ stat.value|cell(stat.format) }}</b>{% if stat.rank %}<small>#{{ stat.rank }} of {{ stat.of }} {{ player.position }}</small>{% endif %}</article>{% else %}<p class="empty">No season totals are available for this player.</p>{% endfor %}</div>
     </section>
 
     <section class="section" id="game-log">

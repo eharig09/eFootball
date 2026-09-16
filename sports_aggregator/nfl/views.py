@@ -353,7 +353,7 @@ def player_headline_stats(totals: dict[str, float], position: str | None) -> lis
                        ("Assists", "def_tackle_assists", "big"), ("Sacks", "def_sacks", "f1"),
                        ("QB hits", "def_qb_hits", "big"), ("INT", "def_interceptions", "int"),
                        ("Pass defended", "def_pass_defended", "big"))
-    return [{"label": label, "value": totals[key], "format": value_format}
+    return [{"label": label, "key": key, "value": totals[key], "format": value_format}
             for label, key, value_format in definitions if totals.get(key) is not None]
 
 
