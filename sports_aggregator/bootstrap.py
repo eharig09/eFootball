@@ -38,12 +38,19 @@ RESULT_HISTORY_FLOOR = 2015
 #: Seasons of box scores and player history, which are the expensive ones.
 DETAIL_HISTORY_SEASONS = 7
 
-#: Address-space ceiling for NFL segments, which all pay the cost of booting
-#: the full combined app (see Step.memory_mb) before doing their own work.
-#: Higher than the CFB default on purpose, not tunable per-deploy like
-#: CFB_REFRESH_CHILD_MB because it tracks that shared boot cost rather than
-#: any one host's memory budget.
-NFL_CHILD_MEMORY_MB = 380
+#: NFL segments get no RLIMIT_AS ceiling at all (see Step.memory_mb): two
+#: rounds of live production testing (200MB, then 380MB) both failed
+#: "nfl-core" with an OpenBLAS allocation error at a *resident* peak of
+#: 44-94MB -- nowhere near either ceiling. RLIMIT_AS bounds virtual address
+#: space, and every NFL segment boots the full combined app (all NFL and
+#: CFB blueprints, numpy/pandas/pyarrow included) via create_app() before
+#: doing any real work, which alone appears to reserve more virtual space
+#: than a few hundred MB even though the actual working set stays small.
+#: Since the real memory this step ever touches is tiny, the ceiling was
+#: failing it for no safety benefit -- the step's own timeout_seconds and
+#: Render's platform-level OOM killer (which acts on real, not virtual,
+#: memory) remain as the actual backstops.
+NFL_CHILD_MEMORY_MB = 0
 
 
 @dataclass
@@ -59,12 +66,8 @@ class Step:
     #: driver's own timeout, which is a backstop rather than a budget.
     timeout_seconds: float | None = None
     #: Address-space ceiling (MB) for this step's child process. None uses
-    #: the driver's CFB_REFRESH_CHILD_MB default. NFL segments need a higher
-    #: one: every "nfl.refresh_cli" segment boots the full combined app (all
-    #: NFL and CFB blueprints, nflverse/pandas included) via create_app()
-    #: before doing any actual work, no matter how small that segment's own
-    #: job is -- so the same ceiling that safely bounds a lightweight CFB
-    #: step is not enough headroom just to finish importing for these.
+    #: the driver's CFB_REFRESH_CHILD_MB default; 0 disables the ceiling
+    #: entirely (see NFL_CHILD_MEMORY_MB for why NFL segments use 0).
     memory_mb: int | None = None
 
 
