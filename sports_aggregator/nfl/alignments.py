@@ -5,8 +5,22 @@ from __future__ import annotations
 from statistics import median
 from typing import Any
 
+from sports_aggregator.nfl.explorer import with_rates
 from sports_aggregator.nfl.pff import NFLPFFService, season_scaled_minimum
 from sports_aggregator.nfl.repository import NFLRepository
+
+
+def _ngs_season_lookup(repository: NFLRepository, season: int, team: str,
+                       metrics: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+    """Season-average Next Gen Stats for one team's roster, keyed by player.
+
+    `with_rates` divides each metric's weighted-sum companion back down by
+    its own volume metric (see explorer.py) -- safe to call here even though
+    this query only asks for a handful of the columns it knows how to derive,
+    since every division it does not have inputs for just comes back None.
+    """
+    rows = repository.player_season_stats(season, metrics, team=team)
+    return {row["player_id"]: with_rates(row) for row in rows}
 
 
 def _weak_zones(zones: list[dict[str, Any]], minimum_attempts: float) -> set[tuple[str, str]]:
@@ -57,6 +71,10 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
             -(usage.get(row.get("gsis_id"), {}).get("targets") or 0),
             -(row.get("routes") or 0),
         ))
+        receiving_ngs = _ngs_season_lookup(
+            repository, pff_season, offense,
+            ("targets", "ngs_rec_separation_wtd", "ngs_rec_cushion_wtd"),
+        )
         slot_defenders = [row for row in pff.family_profiles(
             pff_season, "slot_coverage", defense,
             ("coverage_snaps", "qb_rating_against", "yards_per_coverage_snap"),
@@ -152,6 +170,7 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                 interaction = "The receiver’s preferred target zone is measured, but the defense lacks a qualifying result in that exact cell."
             else:
                 interaction = "Alignment and route volume are available; receiver-level target-location data is not yet available."
+            receiver_ngs = receiving_ngs.get(receiver.get("gsis_id"), {})
             candidates.append({
                 "offense": offense, "defense": defense, "player_name": receiver["player_name"],
                 "player_id": receiver.get("gsis_id"), "alignment": alignment,
@@ -165,6 +184,8 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                 "exploit_score": exploit_score,
                 "confidence": "High-volume interaction" if (receiver.get("routes") or 0) >= 350 else "Rotation interaction",
                 "season": pff_season,
+                "ngs_separation": receiver_ngs.get("ngs_rec_separation"),
+                "ngs_cushion": receiver_ngs.get("ngs_rec_cushion"),
             })
         candidates.sort(key=lambda card: (-card["weak_zone_hits"], -card["exploit_score"]))
         cards.extend(candidates[:3])
@@ -187,9 +208,15 @@ def rushing_matchups(repository: NFLRepository, pff: NFLPFFService,
         ) if row.get("gsis_id") in current_ids]
         runners.sort(key=lambda row: (-(usage.get(row.get("gsis_id"), {}).get("carries") or 0),
                                       -(row.get("attempts") or 0)))
+        rushing_ngs = _ngs_season_lookup(
+            repository, pff_season, offense,
+            ("carries", "ngs_rush_efficiency_wtd", "ngs_rush_stacked_box_pct_wtd",
+             "ngs_rush_yards_over_expected"),
+        )
         defense_profile = profiles.get(defense) or {}
         for runner in runners[:3]:
             role = usage.get(runner.get("gsis_id"), {})
+            runner_ngs = rushing_ngs.get(runner.get("gsis_id"), {})
             output.append({
                 "offense": offense, "defense": defense, "player_id": runner.get("gsis_id"),
                 "player_name": runner.get("player_name"), "carries": role.get("carries"),
@@ -200,6 +227,9 @@ def rushing_matchups(repository: NFLRepository, pff: NFLPFFService,
                 "defense_rush_epa_allowed": defense_profile.get("defensive_rush_epa_allowed"),
                 "defense_success_allowed": defense_profile.get("defensive_success_allowed"),
                 "season": pff_season,
+                "ngs_efficiency": runner_ngs.get("ngs_rush_efficiency"),
+                "ngs_stacked_box_pct": runner_ngs.get("ngs_rush_stacked_box_pct"),
+                "ngs_yards_over_expected": runner_ngs.get("ngs_rush_yards_over_expected"),
             })
     return output
 

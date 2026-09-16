@@ -15,7 +15,7 @@ from sports_aggregator.nfl.models import Game, Player, Team
 from sports_aggregator.nfl.data_sources import free_sources, load_data_sources
 from sports_aggregator.nfl.espn import injury_rows, staff_rows
 from sports_aggregator.nfl.naming import canon_position, canon_team, normalize_name
-from sports_aggregator.nfl.alignments import alignment_matchups
+from sports_aggregator.nfl.alignments import alignment_matchups, rushing_matchups
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.rss_directory import national_feeds, team_feeds
 from sports_aggregator.nfl.source_directory import import_directory, load_directory
@@ -973,15 +973,21 @@ class NFLSourceDirectoryTests(unittest.TestCase):
 
 
 class _FakeAlignmentRepository:
-    """Duck-typed stand-in for NFLRepository -- alignment_matchups only calls
-    these four methods, so a real sqlite-backed repository (with PFF fixture
-    families synced through it) isn't needed to exercise the pure logic."""
+    """Duck-typed stand-in for NFLRepository -- alignment_matchups and
+    rushing_matchups only call these methods, so a real sqlite-backed
+    repository (with PFF fixture families synced through it) isn't needed
+    to exercise the pure logic."""
 
-    def __init__(self, *, weeks_played, rosters, usage=None, receiver_profiles=None):
+    def __init__(self, *, weeks_played, rosters, usage=None, receiver_profiles=None,
+                season_stats=None):
         self._weeks_played = weeks_played
         self._rosters = rosters
         self._usage = usage or {}
         self._receiver_profiles = receiver_profiles or {}
+        # {(season, team): [row, ...]}, each row shaped like a real
+        # player_season_stats() result (player_id plus whatever metrics
+        # were asked for).
+        self._season_stats = season_stats or {}
 
     def latest_stat_week(self, season):
         return self._weeks_played[season]
@@ -995,17 +1001,23 @@ class _FakeAlignmentRepository:
     def receiver_pass_profile(self, _season, player_id):
         return self._receiver_profiles.get(player_id, {"zones": [], "total": {}})
 
+    def player_season_stats(self, season, _metrics, *, team=None, **_kwargs):
+        return self._season_stats.get((season, team), [])
+
 
 class _FakeAlignmentPFF:
-    def __init__(self, receivers=None, slot_defenders=None):
+    def __init__(self, receivers=None, slot_defenders=None, runners=None):
         self._receivers = receivers or {}
         self._slot_defenders = slot_defenders or {}
+        self._runners = runners or {}
 
     def family_profiles(self, _season, family, team, _fields):
         if family == "receiving_summary":
             return self._receivers.get(team, [])
         if family == "slot_coverage":
             return self._slot_defenders.get(team, [])
+        if family == "rushing_summary":
+            return self._runners.get(team, [])
         return []
 
 
@@ -1123,6 +1135,77 @@ class AlignmentMatchupTests(unittest.TestCase):
         self.assertEqual(offense_cards[0]["player_name"], "Weak Spot Exploiter")
         self.assertEqual(offense_cards[0]["weak_zone_hits"], 1)
         self.assertEqual(offense_cards[1]["weak_zone_hits"], 0)
+
+    def test_alignment_cards_carry_season_weighted_ngs_separation_and_cushion(self):
+        """Next Gen Stats separation/cushion on each receiver card are a
+        volume-weighted season average, not a raw per-week number -- same
+        SUM(weighted)/SUM(weight) shape explorer.py uses for PACR/RACR,
+        exercised here through alignment_matchups' own lookup."""
+        game = {"away_team": "AAA", "home_team": "BBB", "season": 2026}
+        repository = _FakeAlignmentRepository(
+            weeks_played={2026: 10},
+            rosters={"AAA": ("r1",), "BBB": ()},
+            usage={"AAA": [{"player_id": "r1", "targets": 20, "target_share": .3}]},
+            receiver_profiles={"r1": {"zones": [], "total": {"targets": 20}}},
+            season_stats={(2026, "AAA"): [
+                # 3.5 avg separation and 6.0 avg cushion weighted across 20 targets.
+                {"player_id": "r1", "targets": 20,
+                 "ngs_rec_separation_wtd": 70.0, "ngs_rec_cushion_wtd": 120.0},
+            ]},
+        )
+        pff = _FakeAlignmentPFF(receivers={"AAA": [
+            {"gsis_id": "r1", "player_name": "Receiver One", "routes": 100,
+             "grades_pass_route": 75.0, "yprr": 1.8, "slot_rate": 5, "wide_rate": 95},
+        ]})
+        cards = alignment_matchups(repository, pff, game, 2026, 2026, {"BBB": {"season": 2026, "zones": []}})
+        card = next(card for card in cards if card["player_name"] == "Receiver One")
+        self.assertAlmostEqual(card["ngs_separation"], 3.5)
+        self.assertAlmostEqual(card["ngs_cushion"], 6.0)
+
+    def test_alignment_card_ngs_fields_are_none_without_a_season_stats_match(self):
+        """A receiver with no matching Next Gen Stats row (not yet synced,
+        or no qualifying targets) gets None rather than a KeyError or a
+        misleading zero."""
+        game = {"away_team": "AAA", "home_team": "BBB", "season": 2026}
+        repository = _FakeAlignmentRepository(
+            weeks_played={2026: 10}, rosters={"AAA": ("r1",), "BBB": ()},
+            usage={"AAA": [{"player_id": "r1", "targets": 20, "target_share": .3}]},
+            receiver_profiles={"r1": {"zones": [], "total": {"targets": 20}}},
+        )
+        pff = _FakeAlignmentPFF(receivers={"AAA": [
+            {"gsis_id": "r1", "player_name": "Receiver One", "routes": 100,
+             "grades_pass_route": 75.0, "yprr": 1.8, "slot_rate": 5, "wide_rate": 95},
+        ]})
+        cards = alignment_matchups(repository, pff, game, 2026, 2026, {"BBB": {"season": 2026, "zones": []}})
+        card = next(card for card in cards if card["player_name"] == "Receiver One")
+        self.assertIsNone(card["ngs_separation"])
+        self.assertIsNone(card["ngs_cushion"])
+
+
+class RushingMatchupNgsTests(unittest.TestCase):
+    def test_run_game_cards_carry_season_weighted_ngs_efficiency_and_ryoe(self):
+        game = {"away_team": "AAA", "home_team": "BBB", "season": 2026}
+        repository = _FakeAlignmentRepository(
+            weeks_played={2026: 10}, rosters={"AAA": ("b1",)},
+            usage={"AAA": [{"player_id": "b1", "carries": 15, "carry_share": .6,
+                            "rushing_yards": 80}]},
+            season_stats={(2026, "AAA"): [
+                # 4.2 avg efficiency weighted across 15 carries; RYOE already
+                # a real yards total (12.0), so it sums with no weighting.
+                {"player_id": "b1", "carries": 15, "ngs_rush_efficiency_wtd": 63.0,
+                 "ngs_rush_stacked_box_pct_wtd": 150.0, "ngs_rush_yards_over_expected": 12.0},
+            ]},
+        )
+        pff = _FakeAlignmentPFF(runners={"AAA": [
+            {"gsis_id": "b1", "player_name": "Back One", "attempts": 15,
+             "grades_run": 72.0, "elusive_rating": 60.0, "yco_attempt": 2.1,
+             "avoided_tackles": 3},
+        ]})
+        cards = rushing_matchups(repository, pff, game, 2026, 2026, {"BBB": {}})
+        card = next(card for card in cards if card["player_name"] == "Back One")
+        self.assertAlmostEqual(card["ngs_efficiency"], 4.2)
+        self.assertAlmostEqual(card["ngs_stacked_box_pct"], 10.0)
+        self.assertAlmostEqual(card["ngs_yards_over_expected"], 12.0)
 
 
 class ViewTableHelperTests(unittest.TestCase):
