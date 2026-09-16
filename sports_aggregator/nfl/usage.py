@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sports_aggregator.nfl.alignments import ngs_season_lookup
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -26,6 +27,29 @@ def team_usage_context(repository: NFLRepository, season: int, team: str, *,
         row["stat_season"] = stats_season
         row["player_url"] = f"/nfl/players/{row['player_id']}/?season={stats_season}"
     active = [row for row in rows if row["opportunities"] > 0]
+    target_leaders = sorted(
+        (row for row in active if row["targets"] > 0),
+        key=lambda row: (-row["target_share"], -row["targets"]),
+    )[:6]
+    carry_leaders = sorted(
+        (row for row in active if row["carries"] > 0),
+        key=lambda row: (-row["carry_share"], -row["carries"]),
+    )[:6]
+    opportunity_leaders = sorted(
+        active, key=lambda row: (-(row["opportunity_share"] or 0), -row["opportunities"]),
+    )[:6]
+    # Volume tells you who gets the ball; separation/efficiency tells you
+    # how well they use it -- pull each leader's own season Next Gen Stats
+    # alongside their share so both read together on the same row.
+    receiving_ngs = ngs_season_lookup(
+        repository, stats_season, team,
+        ("targets", "ngs_rec_separation_wtd", "carries",
+         "ngs_rush_efficiency_wtd", "ngs_rush_yards_over_expected"),
+    )
+    for row in target_leaders + opportunity_leaders:
+        row["ngs_separation"] = receiving_ngs.get(row["player_id"], {}).get("ngs_rec_separation")
+    for row in carry_leaders + opportunity_leaders:
+        row["ngs_efficiency"] = receiving_ngs.get(row["player_id"], {}).get("ngs_rush_efficiency")
     return {
         "season": stats_season,
         "rows": active,
@@ -34,14 +58,9 @@ def team_usage_context(repository: NFLRepository, season: int, team: str, *,
         "returning_opportunity_share": sum(
             row["opportunity_share"] or 0 for row in active
         ),
-        "target_leaders": sorted(
-            (row for row in active if row["targets"] > 0),
-            key=lambda row: (-row["target_share"], -row["targets"]),
-        )[:4],
-        "carry_leaders": sorted(
-            (row for row in active if row["carries"] > 0),
-            key=lambda row: (-row["carry_share"], -row["carries"]),
-        )[:4],
+        "target_leaders": target_leaders,
+        "carry_leaders": carry_leaders,
+        "opportunity_leaders": opportunity_leaders,
     }
 
 

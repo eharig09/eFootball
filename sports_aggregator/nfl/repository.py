@@ -1870,6 +1870,40 @@ class NFLRepository:
                                       output["clocked_plays"] if output.get("clocked_plays") else None)
         return output
 
+    def league_situational_profile(self, season: int, *,
+                                   before_week: int | None = None) -> list[dict[str, Any]]:
+        """team_situational_profile for every team at once, for leaguewide ranking."""
+        self.initialize()
+        week_filter = " AND week<?" if before_week is not None else ""
+        parameters: tuple[Any, ...] = (season, before_week) if before_week is not None else (season,)
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """SELECT team,COUNT(DISTINCT game_id) games,SUM(plays) plays,SUM(drives) drives,
+                          SUM(third_down_plays) third_down_plays,
+                          SUM(third_down_conversions) third_down_conversions,
+                          SUM(red_zone_plays) red_zone_plays,SUM(red_zone_successes) red_zone_successes,
+                          SUM(neutral_plays) neutral_plays,SUM(neutral_passes) neutral_passes,
+                          SUM(seconds_sum) seconds_sum,SUM(clocked_plays) clocked_plays
+                   FROM game_team_situational WHERE season=?""" + week_filter + " GROUP BY team",
+                parameters,
+            )
+            output = []
+            for row in rows:
+                item = dict(row)
+                games = item.get("games") or 0
+                item["plays_per_game"] = item.get("plays", 0) / games if games else None
+                item["drives_per_game"] = item.get("drives", 0) / games if games else None
+                item["third_down_rate"] = (item.get("third_down_conversions", 0) /
+                                           item["third_down_plays"] if item.get("third_down_plays") else None)
+                item["red_zone_success_rate"] = (item.get("red_zone_successes", 0) /
+                                                 item["red_zone_plays"] if item.get("red_zone_plays") else None)
+                item["neutral_pass_rate"] = (item.get("neutral_passes", 0) /
+                                             item["neutral_plays"] if item.get("neutral_plays") else None)
+                item["seconds_per_play"] = (item.get("seconds_sum", 0) /
+                                            item["clocked_plays"] if item.get("clocked_plays") else None)
+                output.append(item)
+        return output
+
     def team_playcalling_profile(self, season: int, team: str, *,
                                  before_week: int | None = None) -> dict[str, Any]:
         self.initialize()
@@ -1896,6 +1930,38 @@ class NFLRepository:
         ):
             output[name] = ((output.get(numerator) or 0) / output[denominator]
                             if output.get(denominator) else None)
+        return output
+
+    def league_playcalling_profile(self, season: int, *,
+                                   before_week: int | None = None) -> list[dict[str, Any]]:
+        """team_playcalling_profile for every team at once, for leaguewide ranking."""
+        self.initialize()
+        week_filter = " AND week<?" if before_week is not None else ""
+        parameters: tuple[Any, ...] = (season, before_week) if before_week is not None else (season,)
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """SELECT team,COUNT(DISTINCT game_id) games,SUM(pass_plays) pass_plays,
+                          SUM(rush_plays) rush_plays,SUM(early_down_plays) early_down_plays,
+                          SUM(early_down_passes) early_down_passes,
+                          SUM(shotgun_known) shotgun_known,SUM(shotgun_plays) shotgun_plays,
+                          SUM(no_huddle_known) no_huddle_known,SUM(no_huddle_plays) no_huddle_plays
+                   FROM game_team_playcalling WHERE season=?""" + week_filter + " GROUP BY team",
+                parameters,
+            )
+            output = []
+            for row in rows:
+                item = dict(row)
+                total = (item.get("pass_plays") or 0) + (item.get("rush_plays") or 0)
+                item["plays"] = total
+                item["pass_rate"] = (item.get("pass_plays") or 0) / total if total else None
+                for name, numerator, denominator in (
+                    ("early_down_pass_rate", "early_down_passes", "early_down_plays"),
+                    ("shotgun_rate", "shotgun_plays", "shotgun_known"),
+                    ("no_huddle_rate", "no_huddle_plays", "no_huddle_known"),
+                ):
+                    item[name] = ((item.get(numerator) or 0) / item[denominator]
+                                  if item.get(denominator) else None)
+                output.append(item)
         return output
 
     def coach_performance(self, coach: str | None) -> dict[str, Any] | None:
@@ -2046,6 +2112,61 @@ class NFLRepository:
                 if games else None
             ),
         }
+
+    def league_team_summary(self, season: int, *,
+                            before_week: int | None = None) -> list[dict[str, Any]]:
+        """team_season_summary for every team at once, for leaguewide ranking."""
+        self.initialize()
+        wanted = (
+            "passing_yards", "rushing_yards", "passing_tds", "rushing_tds",
+            "passing_interceptions", "fumbles_lost_total", "sacks_suffered",
+        )
+        placeholders = ",".join("?" for _ in wanted)
+        week_filter = " AND week<?" if before_week is not None else ""
+        parameters: tuple[Any, ...] = ((season, *wanted, before_week)
+                                       if before_week is not None else (season, *wanted))
+        with closing(self._connect()) as connection:
+            totals: dict[str, dict[str, float]] = {}
+            for row in connection.execute(
+                f"""SELECT team,metric,SUM(value) value FROM team_weekly_stats
+                    WHERE season=? AND metric IN ({placeholders}) {week_filter}
+                    GROUP BY team,metric""",
+                parameters,
+            ):
+                totals.setdefault(row["team"], {})[row["metric"]] = row["value"]
+            game_week_filter = " AND week<?" if before_week is not None else ""
+            game_parameters: tuple[Any, ...] = (season, before_week) if before_week is not None else (season,)
+            scores = list(connection.execute(
+                "SELECT away_team,home_team,away_score,home_score FROM games "
+                "WHERE season=? AND completed=1" + game_week_filter,
+                game_parameters,
+            ))
+        games: dict[str, int] = {}
+        points_for: dict[str, int] = {}
+        points_against: dict[str, int] = {}
+        for row in scores:
+            for team, own_key, other_key in ((row["away_team"], "away_score", "home_score"),
+                                             (row["home_team"], "home_score", "away_score")):
+                games[team] = games.get(team, 0) + 1
+                points_for[team] = points_for.get(team, 0) + (row[own_key] or 0)
+                points_against[team] = points_against.get(team, 0) + (row[other_key] or 0)
+        output = []
+        for team, count in games.items():
+            team_totals = totals.get(team, {})
+            per_game = lambda key: team_totals.get(key, 0) / count if count else None
+            output.append({
+                "team": team, "games": count,
+                "points_per_game": points_for.get(team, 0) / count if count else None,
+                "points_allowed_per_game": points_against.get(team, 0) / count if count else None,
+                "passing_yards_per_game": per_game("passing_yards"),
+                "rushing_yards_per_game": per_game("rushing_yards"),
+                "sacks_allowed_per_game": per_game("sacks_suffered"),
+                "turnovers_per_game": (
+                    (team_totals.get("passing_interceptions", 0) + team_totals.get("fumbles_lost_total", 0))
+                    / count if count else None
+                ),
+            })
+        return output
 
     def team_roster(self, season: int, team: str) -> list[dict[str, Any]]:
         self.initialize()

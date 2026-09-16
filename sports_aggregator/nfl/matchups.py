@@ -6,6 +6,7 @@ from contextlib import closing
 from datetime import date, datetime, timezone
 from typing import Any
 
+from sports_aggregator.nfl.ranking import rank_lookup
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.pff import NFLPFFService
 from sports_aggregator.nfl.personnel import significant_movements
@@ -159,7 +160,8 @@ def _leaders(repository: NFLRepository, season: int, team: str, before_week: int
 
 def _game_shape(production: dict[str, dict[str, Any]], recent: dict[str, list[dict[str, Any]]],
                 situational: dict[str, dict[str, Any]], game: dict[str, Any],
-                away: str, home: str) -> dict[str, Any]:
+                away: str, home: str,
+                situational_ranks: dict[str, dict[str, dict[str, int]]] | None = None) -> dict[str, Any]:
     """Blend season, recent, and market context without claiming a betting model."""
     away_attack = production[away].get("points_per_game")
     home_defense = production[home].get("points_allowed_per_game")
@@ -204,6 +206,15 @@ def _game_shape(production: dict[str, dict[str, Any]], recent: dict[str, list[di
                     if situational.get(team, {}).get("drives_per_game") is not None]
     expected_plays = sum(pace_values) / len(pace_values) if pace_values else None
     expected_drives = sum(drive_values) / len(drive_values) if drive_values else None
+    situational_with_ranks = situational
+    if situational_ranks:
+        situational_with_ranks = {}
+        for team in (away, home):
+            profile = dict(situational.get(team, {}))
+            for metric, ranks in situational_ranks.items():
+                profile[f"{metric}_rank"] = ranks.get(team, {}).get("rank")
+                profile[f"{metric}_of"] = ranks.get(team, {}).get("of")
+            situational_with_ranks[team] = profile
     return {
         "away_points": away_points, "home_points": home_points,
         "combined_points": combined,
@@ -220,7 +231,7 @@ def _game_shape(production: dict[str, dict[str, Any]], recent: dict[str, list[di
         "pace_label": ("Fast / high-play environment" if expected_plays is not None and expected_plays >= 66
                        else "Slow / possession-limited environment" if expected_plays is not None and expected_plays <= 61
                        else "Typical play volume" if expected_plays is not None else "Pace sample pending"),
-        "situational": situational,
+        "situational": situational_with_ranks,
     }
 
 
@@ -550,12 +561,16 @@ def matchup_context(repository: NFLRepository, game: dict[str, Any],
         ranks[offense_key] = _ranks(league, offense_key)
         ranks[defense_key] = _ranks(league, defense_key, lower=True)
 
+    production_week = before_week if baseline_season == season else None
     production = {
-        away: repository.team_season_summary(
-            baseline_season, away, before_week=before_week if baseline_season == season else None),
-        home: repository.team_season_summary(
-            baseline_season, home, before_week=before_week if baseline_season == season else None),
+        away: repository.team_season_summary(baseline_season, away, before_week=production_week),
+        home: repository.team_season_summary(baseline_season, home, before_week=production_week),
     }
+    league_production = repository.league_team_summary(baseline_season, before_week=production_week)
+    production_ranks = rank_lookup(
+        league_production, id_key="team", metrics=[key for _, key, *_ in PRODUCTION_METRICS],
+        lower_is_better=frozenset(key for _, key, _, lower in PRODUCTION_METRICS if lower),
+    )
     production_rows = []
     for label, key, value_format, lower_is_better in PRODUCTION_METRICS:
         away_value = production[away].get(key); home_value = production[home].get(key)
@@ -566,6 +581,8 @@ def matchup_context(repository: NFLRepository, game: dict[str, Any],
         production_rows.append({
             "label": label, "format": value_format, "away": away_value,
             "home": home_value, "lean": lean, "lower_is_better": lower_is_better,
+            "away_rank": production_ranks[key].get(away, {}).get("rank"),
+            "home_rank": production_ranks[key].get(home, {}).get("rank"),
         })
 
     recent = {
@@ -577,6 +594,12 @@ def matchup_context(repository: NFLRepository, game: dict[str, Any],
             baseline_season, team, before_week=before_week if baseline_season == season else None,
         ) for team in (away, home)
     }
+    league_situational = repository.league_situational_profile(baseline_season, before_week=production_week)
+    situational_ranks = rank_lookup(
+        league_situational, id_key="team",
+        metrics=("plays_per_game", "drives_per_game", "seconds_per_play",
+                 "neutral_pass_rate", "third_down_rate", "red_zone_success_rate"),
+    )
     unit_cards = (
         _unit_card(profiles, ranks, away, home),
         _unit_card(profiles, ranks, home, away),
@@ -591,7 +614,7 @@ def matchup_context(repository: NFLRepository, game: dict[str, Any],
         "unit_cards": unit_cards,
         "matchup_watches": _matchup_watches(unit_cards),
         "production": production_rows,
-        "game_shape": _game_shape(production, recent, situational, game, away, home),
+        "game_shape": _game_shape(production, recent, situational, game, away, home, situational_ranks),
         "recent": recent,
         "leaders": {
             away: _leaders(repository, season, away, before_week, stats_season=baseline_season),

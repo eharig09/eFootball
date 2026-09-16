@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import Any
 
 from sports_aggregator.nfl.pff import NFLPFFService
+from sports_aggregator.nfl.ranking import rank_lookup
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -45,11 +46,30 @@ def staff_tendencies(repository: NFLRepository, pff: NFLPFFService, season: int,
     playcaller = next((row for row in staff if row.get("playcaller")), None)
     coordinator = by_role.get("Offensive coordinator")
     defensive = by_role.get("Defensive coordinator")
-    playcalling = repository.team_playcalling_profile(season, team)
-    situation = repository.team_situational_profile(season, team)
+    playcalling = dict(repository.team_playcalling_profile(season, team))
+    situation = dict(repository.team_situational_profile(season, team))
     coverage = (pff.team_coverage_tendency(pff_season, team)
                 if pff_season is not None else {"season": None, "coverage_snaps": 0})
     efficiency_ranks = efficiency_ranks or {}
+    # Playcaller tendencies (run/pass split, tempo) ranked against every
+    # other team's coordinator, not just this team's own history.
+    playcalling_ranks = rank_lookup(
+        repository.league_playcalling_profile(season), id_key="team",
+        metrics=("pass_rate", "shotgun_rate", "no_huddle_rate"),
+    )
+    for metric, ranks in playcalling_ranks.items():
+        entry = ranks.get(team, {})
+        playcalling[f"{metric}_rank"] = entry.get("rank")
+        playcalling[f"{metric}_of"] = entry.get("of")
+    situational_ranks = rank_lookup(
+        repository.league_situational_profile(season), id_key="team",
+        metrics=("seconds_per_play", "neutral_pass_rate"),
+        lower_is_better=frozenset({"seconds_per_play"}),
+    )
+    for metric, ranks in situational_ranks.items():
+        entry = ranks.get(team, {})
+        situation[f"{metric}_rank"] = entry.get("rank")
+        situation[f"{metric}_of"] = entry.get("of")
     return {
         "staff": staff,
         "head_coach": head_coach,

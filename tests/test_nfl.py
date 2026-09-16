@@ -516,6 +516,18 @@ class NFLCanonicalSyncTests(unittest.TestCase):
             playcalling = repository.team_playcalling_profile(2025, "GNB")
             self.assertEqual(playcalling["plays"], 1)
             self.assertEqual(playcalling["pass_rate"], 1)
+            # The three bulk "every team at once" variants exist purely for
+            # leaguewide ranking (see ranking.py) and must agree with their
+            # already-trusted single-team counterparts above.
+            league_summary = {row["team"]: row for row in repository.league_team_summary(2025)}
+            self.assertEqual(league_summary["GNB"]["passing_yards_per_game"],
+                             summary["passing_yards_per_game"])
+            self.assertEqual(league_summary["GNB"]["points_per_game"], summary["points_per_game"])
+            league_playcalling = {row["team"]: row for row in repository.league_playcalling_profile(2025)}
+            self.assertEqual(league_playcalling["GNB"]["pass_rate"], playcalling["pass_rate"])
+            situational = repository.team_situational_profile(2025, "GNB")
+            league_situational = {row["team"]: row for row in repository.league_situational_profile(2025)}
+            self.assertEqual(league_situational["GNB"]["plays_per_game"], situational["plays_per_game"])
             postgame = postgame_packet(
                 repository, repository.get_game("2025_01_GB_CHI"),
                 repository.game_efficiency("2025_01_GB_CHI"),

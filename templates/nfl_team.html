@@ -64,12 +64,12 @@
                 <header><span>Offensive playcaller</span><b>{{ staff_packet.offense.coach.coach_name if staff_packet.offense.coach else 'Not available' }}</b>{% if staff_packet.offense.coordinator and staff_packet.offense.coach and staff_packet.offense.coordinator.coach_name != staff_packet.offense.coach.coach_name %}<small>OC: {{ staff_packet.offense.coordinator.coach_name }}</small>{% endif %}</header>
                 {% set pc = staff_packet.offense.playcalling %}{% set sit = staff_packet.offense.situation %}
                 <div class="tendency-rows">
-                    <div><span>Run / pass</span><b>{{ (1 - pc.pass_rate)|cell('rate') if pc.pass_rate is not none else '—' }} / {{ pc.pass_rate|cell('rate') }}</b><small>{{ pc.plays or 0 }} plays</small></div>
-                    <div><span>Neutral pass</span><b>{{ sit.neutral_pass_rate|cell('rate') }}</b><small>{{ sit.neutral_plays or 0 }} neutral plays</small></div>
+                    <div><span>Run / pass</span><b>{{ (1 - pc.pass_rate)|cell('rate') if pc.pass_rate is not none else '—' }} / {{ pc.pass_rate|cell('rate') }}</b><small>{{ pc.plays or 0 }} plays{% if pc.pass_rate_rank %} &middot; #{{ pc.pass_rate_rank }} pass rate{% endif %}</small></div>
+                    <div><span>Neutral pass</span><b>{{ sit.neutral_pass_rate|cell('rate') }}</b><small>{{ sit.neutral_plays or 0 }} neutral plays{% if sit.neutral_pass_rate_rank %} &middot; #{{ sit.neutral_pass_rate_rank }} NFL{% endif %}</small></div>
                     <div><span>Early-down pass</span><b>{{ pc.early_down_pass_rate|cell('rate') }}</b><small>{{ pc.early_down_plays or 0 }} plays</small></div>
-                    <div><span>Pace</span><b>{{ sit.seconds_per_play|cell('f1') }} sec</b><small>{{ sit.plays_per_game|cell('f1') }} plays / game</small></div>
-                    <div><span>Shotgun / under center</span><b>{{ pc.shotgun_rate|cell('rate') }} / {{ (1 - pc.shotgun_rate)|cell('rate') if pc.shotgun_rate is not none else '—' }}</b><small>{{ pc.shotgun_known or 0 }} charted plays</small></div>
-                    <div><span>No huddle</span><b>{{ pc.no_huddle_rate|cell('rate') }}</b><small>{{ pc.no_huddle_known or 0 }} charted plays</small></div>
+                    <div><span>Pace</span><b>{{ sit.seconds_per_play|cell('f1') }} sec</b><small>{{ sit.plays_per_game|cell('f1') }} plays / game{% if sit.seconds_per_play_rank %} &middot; #{{ sit.seconds_per_play_rank }} fastest{% endif %}</small></div>
+                    <div><span>Shotgun / under center</span><b>{{ pc.shotgun_rate|cell('rate') }} / {{ (1 - pc.shotgun_rate)|cell('rate') if pc.shotgun_rate is not none else '—' }}</b><small>{{ pc.shotgun_known or 0 }} charted plays{% if pc.shotgun_rate_rank %} &middot; #{{ pc.shotgun_rate_rank }} NFL{% endif %}</small></div>
+                    <div><span>No huddle</span><b>{{ pc.no_huddle_rate|cell('rate') }}</b><small>{{ pc.no_huddle_known or 0 }} charted plays{% if pc.no_huddle_rate_rank %} &middot; #{{ pc.no_huddle_rate_rank }} NFL{% endif %}</small></div>
                 </div>
             </article>
             <article class="staff-tendency defense-tendency">
@@ -112,6 +112,19 @@
             <article><span>Light box rate</span><b>{{ scheme_rate.light_box_rate|cell('f1') }}%</b></article>
             <article><span>Heavy box rate</span><b>{{ scheme_rate.heavy_box_rate|cell('f1') }}%</b></article>
             <article><span>Sub package rate</span><b>{{ scheme_rate.sub_package_rate|cell('f1') }}%</b></article>
+        </div>
+        {% endif %}
+        {% set ngs = team_context.ngs_summary %}
+        {% if ngs and (ngs.pass_cpoe is not none or ngs.rec_separation is not none or ngs.rush_efficiency is not none) %}
+        <h3 class="subsection-title">Next Gen Stats</h3>
+        <p class="section-note">Team-wide rates: each skill player's weekly Next Gen Stats value weighted by that week's volume (attempts, targets, or carries) and pooled across the {{ team_context.performance_season }} roster.</p>
+        <div class="profile-strip team-profile-ranked">
+            <article><span>Passing CPOE</span><b>{{ ngs.pass_cpoe|cell('pct') }}</b></article>
+            <article><span>Time to throw</span><b>{{ ngs.pass_time_to_throw|cell('f1') }}s</b></article>
+            <article><span>Receiver separation</span><b>{{ ngs.rec_separation|cell('f1') }}</b></article>
+            <article><span>Receiver cushion</span><b>{{ ngs.rec_cushion|cell('f1') }}</b></article>
+            <article><span>Rush efficiency</span><b>{{ ngs.rush_efficiency|cell('f1') }}</b></article>
+            <article><span>Rush yds over expected</span><b>{{ ngs.rush_yards_over_expected|cell('signed2') }}</b></article>
         </div>
         {% endif %}
     </section>
@@ -159,8 +172,9 @@
             <article><span>Returning opportunities</span><b>{{ team_context.usage.returning_opportunity_share|cell('rate') }}</b></article>
         </div>
         <div class="usage-leader-grid">
-            <article><h3>Target concentration</h3>{% for player in team_context.usage.target_leaders %}<a href="{{ player.player_url }}"><span><b>{{ player.player_name }}</b><small>{{ player.position or '—' }} &middot; {{ player.targets|cell('int') }} targets</small></span><strong>{{ player.target_share|cell('rate') }}</strong></a>{% else %}<p class="empty">No target workload is available.</p>{% endfor %}</article>
-            <article><h3>Rushing concentration</h3>{% for player in team_context.usage.carry_leaders %}<a href="{{ player.player_url }}"><span><b>{{ player.player_name }}</b><small>{{ player.position or '—' }} &middot; {{ player.carries|cell('int') }} carries</small></span><strong>{{ player.carry_share|cell('rate') }}</strong></a>{% else %}<p class="empty">No rushing workload is available.</p>{% endfor %}</article>
+            <article><h3>Target concentration</h3>{% for player in team_context.usage.target_leaders %}<a href="{{ player.player_url }}"><span><b>{{ player.player_name }}</b><small>{{ player.position or '—' }} &middot; {{ player.targets|cell('int') }} targets{% if player.ngs_separation is not none %} &middot; {{ player.ngs_separation|cell('f1') }} sep (NGS){% endif %}</small></span><strong>{{ player.target_share|cell('rate') }}</strong></a>{% else %}<p class="empty">No target workload is available.</p>{% endfor %}</article>
+            <article><h3>Rushing concentration</h3>{% for player in team_context.usage.carry_leaders %}<a href="{{ player.player_url }}"><span><b>{{ player.player_name }}</b><small>{{ player.position or '—' }} &middot; {{ player.carries|cell('int') }} carries{% if player.ngs_efficiency is not none %} &middot; {{ player.ngs_efficiency|cell('f1') }} eff (NGS){% endif %}</small></span><strong>{{ player.carry_share|cell('rate') }}</strong></a>{% else %}<p class="empty">No rushing workload is available.</p>{% endfor %}</article>
+            <article><h3>Overall opportunity</h3>{% for player in team_context.usage.opportunity_leaders %}<a href="{{ player.player_url }}"><span><b>{{ player.player_name }}</b><small>{{ player.position or '—' }} &middot; {{ player.targets|cell('int') }} tgt + {{ player.carries|cell('int') }} car</small></span><strong>{{ player.opportunity_share|cell('rate') }}</strong></a>{% else %}<p class="empty">No workload is available.</p>{% endfor %}</article>
         </div>
         <details class="data-disclosure"><summary>View opportunity table</summary>{{ data_table(workload) }}</details>
         <h3 class="subsection-title">Snap participation</h3>

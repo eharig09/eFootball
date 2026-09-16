@@ -91,6 +91,44 @@ def _split(games: list[dict], team: str, label: str, predicate) -> dict[str, Any
             "point_diff": points_for - points_against}
 
 
+def team_ngs_summary(repository: NFLRepository, season: int, team: str) -> dict[str, Any]:
+    """Team-wide Next Gen Stats: every skill-position player's weighted
+    contribution pooled into one team rate, the same volume-weighted
+    SUM/SUM shape explorer.py's with_rates() uses per player, just summed
+    across a roster instead of across a season."""
+    def team_rate(rows: list[dict[str, Any]], wtd_key: str, weight_key: str) -> float | None:
+        weight_total = sum(row.get(weight_key) or 0 for row in rows)
+        if not weight_total:
+            return None
+        return sum(row.get(wtd_key) or 0 for row in rows) / weight_total
+
+    passing = repository.player_season_stats(
+        season, ("attempts", "ngs_pass_cpoe_wtd", "ngs_pass_time_to_throw_wtd"),
+        team=team, position="QB",
+    )
+    receiving = repository.player_season_stats(
+        season, ("targets", "ngs_rec_separation_wtd", "ngs_rec_cushion_wtd"), team=team, position="WR",
+    ) + repository.player_season_stats(
+        season, ("targets", "ngs_rec_separation_wtd", "ngs_rec_cushion_wtd"), team=team, position="TE",
+    )
+    rushing = repository.player_season_stats(
+        season, ("carries", "ngs_rush_efficiency_wtd", "ngs_rush_yards_over_expected"),
+        team=team, position="RB",
+    ) + repository.player_season_stats(
+        season, ("carries", "ngs_rush_efficiency_wtd", "ngs_rush_yards_over_expected"),
+        team=team, position="FB",
+    )
+    return {
+        "pass_cpoe": team_rate(passing, "ngs_pass_cpoe_wtd", "attempts"),
+        "pass_time_to_throw": team_rate(passing, "ngs_pass_time_to_throw_wtd", "attempts"),
+        "rec_separation": team_rate(receiving, "ngs_rec_separation_wtd", "targets"),
+        "rec_cushion": team_rate(receiving, "ngs_rec_cushion_wtd", "targets"),
+        "rush_efficiency": team_rate(rushing, "ngs_rush_efficiency_wtd", "carries"),
+        "rush_yards_over_expected": (sum(row.get("ngs_rush_yards_over_expected") or 0 for row in rushing)
+                                     if rushing else None),
+    }
+
+
 def team_context(repository: NFLRepository, season: int, team: str) -> dict[str, Any]:
     identities = {row["abbreviation"]: row for row in repository.list_teams()}
     games = repository.schedule(season, team=team)
@@ -154,6 +192,7 @@ def team_context(repository: NFLRepository, season: int, team: str) -> dict[str,
         "production": production, "production_season": production_season,
         "efficiency": profile, "performance_season": performance_season,
         "efficiency_ranks": ranks, "leaders": leaders,
+        "ngs_summary": team_ngs_summary(repository, performance_season, team),
         "unit_continuity": unit_continuity(repository, season, team),
         "usage": team_usage_context(
             repository, season, team, preferred_season=production_season,

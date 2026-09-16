@@ -11,7 +11,7 @@ from sports_aggregator.nfl.ranking import rank_lookup
 from sports_aggregator.nfl.repository import NFLRepository
 
 
-def _ngs_season_lookup(repository: NFLRepository, season: int, team: str,
+def ngs_season_lookup(repository: NFLRepository, season: int, team: str,
                        metrics: tuple[str, ...]) -> dict[str, dict[str, Any]]:
     """Season-average Next Gen Stats for one team's roster, keyed by player.
 
@@ -57,6 +57,41 @@ def _weak_zones(zones: list[dict[str, Any]], minimum_attempts: float) -> set[tup
             if zone["epa_per_attempt"] > baseline}
 
 
+def passer_ngs_leaders(repository: NFLRepository, game: dict[str, Any],
+                       pff_season: int) -> dict[str, dict[str, Any] | None]:
+    """Each team's most-used passer's season Next Gen Stats, ranked against
+    every qualifying QB leaguewide -- the passing counterpart to the
+    receiver/runner NGS already carried on the alignment/rushing cards."""
+    query_metrics = ("attempts", "ngs_pass_cpoe_wtd", "ngs_pass_time_to_throw_wtd",
+                     "ngs_pass_aggressiveness_wtd")
+    rank_metrics = ("ngs_pass_cpoe", "ngs_pass_time_to_throw", "ngs_pass_aggressiveness")
+    league_ranks = rank_lookup(
+        (with_rates(row) for row in repository.player_season_stats(
+            pff_season, query_metrics, position="QB")),
+        id_key="player_id", metrics=rank_metrics,
+    )
+    output: dict[str, dict[str, Any] | None] = {}
+    for team in (game["away_team"], game["home_team"]):
+        rows = [with_rates(row) for row in repository.player_season_stats(
+            pff_season, query_metrics, team=team, position="QB")]
+        leader = max(rows, key=lambda row: row.get("attempts") or 0, default=None)
+        if leader is None:
+            output[team] = None
+            continue
+        player_id = leader["player_id"]
+        output[team] = {
+            "player_id": player_id, "player_name": leader.get("player_name"),
+            "attempts": leader.get("attempts"),
+            "ngs_cpoe": leader.get("ngs_pass_cpoe"),
+            "ngs_cpoe_rank": league_ranks["ngs_pass_cpoe"].get(player_id),
+            "ngs_time_to_throw": leader.get("ngs_pass_time_to_throw"),
+            "ngs_time_to_throw_rank": league_ranks["ngs_pass_time_to_throw"].get(player_id),
+            "ngs_aggressiveness": leader.get("ngs_pass_aggressiveness"),
+            "ngs_aggressiveness_rank": league_ranks["ngs_pass_aggressiveness"].get(player_id),
+        }
+    return output
+
+
 def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                        game: dict[str, Any], roster_season: int,
                        pff_season: int, defense_profiles: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -94,7 +129,7 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
             -(usage.get(row.get("gsis_id"), {}).get("targets") or 0),
             -(row.get("routes") or 0),
         ))
-        receiving_ngs = _ngs_season_lookup(
+        receiving_ngs = ngs_season_lookup(
             repository, pff_season, offense,
             ("targets", "ngs_rec_separation_wtd", "ngs_rec_cushion_wtd"),
         )
@@ -239,7 +274,7 @@ def rushing_matchups(repository: NFLRepository, pff: NFLPFFService,
         ) if row.get("gsis_id") in current_ids]
         runners.sort(key=lambda row: (-(usage.get(row.get("gsis_id"), {}).get("carries") or 0),
                                       -(row.get("attempts") or 0)))
-        rushing_ngs = _ngs_season_lookup(
+        rushing_ngs = ngs_season_lookup(
             repository, pff_season, offense,
             ("carries", "ngs_rush_efficiency_wtd", "ngs_rush_stacked_box_pct_wtd",
              "ngs_rush_yards_over_expected"),

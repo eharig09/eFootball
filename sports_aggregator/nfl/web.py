@@ -9,7 +9,7 @@ from flask import Blueprint, abort, current_app, jsonify, render_template, reque
 from sports_aggregator.catalog import get_league
 from sports_aggregator.nfl.charts import player_charts, team_charts, with_last_season
 from sports_aggregator.nfl.alignments import (
-    alignment_matchups, player_matchup_watches, rushing_matchups,
+    alignment_matchups, passer_ngs_leaders, player_matchup_watches, rushing_matchups,
 )
 from sports_aggregator.nfl.availability import availability_packet
 from sports_aggregator.nfl.content import NFLContentRepository
@@ -952,6 +952,7 @@ def _game_packet(game_id: str) -> dict:
         context["baseline_season"], context["profiles"],
     )
     player_watches = player_matchup_watches(player_matchups, trenches)
+    passer_ngs = passer_ngs_leaders(repository, game, pff_season)
     content_items = _content().for_game(game_id, 60)
     postgame = (postgame_packet(repository, game, efficiency_rows, player_rows)
                 if game["completed"] else None)
@@ -974,6 +975,7 @@ def _game_packet(game_id: str) -> dict:
             "player_matchups": player_matchups, "player_watches": player_watches,
             "pff_season": pff_season,
             "run_matchups": run_matchups,
+            "passer_ngs": passer_ngs,
             "trenches": trenches,
             "availability": availability,
             "postgame": postgame,
@@ -1031,6 +1033,48 @@ def game_api(game_id: str):
 #: everything else on the headline cards is "more is better".
 _HEADLINE_LOWER_IS_BETTER = frozenset({"passing_interceptions"})
 
+#: (label, metric key, format) per position -- the same Next Gen Stats keys
+#: explorer.py's with_rates() knows how to derive from SUM_METRICS.
+_NGS_HEADLINE_DEFINITIONS = {
+    "QB": (("CPOE (NGS)", "ngs_pass_cpoe", "pct"),
+          ("Time to throw", "ngs_pass_time_to_throw", "f1"),
+          ("Aggressiveness", "ngs_pass_aggressiveness", "pct"),
+          ("Air yds (intended)", "ngs_pass_intended_air_yards", "f1")),
+    "RB": (("Rush efficiency", "ngs_rush_efficiency", "f1"),
+          ("Rush yds over exp.", "ngs_rush_yards_over_expected", "signed2"),
+          ("Stacked box %", "ngs_rush_stacked_box_pct", "pct")),
+    "WR": (("Separation", "ngs_rec_separation", "f1"),
+          ("Cushion", "ngs_rec_cushion", "f1"),
+          ("YAC over exp.", "ngs_rec_yac_above_expectation", "signed2")),
+}
+_NGS_HEADLINE_DEFINITIONS["FB"] = _NGS_HEADLINE_DEFINITIONS["RB"]
+_NGS_HEADLINE_DEFINITIONS["TE"] = _NGS_HEADLINE_DEFINITIONS["WR"]
+
+
+def _ngs_headline_stats(repository: NFLRepository, season: int, position: str | None,
+                        player_id: str) -> list[dict]:
+    """Next Gen Stats headline cards, ranked the same way as the traditional
+    ones -- against every same-position peer with a qualifying value."""
+    definitions = _NGS_HEADLINE_DEFINITIONS.get((position or "").upper())
+    if not definitions:
+        return []
+    peers = [with_rates(row) for row in repository.player_season_stats(
+        season, SUM_METRICS, position=(position or "").upper())]
+    metrics = [key for _label, key, _fmt in definitions]
+    ranks = rank_lookup(peers, id_key="player_id", metrics=metrics)
+    own = next((row for row in peers if row["player_id"] == player_id), None)
+    if own is None:
+        return []
+    stats = []
+    for label, key, value_format in definitions:
+        value = own.get(key)
+        if value is None:
+            continue
+        entry = {"label": label, "value": value, "format": value_format}
+        entry.update(ranks[key].get(player_id, {}))
+        stats.append(entry)
+    return stats
+
 
 def _headline_stats_with_rank(repository: NFLRepository, season: int, position: str | None,
                               player_id: str, totals: dict[str, float]) -> list[dict]:
@@ -1081,6 +1125,7 @@ def _player_packet(player_id: str, season: int) -> dict:
         "totals": player_totals_table(totals),
         "headline_stats": _headline_stats_with_rank(
             repository, season, player.get("position"), player_id, totals),
+        "ngs_stats": _ngs_headline_stats(repository, season, player.get("position"), player_id),
         "game_log": player_game_log(weekly),
         "game_log_groups": player_game_log_tables(log_rows, show_season=career_view),
         "performance_charts": player_charts(chart_rows, player.get("position")),
