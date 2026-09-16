@@ -19,6 +19,7 @@ from sports_aggregator.nfl.explorer import (
 )
 from sports_aggregator.nfl.naming import canon_team
 from sports_aggregator.nfl.matchups import matchup_context
+from sports_aggregator.page_cache import cached_page
 from sports_aggregator.nfl.landing import draft_projection, games_to_watch
 from sports_aggregator.nfl.nflverse import current_season
 from sports_aggregator.nfl.pff import NFLPFFService, PFF_EXPLORER_METRICS, season_scaled_minimum
@@ -455,6 +456,7 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
 
 
 @nfl_pages.get("/nfl/")
+@cached_page
 def dashboard():
     packet = _dashboard_packet(_season(), request.args.get("week", type=int))
     return render_template("nfl.html", league=get_league("nfl"), **packet)
@@ -711,6 +713,7 @@ def data_status_api():
 
 
 @nfl_pages.get("/nfl/teams/<abbreviation>/")
+@cached_page
 def team_page(abbreviation: str):
     season = _season(); code = canon_team(abbreviation)
     team = _repository().get_team(code)
@@ -977,6 +980,7 @@ def _game_packet(game_id: str) -> dict:
 
 
 @nfl_pages.get("/nfl/games/<game_id>/")
+@cached_page
 def game_page(game_id: str):
     return render_template("nfl_game.html", league=get_league("nfl"), **_game_packet(game_id))
 
@@ -1066,6 +1070,7 @@ def _player_packet(player_id: str, season: int) -> dict:
 
 
 @nfl_pages.get("/nfl/players/<player_id>/")
+@cached_page
 def player_page(player_id: str):
     return render_template(
         "nfl_player.html", league=get_league("nfl"), **_player_packet(player_id, _season())
