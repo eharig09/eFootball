@@ -76,11 +76,61 @@ document.querySelectorAll("[data-prod-trend]").forEach(function(shell){
       {% for depth, label in [('deep','Deep 20+'),('intermediate','Intermediate 10–19'),('short','Short 0–9'),('behind_line','Behind LOS')] %}<div class="prod-zone-row"><span>{{ label }}</span>
         {% for direction in ['left','middle','right'] %}{% set zone=(panel.zones | selectattr('depth','equalto',depth) | selectattr('direction','equalto',direction) | first) %}
         <button type="button" class="prod-zone {{ 'positive' if zone.edge is not none and zone.edge > 0.05 else 'negative' if zone.edge is not none and zone.edge < -0.05 else 'neutral' }}"><b>{{ zone.edge | cell('signed2') if zone.edge is not none else '—' }}</b><small>O {{ zone.offense.epa_per_attempt | cell('signed2') }} &middot; D {{ zone.defense.epa_per_attempt | cell('signed2') }}</small><em>{{ direction | title }}</em>
-          <span class="prod-zone-tip"><strong>{{ label }} {{ direction }}</strong>{% for receiver in zone.offense.receivers %}<span>{{ receiver.name }}<b>{{ receiver.receptions }} rec &middot; {{ receiver.yards }} yds &middot; {{ receiver.touchdowns }} TD</b></span>{% else %}<span>No named targets</span>{% endfor %}</span>
+          <span class="prod-zone-tip"><strong>{{ panel.attacker }} targets</strong>{% for receiver in zone.offense.receivers %}<span>{{ receiver.name }} <i>{{ receiver.position }}</i><b>{{ receiver.receptions }} rec &middot; {{ receiver.yards }} yds &middot; {{ receiver.touchdowns }} TD</b></span>{% else %}<span>No named targets</span>{% endfor %}
+            {% if zone.defense.allowed_by_position %}<strong>{{ panel.defender }} allows by position</strong>{% for entry in zone.defense.allowed_by_position %}<span>{{ entry.position }}<b>{{ entry.targets }} targets</b></span>{% endfor %}{% endif %}
+          </span>
         </button>{% endfor %}
       </div>{% endfor %}<div class="prod-los">LINE OF SCRIMMAGE</div>
     </div>
   </div>{% endfor %}
+</section>{% endif %}
+{% endmacro %}
+
+{% macro passing_situational_strip(panels) %}
+{% if panels and panels | selectattr('rows') | list %}<section class="section cfb-pass-situational" data-mobile-tab-panel="matchups">
+  <div class="section-head-row"><div><h2>High-value opportunities</h2><div class="section-note">Red zone (inside the 20) and end zone (the target itself reaches the goal line) passing, same offense/defense EPA blend as the field above.</div></div></div>
+  {% for panel in panels %}{% if panel.rows %}<div class="prod-situational-panel">
+    <div class="prod-pass-meta"><b>{{ panel.attacker }} offense</b><i>vs</i><b>{{ panel.defender }} defense</b></div>
+    <div class="prod-situational-grid">{% for row in panel.rows %}<div class="prod-situational-cell {{ 'positive' if row.edge is not none and row.edge > 0.05 else 'negative' if row.edge is not none and row.edge < -0.05 else 'neutral' }}">
+      <span>{{ row.label }}</span><b>{{ row.edge | cell('signed2') if row.edge is not none else '—' }}</b>
+      <small>O {{ row.offense.epa_per_attempt | cell('signed2') }} ({{ row.offense.attempts }} att) &middot; D {{ row.defense.epa_per_attempt | cell('signed2') }} ({{ row.defense.attempts }} att)</small>
+      <span class="prod-zone-tip"><strong>{{ panel.attacker }} targets</strong>{% for receiver in row.offense.receivers %}<span>{{ receiver.name }} <i>{{ receiver.position }}</i><b>{{ receiver.receptions }} rec &middot; {{ receiver.yards }} yds &middot; {{ receiver.touchdowns }} TD</b></span>{% else %}<span>No named targets</span>{% endfor %}
+        {% if row.defense.allowed_by_position %}<strong>{{ panel.defender }} allows by position</strong>{% for entry in row.defense.allowed_by_position %}<span>{{ entry.position }}<b>{{ entry.targets }} targets</b></span>{% endfor %}{% endif %}
+      </span>
+    </div>{% endfor %}</div>
+  </div>{% endif %}{% endfor %}
+</section>{% endif %}
+{% endmacro %}
+
+{% macro rushing_field(panels) %}
+{% if panels and panels | sum(attribute='attempts') %}<section class="section cfb-pass-field" data-prod-run data-mobile-tab-panel="matchups">
+  <div class="section-head-row"><div><h2>Run direction matchup</h2><div class="section-note">EPA/attempt edge &middot; this offense's average blended with what the defense allows here. CFBD charts left/middle/right only, no gap-width split. Hover or focus a zone for rusher production.</div></div><div class="prod-switch" role="group" aria-label="Rushing offense">{% for panel in panels %}<button type="button" class="{{ 'active' if loop.first else '' }}" data-prod-run-tab="{{ panel.attacker }}">{{ panel.attacker }} O</button>{% endfor %}</div></div>
+  {% for panel in panels %}<div class="prod-run-panel" data-prod-run-panel="{{ panel.attacker }}"{% if not loop.first %} hidden{% endif %}>
+    <div class="prod-pass-meta"><b>{{ panel.attacker }} offense</b><span>{{ panel.attempts }} charted att</span><i>vs</i><b>{{ panel.defender }} defense</b><span>{{ panel.allowed_attempts }} charted att</span></div>
+    <div class="prod-situational-grid">{% for zone in panel.zones %}<div class="prod-situational-cell {{ 'positive' if zone.edge is not none and zone.edge > 0.05 else 'negative' if zone.edge is not none and zone.edge < -0.05 else 'neutral' }}">
+      <span>{{ zone.direction | title }}</span><b>{{ zone.edge | cell('signed2') if zone.edge is not none else '—' }}</b>
+      <small>O {{ zone.offense.epa_per_attempt | cell('signed2') }} ({{ zone.offense.attempts }} att) &middot; D {{ zone.defense.epa_per_attempt | cell('signed2') }} ({{ zone.defense.attempts }} att)</small>
+      <span class="prod-zone-tip"><strong>{{ panel.attacker }} rushers</strong>{% for rusher in zone.offense.rushers %}<span>{{ rusher.name }} <i>{{ rusher.position }}</i><b>{{ rusher.attempts }} att &middot; {{ rusher.yards }} yds &middot; {{ rusher.touchdowns }} TD</b></span>{% else %}<span>No named rushers</span>{% endfor %}
+        {% if zone.defense.allowed_by_position %}<strong>{{ panel.defender }} allows by position</strong>{% for entry in zone.defense.allowed_by_position %}<span>{{ entry.position }}<b>{{ entry.attempts }} att</b></span>{% endfor %}{% endif %}
+      </span>
+    </div>{% endfor %}</div>
+  </div>{% endfor %}
+</section>{% endif %}
+{% endmacro %}
+
+{% macro rushing_situational_strip(panels) %}
+{% if panels and panels | selectattr('rows') | list %}<section class="section cfb-pass-situational" data-mobile-tab-panel="matchups">
+  <div class="section-head-row"><div><h2>Red-zone rushing</h2><div class="section-note">Carries inside the 20, same offense/defense EPA blend as the run-direction field above. No end-zone split for a rush attempt.</div></div></div>
+  {% for panel in panels %}{% if panel.rows %}<div class="prod-situational-panel">
+    <div class="prod-pass-meta"><b>{{ panel.attacker }} offense</b><i>vs</i><b>{{ panel.defender }} defense</b></div>
+    <div class="prod-situational-grid">{% for row in panel.rows %}<div class="prod-situational-cell {{ 'positive' if row.edge is not none and row.edge > 0.05 else 'negative' if row.edge is not none and row.edge < -0.05 else 'neutral' }}">
+      <span>{{ row.label }}</span><b>{{ row.edge | cell('signed2') if row.edge is not none else '—' }}</b>
+      <small>O {{ row.offense.epa_per_attempt | cell('signed2') }} ({{ row.offense.attempts }} att) &middot; D {{ row.defense.epa_per_attempt | cell('signed2') }} ({{ row.defense.attempts }} att)</small>
+      <span class="prod-zone-tip"><strong>{{ panel.attacker }} rushers</strong>{% for rusher in row.offense.rushers %}<span>{{ rusher.name }} <i>{{ rusher.position }}</i><b>{{ rusher.attempts }} att &middot; {{ rusher.yards }} yds &middot; {{ rusher.touchdowns }} TD</b></span>{% else %}<span>No named rushers</span>{% endfor %}
+        {% if row.defense.allowed_by_position %}<strong>{{ panel.defender }} allows by position</strong>{% for entry in row.defense.allowed_by_position %}<span>{{ entry.position }}<b>{{ entry.attempts }} att</b></span>{% endfor %}{% endif %}
+      </span>
+    </div>{% endfor %}</div>
+  </div>{% endif %}{% endfor %}
 </section>{% endif %}
 {% endmacro %}
 
@@ -148,4 +198,10 @@ document.querySelectorAll("[data-prod-trend]").forEach(function(shell){
 </div>{% endfor %}</div>
 {% endmacro %}
 
-{% macro visual_scripts() %}<script>(function(){"use strict";function wire(root,tabName,panelName){document.querySelectorAll(root).forEach(function(shell){var tabs=Array.prototype.slice.call(shell.querySelectorAll(tabName));tabs.forEach(function(tab){tab.addEventListener("click",function(){tabs.forEach(function(item){item.classList.toggle("active",item===tab);});shell.querySelectorAll(panelName).forEach(function(panel){panel.hidden=panel.dataset[panelName.indexOf('pass')>-1?'prodPassPanel':'prodDepthPanel']!==tab.dataset[tabName.indexOf('pass')>-1?'prodPassTab':'prodDepthTab'];});});});});}wire_STA();function wire_STA(){wire('[data-prod-pass]','[data-prod-pass-tab]','[data-prod-pass-panel]');wire('[data-prod-depth]','[data-prod-depth-tab]','[data-prod-depth-panel]');}}());</script>{% endmacro %}
+{% macro visual_scripts() %}<script>(function(){"use strict";
+function datasetKey(selector){var name=selector.replace(/[\[\]]/g,"").replace("data-","");return name.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();});}
+function wire(root,tabSelector,panelSelector){var tabKey=datasetKey(tabSelector),panelKey=datasetKey(panelSelector);document.querySelectorAll(root).forEach(function(shell){var tabs=Array.prototype.slice.call(shell.querySelectorAll(tabSelector));tabs.forEach(function(tab){tab.addEventListener("click",function(){tabs.forEach(function(item){item.classList.toggle("active",item===tab);});shell.querySelectorAll(panelSelector).forEach(function(panel){panel.hidden=panel.dataset[panelKey]!==tab.dataset[tabKey];});});});});}
+wire('[data-prod-pass]','[data-prod-pass-tab]','[data-prod-pass-panel]');
+wire('[data-prod-depth]','[data-prod-depth-tab]','[data-prod-depth-panel]');
+wire('[data-prod-run]','[data-prod-run-tab]','[data-prod-run-panel]');
+}());</script>{% endmacro %}

@@ -1,6 +1,7 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import data_table, story_list, tabbed_tables, tabs_script %}
-{% from "_cfb_page_visuals.html" import passer_profile_module, trend_chart, trend_scripts %}
+{% from "_cfb_page_visuals.html" import passer_profile_module %}
+{% from "_charts.html" import chart_workbench, chart_scripts %}
 
 {% block title %}{{ player.name }} | College Football Player{% endblock %}
 
@@ -64,7 +65,7 @@
             <h2>Recent form &amp; upcoming opponent</h2>
             {% if player_trend %}
             <div class="section-note">Weekly production, {{ season }} season.</div>
-            {{ trend_chart(player_trend, 'player-trend-chart', 'Recent form') }}
+            {{ chart_workbench(player_trend, 'player-trend-chart', '/college-football/games/') }}
             {% endif %}
             {% if opponent_history.game %}
             <div class="section-note">
@@ -178,7 +179,7 @@
 
 {% block scripts %}
 {{ tabs_script() }}
-{% if player_trend %}{{ trend_scripts() }}{% endif %}
+{% if player_trend %}{{ chart_scripts() }}{% endif %}
 <script>
 (function () {
     "use strict";

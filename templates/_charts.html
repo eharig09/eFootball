@@ -1,0 +1,26 @@
+{#- Sport-agnostic Chart.js weekly-form workbench and scatter plot, shared by
+    the NFL and CFB sides. Renders client-side (see chart_scripts() below and
+    static/charts.js), which handles axis scaling and tick density natively.
+    game_url_prefix/player_url_prefix decide which sport's game/player pages
+    a click or a scatter dot navigates to. -#}
+{% macro chart_workbench(charts, chart_id, game_url_prefix='/nfl/games/') %}
+{% if charts %}<div class="chart-workbench" data-chart-workbench data-game-url="{{ game_url_prefix }}">
+    <header><div><h3>Weekly form</h3><p>Select up to two metrics; the second overlays on its own right-hand axis. Exact values remain available on hover, and each point links to its game.</p></div><div class="chart-toggles">{% for chart in charts %}<label style="--series:{{ chart.color }}"><input type="checkbox" data-metric="{{ chart.key }}"{{ ' checked' if loop.first }}><span></span>{{ chart.label }}</label>{% endfor %}</div></header>
+    <div class="chart-canvas-wrap"><canvas role="img" aria-label="Weekly performance trend"></canvas></div>
+    <script type="application/json" data-chart-json>{{ charts|tojson }}</script>
+</div>{% endif %}
+{% endmacro %}
+
+{% macro scatter_chart(scatter, player_url_prefix='/nfl/players/') %}
+{% if scatter.points %}
+<div class="chart-canvas-wrap" data-scatter-chart data-player-url="{{ player_url_prefix }}">
+    <canvas role="img" aria-label="{{ scatter.y_label }} versus {{ scatter.x_label }}, one point per player"></canvas>
+    <script type="application/json" data-scatter-json>{{ scatter|tojson }}</script>
+</div>
+{% else %}<div class="empty">No players have both metrics recorded for this filter.</div>{% endif %}
+{% endmacro %}
+
+{% macro chart_scripts() %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='charts.js') }}"></script>
+{% endmacro %}

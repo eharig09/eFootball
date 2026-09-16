@@ -253,22 +253,31 @@ def team_season_splits(repository: CFBRepository, team: str, season: int, *,
 def team_season_field(repository: CFBRepository, team: str, season: int, *,
                       role: str = "offense", model_version: str = MODEL_VERSION,
                       ) -> dict[str, Any]:
-    """Depth-by-direction passing profile, including receiver output by zone."""
+    """Depth-by-direction passing profile, including receiver output by zone.
+
+    For role="defense", each zone also carries `allowed_by_position`: a
+    season-wide, every-opponent tally of what offensive positions have beaten
+    this defense in that zone -- the honest defensive summary, since the
+    receiver list already shows each name's own position inline and does not
+    need a second, redundant tally on the offense side.
+    """
     initialize(repository)
     column = "p.offense" if role == "offense" else "p.defense"
     with repository._reader() as connection:
         rows = connection.execute(
             f"""SELECT p.pass_direction,p.air_yards,p.outcome,p.target,p.target_id,
-                       p.total_yards,e.epa,COALESCE(c.scoring,0) scoring,c.play_text
+                       p.total_yards,e.epa,COALESCE(c.scoring,0) scoring,c.play_text,
+                       pl.position
                 FROM cfbd_passing_plays p
                 LEFT JOIN cfb_play_epa e ON e.play_id=p.play_id AND e.model_version=?
                 LEFT JOIN cfb_play_metrics m ON m.play_id=p.play_id
                 LEFT JOIN cfb_plays c ON c.play_id=p.play_id
+                LEFT JOIN players pl ON pl.player_id=p.target_id AND pl.season=p.season
                 WHERE p.season=? AND {column}=? AND p.pass_direction IS NOT NULL
                   AND p.air_yards IS NOT NULL AND COALESCE(m.garbage_time,0)=0""",
             (model_version, int(season), str(team))).fetchall()
     zones = {(depth, direction): {"attempts": 0, "completions": 0, "yards": 0.0,
-                                  "epa": 0.0, "epa_plays": 0, "receivers": {}}
+                                  "epa": 0.0, "epa_plays": 0, "receivers": {}, "positions": {}}
              for depth, _low, _high in DEPTH_BANDS for direction in ("left", "middle", "right")}
     for row in rows:
         direction = str(row["pass_direction"] or "").casefold()
@@ -283,25 +292,103 @@ def team_season_field(repository: CFBRepository, team: str, season: int, *,
         if row["epa"] is not None:
             zone["epa"] += float(row["epa"]); zone["epa_plays"] += 1
         target = str(row["target"] or "").strip()
+        position = str(row["position"] or "UNK").upper()
         if target:
             receiver = zone["receivers"].setdefault(target, {
-                "name": target, "player_id": row["target_id"], "receptions": 0,
-                "yards": 0, "touchdowns": 0, "targets": 0})
+                "name": target, "player_id": row["target_id"], "position": position,
+                "receptions": 0, "yards": 0, "touchdowns": 0, "targets": 0})
             receiver["targets"] += 1
             if complete:
                 receiver["receptions"] += 1
                 receiver["yards"] += round(float(row["total_yards"] or 0))
                 touchdown = bool(row["scoring"]) and "touchdown" in str(row["play_text"] or "").casefold()
                 receiver["touchdowns"] += int(touchdown)
+            if role == "defense":
+                zone["positions"][position] = zone["positions"].get(position, 0) + 1
     output = {}
     for key, zone in zones.items():
         receivers = sorted(zone.pop("receivers").values(),
                            key=lambda item: (-item["receptions"], -item["yards"], item["name"]))
+        positions = zone.pop("positions")
+        allowed_by_position = sorted(
+            ({"position": position, "targets": count} for position, count in positions.items()),
+            key=lambda item: (-item["targets"], item["position"])) if role == "defense" else []
         output[key] = {**zone,
                        "epa_per_attempt": zone["epa"] / zone["epa_plays"] if zone["epa_plays"] else None,
-                       "receivers": receivers[:5]}
+                       "receivers": receivers[:5], "allowed_by_position": allowed_by_position}
     return {"team": team, "season": int(season), "role": role, "zones": output,
             "attempts": len(rows)}
+
+
+#: Red zone: the same yardline_100<=20 convention the NFL side uses. End zone:
+#: the target itself reaches or crosses the goal line (start_yards_to_goal
+#: minus air_yards <= 0) -- an incompletion or interception thrown into the
+#: end zone counts, not just a score, matching the NFL side's exact
+#: definition and reusing the same start_yards_to_goal/air_yards columns
+#: already stored rather than needing a new one.
+SITUATIONS = (
+    ("red_zone", "Red zone", "p.start_yards_to_goal<=20"),
+    ("end_zone", "End zone", "p.start_yards_to_goal-p.air_yards<=0"),
+)
+
+
+def team_season_situational(repository: CFBRepository, team: str, season: int, *,
+                            role: str = "offense", model_version: str = MODEL_VERSION,
+                            ) -> dict[str, dict[str, Any]]:
+    """Red-zone and end-zone passing splits, same shape as one team_season_field
+    zone (attempts/completions/yards/epa/receivers/allowed_by_position) so the
+    same template partial can render both."""
+    initialize(repository)
+    column = "p.offense" if role == "offense" else "p.defense"
+    situations = {}
+    with repository._reader() as connection:
+        for key, _label, condition in SITUATIONS:
+            rows = connection.execute(
+                f"""SELECT p.outcome,p.target,p.target_id,p.total_yards,e.epa,
+                           COALESCE(c.scoring,0) scoring,c.play_text,pl.position
+                    FROM cfbd_passing_plays p
+                    LEFT JOIN cfb_play_epa e ON e.play_id=p.play_id AND e.model_version=?
+                    LEFT JOIN cfb_play_metrics m ON m.play_id=p.play_id
+                    LEFT JOIN cfb_plays c ON c.play_id=p.play_id
+                    LEFT JOIN players pl ON pl.player_id=p.target_id AND pl.season=p.season
+                    WHERE p.season=? AND {column}=? AND p.air_yards IS NOT NULL
+                      AND p.start_yards_to_goal IS NOT NULL AND COALESCE(m.garbage_time,0)=0
+                      AND {condition}""",
+                (model_version, int(season), str(team))).fetchall()
+            zone = {"attempts": 0, "completions": 0, "yards": 0.0, "epa": 0.0, "epa_plays": 0,
+                   "receivers": {}, "positions": {}}
+            for row in rows:
+                zone["attempts"] += 1
+                complete = row["outcome"] == "completion"
+                zone["completions"] += int(complete)
+                zone["yards"] += float(row["total_yards"] or 0)
+                if row["epa"] is not None:
+                    zone["epa"] += float(row["epa"]); zone["epa_plays"] += 1
+                target = str(row["target"] or "").strip()
+                position = str(row["position"] or "UNK").upper()
+                if target:
+                    receiver = zone["receivers"].setdefault(target, {
+                        "name": target, "player_id": row["target_id"], "position": position,
+                        "receptions": 0, "yards": 0, "touchdowns": 0, "targets": 0})
+                    receiver["targets"] += 1
+                    if complete:
+                        receiver["receptions"] += 1
+                        receiver["yards"] += round(float(row["total_yards"] or 0))
+                        touchdown = (bool(row["scoring"])
+                                    and "touchdown" in str(row["play_text"] or "").casefold())
+                        receiver["touchdowns"] += int(touchdown)
+                    if role == "defense":
+                        zone["positions"][position] = zone["positions"].get(position, 0) + 1
+            receivers = sorted(zone.pop("receivers").values(),
+                              key=lambda item: (-item["receptions"], -item["yards"], item["name"]))
+            positions = zone.pop("positions")
+            allowed_by_position = sorted(
+                ({"position": position, "targets": count} for position, count in positions.items()),
+                key=lambda item: (-item["targets"], item["position"])) if role == "defense" else []
+            situations[key] = {**zone,
+                               "epa_per_attempt": zone["epa"] / zone["epa_plays"] if zone["epa_plays"] else None,
+                               "receivers": receivers[:8], "allowed_by_position": allowed_by_position}
+    return situations
 
 
 def passer_career_field(repository: CFBRepository, player_id: str, *,
@@ -391,6 +478,32 @@ def matchup_field(repository: CFBRepository, game: dict[str, Any], *,
         panels.append({"attacker": attacker, "defender": defender, "zones": zones,
                        "attempts": profiles[attacker]["offense"]["attempts"],
                        "allowed_attempts": profiles[defender]["defense"]["attempts"]})
+    return panels
+
+
+def matchup_situational(repository: CFBRepository, game: dict[str, Any], *,
+                        model_version: str = MODEL_VERSION) -> list[dict[str, Any]]:
+    """Red-zone/end-zone passing splits for both offenses against the defense
+    each will face -- the same "high-value opportunity" read as the depth/
+    direction field, restricted to the situations that decide games."""
+    season = int(game.get("season") or 0)
+    away, home = str(game.get("away_team") or ""), str(game.get("home_team") or "")
+    situational = {team: {role: team_season_situational(repository, team, season, role=role,
+                                                         model_version=model_version)
+                          for role in ("offense", "defense")} for team in (away, home)}
+    panels = []
+    for attacker, defender in ((away, home), (home, away)):
+        rows = []
+        for key, label, _condition in SITUATIONS:
+            offense = situational[attacker]["offense"][key]
+            defense = situational[defender]["defense"][key]
+            if not offense["attempts"] and not defense["attempts"]:
+                continue
+            off_epa, def_epa = offense["epa_per_attempt"], defense["epa_per_attempt"]
+            edge = (off_epa + def_epa) / 2 if off_epa is not None and def_epa is not None else None
+            rows.append({"key": key, "label": label, "offense": offense, "defense": defense,
+                        "edge": edge})
+        panels.append({"attacker": attacker, "defender": defender, "rows": rows})
     return panels
 
 
@@ -505,7 +618,7 @@ def passer_weekly_trend(repository: CFBRepository, player_id: str, season: int, 
     identifier = str(player_id)
     with repository._reader() as connection:
         rows = connection.execute(
-            """SELECT p.week, p.outcome, p.total_yards, e.epa
+            """SELECT p.week, p.game_id, p.defense, p.outcome, p.total_yards, e.epa
                FROM cfbd_passing_plays p
                LEFT JOIN cfb_play_epa e ON e.play_id = p.play_id AND e.model_version = ?
                LEFT JOIN cfb_play_metrics m ON m.play_id = p.play_id
@@ -518,7 +631,8 @@ def passer_weekly_trend(repository: CFBRepository, player_id: str, season: int, 
         if week is None:
             continue
         bucket = weeks.setdefault(int(week), {"attempts": 0, "completions": 0,
-                                              "yards": 0.0, "epa": 0.0, "epa_plays": 0})
+                                              "yards": 0.0, "epa": 0.0, "epa_plays": 0,
+                                              "game_id": row["game_id"], "opponent": row["defense"]})
         bucket["attempts"] += 1
         if row["outcome"] == "completion":
             bucket["completions"] += 1
@@ -531,6 +645,7 @@ def passer_weekly_trend(repository: CFBRepository, player_id: str, season: int, 
         attempts = bucket["attempts"]
         output.append({
             "week": week, "attempts": attempts,
+            "game_id": bucket["game_id"], "opponent": bucket["opponent"],
             "completion_rate": (bucket["completions"] / attempts) if attempts else None,
             "yards_per_attempt": (bucket["yards"] / attempts) if attempts else None,
             "epa_per_attempt": (bucket["epa"] / bucket["epa_plays"]) if bucket["epa_plays"] else None,

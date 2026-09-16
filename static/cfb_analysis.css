@@ -297,3 +297,64 @@
 .box-report .pg-tendency-team>h4{padding-left:12px}
 .box-report .pg-qb-team-head{padding-left:12px}
 .box-report .mof-header{background:transparent;color:var(--muted);border-bottom:1px solid var(--report-rule)}.box-report .role-signal{border:0;border-top:1px solid var(--report-rule);border-bottom:1px solid var(--report-rule);background:transparent;padding-left:0;padding-right:0}.box-report .pg-summary-grid{gap:18px}.box-report .pg-summary-card{border:0;border-top:2px solid var(--report-rule);background:transparent;padding:10px 0}.box-report .pg-turn{border:0;border-top:1px solid var(--report-rule);background:transparent;margin:0;padding:12px 0}.box-report .pg-turn:before{display:none}.box-report .pg-detail{border:0;border-top:1px solid var(--report-rule);border-bottom:1px solid var(--report-rule);background:transparent}
+.chart-workbench{margin-bottom:13px;padding:16px;border:1px solid var(--line-strong);border-radius:5px;background:var(--paper)}
+.chart-workbench>header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:22px}
+.chart-workbench h3{margin:0;color:var(--on-strong);font-size:1rem}
+.chart-workbench p{margin:4px 0 0;color:var(--muted);font-size:.7rem}
+.chart-toggles{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}
+.chart-toggles label{display:flex;align-items:center;gap:5px;padding:5px 7px;border:1px solid var(--line);border-radius:3px;color:var(--ink);font-size:.65rem;cursor:pointer}
+.chart-toggles input{accent-color:var(--series)}
+.chart-toggles label>span{width:12px;height:3px;background:var(--series)}
+.chart-canvas-wrap{position:relative;width:100%;height:280px;margin-top:10px}
+
+/* Passing field matchup, its red-zone/end-zone companion strip, and the
+   passer-profile depth/direction breakdown: none of the .prod-* classes
+   these macros emit (_cfb_page_visuals.html) had any styling at all before
+   this pass -- the whole section rendered as unstyled buttons with its
+   hover detail permanently visible inline, not hidden until hover/focus. */
+.section-head-row{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+.section-head-row h2{margin:0 0 4px}
+.prod-switch{display:flex;flex-wrap:wrap;gap:6px}
+.prod-switch button{padding:6px 12px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--muted);font-size:.72rem;font-weight:700;cursor:pointer}
+.prod-switch button.active{border-color:var(--accent);color:var(--on-strong);background:color-mix(in srgb,var(--accent) 18%,var(--paper))}
+.prod-pass-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px;color:var(--muted);font-size:.78rem}
+.prod-pass-meta b{color:var(--ink)}
+.prod-pass-meta i{font-style:normal;color:var(--muted)}
+.prod-field{border:1px solid var(--line-strong);border-radius:6px;background:var(--cream);padding:10px;overflow:visible}
+.prod-endzone,.prod-los{padding:6px 10px;color:var(--muted);font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;text-align:center;border-bottom:1px dashed var(--line)}
+.prod-los{border-bottom:0;border-top:1px dashed var(--line)}
+.prod-zone-row{display:flex;align-items:stretch;gap:6px;padding:6px 0}
+.prod-zone-row>span{flex:0 0 92px;display:flex;align-items:center;color:var(--muted);font-size:.68rem;font-weight:700}
+.prod-situational-grid,.prod-zone-row{position:relative}
+.prod-zone{position:relative;flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:9px 10px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);text-align:left;cursor:pointer}
+.prod-zone.positive{border-color:#4caf7d;background:color-mix(in srgb,#4caf7d 14%,var(--paper))}
+.prod-zone.negative{border-color:#e0685f;background:color-mix(in srgb,#e0685f 14%,var(--paper))}
+.prod-zone b{font-size:1rem}
+.prod-zone small{color:var(--muted);font-size:.64rem}
+.prod-zone em{position:absolute;top:6px;right:8px;color:var(--muted);font-size:.58rem;font-style:normal;text-transform:uppercase;letter-spacing:.06em}
+.prod-zone-tip{display:none;position:absolute;left:0;top:100%;z-index:20;width:max-content;max-width:280px;margin-top:6px;padding:10px;border:1px solid var(--line-strong);border-radius:5px;background:var(--surface-strong);box-shadow:0 12px 28px #0008;text-align:left}
+.prod-zone-tip strong{display:block;margin:6px 0 4px;color:var(--gold);font-size:.6rem;text-transform:uppercase;letter-spacing:.06em}
+.prod-zone-tip strong:first-child{margin-top:0}
+.prod-zone-tip span{display:flex;justify-content:space-between;gap:10px;padding:3px 0;color:var(--on-strong-muted);font-size:.7rem}
+.prod-zone-tip span i{font-style:normal;color:var(--muted)}
+.prod-zone-tip span b{color:var(--ink);font-weight:700;white-space:nowrap}
+.cfb-pass-situational{margin-top:16px}
+.prod-situational-panel{margin-bottom:14px}
+.prod-situational-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+.prod-situational-cell{position:relative;display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:5px;background:var(--paper)}
+.prod-situational-cell.positive{border-color:#4caf7d;background:color-mix(in srgb,#4caf7d 14%,var(--paper))}
+.prod-situational-cell.negative{border-color:#e0685f;background:color-mix(in srgb,#e0685f 14%,var(--paper))}
+.prod-situational-cell>span:first-child{color:var(--muted);font-size:.64rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em}
+.prod-situational-cell b{font-size:1.1rem}
+.prod-situational-cell small{color:var(--muted);font-size:.66rem}
+.prod-shape-facts{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.prod-shape-facts span{display:flex;flex-direction:column-reverse;gap:2px;padding:9px 12px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--muted);font-size:.66rem}
+.prod-shape-facts b{color:var(--ink);font-size:1.15rem}
+.prod-passer-split{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:12px 0}
+.subhead{margin:0 0 8px;color:var(--on-strong);font-size:.85rem;font-weight:800}
+.prod-passer-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.prod-passer-row:last-child{border-bottom:0}
+.prod-passer-row span{color:var(--muted);font-size:.75rem}
+.prod-passer-row b{color:var(--ink)}
+.prod-passer-row small{color:var(--muted);font-size:.66rem}
+.prod-passer-note{margin:4px 0 0;color:var(--muted);font-size:.7rem}

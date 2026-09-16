@@ -260,56 +260,77 @@ def team_trend_chart_data(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     }
 
 
+#: Same palette sports_aggregator.nfl.charts uses for its own dual-axis
+#: workbench -- a literal constant, not shared logic, so it is repeated here
+#: rather than importing NFL code into a CFB module.
+CHART_COLORS = ("#69c5ff", "#ffb45f", "#78d69b", "#d49cff", "#ff7f8a", "#e7dc68")
+
+
+def _chart_series(rows: list[dict[str, Any]], key: str, label: str, *, value_format: str = "f1",
+                  pct: bool = False, color: str | None = None) -> dict[str, Any] | None:
+    """One metric's weekly series, shaped for the shared chart_workbench macro
+    (see templates/_charts.html) -- the exact same {key,label,format,color,
+    values:[{week,week_label,opponent,game_id,value}]} shape
+    sports_aggregator.nfl.charts.series() produces, so both sports' player
+    pages render with the same dual-axis Chart.js workbench."""
+    values = []
+    for row in rows:
+        raw = row.get(key)
+        if raw is None:
+            continue
+        value = round(raw * 100, 1) if pct else round(raw, 3)
+        values.append({"week": row.get("week"), "week_label": row.get("week_label"),
+                       "opponent": row.get("opponent"), "game_id": row.get("game_id"),
+                       "value": value})
+    if not values:
+        return None
+    return {"key": key, "label": label, "format": value_format, "color": color, "values": values}
+
+
 def player_trend_chart_data(rows: list[dict[str, Any]],
                             previous_rows: list[dict[str, Any]] | None = None,
-                            *, min_count: int = 3) -> dict[str, Any] | None:
-    """One passer's week-by-week series, shaped for the generic `trend_chart` macro.
+                            *, min_count: int = 3) -> list[dict[str, Any]]:
+    """One passer's week-by-week series, for the shared dual-axis chart_workbench.
 
     `previous_rows` (last season's version of the same weekly rows) backfills
     a season that has not yet reached `min_count` real weeks -- see
     `_weeks_with_ghosts`.
     """
-    combined, ghost_count = _weeks_with_ghosts(rows, previous_rows, min_count=min_count)
-    if not combined:
-        return None
-    labels = [row["week_label"] for row in combined]
-
-    def single(key: str, label: str, *, pct: bool = False) -> dict[str, Any]:
-        return {"key": key, "label": label, "series": [
-            {"key": key, "label": label, "color": "#6ea8f0",
-             "data": _week_series(combined, key, pct=pct)},
-        ]}
-
-    return {
-        "labels": labels,
-        "ghost_count": ghost_count,
-        "metrics": [
-            single("epa_per_attempt", "EPA / attempt"),
-            single("completion_rate", "Completion rate", pct=True),
-            single("yards_per_attempt", "Yards / attempt"),
-        ],
-    }
+    combined, _ghost_count = _weeks_with_ghosts(rows, previous_rows, min_count=min_count)
+    definitions = (
+        ("epa_per_attempt", "EPA / attempt", "signed2", False),
+        ("completion_rate", "Completion rate", "pct", True),
+        ("yards_per_attempt", "Yards / attempt", "f1", False),
+    )
+    charts = []
+    for index, (key, label, value_format, pct) in enumerate(definitions):
+        chart = _chart_series(combined, key, label, value_format=value_format, pct=pct,
+                              color=CHART_COLORS[index % len(CHART_COLORS)])
+        if chart:
+            charts.append(chart)
+    return charts
 
 
 #: Which weekly box-score metrics read as "recent form" for a non-QB skill
 #: position -- rushers lead with scrimmage yards, receivers with receiving
 #: yards, since that is the number a reader already scans the box score for.
 SKILL_TREND_METRICS = {
-    "RB": (("scrimmage_yards", "Scrimmage yds"), ("yards_per_carry", "Yds / carry"),
-          ("rush_yards", "Rush yds")),
-    "FB": (("scrimmage_yards", "Scrimmage yds"), ("yards_per_carry", "Yds / carry"),
-          ("rush_yards", "Rush yds")),
-    "WR": (("receiving_yards", "Receiving yds"), ("yards_per_reception", "Yds / catch"),
-          ("receptions", "Receptions")),
-    "TE": (("receiving_yards", "Receiving yds"), ("yards_per_reception", "Yds / catch"),
-          ("receptions", "Receptions")),
+    "RB": (("scrimmage_yards", "Scrimmage yds", "big"), ("yards_per_carry", "Yds / carry", "f1"),
+          ("rush_yards", "Rush yds", "big")),
+    "FB": (("scrimmage_yards", "Scrimmage yds", "big"), ("yards_per_carry", "Yds / carry", "f1"),
+          ("rush_yards", "Rush yds", "big")),
+    "WR": (("receiving_yards", "Receiving yds", "big"), ("yards_per_reception", "Yds / catch", "f1"),
+          ("receptions", "Receptions", "int")),
+    "TE": (("receiving_yards", "Receiving yds", "big"), ("yards_per_reception", "Yds / catch", "f1"),
+          ("receptions", "Receptions", "int")),
 }
 
 
 def skill_player_trend_chart_data(rows: list[dict[str, Any]], position: str,
                                   previous_rows: list[dict[str, Any]] | None = None,
-                                  *, min_count: int = 3) -> dict[str, Any] | None:
-    """A rusher or receiver's week-by-week series, for the same generic chart.
+                                  *, min_count: int = 3) -> list[dict[str, Any]]:
+    """A rusher or receiver's week-by-week series, for the shared dual-axis
+    chart_workbench.
 
     Passers get event-level EPA (`player_trend_chart_data`, from charted pass
     plays); nothing tags a rusher or receiver on a play the same way, so this
@@ -317,22 +338,15 @@ def skill_player_trend_chart_data(rows: list[dict[str, Any]], position: str,
     """
     metrics_spec = SKILL_TREND_METRICS.get(str(position or "").upper())
     if not metrics_spec:
-        return None
-    combined, ghost_count = _weeks_with_ghosts(rows, previous_rows, min_count=min_count)
-    if not combined:
-        return None
-    labels = [row["week_label"] for row in combined]
-
-    def single(key: str, label: str) -> dict[str, Any]:
-        return {"key": key, "label": label, "series": [
-            {"key": key, "label": label, "color": "#6ea8f0", "data": _week_series(combined, key)},
-        ]}
-
-    return {
-        "labels": labels,
-        "ghost_count": ghost_count,
-        "metrics": [single(key, label) for key, label in metrics_spec],
-    }
+        return []
+    combined, _ghost_count = _weeks_with_ghosts(rows, previous_rows, min_count=min_count)
+    charts = []
+    for index, (key, label, value_format) in enumerate(metrics_spec):
+        chart = _chart_series(combined, key, label, value_format=value_format,
+                              color=CHART_COLORS[index % len(CHART_COLORS)])
+        if chart:
+            charts.append(chart)
+    return charts
 
 
 def game_shape(away_team: str, home_team: str, away_pace: dict[str, Any] | None,

@@ -1,11 +1,12 @@
 (function () {
     "use strict";
 
-    // .injury-tooltip and .pass-zone-tooltip are CSS :hover/:focus-within
-    // popups, positioned `absolute` relative to their trigger. Every one of
-    // them lives inside a `.section` (or a `.pass-matchup-card`), and both
-    // clip with `overflow:hidden`/`overflow-x:auto` for their own rounded-
-    // corner and horizontal-scroll styling -- so a tooltip wide enough to
+    // .injury-tooltip, .pass-zone-tooltip (NFL) and .prod-zone-tip (CFB) are
+    // CSS :hover/:focus-within popups, positioned `absolute` relative to
+    // their trigger. Every one of them lives inside a `.section` (or a
+    // `.pass-matchup-card`/`.prod-zone-row`), and clips with `overflow:
+    // hidden`/`overflow-x:auto` for its own rounded-corner and horizontal-
+    // scroll styling -- so a tooltip wide enough to
     // reach that edge gets silently clipped no matter its z-index. z-index
     // only orders paint among unclipped elements; it cannot undo an
     // ancestor's overflow clipping. `position: fixed` escapes the clipping,
@@ -21,7 +22,7 @@
     // then move it back to its original spot on hide -- both so the
     // server-rendered structure stays intact between shows, and so a
     // trigger's own child-lookup keeps working the next time it's opened.
-    var SELECTOR = ".injury-tooltip, .pass-zone-tooltip";
+    var SELECTOR = ".injury-tooltip, .pass-zone-tooltip, .prod-zone-tip";
     var MARGIN = 10;
     var active = null;
     var hideTimer = null;

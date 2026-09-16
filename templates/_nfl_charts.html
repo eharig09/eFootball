@@ -1,29 +1,10 @@
-{#- Renders client-side with Chart.js's native "scatter" type (see
-    nfl_chart_scripts() below and static/nfl_charts.js), which handles axis
-    scaling and tick density -- matching the weekly-form workbench's pattern
-    rather than hand-computed SVG geometry. -#}
-{% macro scatter_chart(scatter) %}
-{% if scatter.points %}
-<div class="chart-canvas-wrap" data-scatter-chart>
-    <canvas role="img" aria-label="{{ scatter.y_label }} versus {{ scatter.x_label }}, one point per player"></canvas>
-    <script type="application/json" data-scatter-json>{{ scatter|tojson }}</script>
-</div>
-{% else %}<div class="empty">No players have both metrics recorded for this filter.</div>{% endif %}
-{% endmacro %}
+{#- Thin NFL-flavored wrapper over the shared chart macros in _charts.html,
+    so existing NFL call sites (chart_workbench/scatter_chart/nfl_chart_scripts)
+    do not need to change. -#}
+{% from "_charts.html" import chart_workbench as _chart_workbench, scatter_chart as _scatter_chart, chart_scripts %}
 
-{#- Weekly form: rendered client-side with Chart.js (see nfl_chart_scripts()
-    below), which handles axis auto-scaling and tick density natively --
-    matching the pattern _cfb_page_visuals.html already uses for the same
-    kind of weekly trend chart, rather than hand-computed SVG geometry. -#}
-{% macro chart_workbench(charts, chart_id) %}
-{% if charts %}<div class="chart-workbench" data-chart-workbench>
-    <header><div><h3>Weekly form</h3><p>Select up to two metrics; the second overlays on its own right-hand axis. Exact values remain available on hover, and each point links to its game.</p></div><div class="chart-toggles">{% for chart in charts %}<label style="--series:{{ chart.color }}"><input type="checkbox" data-metric="{{ chart.key }}"{{ ' checked' if loop.first }}><span></span>{{ chart.label }}</label>{% endfor %}</div></header>
-    <div class="chart-canvas-wrap"><canvas role="img" aria-label="Weekly performance trend"></canvas></div>
-    <script type="application/json" data-chart-json>{{ charts|tojson }}</script>
-</div>{% endif %}
-{% endmacro %}
+{% macro scatter_chart(scatter) %}{{ _scatter_chart(scatter, '/nfl/players/') }}{% endmacro %}
 
-{% macro nfl_chart_scripts() %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="{{ url_for('static', filename='nfl_charts.js') }}"></script>
-{% endmacro %}
+{% macro chart_workbench(charts, chart_id) %}{{ _chart_workbench(charts, chart_id, '/nfl/games/') }}{% endmacro %}
+
+{% macro nfl_chart_scripts() %}{{ chart_scripts() }}{% endmacro %}

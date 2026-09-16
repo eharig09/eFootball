@@ -47,7 +47,8 @@ from sports_aggregator.cfb.coordinator_pace import team_drives_per_game, team_pa
 from sports_aggregator.cfb.player_game_log import player_weekly_trend
 from sports_aggregator.cfb.team_game_advanced import team_weekly_trend
 from sports_aggregator.cfb.passing_plays import (
-    matchup_field, passer_career_field, passer_profile, passer_weekly_trend)
+    matchup_field, matchup_situational, passer_career_field, passer_profile, passer_weekly_trend)
+from sports_aggregator.cfb.rushing_plays import matchup_rushing, matchup_rushing_situational
 from sports_aggregator.cfb.pff import pff_summary
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb import views
@@ -758,6 +759,9 @@ def game_preview(game_id: int):
             caption=f"{game['home_team']} portal departures", departed=True),
         matchup_report=matchup_report,
         passing_field_panels=matchup_field(repository, game),
+        passing_situational_panels=matchup_situational(repository, game),
+        rushing_field_panels=matchup_rushing(repository, game),
+        rushing_situational_panels=matchup_rushing_situational(repository, game),
         matchup_table=views.matchup_watch_table(matchup_report, brands_by_school),
         player_matchup_table=views.player_matchup_table(
             player_matchups(repository, game["home_team_id"], game["away_team_id"]),

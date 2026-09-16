@@ -259,7 +259,8 @@ def player_weekly_trend(repository, player: dict[str, Any], season: int) -> list
             return []
         placeholders = _placeholders(player_ids)
         rows = connection.execute(
-            f"""SELECT gp.game_id,g.week,gp.category,gp.stat_type,gp.numeric_value
+            f"""SELECT gp.game_id,g.week,gp.category,gp.stat_type,gp.numeric_value,
+                       gp.team_id,g.home_team_id,g.home_team,g.away_team_id,g.away_team
                 FROM game_player_box_stats gp JOIN games g USING(game_id)
                 WHERE gp.player_id IN ({placeholders}) AND g.season=?""",
             [*player_ids, season],
@@ -267,9 +268,12 @@ def player_weekly_trend(repository, player: dict[str, Any], season: int) -> list
 
     games: dict[int, dict[str, Any]] = {}
     weeks: dict[int, int] = {}
+    opponents: dict[int, str] = {}
     for raw in rows:
         game_id = int(raw["game_id"])
         weeks[game_id] = raw["week"]
+        opponents[game_id] = (raw["away_team"] if raw["team_id"] == raw["home_team_id"]
+                              else raw["home_team"])
         value = raw["numeric_value"]
         if value is None:
             continue
@@ -294,7 +298,7 @@ def player_weekly_trend(repository, player: dict[str, Any], season: int) -> list
         receiving_yards = stat(values, "receiving", "YDS")
         total_yards = (rush_yards or 0.0) + (receiving_yards or 0.0)
         output.append({
-            "week": int(week),
+            "week": int(week), "game_id": game_id, "opponent": opponents.get(game_id),
             "rush_yards": rush_yards,
             "yards_per_carry": round(rush_yards / rush_att, 2) if rush_yards is not None and rush_att else None,
             "receptions": receptions,

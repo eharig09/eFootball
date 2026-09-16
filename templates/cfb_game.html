@@ -1,6 +1,6 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import conference_mark, data_table, linked_piece_meta, story_list, tabbed_tables, tabs_script %}
-{% from "_cfb_page_visuals.html" import game_shape_module, passing_field, probability_track, recent_form, visual_scripts %}
+{% from "_cfb_page_visuals.html" import game_shape_module, passing_field, passing_situational_strip, probability_track, recent_form, rushing_field, rushing_situational_strip, visual_scripts %}
 
 {% block title %}{{ game.away_team }} at {{ game.home_team }} | Game Preview{% endblock %}
 
@@ -393,6 +393,9 @@
 </section>
 
 {{ passing_field(passing_field_panels) }}
+{{ passing_situational_strip(passing_situational_panels) }}
+{{ rushing_field(rushing_field_panels) }}
+{{ rushing_situational_strip(rushing_situational_panels) }}
 
 <section class="section" data-mobile-tab-panel="matchups">
     <h2>Player and unit watches</h2>
@@ -494,4 +497,4 @@
 </section>
 {% endblock %}
 
-{% block scripts %}{{ tabs_script() }}{{ visual_scripts() }}{% endblock %}
+{% block scripts %}{{ tabs_script() }}{{ visual_scripts() }}<script src="{{ url_for('static', filename='tooltips.js') }}"></script>{% endblock %}

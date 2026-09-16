@@ -6,10 +6,10 @@
     Chart.defaults.borderColor = "#293945";
     Chart.defaults.font.family = '"Cascadia Mono", Consolas, monospace';
 
-    // Mirrors sports_aggregator.tables.format_value's format keys, since
-    // every chart's `format` field comes straight from that same Column
-    // vocabulary -- one number reads the same way whether it's in a table
-    // cell or a chart tick.
+    // Mirrors sports_aggregator.tables.format_value's format keys (and CFB's
+    // own cell filter), since every chart's `format` field comes straight
+    // from that same vocabulary -- one number reads the same way whether
+    // it's in a table cell or a chart tick, on either sport's pages.
     var FORMATTERS = {
         int: function (v) { return String(Math.round(v)); },
         big: function (v) { return Math.round(v).toLocaleString(); },
@@ -47,6 +47,7 @@
     document.querySelectorAll("[data-chart-workbench]").forEach(function (root) {
         var canvas = root.querySelector("canvas");
         var payload = JSON.parse(root.querySelector("[data-chart-json]").textContent);
+        var gameUrlPrefix = root.dataset.gameUrl || "/nfl/games/";
         var byKey = {};
         payload.forEach(function (chartData) { byKey[chartData.key] = chartData; });
         var inputs = Array.prototype.slice.call(root.querySelectorAll("input[data-metric]"));
@@ -67,7 +68,7 @@
                     var chartData = input && byKey[input.dataset.metric];
                     var point = chartData && chartData.values[el.index];
                     if (point && point.game_id) {
-                        window.location.href = "/nfl/games/" + point.game_id + "/";
+                        window.location.href = gameUrlPrefix + point.game_id + "/";
                     }
                 },
                 plugins: {
@@ -158,6 +159,7 @@
     document.querySelectorAll("[data-scatter-chart]").forEach(function (root) {
         var canvas = root.querySelector("canvas");
         var scatter = JSON.parse(root.querySelector("[data-scatter-json]").textContent);
+        var playerUrlPrefix = root.dataset.playerUrl || "/nfl/players/";
         var points = scatter.points;
         var chart = new Chart(canvas.getContext("2d"), {
             type: "scatter",
@@ -178,7 +180,7 @@
                     if (!elements.length) return;
                     var point = points[elements[0].index];
                     if (point && point.player_id) {
-                        window.location.href = "/nfl/players/" + point.player_id + "/";
+                        window.location.href = playerUrlPrefix + point.player_id + "/";
                     }
                 },
                 onHover: function (event, elements) {
