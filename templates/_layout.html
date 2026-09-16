@@ -39,6 +39,7 @@
         <a class="data-pill{% if data_freshness.status == 'failed' %} data-pill-bad{% elif data_freshness.status == 'degraded' %} data-pill-warn{% endif %}" href="{{ url_for('cfb_data_status.data_status') }}{% if data_freshness.attention_count %}#needs-attention{% endif %}" title="Open data refresh status">
           {% if data_freshness.running %}● Refreshing data{% elif data_freshness.attention_count %}● {{ data_freshness.attention_count }} {{ 'issue needs' if data_freshness.attention_count == 1 else 'issues need' }} attention{% elif data_freshness.relative and data_freshness.relative != 'unknown' %}● Updated {{ data_freshness.relative }}{% else %}● Data status{% endif %}
         </a>
+        <a class="data-pill" href="{{ url_for('nfl.dashboard') }}" title="Switch to the NFL workspace">NFL &rarr;</a>
         <form class="header-search" action="/college-football/search/" method="get" role="search"><input type="search" name="q" placeholder="Search" aria-label="Search teams, players, games"></form>
     </div>
     {#- Every page's breadcrumb points one step back and nothing else, so the

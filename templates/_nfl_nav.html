@@ -16,6 +16,8 @@
             <a href="{{ url_for('nfl.dashboard', season=season, _anchor='news') }}">News</a>
         </nav>
         <div class="nfl-nav-tools">{% if context %}<span class="nav-context">{{ context }}</span>{% endif %}
+            <a class="data-pill" href="{{ url_for('index') }}" title="Back to the league picker">&larr; Sports News Aggregator</a>
+            <a class="data-pill" href="{{ url_for('cfb.today') }}" title="Switch to the College Football workspace">CFB &rarr;</a>
             <a class="data-pill{% if nfl_data_freshness.status == 'failed' %} data-pill-bad{% elif nfl_data_freshness.status == 'degraded' %} data-pill-warn{% endif %}"
                href="{{ url_for('nfl.data_status', season=season) }}{% if nfl_data_freshness.attention_count %}#needs-attention{% endif %}"
                title="Open NFL data status">
