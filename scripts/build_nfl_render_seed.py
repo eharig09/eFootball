@@ -11,11 +11,32 @@ import sqlite3
 from sports_aggregator.nfl.repository import NFLRepository
 
 
+#: player_weekly_stats stores ~138 distinct metric names per player-game (an
+#: EAV table), but every consumer of it -- player_charts, the stat explorer's
+#: METRICS, the game-log tables, headline stats, season totals -- only ever
+#: reads this bounded set. Restricting the seed to just these keeps the file
+#: "compact" (this module's whole reason to exist) while still fully
+#: supporting every feature a fresh, seed-restored production DB needs;
+#: anything outside this list only ever shows up via a real nflverse sync,
+#: which stores every metric regardless of this filter.
+WEEKLY_STAT_METRICS = (
+    "attempts", "completions", "passing_yards", "passing_tds", "passing_interceptions",
+    "passing_epa", "passing_cpoe", "passing_air_yards",
+    "carries", "rushing_yards", "rushing_tds", "rushing_first_downs", "rushing_epa",
+    "rushing_fumbles_lost",
+    "targets", "receptions", "receiving_yards", "receiving_tds", "receiving_first_downs",
+    "receiving_air_yards", "receiving_yards_after_catch", "target_share", "receiving_epa",
+    "def_tackles_solo", "def_tackle_assists", "def_sacks", "def_interceptions",
+    "def_tackles_for_loss", "def_qb_hits", "def_pass_defended", "def_fumbles_forced",
+    "fg_made", "fg_att", "fg_long", "pat_made", "pat_att", "fantasy_points_ppr",
+)
+
 FILTERS = {
     "teams": "1",
     "games": "season >= 2010",
     "players": "season >= 2025",
-    "player_weekly_stats": "season >= 2026",
+    "player_weekly_stats": ("season >= 2025 AND metric IN ("
+                            + ",".join(f"'{metric}'" for metric in WEEKLY_STAT_METRICS) + ")"),
     "snap_counts": "season >= 2025",
     "depth_chart_snapshots": "season >= 2025 AND snapshot_at = (SELECT MAX(d2.snapshot_at) FROM source.depth_chart_snapshots d2 WHERE d2.season=depth_chart_snapshots.season AND d2.team=depth_chart_snapshots.team)",
     "team_staff": "season >= 2025",
