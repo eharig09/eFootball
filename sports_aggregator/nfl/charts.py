@@ -80,20 +80,28 @@ def player_charts(rows: list[dict[str, Any]], position: str | None) -> list[dict
                        ("passing_air_yards", "Air yards", "big"), ("attempts", "Attempts", "int"),
                        ("completions", "Completions", "int"), ("passing_tds", "Passing TDs", "int"),
                        ("passing_interceptions", "Interceptions", "int"),
-                       ("rushing_yards", "Rushing yards", "big"), ("rushing_epa", "Rushing EPA", "signed2"))
+                       ("rushing_yards", "Rushing yards", "big"), ("rushing_epa", "Rushing EPA", "signed2"),
+                       ("ngs_pass_cpoe", "CPOE (NGS)", "pct"),
+                       ("ngs_pass_time_to_throw", "Time to throw", "f1"),
+                       ("ngs_pass_aggressiveness", "Aggressiveness", "pct"))
     elif position in {"RB", "FB"}:
         definitions = (("rushing_yards", "Rushing yards", "big"), ("carries", "Carries", "int"),
                        ("targets", "Targets", "int"), ("receiving_yards", "Receiving yards", "big"),
                        ("rushing_epa", "Rushing EPA", "signed2"), ("rushing_tds", "Rushing TDs", "int"),
                        ("rushing_first_downs", "Rushing 1st downs", "int"),
-                       ("receptions", "Receptions", "int"), ("receiving_epa", "Receiving EPA", "signed2"))
+                       ("receptions", "Receptions", "int"), ("receiving_epa", "Receiving EPA", "signed2"),
+                       ("ngs_rush_yards_over_expected", "Rush yds over expected", "signed2"),
+                       ("ngs_rush_stacked_box_pct", "Stacked box %", "pct"))
     elif position in {"WR", "TE"}:
         definitions = (("receiving_yards", "Receiving yards", "big"), ("targets", "Targets", "int"),
                        ("receptions", "Receptions", "int"), ("receiving_air_yards", "Air yards", "big"),
                        ("receiving_yards_after_catch", "Yards after catch", "big"),
                        ("receiving_epa", "Receiving EPA", "signed2"),
                        ("receiving_tds", "Receiving TDs", "int"),
-                       ("rushing_yards", "Rushing yards", "big"))
+                       ("rushing_yards", "Rushing yards", "big"),
+                       ("ngs_rec_separation", "Separation", "f1"),
+                       ("ngs_rec_cushion", "Cushion", "f1"),
+                       ("ngs_rec_yac_above_expectation", "YAC over expected", "signed2"))
     else:
         definitions = (("def_tackles_solo", "Solo tackles", "int"), ("def_qb_hits", "QB hits", "int"),
                        ("def_sacks", "Sacks", "f1"), ("def_tackles_for_loss", "Tackles for loss", "f1"),

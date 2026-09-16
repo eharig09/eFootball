@@ -539,7 +539,8 @@ class NFLRepository:
             connection.commit()
         return len(rows)
 
-    def replace_weekly_stats(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
+    @staticmethod
+    def _pivot_weekly_values(rows: Iterable[Mapping[str, Any]]) -> list[tuple]:
         values: list[tuple] = []
         for row in rows:
             player_id = str(row.get("player_id") or "").strip()
@@ -559,11 +560,30 @@ class NFLRepository:
                     str(row.get("team") or ""), str(row.get("opponent_team") or ""),
                     str(row.get("position") or "") or None, metric, value,
                 ))
+        return values
+
+    def replace_weekly_stats(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
+        values = self._pivot_weekly_values(rows)
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM player_weekly_stats WHERE season=?", (season,))
             connection.executemany(
                 "INSERT INTO player_weekly_stats VALUES (?,?,?,?,?,?,?,?,?,?,?)", values,
+            )
+            connection.commit()
+        return len(values)
+
+    def upsert_weekly_stats(self, rows: Iterable[Mapping[str, Any]]) -> int:
+        """Add or replace specific (game, player, metric) rows without
+        touching the rest of the season -- for a metric source (Next Gen
+        Stats) that syncs independently of the season-wide weekly-stats
+        replace above and must not wipe out whatever that one already
+        wrote."""
+        values = self._pivot_weekly_values(rows)
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.executemany(
+                "INSERT OR REPLACE INTO player_weekly_stats VALUES (?,?,?,?,?,?,?,?,?,?,?)", values,
             )
             connection.commit()
         return len(values)

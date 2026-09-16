@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
-from typing import Callable
+from typing import Any, Callable
 
-from sports_aggregator.nfl.models import Game, Player, SyncDatasetResult, SyncReport, Team
+from sports_aggregator.nfl.models import Game, Player, SyncDatasetResult, SyncReport, Team, optional_float
 from sports_aggregator.nfl.naming import canon_team
 from sports_aggregator.nfl.nflverse import NflverseClient
 from sports_aggregator.nfl.repository import NFLRepository
@@ -33,7 +33,41 @@ REQUIRED_COLUMNS = {
     "team_weekly": {"season", "week", "season_type", "team", "opponent_team"},
     "pbp": {"game_id", "season", "week", "posteam", "defteam", "epa", "success",
             "pass", "rush", "down", "yards_gained"},
+    "ngs_passing": {"season", "week", "season_type", "player_gsis_id", "team_abbr"},
+    "ngs_rushing": {"season", "week", "season_type", "player_gsis_id", "team_abbr"},
+    "ngs_receiving": {"season", "week", "season_type", "player_gsis_id", "team_abbr"},
 }
+
+# Next Gen Stats: (nflverse column, stored metric key, weight column within
+# the same NGS row). Most NGS columns are already per-week averages, so a
+# raw SUM() across a season is meaningless -- summing "avg time to throw"
+# over 17 weeks does not produce a number anyone can read. Instead each one
+# gets a weighted-sum companion (see _ngs_rows below) that a season query
+# can SUM() alongside the weight's own already-summed total and divide back
+# down, the same volume-weighted-ratio approach explorer.py already uses for
+# PACR/RACR -- just generalized to a weight that is not literally "yards".
+NGS_PASSING_RATE_METRICS = (
+    ("avg_time_to_throw", "ngs_pass_time_to_throw", "attempts"),
+    ("aggressiveness", "ngs_pass_aggressiveness", "attempts"),
+    ("avg_intended_air_yards", "ngs_pass_intended_air_yards", "attempts"),
+    ("avg_air_yards_to_sticks", "ngs_pass_air_yards_to_sticks", "attempts"),
+    ("completion_percentage_above_expectation", "ngs_pass_cpoe", "attempts"),
+    ("avg_completed_air_yards", "ngs_pass_completed_air_yards", "completions"),
+)
+NGS_RUSHING_RATE_METRICS = (
+    ("efficiency", "ngs_rush_efficiency", "rush_attempts"),
+    ("avg_time_to_los", "ngs_rush_time_to_los", "rush_attempts"),
+    ("percent_attempts_gte_eight_defenders", "ngs_rush_stacked_box_pct", "rush_attempts"),
+)
+NGS_RECEIVING_RATE_METRICS = (
+    ("avg_separation", "ngs_rec_separation", "targets"),
+    ("avg_cushion", "ngs_rec_cushion", "targets"),
+    ("percent_share_of_intended_air_yards", "ngs_rec_air_yards_share", "targets"),
+)
+#: Already a real per-week yards total (rush_yards minus expected_rush_yards
+#: for that week's carries), not a rate -- sums across weeks like any other
+#: yardage stat, no weighting needed.
+NGS_RUSHING_SUM_METRICS = (("rush_yards_over_expected", "ngs_rush_yards_over_expected"),)
 
 
 def _records(dataset: str, frame) -> list[dict]:
@@ -41,6 +75,79 @@ def _records(dataset: str, frame) -> list[dict]:
     if missing:
         raise ValueError(f"nflverse {dataset} missing required columns {sorted(missing)}")
     return frame.to_dict("records")
+
+
+def _weekly_game_lookup(weekly_rows: list[dict]) -> dict[tuple[int, str, str], dict]:
+    """(week, season_type, player_id) -> the game context Next Gen Stats
+    itself does not carry, so its rows can still land in player_weekly_stats,
+    whose primary key requires a game_id."""
+    lookup: dict[tuple[int, str, str], dict] = {}
+    for row in weekly_rows:
+        player_id = str(row.get("player_id") or "").strip()
+        if not player_id:
+            continue
+        key = (int(row["week"]), str(row.get("season_type") or "REG"), player_id)
+        lookup[key] = {
+            "game_id": str(row.get("game_id") or ""),
+            "opponent_team": canon_team(row.get("opponent_team")),
+            "player_name": row.get("player_display_name") or row.get("player_name"),
+            "position": row.get("position"),
+        }
+    return lookup
+
+
+def _ngs_rows(records: list[dict], game_lookup: dict[tuple[int, str, str], dict], *,
+             rate_metrics: tuple[tuple[str, str, str], ...] = (),
+             sum_metrics: tuple[tuple[str, str], ...] = (),
+             extra: Callable[[dict], dict[str, float]] | None = None) -> list[dict]:
+    rows: list[dict] = []
+    for record in records:
+        # week 0 is a season-to-date running total nflverse republishes
+        # alongside each real week, not a game of its own.
+        if int(record.get("week") or 0) == 0:
+            continue
+        player_id = str(record.get("player_gsis_id") or "").strip()
+        if not player_id:
+            continue
+        season_type = str(record.get("season_type") or "REG")
+        context = game_lookup.get((int(record["week"]), season_type, player_id))
+        if context is None:
+            continue
+        row: dict[str, Any] = {
+            "season": int(record["season"]), "week": int(record["week"]),
+            "season_type": season_type, "game_id": context["game_id"],
+            "player_id": player_id,
+            "player_display_name": record.get("player_display_name") or context.get("player_name"),
+            "team": canon_team(record.get("team_abbr")), "opponent_team": context["opponent_team"],
+            "position": record.get("player_position") or context.get("position"),
+        }
+        for source_column, metric_key, weight_column in rate_metrics:
+            value = optional_float(record.get(source_column))
+            weight = optional_float(record.get(weight_column))
+            if value is None or weight is None:
+                continue
+            row[metric_key] = value
+            row[f"{metric_key}_wtd"] = value * weight
+        for source_column, metric_key in sum_metrics:
+            value = optional_float(record.get(source_column))
+            if value is not None:
+                row[metric_key] = value
+        if extra:
+            row.update(extra(record))
+        rows.append(row)
+    return rows
+
+
+def _receiving_ngs_extra(record: dict) -> dict[str, float]:
+    """YAC above expectation is a per-catch average in the source data;
+    multiplying by receptions turns it into a real weekly yards total, the
+    same shape as ngs_rush_yards_over_expected, so it can sum across weeks
+    without needing a weighted-ratio companion."""
+    above = optional_float(record.get("avg_yac_above_expectation"))
+    receptions = optional_float(record.get("receptions"))
+    if above is None or receptions is None:
+        return {}
+    return {"ngs_rec_yac_above_expectation": above * receptions}
 
 
 class NFLDataSync:
@@ -101,6 +208,27 @@ class NFLDataSync:
                 row["opponent_team"] = canon_team(row.get("opponent_team"))
             return self.repository.replace_weekly_stats(season, rows)
 
+        def store_next_gen_stats() -> int:
+            weekly_rows = _records(
+                "weekly_stats", self.client.load_weekly([season], season_type="", force=force))
+            for row in weekly_rows:
+                row["team"] = canon_team(row.get("team"))
+                row["opponent_team"] = canon_team(row.get("opponent_team"))
+            lookup = _weekly_game_lookup(weekly_rows)
+            total = self.repository.upsert_weekly_stats(_ngs_rows(
+                _records("ngs_passing", self.client.load_ngs_passing([season], force=force)),
+                lookup, rate_metrics=NGS_PASSING_RATE_METRICS,
+            ))
+            total += self.repository.upsert_weekly_stats(_ngs_rows(
+                _records("ngs_rushing", self.client.load_ngs_rushing([season], force=force)),
+                lookup, rate_metrics=NGS_RUSHING_RATE_METRICS, sum_metrics=NGS_RUSHING_SUM_METRICS,
+            ))
+            total += self.repository.upsert_weekly_stats(_ngs_rows(
+                _records("ngs_receiving", self.client.load_ngs_receiving([season], force=force)),
+                lookup, rate_metrics=NGS_RECEIVING_RATE_METRICS, extra=_receiving_ngs_extra,
+            ))
+            return total
+
         def store_snap_counts() -> int:
             rows = _records("snap_counts", self.client.load_snap_counts([season], force=force))
             return self.repository.replace_snap_counts(season, rows)
@@ -140,6 +268,7 @@ class NFLDataSync:
         jobs: list[tuple[str, Callable[[], int]]] = [
             ("teams", store_teams), ("games", store_games), ("elo", store_elo),
             ("players", store_players), ("weekly_stats", store_weekly),
+            ("next_gen_stats", store_next_gen_stats),
             ("snap_counts", store_snap_counts), ("depth_charts", store_depth_charts),
             ("player_master", store_player_master), ("player_ids", store_player_ids),
             ("team_weekly", store_team_weekly),
@@ -168,7 +297,7 @@ class NFLDataSync:
         games_by_season: dict[int, list[dict]] = {}
         for row in schedules:
             games_by_season.setdefault(int(row["season"]), []).append(row)
-        totals = {"seasons": 0, "games": 0, "weekly_metrics": 0,
+        totals = {"seasons": 0, "games": 0, "weekly_metrics": 0, "next_gen_stats": 0,
                   "team_metrics": 0, "efficiency": 0, "situational": 0,
                   "playcalling": 0, "pass_zones": 0, "receiver_zones": 0,
                   "rush_direction": 0, "situational_pass": 0, "rush_situational": 0}
@@ -185,6 +314,19 @@ class NFLDataSync:
                 row["team"] = canon_team(row.get("team"))
                 row["opponent_team"] = canon_team(row.get("opponent_team"))
             totals["weekly_metrics"] += self.repository.replace_weekly_stats(season, weekly)
+            lookup = _weekly_game_lookup(weekly)
+            totals["next_gen_stats"] += self.repository.upsert_weekly_stats(_ngs_rows(
+                _records("ngs_passing", self.client.load_ngs_passing([season], force=force)),
+                lookup, rate_metrics=NGS_PASSING_RATE_METRICS,
+            ))
+            totals["next_gen_stats"] += self.repository.upsert_weekly_stats(_ngs_rows(
+                _records("ngs_rushing", self.client.load_ngs_rushing([season], force=force)),
+                lookup, rate_metrics=NGS_RUSHING_RATE_METRICS, sum_metrics=NGS_RUSHING_SUM_METRICS,
+            ))
+            totals["next_gen_stats"] += self.repository.upsert_weekly_stats(_ngs_rows(
+                _records("ngs_receiving", self.client.load_ngs_receiving([season], force=force)),
+                lookup, rate_metrics=NGS_RECEIVING_RATE_METRICS, extra=_receiving_ngs_extra,
+            ))
             team_rows = _records(
                 "team_weekly", self.client.load_team_weekly([season], force=force)
             )

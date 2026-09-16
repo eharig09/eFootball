@@ -32,6 +32,11 @@ ASSETS = {
     "player_master": ("players", "players.parquet"),
     "team_weekly": ("stats_team", "stats_team_week_{season}.parquet"),
     "pbp": ("pbp", "play_by_play_{season}.parquet"),
+    # These three are one continuously-updated file each, covering every
+    # season since 2016 -- not one release per season like the assets above.
+    "ngs_passing": ("nextgen_stats", "ngs_passing.parquet"),
+    "ngs_rushing": ("nextgen_stats", "ngs_rushing.parquet"),
+    "ngs_receiving": ("nextgen_stats", "ngs_receiving.parquet"),
 }
 PLAYER_IDS_URL = "https://github.com/dynastyprocess/data/raw/master/files/db_playerids.csv"
 PBP_ANALYTICS_COLUMNS = (
@@ -206,3 +211,22 @@ class NflverseClient:
 
     def load_pbp(self, seasons: Iterable[int], *, force: bool = False):
         return self._stack("pbp", seasons, force=force, columns=PBP_ANALYTICS_COLUMNS)
+
+    def _load_next_gen_stats(self, asset: str, seasons: Iterable[int], *, force: bool = False):
+        """Next Gen Stats ships as one all-seasons file per stat type, so
+        filter to the wanted seasons client-side rather than fetching once
+        per season like the per-season release assets above."""
+        frame = self.frame(asset, force=force)
+        if frame.empty:
+            return frame
+        wanted = {int(season) for season in seasons}
+        return frame[frame["season"].isin(wanted)].reset_index(drop=True)
+
+    def load_ngs_passing(self, seasons: Iterable[int], *, force: bool = False):
+        return self._load_next_gen_stats("ngs_passing", seasons, force=force)
+
+    def load_ngs_rushing(self, seasons: Iterable[int], *, force: bool = False):
+        return self._load_next_gen_stats("ngs_rushing", seasons, force=force)
+
+    def load_ngs_receiving(self, seasons: Iterable[int], *, force: bool = False):
+        return self._load_next_gen_stats("ngs_receiving", seasons, force=force)

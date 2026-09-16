@@ -176,12 +176,52 @@ METRICS: tuple[tuple[str, str, str, str], ...] = (
 
     ("fantasy_points", "Fantasy", "f1", "Fantasy"),
     ("fantasy_points_ppr", "Fantasy (PPR)", "f1", "Fantasy"),
+
+    # Next Gen Stats (player tracking data): nflverse publishes these as
+    # per-week averages, so a season figure needs volume-weighting rather
+    # than a plain SUM -- see _NGS_WEIGHTS and with_rates() below. The two
+    # yards-over-expected metrics are the exception: nflverse already
+    # reports those as a real per-week total, so they sum normally.
+    ("ngs_pass_time_to_throw", "Time to throw", "f1", "Next Gen Stats"),
+    ("ngs_pass_aggressiveness", "Aggressiveness", "pct", "Next Gen Stats"),
+    ("ngs_pass_intended_air_yards", "Air yds (intended)", "f1", "Next Gen Stats"),
+    ("ngs_pass_completed_air_yards", "Air yds (completed)", "f1", "Next Gen Stats"),
+    ("ngs_pass_air_yards_to_sticks", "Air yds to sticks", "signed2", "Next Gen Stats"),
+    ("ngs_pass_cpoe", "CPOE (NGS)", "pct", "Next Gen Stats"),
+    ("ngs_rush_efficiency", "Rush efficiency", "f1", "Next Gen Stats"),
+    ("ngs_rush_time_to_los", "Time to LOS", "f1", "Next Gen Stats"),
+    ("ngs_rush_stacked_box_pct", "Stacked box %", "pct", "Next Gen Stats"),
+    ("ngs_rush_yards_over_expected", "Rush yds over expected", "signed2", "Next Gen Stats"),
+    ("ngs_rec_separation", "Separation", "f1", "Next Gen Stats"),
+    ("ngs_rec_cushion", "Cushion", "f1", "Next Gen Stats"),
+    ("ngs_rec_air_yards_share", "Air yards share", "pct", "Next Gen Stats"),
+    ("ngs_rec_yac_above_expectation", "YAC over expected", "signed2", "Next Gen Stats"),
 )
 _RATE_METRICS = {"completion_pct", "yards_per_attempt", "yards_per_carry",
                  "yards_per_reception", "catch_rate", "pacr", "racr", "fg_pct", "pat_pct"}
+#: Next Gen Stats rate metrics -> the already-summed volume metric (season
+#: totals, both stored under their normal metric names) that its weighted
+#: companion (stored at ingest as rate*volume for that week, see
+#: sync.py's _ngs_rows) needs dividing back down by. The same
+#: SUM(numerator)/SUM(denominator) shape _RATE_METRICS above uses for
+#: PACR/RACR, generalized to a weight that isn't literally "yards".
+_NGS_WEIGHTS = {
+    "ngs_pass_time_to_throw": "attempts", "ngs_pass_aggressiveness": "attempts",
+    "ngs_pass_intended_air_yards": "attempts", "ngs_pass_air_yards_to_sticks": "attempts",
+    "ngs_pass_cpoe": "attempts", "ngs_pass_completed_air_yards": "completions",
+    "ngs_rush_efficiency": "carries", "ngs_rush_time_to_los": "carries",
+    "ngs_rush_stacked_box_pct": "carries",
+    "ngs_rec_separation": "targets", "ngs_rec_cushion": "targets",
+    "ngs_rec_air_yards_share": "targets",
+}
+_RATE_METRICS |= set(_NGS_WEIGHTS)
 #: Metrics fetched straight from the database via SUM(); rate metrics above
-#: are computed from these afterward.
-SUM_METRICS = tuple(key for key, *_ in METRICS if key not in _RATE_METRICS and key != "games")
+#: are computed from these afterward. NGS rate metrics also pull in their
+#: weighted companion column, which isn't itself a picker metric.
+SUM_METRICS = (
+    tuple(key for key, *_ in METRICS if key not in _RATE_METRICS and key != "games")
+    + tuple(f"{key}_wtd" for key in _NGS_WEIGHTS)
+)
 METRIC_LABELS = {key: label for key, label, _fmt, _category in METRICS}
 METRIC_FORMATS = {key: fmt for key, _label, fmt, _category in METRICS}
 METRIC_CATEGORIES = tuple(dict.fromkeys(category for *_, category in METRICS))
@@ -221,6 +261,8 @@ def with_rates(row: dict[str, Any]) -> dict[str, Any]:
     row["racr"] = _safe_divide(row.get("receiving_yards"), row.get("receiving_air_yards"))
     row["fg_pct"] = _safe_divide(row.get("fg_made"), row.get("fg_att"))
     row["pat_pct"] = _safe_divide(row.get("pat_made"), row.get("pat_att"))
+    for metric, weight in _NGS_WEIGHTS.items():
+        row[metric] = _safe_divide(row.get(f"{metric}_wtd"), row.get(weight))
     return row
 
 

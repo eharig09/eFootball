@@ -19,7 +19,9 @@ from sports_aggregator.nfl.alignments import alignment_matchups
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.rss_directory import national_feeds, team_feeds
 from sports_aggregator.nfl.source_directory import import_directory, load_directory
-from sports_aggregator.nfl.sync import NFLDataSync
+from sports_aggregator.nfl.sync import (
+    NFLDataSync, NGS_PASSING_RATE_METRICS, NGS_RUSHING_RATE_METRICS, NGS_RUSHING_SUM_METRICS,
+)
 from sports_aggregator.nfl.teams import unit_continuity
 from sports_aggregator.nfl.nflverse import NflverseClient, NflverseError, current_season
 from sports_aggregator.nfl.charts import player_charts, team_charts
@@ -325,6 +327,34 @@ class FakeNflverseClient:
             "fg_made_list": "40;52",
         }])
 
+    def load_ngs_passing(self, _seasons, **_kwargs):
+        return FakeFrame([{
+            "season": 2025, "week": 1, "season_type": "REG", "player_gsis_id": "00-001",
+            "player_display_name": "Sample Player", "player_position": "QB", "team_abbr": "GB",
+            "attempts": 30, "completions": 20, "avg_time_to_throw": 2.7, "aggressiveness": 15.0,
+            "avg_intended_air_yards": 7.5, "avg_air_yards_to_sticks": -1.2,
+            "completion_percentage_above_expectation": 3.5, "avg_completed_air_yards": 5.1,
+        }])
+
+    def load_ngs_rushing(self, _seasons, **_kwargs):
+        return FakeFrame([{
+            "season": 2025, "week": 1, "season_type": "REG", "player_gsis_id": "00-001",
+            "player_display_name": "Sample Player", "player_position": "QB", "team_abbr": "GB",
+            "rush_attempts": 2, "efficiency": 4.2, "avg_time_to_los": 2.9,
+            "percent_attempts_gte_eight_defenders": 10.0, "rush_yards_over_expected": 1.5,
+        }])
+
+    def load_ngs_receiving(self, _seasons, **_kwargs):
+        # No matching load_weekly row for this player -- exercises the
+        # "no game context to anchor to" skip path in sync.py's _ngs_rows.
+        return FakeFrame([{
+            "season": 2025, "week": 1, "season_type": "REG", "player_gsis_id": "00-999",
+            "player_display_name": "Unrostered Player", "player_position": "WR", "team_abbr": "GB",
+            "targets": 5, "receptions": 3, "avg_separation": 2.8, "avg_cushion": 5.5,
+            "percent_share_of_intended_air_yards": 20.0, "avg_yac": 4.0, "avg_expected_yac": 3.0,
+            "avg_yac_above_expectation": 1.0,
+        }])
+
     def load_snap_counts(self, _seasons, **_kwargs):
         return FakeFrame([{
             "season": 2025, "week": 1, "game_id": "2025_01_GB_CHI",
@@ -429,7 +459,13 @@ class NFLCanonicalSyncTests(unittest.TestCase):
 
             self.assertTrue(report.succeeded)
             self.assertEqual(repository.counts(2025), {
-                "teams": 1, "games": 1, "players": 1, "weekly_metrics": 4,
+                # 4 from load_weekly's own row, plus 19 Next Gen Stats metrics:
+                # 6 passing + 3 rushing rate metrics each store a natural and
+                # a weighted-companion value (18), plus the one directly-
+                # summable ngs_rush_yards_over_expected (1). The fake
+                # receiving row uses a player_gsis_id load_weekly never
+                # mentions, so it is skipped for lack of a game to anchor to.
+                "teams": 1, "games": 1, "players": 1, "weekly_metrics": 23,
                 "snap_counts": 1, "depth_snapshots": 1,
                 "player_master": 1, "external_ids": 5,
                 "team_metrics": 2, "game_efficiency": 2,
@@ -500,9 +536,14 @@ class NFLCanonicalSyncTests(unittest.TestCase):
                 self.assertEqual(connection.execute(
                     "SELECT completed FROM games"
                 ).fetchone()[0], 1)
+                ngs_metrics = set()
+                for _column, metric_key, _weight in (*NGS_PASSING_RATE_METRICS, *NGS_RUSHING_RATE_METRICS):
+                    ngs_metrics |= {metric_key, f"{metric_key}_wtd"}
+                for _column, metric_key in NGS_RUSHING_SUM_METRICS:
+                    ngs_metrics.add(metric_key)
                 self.assertEqual(
                     {row[0] for row in connection.execute("SELECT metric FROM player_weekly_stats")},
-                    {"attempts", "passing_yards", "targets", "carries"},
+                    {"attempts", "passing_yards", "targets", "carries"} | ngs_metrics,
                 )
 
     def test_roster_movement_and_content_links_use_nfl_ids(self):
