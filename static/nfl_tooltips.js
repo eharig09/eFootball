@@ -47,30 +47,59 @@
     }
 
     function place(trigger, tooltip) {
+        // The base (non-JS) CSS still carries `left:50%;transform:translateX(-50%)`
+        // from when a tooltip centered itself under its trigger without any
+        // JS involvement. That transform survives onto the portaled element
+        // and silently shifts it left by half its own width on top of the
+        // `left` computed below -- harmless on a wide desktop viewport where
+        // there's room to spare, but on a narrow phone screen a few hundred
+        // pixels of unwanted shift reliably pushes the tooltip off the left
+        // edge. Clearing it here is what actually makes `left`/`top` mean
+        // what the math below assumes they mean.
+        var style = tooltip.style;
+        style.setProperty("transform", "none", "important");
+        style.setProperty("max-height", "none", "important");
+        style.removeProperty("overflow-y");
         var triggerRect = trigger.getBoundingClientRect();
         var tipRect = tooltip.getBoundingClientRect();
         var left = triggerRect.left;
-        var top = triggerRect.bottom + 8;
         if (left + tipRect.width > window.innerWidth - MARGIN) {
             left = window.innerWidth - tipRect.width - MARGIN;
         }
         if (left < MARGIN) left = MARGIN;
-        if (top + tipRect.height > window.innerHeight - MARGIN) {
-            top = triggerRect.top - tipRect.height - 8;
+        // Prefer whichever side of the trigger has more room, then clamp the
+        // tooltip's own height to whatever that side actually has -- a
+        // contributor-heavy tooltip (8 offense rows + a position-grouped
+        // defense breakdown) can easily be taller than a short phone
+        // viewport, and without this it just runs off the bottom (or top)
+        // with no way to reach the rest of it.
+        var spaceBelow = window.innerHeight - triggerRect.bottom - 8 - MARGIN;
+        var spaceAbove = triggerRect.top - 8 - MARGIN;
+        var top, maxHeight;
+        if (tipRect.height <= spaceBelow || spaceBelow >= spaceAbove) {
+            top = triggerRect.bottom + 8;
+            maxHeight = spaceBelow;
+        } else {
+            maxHeight = spaceAbove;
+            top = triggerRect.top - Math.min(tipRect.height, maxHeight) - 8;
         }
         if (top < MARGIN) top = MARGIN;
-        var style = tooltip.style;
         style.setProperty("position", "fixed", "important");
         style.setProperty("left", left + "px", "important");
         style.setProperty("top", top + "px", "important");
         style.setProperty("right", "auto", "important");
         style.setProperty("bottom", "auto", "important");
         style.setProperty("z-index", "99999", "important");
+        if (tipRect.height > maxHeight) {
+            style.setProperty("max-height", Math.max(160, maxHeight) + "px", "important");
+            style.setProperty("overflow-y", "auto", "important");
+        }
     }
 
     function clear(tooltip) {
         var style = tooltip.style;
-        ["display", "position", "left", "top", "right", "bottom", "z-index"].forEach(function (prop) {
+        ["display", "position", "left", "top", "right", "bottom", "z-index",
+         "transform", "max-height", "overflow-y"].forEach(function (prop) {
             style.removeProperty(prop);
         });
         var home = homes.get(tooltip);
