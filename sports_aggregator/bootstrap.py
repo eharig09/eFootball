@@ -111,8 +111,28 @@ def steps(season: int, *, history_from: int | None = None,
         Step("nfl-content", "NFL reporting and curated Bluesky feeds",
              ["sports_aggregator.nfl.refresh_cli", "content", "--season", year],
              ("initial", "refresh"), optional=True, timeout_seconds=1800, memory_mb=NFL_CHILD_MEMORY_MB),
-        Step("nfl-core", "NFL schedules, stats, snaps, depth and play-by-play analytics",
-             ["sports_aggregator.nfl.refresh_cli", "core", "--season", year],
+        # Split from one "nfl-core" step into four: a live memory-footprint
+        # investigation found that running all twelve of NFLDataSync's
+        # dataset jobs back to back in one process needs more virtual
+        # address space than is safe to give a single child on a 512MB
+        # instance, even with the OpenBLAS import-overhead and thread-count
+        # fixes both applied (see sync.py's CORE_FOUNDATION etc. and
+        # refresh_cli.py's _sync_core). Each of these four is its own
+        # subprocess, so its peak is bounded by its own group's largest
+        # dataset rather than the cumulative total of all twelve.
+        Step("nfl-core-foundation", "NFL teams, games, Elo, and rosters",
+             ["sports_aggregator.nfl.refresh_cli", "core-foundation", "--season", year],
+             ("initial", "refresh"), optional=True, timeout_seconds=600, memory_mb=NFL_CHILD_MEMORY_MB),
+        Step("nfl-core-stats", "NFL weekly, Next Gen, snap, and roster-master stats",
+             ["sports_aggregator.nfl.refresh_cli", "core-stats", "--season", year],
+             ("initial", "refresh"), optional=True, timeout_seconds=900, memory_mb=NFL_CHILD_MEMORY_MB),
+        # By a wide margin the single largest dataset (500k+ rows a
+        # season) -- isolated on its own rather than folded into stats.
+        Step("nfl-core-depth", "NFL depth chart snapshots",
+             ["sports_aggregator.nfl.refresh_cli", "core-depth", "--season", year],
+             ("initial", "refresh"), optional=True, timeout_seconds=900, memory_mb=NFL_CHILD_MEMORY_MB),
+        Step("nfl-core-pbp", "NFL play-by-play derived analytics",
+             ["sports_aggregator.nfl.refresh_cli", "core-pbp", "--season", year],
              ("initial", "refresh"), optional=True, timeout_seconds=1800, memory_mb=NFL_CHILD_MEMORY_MB),
         Step("nfl-pff", "Read-only completed-season NFL PFF baseline",
              ["sports_aggregator.nfl.refresh_cli", "pff", "--season", year],

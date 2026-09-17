@@ -562,6 +562,37 @@ class NFLCanonicalSyncTests(unittest.TestCase):
                     {"attempts", "passing_yards", "targets", "carries"} | ngs_metrics,
                 )
 
+    def test_core_groups_partition_every_sync_job_with_no_overlap(self):
+        """Regression test for the nfl-core split (bootstrap.py's four
+        nfl-core-* steps): every job name sync() can produce must land in
+        exactly one group, or a future added dataset would silently vanish
+        from every split segment instead of running in any of them."""
+        from sports_aggregator.nfl import sync as sync_module
+        all_job_names = {
+            "teams", "games", "elo", "players", "weekly_stats", "next_gen_stats",
+            "snap_counts", "depth_charts", "player_master", "player_ids",
+            "team_weekly", "pbp_efficiency",
+        }
+        groups = (sync_module.CORE_FOUNDATION, sync_module.CORE_STATS,
+                 sync_module.CORE_DEPTH, sync_module.CORE_PBP)
+        union = frozenset().union(*groups)
+        self.assertEqual(union, all_job_names, "every job must belong to some group")
+        for first, second in ((a, b) for i, a in enumerate(groups) for b in groups[i + 1:]):
+            self.assertEqual(first & second, frozenset(), "groups must not overlap")
+
+    def test_sync_only_parameter_scopes_to_one_group(self):
+        from sports_aggregator.nfl.sync import NFLDataSync, CORE_FOUNDATION
+        with tempfile.TemporaryDirectory() as directory:
+            repository = NFLRepository(Path(directory) / "nfl.sqlite3")
+            report = NFLDataSync(FakeNflverseClient(), repository).sync(
+                2025, only=CORE_FOUNDATION,
+            )
+            self.assertEqual({dataset.dataset for dataset in report.datasets}, CORE_FOUNDATION)
+            self.assertTrue(report.succeeded)
+            # None of the stats/depth-chart/PBP jobs ran, so weekly_metrics
+            # stays at zero even though the fake client can supply them.
+            self.assertEqual(repository.counts(2025)["weekly_metrics"], 0)
+
     def test_roster_movement_and_content_links_use_nfl_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             repository = NFLRepository(Path(directory) / "nfl.sqlite3")
@@ -1540,7 +1571,7 @@ class NFLRefreshCliTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "4")
 
     def test_main_dispatches_each_segment_with_the_right_arguments(self):
-        from sports_aggregator.nfl import refresh_cli
+        from sports_aggregator.nfl import refresh_cli, sync as sync_module
         calls = []
 
         def record_core(season, **kwargs):
@@ -1553,7 +1584,8 @@ class NFLRefreshCliTests(unittest.TestCase):
              patch.object(refresh_cli, "_sync_pff", lambda season, **k: calls.append(("pff", season))), \
              patch.object(refresh_cli, "_sync_history", lambda start, end, **k: calls.append(("history", start, end))), \
              patch.object(refresh_cli, "_sync_weather", lambda season, **k: calls.append(("weather", season))):
-            for segment in ("rosters", "core", "essentials", "content", "pff", "history", "weather"):
+            for segment in ("rosters", "core-foundation", "core-stats", "core-depth", "core-pbp",
+                           "content", "pff", "history", "weather"):
                 self.assertEqual(refresh_cli.main([segment, "--season", "2026"]), 0)
 
         self.assertIn(("rosters", 2026), calls)
@@ -1562,13 +1594,29 @@ class NFLRefreshCliTests(unittest.TestCase):
         self.assertIn(("pff", 2025), calls)
         self.assertIn(("history", 2010, 2025), calls)
         self.assertIn(("weather", 2026), calls)
-        core_calls = {call[2]["include_pbp"] for call in calls if call[0] == "core"}
-        self.assertEqual(core_calls, {True, False}, "core=True (full PBP), essentials=False (skip it)")
+        core_calls = {call[0]: call[2] for call in calls if call[0] == "core"}
+        # Only one "core" entry in `calls` since each segment overwrites the
+        # key -- rebuild per-segment by re-running the dispatch logic below
+        # instead, against the real group constants.
+        core_kwargs_by_group = []
+        with patch.object(refresh_cli, "_sync_core", lambda season, **k: (core_kwargs_by_group.append(k), True)[1]):
+            for segment, expected_group, expected_pbp, expected_extras in (
+                ("core-foundation", sync_module.CORE_FOUNDATION, False, True),
+                ("core-stats", sync_module.CORE_STATS, False, False),
+                ("core-depth", sync_module.CORE_DEPTH, False, False),
+                ("core-pbp", sync_module.CORE_PBP, True, False),
+            ):
+                core_kwargs_by_group.clear()
+                self.assertEqual(refresh_cli.main([segment, "--season", "2026"]), 0)
+                kwargs = core_kwargs_by_group[0]
+                self.assertEqual(kwargs["only"], expected_group)
+                self.assertEqual(kwargs["include_pbp"], expected_pbp)
+                self.assertEqual(kwargs["include_extras"], expected_extras)
 
     def test_main_returns_failure_exit_code_when_core_sync_reports_failure(self):
         from sports_aggregator.nfl import refresh_cli
         with patch.object(refresh_cli, "_sync_core", lambda season, **k: False):
-            self.assertEqual(refresh_cli.main(["core", "--season", "2026"]), 1)
+            self.assertEqual(refresh_cli.main(["core-foundation", "--season", "2026"]), 1)
 
     def test_main_returns_failure_exit_code_on_unexpected_exception(self):
         from sports_aggregator.nfl import refresh_cli

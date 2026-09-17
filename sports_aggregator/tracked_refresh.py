@@ -62,7 +62,8 @@ CORE_STEPS = ["weather", "pregame-snapshot"]
 ANALYTICS_STEPS = [
     "pbp", "pbp-derive", "epa", "play-detail", "build-tendencies",
     "team-advanced", "win-probability", "passing-detail", "passing-qb",
-    "coordinators", "nfl-core",
+    "coordinators",
+    "nfl-core-foundation", "nfl-core-stats", "nfl-core-depth", "nfl-core-pbp",
 ]
 
 #: The maintenance segments, which the hourly trigger reaches one at a time by

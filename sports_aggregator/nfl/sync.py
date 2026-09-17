@@ -20,6 +20,19 @@ LOGGER = logging.getLogger(__name__)
 # not be presented as part of that team's current organization.
 TERMINAL_ROSTER_STATUSES = frozenset({"CUT", "RET", "TRD", "TRC"})
 
+#: Subprocess-sized groups for `sync()`'s `only` parameter -- together a
+#: partition of every job name in `sync()`'s own `jobs` list, so each of
+#: nfl-core's four steps (see bootstrap.py) covers a disjoint slice and the
+#: union across all four is exactly what the old single "core" step did.
+#: depth_charts gets its own group because it is, by a wide margin, the
+#: single largest dataset (500k+ rows for a season); pbp_efficiency gets
+#: its own because it is the only optional (include_pbp) job.
+CORE_FOUNDATION = frozenset({"teams", "games", "elo", "players"})
+CORE_STATS = frozenset({"weekly_stats", "next_gen_stats", "snap_counts",
+                        "player_master", "player_ids", "team_weekly"})
+CORE_DEPTH = frozenset({"depth_charts"})
+CORE_PBP = frozenset({"pbp_efficiency"})
+
 REQUIRED_COLUMNS = {
     "teams": {"team_abbr", "team_name", "team_nick", "team_conf", "team_division"},
     "games": {"game_id", "season", "game_type", "week", "gameday", "away_team", "home_team"},
@@ -182,7 +195,17 @@ class NFLDataSync:
         return self.repository.replace_players(season, current)
 
     def sync(self, season: int, *, force: bool = False,
-             include_pbp: bool = True) -> SyncReport:
+             include_pbp: bool = True, only: frozenset[str] | None = None) -> SyncReport:
+        """`only` scopes this call to a subset of dataset jobs by name (see
+        the `jobs` list below), each its own subprocess-bounded refresh_cli
+        segment in production -- a live memory-footprint investigation
+        found the combined "run all 12 jobs in one process" step (the
+        original, unscoped `sync()`) genuinely needs more virtual address
+        space than one child process can safely be given on a 512MB
+        instance, since pandas/pyarrow alone need a real baseline before
+        any dataset-sized allocation. Splitting bounds each subprocess's
+        peak to whatever its own group's largest dataset needs, not the
+        cumulative total of all twelve run back to back."""
         started_at = datetime.now(timezone.utc)
         self.repository.initialize()
 
@@ -275,6 +298,8 @@ class NFLDataSync:
         ]
         if include_pbp:
             jobs.append(("pbp_efficiency", store_pbp))
+        if only is not None:
+            jobs = [(name, job) for name, job in jobs if name in only]
         results: list[SyncDatasetResult] = []
         for name, job in jobs:
             try:

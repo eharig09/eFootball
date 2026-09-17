@@ -77,20 +77,31 @@ def _sync_rosters(season: int, *, force: bool = False) -> None:
     _sync_espn_context(repository, season, force=force)
 
 
-def _sync_core(season: int, *, include_pbp: bool, force: bool = False) -> bool:
+def _sync_core(season: int, *, include_pbp: bool, only: "frozenset[str] | None" = None,
+               include_extras: bool = True, force: bool = False) -> bool:
+    """`only` scopes this to one of the four subprocess-sized groups in
+    sync.py (CORE_FOUNDATION/CORE_STATS/CORE_DEPTH/CORE_PBP) -- see that
+    module's docstring for why a single "run everything" process no longer
+    fits safely. `include_extras` gates the ESPN staff/injury sync and NFL
+    source-directory seeding, neither of which is part of NFLDataSync's own
+    job list; only one of the four segments (foundation) needs to run them."""
     from sports_aggregator.nfl.sync import NFLDataSync
-    from sports_aggregator.nfl.source_directory import DEFAULT_PATH, import_directory
     repository = _nfl_repository()
-    report = NFLDataSync(_nflverse_client(), repository).sync(season, force=force, include_pbp=include_pbp)
+    report = NFLDataSync(_nflverse_client(), repository).sync(
+        season, force=force, include_pbp=include_pbp, only=only,
+    )
     for dataset in report.datasets:
         print(f"{dataset.dataset}: {dataset.status} ({dataset.count})")
-    _sync_espn_context(repository, season, force=force)
-    # Normally a fresh empty disk's fast path handles this (see
-    # production_seed.restore_public_seed); repeated here so a disk that
-    # already has core data but never got the registry seeded still gets it.
-    if DEFAULT_PATH.exists():
-        sources = import_directory(_source_registry(), DEFAULT_PATH)
-        print(f"nfl_sources: success ({sources})")
+    if include_extras:
+        from sports_aggregator.nfl.source_directory import DEFAULT_PATH, import_directory
+        _sync_espn_context(repository, season, force=force)
+        # Normally a fresh empty disk's fast path handles this (see
+        # production_seed.restore_public_seed); repeated here so a disk
+        # that already has core data but never got the registry seeded
+        # still gets it.
+        if DEFAULT_PATH.exists():
+            sources = import_directory(_source_registry(), DEFAULT_PATH)
+            print(f"nfl_sources: success ({sources})")
     return report.succeeded
 
 
@@ -173,21 +184,34 @@ def _sync_weather(season: int, *, force: bool = False) -> None:
     print("nfl_weather: " + json.dumps(result, sort_keys=True))
 
 
+#: See sync.py's CORE_FOUNDATION/CORE_STATS/CORE_DEPTH/CORE_PBP for what
+#: each group actually covers and why it's split this way.
+_CORE_SEGMENTS = ("core-foundation", "core-stats", "core-depth", "core-pbp")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "segment", choices=("rosters", "essentials", "core", "content", "pff", "history", "weather")
+        "segment", choices=("rosters", *_CORE_SEGMENTS, "content", "pff", "history", "weather")
     )
     parser.add_argument("--season", type=int, required=True)
     args = parser.parse_args(argv)
     try:
         if args.segment == "rosters":
             _sync_rosters(args.season)
-        elif args.segment == "essentials":
-            if not _sync_core(args.season, include_pbp=False):
-                return 1
-        elif args.segment == "core":
-            if not _sync_core(args.season, include_pbp=True):
+        elif args.segment in _CORE_SEGMENTS:
+            from sports_aggregator.nfl import sync as sync_module
+            group, include_pbp = {
+                "core-foundation": (sync_module.CORE_FOUNDATION, False),
+                "core-stats": (sync_module.CORE_STATS, False),
+                "core-depth": (sync_module.CORE_DEPTH, False),
+                "core-pbp": (sync_module.CORE_PBP, True),
+            }[args.segment]
+            succeeded = _sync_core(
+                args.season, include_pbp=include_pbp, only=group,
+                include_extras=(args.segment == "core-foundation"),
+            )
+            if not succeeded:
                 return 1
         elif args.segment == "content":
             _sync_content(args.season)

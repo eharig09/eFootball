@@ -137,7 +137,7 @@ def _pff_available() -> bool:
 def _import_source_directory() -> int | None:
     """Seed the shared, CFB-hosted source registry with the NFL directory.
 
-    Normally `sync-nfl` (the "essentials" stage) does this. The snapshot
+    Normally `sync-nfl`'s "core-foundation" stage does this. The snapshot
     fast path below returns before that stage ever runs, so on a fresh disk
     the registry stayed empty forever even though the NFL data itself
     restored fine -- every "leaders"/"sources" page that reads it (team
@@ -241,9 +241,13 @@ def run(season: int) -> dict[str, Any]:
         lock_path.unlink(missing_ok=True)
         return state
 
-    stages = ["essentials", "content", "history"]
+    # Each stage is its own subprocess (see sync.py's CORE_FOUNDATION etc.
+    # and refresh_cli.py's _sync_core for why "essentials" is no longer one
+    # step): a fresh, empty disk gets the same memory-footprint protection
+    # as every other production refresh, not a monolithic first run.
+    stages = ["core-foundation", "core-stats", "core-depth", "content", "history"]
     if _pff_available():
-        stages.insert(2, "pff")
+        stages.insert(stages.index("history"), "pff")
     try:
         for stage in stages:
             started = _stamp()
