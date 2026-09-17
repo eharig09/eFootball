@@ -2,23 +2,36 @@
 
 Deliberately does not import `app` (Flask, every CFB blueprint, every NFL
 web/analytics module). It used to: every segment here booted the entire
-combined application just to reach a handful of narrow sync functions.
-Live production testing traced "OpenBLAS error: Memory allocation still
-failed" on nfl-core and nfl-content to exactly that -- both failed within
-under a second, at a resident-memory peak far below the configured
-ceiling, which is the signature of the *virtual* address space `app.py`'s
-import graph alone reserves colliding with RLIMIT_AS before any of these
-functions' own work (much smaller for most of these segments, and for
-content's case, nonexistent -- it never touches numpy/pandas at all)
-gets a chance to run. Each function below imports only the sports_aggregator.nfl
-and sports_aggregator.social modules it actually needs.
+combined application just to reach a handful of narrow sync functions,
+which was real, measured waste (see git history) but turned out not to be
+the whole story for nfl-core specifically. Live production bisection
+found the actual cause of its remaining "OpenBLAS error: Memory
+allocation still failed": render.yaml sets OPENBLAS_NUM_THREADS=1 (and
+OMP/MKL/NUMEXPR alongside it) precisely to stop OpenBLAS from sizing its
+thread pool off the container's *visible* CPU count (16, the host's --
+not the Starter plan's real ~0.5 vCPU share), but a live check found all
+four completely unset in the running process. Whatever broke that
+propagation, 16 threads each reserving their own stack/buffers is exactly
+enough virtual address space to explain failures instantly, at a
+resident-memory peak far too low to be the real numpy/pandas work.
+Forcing these here does not depend on that propagation working at all.
+
+Each function below imports only the sports_aggregator.nfl and
+sports_aggregator.social modules it actually needs.
 """
 from __future__ import annotations
+
+# Must happen before anything that might import numpy/pandas (transitively
+# or directly) -- OpenBLAS reads these at library-init time. setdefault, not
+# assignment: an explicitly-configured value (should the env propagation
+# above ever get fixed) still wins.
+import os
+for _threads_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    os.environ.setdefault(_threads_var, "1")
 
 import argparse
 from datetime import datetime, timezone
 import json
-import os
 from pathlib import Path
 import sys
 

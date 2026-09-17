@@ -1,4 +1,15 @@
 import os
+
+# Must happen before anything that might import numpy/pandas (transitively
+# or directly) -- OpenBLAS reads these at library-init time, and a live
+# Render check found all four unset in the running process despite
+# render.yaml configuring them, letting OpenBLAS size its thread pool off
+# the container's host-visible CPU count (16) rather than the plan's real
+# share. See sports_aggregator/nfl/refresh_cli.py for the full story.
+# setdefault, not assignment: an explicitly-configured value still wins.
+for _threads_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    os.environ.setdefault(_threads_var, "1")
+
 from collections import deque
 from datetime import datetime, timezone
 import json

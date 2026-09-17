@@ -1504,6 +1504,41 @@ class NFLRefreshCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.split(), ["False"] * 5)
 
+    def test_module_import_forces_blas_thread_limit_env_vars(self):
+        """Regression test for the real production cause: a live Render
+        check found OPENBLAS_NUM_THREADS/OMP_NUM_THREADS/MKL_NUM_THREADS all
+        unset despite render.yaml configuring them, letting OpenBLAS size
+        its thread pool off the container's host-visible CPU count (16)
+        instead of the plan's real share -- enough virtual address space
+        to fail nfl-core instantly, well under its memory ceiling. This
+        module must force them itself rather than trust propagation."""
+        keys = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
+        root = Path(__file__).resolve().parents[1]
+        script = (
+            "import os; "
+            + "; ".join(f"os.environ.pop('{key}', None)" for key in keys) + "; "
+            "import sports_aggregator.nfl.refresh_cli; "
+            + "; ".join(f"print(os.environ.get('{key}'))" for key in keys)
+        )
+        env = {key: value for key, value in os.environ.items() if key not in keys}
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, cwd=str(root), env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(), ["1"] * len(keys))
+
+    def test_module_import_does_not_override_an_explicitly_configured_thread_count(self):
+        root = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env["OPENBLAS_NUM_THREADS"] = "4"
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "import os; import sports_aggregator.nfl.refresh_cli; print(os.environ['OPENBLAS_NUM_THREADS'])"],
+            capture_output=True, text=True, cwd=str(root), env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "4")
+
     def test_main_dispatches_each_segment_with_the_right_arguments(self):
         from sports_aggregator.nfl import refresh_cli
         calls = []
