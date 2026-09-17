@@ -38,26 +38,31 @@ RESULT_HISTORY_FLOOR = 2015
 #: Seasons of box scores and player history, which are the expensive ones.
 DETAIL_HISTORY_SEASONS = 7
 
-#: Address-space ceiling for NFL segments. History here matters, because the
-#: obvious-looking fix is wrong:
+#: Address-space ceiling for NFL segments. History here matters -- the
+#: obvious-looking fixes were wrong twice before the real cause surfaced:
 #:   - 200MB, then 380MB: both failed "nfl-core" fast (<1s) with an OpenBLAS
-#:     allocation error at a *resident* peak of only 44-94MB -- nowhere near
+#:     allocation error at a resident peak of only 44-94MB -- nowhere near
 #:     either ceiling, since RLIMIT_AS bounds virtual address space, not
-#:     RSS, and just booting the full combined app reserves more of that
-#:     than it seems like it should.
+#:     RSS. Fixed two real bugs behind that (refresh_cli.py no longer boots
+#:     the full app; both refresh_cli.py and app.py now force the BLAS
+#:     thread-limit env vars from code, since they were silently unset in
+#:     the running process despite render.yaml configuring them).
 #:   - 0 (no ceiling): removed on the theory that a tiny real working set
-#:     meant the ceiling was pure downside. This was wrong -- live testing
-#:     immediately took the whole 512MB instance down with a platform-level
-#:     OOM kill (Render event: "Ran out of memory (used over 512MB)").
-#:     Once nothing stopped it, the process's real appetite turned out to
-#:     be much larger than the RLIMIT_AS failures ever revealed, likely the
-#:     PBP/snap-count/depth-chart processing this step actually does.
-#: 380 is the largest value proven NOT to crash the instance (it fails the
-#: step alone instead), so that is where this sits until nfl-core's own
-#: memory footprint is reduced (chunking the PBP work, or splitting it into
-#: its own step) enough to actually complete under a safe ceiling -- raising
-#: this number back toward "no limit" is not a safe way to get there.
-NFL_CHILD_MEMORY_MB = 380
+#:     meant the ceiling was pure downside. Wrong -- live testing took the
+#:     whole *512MB* instance down with a platform OOM kill. Splitting
+#:     nfl-core into four subprocess-sized steps (see sync.py's
+#:     CORE_FOUNDATION etc.) helped but didn't fully resolve it: a live
+#:     `ps aux --sort=-rss` check found gunicorn's master+worker alone
+#:     using ~140-270MB RSS on that plan, leaving only ~200-240MB of real
+#:     headroom for a refresh child -- a genuine capacity limit, not a
+#:     remaining bug.
+#: The instance has since been upgraded to 8GB (from the original 512MB
+#: Starter plan) specifically to resolve that. 4096MB leaves gunicorn,
+#: the refresh orchestrator, and any concurrent CFB step several GB of
+#: headroom -- generous for anything an NFL segment plausibly needs, while
+#: still being a real, bounded ceiling rather than "no limit" (which is
+#: what actually caused the one real crash in this history).
+NFL_CHILD_MEMORY_MB = 4096
 
 
 @dataclass
