@@ -1053,10 +1053,11 @@ class _FakeAlignmentRepository:
 
 
 class _FakeAlignmentPFF:
-    def __init__(self, receivers=None, slot_defenders=None, runners=None):
+    def __init__(self, receivers=None, slot_defenders=None, runners=None, league_leaders=None):
         self._receivers = receivers or {}
         self._slot_defenders = slot_defenders or {}
         self._runners = runners or {}
+        self._league_leaders = league_leaders or {}
 
     def family_profiles(self, _season, family, team, _fields):
         if family == "receiving_summary":
@@ -1066,6 +1067,10 @@ class _FakeAlignmentPFF:
         if family == "rushing_summary":
             return self._runners.get(team, [])
         return []
+
+    def leaders(self, _season, family, metric, *, team=None, limit=25, lower=False,
+               minimum_metric=None, minimum_value=0):
+        return self._league_leaders.get((family, metric), [])
 
 
 class AlignmentMatchupTests(unittest.TestCase):
@@ -1209,6 +1214,31 @@ class AlignmentMatchupTests(unittest.TestCase):
         self.assertAlmostEqual(card["ngs_separation"], 3.5)
         self.assertAlmostEqual(card["ngs_cushion"], 6.0)
 
+    def test_alignment_cards_carry_a_leaguewide_route_grade_rank(self):
+        """Route grade rank comes from a leaguewide PFF pool via leaders(),
+        not just this game's own candidates -- reuses the same shared
+        ranking helper (rank_within) NGS separation/cushion already use."""
+        game = {"away_team": "AAA", "home_team": "BBB", "season": 2026}
+        repository = _FakeAlignmentRepository(
+            weeks_played={2026: 10}, rosters={"AAA": ("r1",), "BBB": ()},
+            usage={"AAA": [{"player_id": "r1", "targets": 20, "target_share": .3}]},
+            receiver_profiles={"r1": {"zones": [], "total": {"targets": 20}}},
+        )
+        pff = _FakeAlignmentPFF(
+            receivers={"AAA": [
+                {"gsis_id": "r1", "player_name": "Receiver One", "routes": 100,
+                 "grades_pass_route": 75.0, "yprr": 1.8, "slot_rate": 5, "wide_rate": 95},
+            ]},
+            league_leaders={("receiving_summary", "grades_pass_route"): [
+                {"gsis_id": "other1", "value": 90.0},
+                {"gsis_id": "r1", "value": 75.0},
+                {"gsis_id": "other2", "value": 60.0},
+            ]},
+        )
+        cards = alignment_matchups(repository, pff, game, 2026, 2026, {"BBB": {"season": 2026, "zones": []}})
+        card = next(card for card in cards if card["player_name"] == "Receiver One")
+        self.assertEqual(card["route_grade_rank"], {"rank": 2, "of": 3})
+
     def test_alignment_card_ngs_fields_are_none_without_a_season_stats_match(self):
         """A receiver with no matching Next Gen Stats row (not yet synced,
         or no qualifying targets) gets None rather than a KeyError or a
@@ -1253,6 +1283,28 @@ class RushingMatchupNgsTests(unittest.TestCase):
         self.assertAlmostEqual(card["ngs_efficiency"], 4.2)
         self.assertAlmostEqual(card["ngs_stacked_box_pct"], 10.0)
         self.assertAlmostEqual(card["ngs_yards_over_expected"], 12.0)
+
+    def test_run_game_cards_carry_a_leaguewide_run_grade_rank(self):
+        game = {"away_team": "AAA", "home_team": "BBB", "season": 2026}
+        repository = _FakeAlignmentRepository(
+            weeks_played={2026: 10}, rosters={"AAA": ("b1",)},
+            usage={"AAA": [{"player_id": "b1", "carries": 15, "carry_share": .6,
+                            "rushing_yards": 80}]},
+        )
+        pff = _FakeAlignmentPFF(
+            runners={"AAA": [
+                {"gsis_id": "b1", "player_name": "Back One", "attempts": 15,
+                 "grades_run": 72.0, "elusive_rating": 60.0, "yco_attempt": 2.1,
+                 "avoided_tackles": 3},
+            ]},
+            league_leaders={("rushing_summary", "grades_run"): [
+                {"gsis_id": "other1", "value": 85.0},
+                {"gsis_id": "b1", "value": 72.0},
+            ]},
+        )
+        cards = rushing_matchups(repository, pff, game, 2026, 2026, {"BBB": {}})
+        card = next(card for card in cards if card["player_name"] == "Back One")
+        self.assertEqual(card["run_grade_rank"], {"rank": 2, "of": 2})
 
 
 class ViewTableHelperTests(unittest.TestCase):

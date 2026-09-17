@@ -7,7 +7,7 @@ from typing import Any
 
 from sports_aggregator.nfl.explorer import with_rates
 from sports_aggregator.nfl.pff import NFLPFFService, season_scaled_minimum
-from sports_aggregator.nfl.ranking import rank_lookup
+from sports_aggregator.nfl.ranking import rank_lookup, rank_within
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -37,6 +37,18 @@ def _ngs_league_ranks(repository: NFLRepository, season: int, positions: tuple[s
         rows.extend(with_rates(row) for row in
                     repository.player_season_stats(season, query_metrics, position=position))
     return rank_lookup(rows, id_key="player_id", metrics=rank_metrics)
+
+
+def _pff_league_ranks(pff: NFLPFFService, season: int, family: str, metric: str, *,
+                      minimum_metric: str, minimum_value: float) -> dict[str, dict[str, int]]:
+    """Leaguewide rank for one PFF grade, scoped the same way its own
+    leaderboard already is (see web.py's `pff_features`) -- reuses
+    `leaders()`'s existing sample-floor join rather than a second
+    implementation, with `limit=None` so the pool is every qualifying
+    player, not just the display-sized top slice a leaderboard would show."""
+    rows = pff.leaders(season, family, metric, minimum_metric=minimum_metric,
+                       minimum_value=minimum_value, limit=None)
+    return rank_within(rows, id_key="gsis_id", value_key="value")
 
 
 def _weak_zones(zones: list[dict[str, Any]], minimum_attempts: float) -> set[tuple[str, str]]:
@@ -113,6 +125,10 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
         repository, pff_season, ("WR", "TE"),
         ("targets", "ngs_rec_separation_wtd", "ngs_rec_cushion_wtd"),
         ("ngs_rec_separation", "ngs_rec_cushion"),
+    )
+    route_grade_ranks = _pff_league_ranks(
+        pff, pff_season, "receiving_summary", "grades_pass_route",
+        minimum_metric="routes", minimum_value=minimum_routes,
     )
     cards = []
     for offense, defense in ((game["away_team"], game["home_team"]),
@@ -246,6 +262,7 @@ def alignment_matchups(repository: NFLRepository, pff: NFLPFFService,
                 "ngs_cushion": receiver_ngs.get("ngs_rec_cushion"),
                 "ngs_separation_rank": receiving_ngs_ranks["ngs_rec_separation"].get(receiver.get("gsis_id")),
                 "ngs_cushion_rank": receiving_ngs_ranks["ngs_rec_cushion"].get(receiver.get("gsis_id")),
+                "route_grade_rank": route_grade_ranks.get(receiver.get("gsis_id")),
             })
         candidates.sort(key=lambda card: (-card["weak_zone_hits"], -card["exploit_score"]))
         cards.extend(candidates[:3])
@@ -262,6 +279,13 @@ def rushing_matchups(repository: NFLRepository, pff: NFLPFFService,
         ("carries", "ngs_rush_efficiency_wtd", "ngs_rush_stacked_box_pct_wtd",
          "ngs_rush_yards_over_expected"),
         ("ngs_rush_efficiency", "ngs_rush_stacked_box_pct", "ngs_rush_yards_over_expected"),
+    )
+    # Same 100-attempt "qualified" floor as the rushing-grade leaderboard
+    # (web.py's pff_features), scaled down early in the season the same way.
+    weeks_played = repository.latest_stat_week(pff_season)
+    run_grade_ranks = _pff_league_ranks(
+        pff, pff_season, "rushing_summary", "grades_run",
+        minimum_metric="attempts", minimum_value=season_scaled_minimum(100, weeks_played),
     )
     for offense, defense in ((game["away_team"], game["home_team"]),
                              (game["home_team"], game["away_team"])):
@@ -299,6 +323,7 @@ def rushing_matchups(repository: NFLRepository, pff: NFLPFFService,
                 "ngs_efficiency_rank": rushing_ngs_ranks["ngs_rush_efficiency"].get(runner.get("gsis_id")),
                 "ngs_yards_over_expected_rank": rushing_ngs_ranks["ngs_rush_yards_over_expected"].get(
                     runner.get("gsis_id")),
+                "run_grade_rank": run_grade_ranks.get(runner.get("gsis_id")),
             })
     return output
 

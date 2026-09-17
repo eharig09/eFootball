@@ -337,8 +337,14 @@ class NFLPFFService:
             )]
 
     def leaders(self, season: int, family: str, metric: str, *, team: str | None = None,
-                limit: int = 25, lower: bool = False, minimum_metric: str | None = None,
+                limit: int | None = 25, lower: bool = False, minimum_metric: str | None = None,
                 minimum_value: float = 0) -> list[dict[str, Any]]:
+        """`limit=None` returns every qualifying row, unbounded -- needed for
+        leaguewide ranking (see alignments.py's `_pff_league_ranks`), where
+        truncating the pool would both miscount "of N" and drop real
+        qualifiers from the bottom of the ranking. Every existing caller
+        passes a small concrete limit for an actual leaderboard display, so
+        this only changes behavior for callers that opt into `None`."""
         where = "m.season=? AND m.family=? AND m.metric=? AND m.week=0"
         params: list[Any] = [season, family, metric]
         sample_join = ""
@@ -350,13 +356,16 @@ class NFLPFFService:
             where += " AND sample.value>=?"; params.append(minimum_value)
         if team:
             where += " AND m.team=?"; params.append(team)
-        params.append(max(1, min(limit, 100)))
+        limit_clause = ""
+        if limit is not None:
+            limit_clause = " LIMIT ?"
+            params.append(max(1, min(limit, 100)))
         with closing(self.repository._connect()) as connection:
             return [dict(row) for row in connection.execute(
                 f"""SELECT m.*,p.player_name,p.position,p.key_source,p.match_confidence
                      FROM nfl_pff_player_metrics m {sample_join} JOIN nfl_pff_players p
                        ON p.season=m.season AND p.pff_id=m.pff_id AND p.team=m.team
-                     WHERE {where} ORDER BY m.value {'ASC' if lower else 'DESC'} LIMIT ?""", params
+                     WHERE {where} ORDER BY m.value {'ASC' if lower else 'DESC'}{limit_clause}""", params
             )]
 
     def player(self, season: int, gsis_id: str) -> dict[str, Any]:
