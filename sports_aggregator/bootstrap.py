@@ -38,19 +38,26 @@ RESULT_HISTORY_FLOOR = 2015
 #: Seasons of box scores and player history, which are the expensive ones.
 DETAIL_HISTORY_SEASONS = 7
 
-#: NFL segments get no RLIMIT_AS ceiling at all (see Step.memory_mb): two
-#: rounds of live production testing (200MB, then 380MB) both failed
-#: "nfl-core" with an OpenBLAS allocation error at a *resident* peak of
-#: 44-94MB -- nowhere near either ceiling. RLIMIT_AS bounds virtual address
-#: space, and every NFL segment boots the full combined app (all NFL and
-#: CFB blueprints, numpy/pandas/pyarrow included) via create_app() before
-#: doing any real work, which alone appears to reserve more virtual space
-#: than a few hundred MB even though the actual working set stays small.
-#: Since the real memory this step ever touches is tiny, the ceiling was
-#: failing it for no safety benefit -- the step's own timeout_seconds and
-#: Render's platform-level OOM killer (which acts on real, not virtual,
-#: memory) remain as the actual backstops.
-NFL_CHILD_MEMORY_MB = 0
+#: Address-space ceiling for NFL segments. History here matters, because the
+#: obvious-looking fix is wrong:
+#:   - 200MB, then 380MB: both failed "nfl-core" fast (<1s) with an OpenBLAS
+#:     allocation error at a *resident* peak of only 44-94MB -- nowhere near
+#:     either ceiling, since RLIMIT_AS bounds virtual address space, not
+#:     RSS, and just booting the full combined app reserves more of that
+#:     than it seems like it should.
+#:   - 0 (no ceiling): removed on the theory that a tiny real working set
+#:     meant the ceiling was pure downside. This was wrong -- live testing
+#:     immediately took the whole 512MB instance down with a platform-level
+#:     OOM kill (Render event: "Ran out of memory (used over 512MB)").
+#:     Once nothing stopped it, the process's real appetite turned out to
+#:     be much larger than the RLIMIT_AS failures ever revealed, likely the
+#:     PBP/snap-count/depth-chart processing this step actually does.
+#: 380 is the largest value proven NOT to crash the instance (it fails the
+#: step alone instead), so that is where this sits until nfl-core's own
+#: memory footprint is reduced (chunking the PBP work, or splitting it into
+#: its own step) enough to actually complete under a safe ceiling -- raising
+#: this number back toward "no limit" is not a safe way to get there.
+NFL_CHILD_MEMORY_MB = 380
 
 
 @dataclass
@@ -66,8 +73,10 @@ class Step:
     #: driver's own timeout, which is a backstop rather than a budget.
     timeout_seconds: float | None = None
     #: Address-space ceiling (MB) for this step's child process. None uses
-    #: the driver's CFB_REFRESH_CHILD_MB default; 0 disables the ceiling
-    #: entirely (see NFL_CHILD_MEMORY_MB for why NFL segments use 0).
+    #: the driver's CFB_REFRESH_CHILD_MB default; 0 would disable the
+    #: ceiling entirely -- do not do this for a step that boots the full
+    #: app (see NFL_CHILD_MEMORY_MB's history for why that took the whole
+    #: instance down instead of just failing the one step).
     memory_mb: int | None = None
 
 
