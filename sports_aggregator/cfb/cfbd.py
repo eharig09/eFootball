@@ -114,7 +114,14 @@ class CFBDClient:
         base_url: str = DEFAULT_BASE_URL,
         raw_cache_path: str | Path = "instance/cfbd_raw",
         session: requests.Session | None = None,
-        timeout_seconds: float = 20,
+        # /stats/player/season?conference=Ind reproducibly took 19.5-30.6s
+        # live against the real API -- far slower than SEC/B1G/ACC (~4-5s
+        # each, despite ~8x more rows), a CFBD-backend quirk for that one
+        # small conference, not a data-volume issue. This client is only
+        # ever constructed from background CLI/sync entry points (grep
+        # confirms no web.py/views.py request handler builds one), so a
+        # generous timeout here has no live-request latency cost.
+        timeout_seconds: float = 60,
     ) -> None:
         configured_key = api_key if api_key is not None else os.getenv("CFBD_API_KEY", "")
         self.api_key = configured_key.strip()
