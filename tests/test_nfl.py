@@ -3,6 +3,8 @@ from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -1471,6 +1473,72 @@ class HeadlinePlayerRankTests(unittest.TestCase):
         stats = _headline_stats_with_rank(repository, 2026, "QB", "qb1", totals)
         for stat in stats:
             self.assertNotIn("rank", stat)
+
+
+class NFLRefreshCliTests(unittest.TestCase):
+    """refresh_cli.py used to do `from app import create_app` for every
+    segment, booting the entire combined app (every CFB blueprint, pandas,
+    numpy) before any segment-specific work started. Live production
+    testing traced nfl-core/nfl-content's "OpenBLAS error: Memory
+    allocation still failed" directly to that import cost colliding with
+    the refresh child's memory ceiling -- both failed in well under a
+    second, at a resident-memory peak far below the ceiling. The rewrite's
+    entire point is that importing this module stays light; that property
+    is exactly what would silently regress if a future change reintroduced
+    a module-level `from app import ...` or similar."""
+
+    def test_module_import_does_not_load_the_full_app_or_pandas(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (
+            "import sys; "
+            "import sports_aggregator.nfl.refresh_cli; "
+            "print('app' in sys.modules); "
+            "print('sports_aggregator.cfb.web' in sys.modules); "
+            "print('sports_aggregator.nfl.web' in sys.modules); "
+            "print('pandas' in sys.modules); "
+            "print('numpy' in sys.modules)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, cwd=str(root),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(), ["False"] * 5)
+
+    def test_main_dispatches_each_segment_with_the_right_arguments(self):
+        from sports_aggregator.nfl import refresh_cli
+        calls = []
+
+        def record_core(season, **kwargs):
+            calls.append(("core", season, kwargs))
+            return True
+
+        with patch.object(refresh_cli, "_sync_rosters", lambda season, **k: calls.append(("rosters", season))), \
+             patch.object(refresh_cli, "_sync_core", record_core), \
+             patch.object(refresh_cli, "_sync_content", lambda season: calls.append(("content", season))), \
+             patch.object(refresh_cli, "_sync_pff", lambda season, **k: calls.append(("pff", season))), \
+             patch.object(refresh_cli, "_sync_history", lambda start, end, **k: calls.append(("history", start, end))), \
+             patch.object(refresh_cli, "_sync_weather", lambda season, **k: calls.append(("weather", season))):
+            for segment in ("rosters", "core", "essentials", "content", "pff", "history", "weather"):
+                self.assertEqual(refresh_cli.main([segment, "--season", "2026"]), 0)
+
+        self.assertIn(("rosters", 2026), calls)
+        self.assertIn(("content", 2026), calls)
+        # pff and history both look back to the completed prior season.
+        self.assertIn(("pff", 2025), calls)
+        self.assertIn(("history", 2010, 2025), calls)
+        self.assertIn(("weather", 2026), calls)
+        core_calls = {call[2]["include_pbp"] for call in calls if call[0] == "core"}
+        self.assertEqual(core_calls, {True, False}, "core=True (full PBP), essentials=False (skip it)")
+
+    def test_main_returns_failure_exit_code_when_core_sync_reports_failure(self):
+        from sports_aggregator.nfl import refresh_cli
+        with patch.object(refresh_cli, "_sync_core", lambda season, **k: False):
+            self.assertEqual(refresh_cli.main(["core", "--season", "2026"]), 1)
+
+    def test_main_returns_failure_exit_code_on_unexpected_exception(self):
+        from sports_aggregator.nfl import refresh_cli
+        with patch.object(refresh_cli, "_sync_weather", side_effect=RuntimeError("boom")):
+            self.assertEqual(refresh_cli.main(["weather", "--season", "2026"]), 1)
 
 
 if __name__ == "__main__":
