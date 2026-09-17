@@ -102,9 +102,15 @@ def steps(season: int, *, history_from: int | None = None,
         Step("nfl-rosters", "Current NFL roster release",
              ["sports_aggregator.nfl.refresh_cli", "rosters", "--season", year],
              ("initial", "refresh"), optional=True, timeout_seconds=900, memory_mb=NFL_CHILD_MEMORY_MB),
+        # 900s wasn't enough once the OpenBLAS import-overhead fix let this
+        # step actually run its real work (RSS + Bluesky across 150+
+        # sources) instead of crashing almost immediately -- it hit this
+        # ceiling at 900s with real progress made, not a hang. Timeouts
+        # carry none of RLIMIT_AS's instance-wide risk, so this is a safe
+        # number to raise generously.
         Step("nfl-content", "NFL reporting and curated Bluesky feeds",
              ["sports_aggregator.nfl.refresh_cli", "content", "--season", year],
-             ("initial", "refresh"), optional=True, timeout_seconds=900, memory_mb=NFL_CHILD_MEMORY_MB),
+             ("initial", "refresh"), optional=True, timeout_seconds=1800, memory_mb=NFL_CHILD_MEMORY_MB),
         Step("nfl-core", "NFL schedules, stats, snaps, depth and play-by-play analytics",
              ["sports_aggregator.nfl.refresh_cli", "core", "--season", year],
              ("initial", "refresh"), optional=True, timeout_seconds=1800, memory_mb=NFL_CHILD_MEMORY_MB),
