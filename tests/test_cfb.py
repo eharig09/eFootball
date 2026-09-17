@@ -11,10 +11,29 @@ from sports_aggregator.catalog import get_league
 from sports_aggregator.cfb.cfbd import CFBDClient, CFBDConfigurationError
 from sports_aggregator.cfb.models import Game, Player
 from sports_aggregator.cfb.repository import CFBRepository
+from sports_aggregator.cfb.statlines import player_stat_tables
 from sports_aggregator.cfb.sync import CFBDataSync
 from sports_aggregator.cfb.web import _nearest_week_games
 from sports_aggregator.models import Article
 from sports_aggregator.service import AggregationResult
+
+
+class PlayerStatTablesPpaTests(unittest.TestCase):
+    def test_ppa_category_renders_as_its_own_labeled_table(self):
+        """The "ppa" category needed no new rendering path -- registering it
+        in statlines.CATEGORY_SPECS is enough for player_stat_tables (the
+        same pivot used for passing/rushing/receiving) to produce it."""
+        tables = player_stat_tables([
+            {"season": 2026, "team": "Michigan", "position": "QB",
+             "category": "ppa", "stat_type": "PPA_ALL", "numeric_value": .35, "stat_value": ".35"},
+            {"season": 2026, "team": "Michigan", "position": "QB",
+             "category": "ppa", "stat_type": "PPA_PASS", "numeric_value": .4, "stat_value": ".4"},
+        ])
+        ppa = next(entry for entry in tables if entry["category"] == "ppa")
+        self.assertEqual(ppa["label"], "Predicted points added (PPA)")
+        self.assertEqual([column.key for column in ppa["table"].columns][:2], ["season", "team"])
+        self.assertIn("PPA_ALL", [column.key for column in ppa["table"].columns])
+        self.assertAlmostEqual(ppa["table"].rows[0]["PPA_ALL"], .35)
 
 
 class WeekSelectionTests(unittest.TestCase):
@@ -107,6 +126,12 @@ class FakeCFBDClient:
         ]
     def core_ratings(self, _year, _force=False):
         return [{"year": 2026, "throughSeasonType": "regular", "throughWeek": 1, "team": "Michigan", "conference": "Big Ten", "overall": 18.2, "offense": 10.1, "defense": -8.1, "offensePlays": 70, "defensePlays": 65, "modelVersion": "test"}]
+    def ppa_players_season(self, _year, _force=False):
+        return [
+            {"season": 2026, "id": "500", "name": "Test QB", "position": "QB", "team": "Michigan",
+             "conference": "Big Ten", "averagePPA": {"all": .35, "pass": .4, "rush": -.1},
+             "totalPPA": {"all": 100.0, "pass": 105.0, "rush": -5.0}},
+        ]
 
 
 class StubReporting:
@@ -211,6 +236,65 @@ class CFBRepositoryTests(unittest.TestCase):
         self.assertIn(b"Michigan", page.data)
         payload = client.get("/api/v1/cfb/elo").get_json()
         self.assertEqual(payload["rankings"][0]["team"], "Michigan")
+
+    def test_replace_player_ppa_only_touches_the_ppa_category(self):
+        """`/ppa/players/season` isn't conference-scoped like the regular
+        stats sync -- storing it must not wipe other categories the way a
+        conference=None replace_player_stats call would."""
+        self.repository.replace_player_stats(2026, [
+            {"season": 2026, "playerId": "p1", "player": "Alex Example",
+             "team": "Michigan", "conference": "Big Ten", "position": "QB",
+             "category": "passing", "statType": "YDS", "stat": "3120"},
+        ], "Big Ten")
+        count = self.repository.replace_player_ppa(2026, [
+            {"season": 2026, "id": "p1", "name": "Alex Example", "position": "QB",
+             "team": "Michigan", "conference": "Big Ten",
+             "averagePPA": {"all": .35, "pass": .4, "rush": None},
+             "totalPPA": {"all": 100.0, "pass": 105.0, "rush": None}},
+        ])
+        self.assertEqual(count, 2)  # PPA_ALL and PPA_PASS; PPA_RUSH skipped (None)
+
+        def stored_categories():
+            with self.repository._reader() as connection:
+                rows = connection.execute(
+                    "SELECT category,stat_type,numeric_value FROM player_season_stats WHERE player_id='p1'"
+                ).fetchall()
+            return {(row["category"], row["stat_type"]): row["numeric_value"] for row in rows}
+
+        stored = stored_categories()
+        self.assertEqual(stored, {
+            ("passing", "YDS"): 3120.0,
+            ("ppa", "PPA_ALL"): .35,
+            ("ppa", "PPA_PASS"): .4,
+        })
+
+        # Re-syncing PPA for the same season must not disturb "passing".
+        self.repository.replace_player_ppa(2026, [])
+        self.assertEqual(stored_categories(), {("passing", "YDS"): 3120.0})
+
+    def test_player_ppa_rank_applies_the_position_appropriate_volume_floor(self):
+        """PPA has no play-count field of its own, so the qualifying floor
+        is borrowed from the position's existing box-score threshold (ATT
+        for a QB) -- a low-volume outlier must not out-rank a real starter."""
+        self.repository.replace_player_stats(2026, [
+            {"season": 2026, "playerId": "starter", "player": "Real Starter",
+             "team": "Michigan", "conference": "Big Ten", "position": "QB",
+             "category": "passing", "statType": "ATT", "stat": "300"},
+            {"season": 2026, "playerId": "mopup", "player": "Mop Up",
+             "team": "Wisconsin", "conference": "Big Ten", "position": "QB",
+             "category": "passing", "statType": "ATT", "stat": "2"},
+        ], None)
+        self.repository.replace_player_ppa(2026, [
+            {"season": 2026, "id": "starter", "name": "Real Starter", "position": "QB",
+             "team": "Michigan", "conference": "Big Ten",
+             "averagePPA": {"all": .3}, "totalPPA": {"all": 90.0}},
+            {"season": 2026, "id": "mopup", "name": "Mop Up", "position": "QB",
+             "team": "Wisconsin", "conference": "Big Ten",
+             "averagePPA": {"all": 6.9}, "totalPPA": {"all": 6.9}},
+        ])
+        ranks = self.repository.player_ppa_rank(2026, "QB")
+        self.assertEqual(ranks, {"starter": {"rank": 1, "of": 1}})
+        self.assertNotIn("mopup", ranks)
 
     def test_syncs_canonical_entities_aliases_and_preview_data(self):
         report = CFBDataSync(FakeCFBDClient(), self.repository).sync(2026)

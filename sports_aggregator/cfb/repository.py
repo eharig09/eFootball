@@ -18,6 +18,7 @@ from sports_aggregator.cfb.identity import conference_slug as _conference_slug
 from sports_aggregator.cfb.models import Game, PollRanking, Team, normalize_alias
 from sports_aggregator.cfb.statlines import (
     CATEGORY_ORDER, category_columns, category_label, qualifier, sort_stat)
+from sports_aggregator.nfl.ranking import rank_within
 
 
 SCHEMA = """
@@ -394,6 +395,13 @@ def _numeric(value: Any) -> float | None:
         return float(str(value).replace(",", "")) if value not in (None, "") else None
     except (TypeError, ValueError):
         return None
+
+
+#: Position -> the existing stat category whose qualifying threshold (see
+#: statlines.LEADER_QUALIFIERS) stands in for PPA's missing play-count floor.
+_PPA_QUALIFYING_CATEGORY = {
+    "QB": "passing", "RB": "rushing", "FB": "rushing", "WR": "receiving", "TE": "receiving",
+}
 
 
 #: CFBD's returning-production percentage is returning PPA over last season's
@@ -1173,6 +1181,70 @@ class CFBRepository:
                   _numeric(item.get("stat"))) for item in items],
             )
         return len(items)
+
+    def replace_player_ppa(self, season: int, rows: Iterable[dict[str, Any]]) -> int:
+        """Store `/ppa/players/season` under `player_season_stats` as its own
+        "ppa" category -- reuses the existing career-table/player-page
+        pipeline (statlines.py's CATEGORY_SPECS/player_stat_tables) instead
+        of a second storage or rendering path. Deletes only category="ppa"
+        rows for the season, unlike replace_player_stats's whole-season
+        wipe -- this call isn't conference-scoped (one CFBD call covers all
+        of FBS), so a blanket delete here would have to run once and would
+        risk racing a concurrent per-conference player-stats sync."""
+        items = tuple(rows)
+        flattened = []
+        for item in items:
+            player_id = str(item.get("id") or "")
+            if not player_id:
+                continue
+            average = item.get("averagePPA") or {}
+            for stat_type, key in (("PPA_ALL", "all"), ("PPA_PASS", "pass"), ("PPA_RUSH", "rush")):
+                value = average.get(key)
+                if value is None:
+                    continue
+                flattened.append((season, player_id, str(item.get("name") or ""),
+                                  str(item.get("team") or ""), item.get("conference"),
+                                  item.get("position"), "ppa", stat_type,
+                                  str(value), _numeric(value)))
+        with self.transaction() as connection:
+            connection.execute("DELETE FROM player_season_stats WHERE season=? AND category='ppa'",
+                               (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO player_season_stats VALUES(?,?,?,?,?,?,?,?,?,?)", flattened
+            )
+        return len(flattened)
+
+    def player_ppa_rank(self, season: int, position: str) -> dict[str, dict[str, int]]:
+        """Leaguewide PPA_ALL rank for every qualifying player at one
+        position, keyed by player_id -- `rank_within`'s standard shape,
+        reused directly from the NFL vertical (see
+        sports_aggregator.nfl.ranking) rather than a second implementation.
+
+        PPA itself carries no play-count field (confirmed live against
+        CFBD), so "qualifying" volume is borrowed from whichever existing
+        category actually tracks this position's snaps -- passing attempts
+        for a QB, carries for a back, receptions for a receiver -- using
+        the same box-score thresholds (statlines.qualifier) real leaders
+        tables already use, rather than inventing a new floor.
+        """
+        category = _PPA_QUALIFYING_CATEGORY.get((position or "").upper())
+        threshold = qualifier(category) if category else None
+        if threshold is None:
+            return {}
+        qualifying_stat, minimum = threshold
+        self.initialize()
+        with self._reader() as connection:
+            rows = [dict(row) for row in connection.execute(
+                """SELECT s.player_id,s.numeric_value AS value
+                   FROM player_season_stats s
+                   JOIN player_season_stats q
+                     ON q.season=s.season AND q.player_id=s.player_id
+                    AND q.category=? AND q.stat_type=? AND q.numeric_value>=?
+                   WHERE s.season=? AND s.category='ppa' AND s.stat_type='PPA_ALL'
+                     AND s.position=? AND s.numeric_value IS NOT NULL""",
+                (category, qualifying_stat, minimum, season, position),
+            )]
+        return rank_within(rows, id_key="player_id", value_key="value")
 
     def confirm_transfer_pff_links(self, season: int, pff_season: int | None = None) -> dict[str, Any]:
         """Confirm PFF identities for players the portal proves have moved.

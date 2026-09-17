@@ -54,6 +54,15 @@ CATEGORY_SPECS: dict[str, dict[str, Any]] = {
             ("LONG", "LNG", "int", "Longest reception"),
         ],
     },
+    "ppa": {
+        "label": "Predicted points added (PPA)",
+        "sort": "PPA_ALL",
+        "columns": [
+            ("PPA_ALL", "PPA", "f2", "Predicted points added per play, all situations"),
+            ("PPA_PASS", "PASS", "f2", "Predicted points added per play, passing plays"),
+            ("PPA_RUSH", "RUSH", "f2", "Predicted points added per play, rushing plays"),
+        ],
+    },
     "defensive": {
         "label": "Defense",
         "sort": "TOT",
@@ -154,7 +163,7 @@ def qualifier(category: str) -> tuple[str, float] | None:
 
 #: Reading order: scrimmage production, then defense, then special teams.
 CATEGORY_ORDER = (
-    "passing", "rushing", "receiving", "defensive", "interceptions",
+    "passing", "rushing", "receiving", "ppa", "defensive", "interceptions",
     "fumbles", "kicking", "punting", "kickReturns", "puntReturns",
 )
 

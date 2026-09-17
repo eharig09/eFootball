@@ -610,12 +610,17 @@ def player_preview(player_id: str):
         player_trend = skill_player_trend_chart_data(current_trend, position, previous_trend)
     else:
         player_trend = None
+    # Only meaningful for the season actually being viewed -- a career stat
+    # line's older seasons aren't ranked against this season's peer pool.
+    ppa_rank = (repository.player_ppa_rank(season, position).get(player_id)
+               if player.get("season") == season else None)
     return render_template(
         "cfb_player.html", season=season, player=player,
         meta=page_meta_for.player_meta(
             player, repository.brand_for(player.get("team_id"))),
         identity=team_identity(_repository().brand_for(player.get("team_id"))),
         stat_groups=views.player_stat_groups(player),
+        ppa_rank=ppa_rank,
         passer_profile=passer_profile(repository, player_id, season),
         career_passing_field=passer_career_field(repository, player_id),
         player_trend=player_trend,

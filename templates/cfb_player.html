@@ -46,6 +46,9 @@
                 Each category is a conventional stat line pivoted from the long-form CFBD
                 statistics store. Blank columns mean CFBD published no value.
             </div>
+            {% if ppa_rank %}
+                <div class="section-note">Predicted points added (PPA) this season ranks <b>#{{ ppa_rank.rank }} of {{ ppa_rank.of }}</b> qualifying {{ player.position }}s.</div>
+            {% endif %}
             {% if stat_groups %}
                 {{ tabbed_tables(stat_groups, 'player-stats') }}
             {% else %}

@@ -268,6 +268,22 @@ class CFBDClient:
             force=force,
         )
 
+    def ppa_players_season(self, year: int, force: bool = False) -> list[dict]:
+        """Player-season predicted points added, split by play type.
+
+        Unlike `player_season_stats`, this one call covers all of FBS -- no
+        `conference` loop needed. Confirmed live: each row has `id` (not
+        `playerId` like the stats endpoints), `averagePPA`/`totalPPA` dicts
+        keyed `all`/`pass`/`rush`/... -- no play-count field, so a rank needs
+        an external volume floor (see repository.player_ppa_rank).
+        """
+        return self.get(
+            "/ppa/players/season",
+            {"year": year, "excludeGarbageTime": "true"},
+            cache_ttl_seconds=21600,
+            force=force,
+        )
+
     def recruits(self, year: int, force: bool = False) -> list[dict]:
         """Documented /recruiting/players endpoint for one signing class."""
         return self.get("/recruiting/players", {"year": year},

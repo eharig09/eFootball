@@ -82,6 +82,8 @@ class CFBDataSync:
                     season, _as_list("advanced stats", self.client.advanced_team_stats(season, force)))),
                 ("core_ratings", lambda: self.repository.replace_core_ratings(
                     season, _as_list("CORE ratings", self.client.core_ratings(season, force)))),
+                ("player_ppa", lambda: self.repository.replace_player_ppa(
+                    season, _as_list("player PPA", self.client.ppa_players_season(season, force)))),
             ])
 
         results: list[SyncDatasetResult] = []
