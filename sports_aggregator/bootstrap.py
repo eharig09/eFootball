@@ -56,13 +56,19 @@ DETAIL_HISTORY_SEASONS = 7
 #:     using ~140-270MB RSS on that plan, leaving only ~200-240MB of real
 #:     headroom for a refresh child -- a genuine capacity limit, not a
 #:     remaining bug.
-#: The instance has since been upgraded to 8GB (from the original 512MB
-#: Starter plan) specifically to resolve that. 4096MB leaves gunicorn,
-#: the refresh orchestrator, and any concurrent CFB step several GB of
-#: headroom -- generous for anything an NFL segment plausibly needs, while
-#: still being a real, bounded ceiling rather than "no limit" (which is
-#: what actually caused the one real crash in this history).
-NFL_CHILD_MEMORY_MB = 4096
+#: The instance has since been upgraded from the original 512MB Starter
+#: plan -- to 1 CPU / 2GB RAM ("1c-2g"), confirmed from the Render
+#: dashboard after an earlier mistaken read of the plan (2 CPU/8GB) led to
+#: setting this to 4096MB, larger than the entire instance, which crashed
+#: it again immediately. 1200MB is sized off what's actually measured on
+#: this plan: gunicorn's master+worker together use ~140-270MB RSS, the
+#: refresh orchestrator ~43MB, leaving genuine room for a child that peaked
+#: at 580MB on its first real (uncapped-by-a-too-tight-ceiling) run, with
+#: real margin left over for the OS and any concurrent CFB step -- while
+#: still being a bounded ceiling well under the instance's own 2GB, not
+#: "no limit" (which is what actually caused the one real crash before
+#: this one).
+NFL_CHILD_MEMORY_MB = 1200
 
 
 @dataclass
