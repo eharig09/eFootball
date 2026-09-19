@@ -14,6 +14,7 @@ from sports_aggregator.cfb import narrative_composite
 from sports_aggregator.cfb import extreme_tail_composite
 from sports_aggregator.cfb import composite_input_repair
 from sports_aggregator.cfb import internal_power_lenses
+from sports_aggregator.cfb import conditional_convergence
 
 
 def main() -> None:
@@ -60,6 +61,9 @@ def main() -> None:
 
     internal_power = sub.add_parser("internal-power")
     internal_power.add_argument("--year", type=int, default=2025)
+
+    convergence = sub.add_parser("conditional-convergence")
+    convergence.add_argument("--year", type=int, default=2025)
 
     load_dotenv()
     args = parser.parse_args()
@@ -116,6 +120,11 @@ def main() -> None:
         )
     elif args.command == "internal-power":
         payload = internal_power_lenses.report(
+            repository,
+            test_season=args.year,
+        )
+    elif args.command == "conditional-convergence":
+        payload = conditional_convergence.report(
             repository,
             test_season=args.year,
         )

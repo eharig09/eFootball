@@ -253,3 +253,71 @@ def test_internal_score_uses_only_active_scales():
     assert score["available"] == 4
     assert score["direction"] == 1
     assert score["agreement"] == 0.75
+
+
+from sports_aggregator.cfb import conditional_convergence as cc
+
+
+def test_conditional_state_counts_structural_and_market_confirmations():
+    row = {
+        "margin_power_edge": 2.0,
+        "football_lab_edge": 1.0,
+        "elo_edge": 0.5,
+        "efficiency_power_edge": 1.5,
+        "line_elo_edge": 0.75,
+        "narrative_interaction_edge": -0.25,
+    }
+    scales = {
+        "margin_power_edge": 1.0,
+        "football_lab_edge": 1.0,
+        "elo_edge": 1.0,
+        "efficiency_power_edge": 1.0,
+        "line_elo_edge": 1.0,
+        "narrative_interaction_edge": 1.0,
+    }
+    state = cc._state(row, scales)
+    assert state is not None
+    assert state["confirmation_count"] == 2
+    assert state["confirmation_combination"] == "structural+market"
+    assert state["narrative_state"] == "opposes"
+
+
+def test_conditional_structural_cluster_requires_two_members():
+    row = {
+        "margin_power_edge": 1.0,
+        "football_lab_edge": 1.0,
+        "elo_edge": None,
+        "efficiency_power_edge": None,
+        "line_elo_edge": 1.0,
+        "narrative_interaction_edge": None,
+    }
+    scales = {
+        "margin_power_edge": 1.0,
+        "football_lab_edge": 1.0,
+        "line_elo_edge": 1.0,
+    }
+    state = cc._state(row, scales)
+    assert state is not None
+    assert state["structural_confirms"] is None
+    assert state["available_confirmations"] == 1
+
+
+def test_conditional_subset_requires_both_confirmation_families_by_default():
+    row = {
+        "market_margin_residual": 3.0,
+        "margin_power_edge": 1.2,
+        "football_lab_edge": 0.8,
+        "elo_edge": 0.6,
+        "efficiency_power_edge": None,
+        "line_elo_edge": 0.5,
+        "narrative_interaction_edge": None,
+    }
+    scales = {
+        "margin_power_edge": 1.0,
+        "football_lab_edge": 1.0,
+        "elo_edge": 1.0,
+        "line_elo_edge": 1.0,
+    }
+    rows = cc._subset(
+        [row], scales, low=1.0, high=1.5, confirmation_count=2)
+    assert len(rows) == 1
