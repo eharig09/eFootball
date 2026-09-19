@@ -257,3 +257,55 @@ def test_market_leverage_features_include_model_market_gap():
     features = bt._leverage_features(row)
     assert features is not None
     assert features[0] == 5.0
+
+
+def test_selective_leverage_policy_can_choose_market_unchanged():
+    fit_rows = []
+    validation_rows = []
+    for i in range(40):
+        base = {
+            "market_implied_points": 24.0,
+            "projected_offensive_points": 30.0 if i % 2 == 0 else 18.0,
+            "projected_drives": 11.0,
+            "projected_plays": 68.0,
+            "projected_points_per_drive": 2.4,
+            "projected_total_yards": 400.0,
+            "projected_giveaways": 1.0,
+            "projected_red_zone_trips": 4.0,
+            "projected_red_zone_touchdowns": 2.5,
+            "quality_edge": 3.0,
+            "quality_sources": 2,
+            "prior_games": 6,
+            "week": 7,
+            "market_total": 50.0,
+        }
+        fit_rows.append({**base, "actual_score_points": 30.0 if i % 2 == 0 else 18.0})
+        # Validation outcomes equal the market, so any learned adjustment hurts.
+        validation_rows.append({**base, "actual_score_points": 24.0})
+    policy = bt._select_leverage_policy(fit_rows, validation_rows)
+    assert policy["shrink"] == 0.0
+
+
+def test_selective_leverage_policy_returns_validation_metadata():
+    rows = []
+    for i in range(50):
+        rows.append({
+            "market_implied_points": 20.0,
+            "projected_offensive_points": 25.0,
+            "projected_drives": 10.0 + (i % 2),
+            "projected_plays": 65.0,
+            "projected_points_per_drive": 2.5,
+            "projected_total_yards": 380.0,
+            "projected_giveaways": 1.0,
+            "projected_red_zone_trips": 4.0,
+            "projected_red_zone_touchdowns": 2.0,
+            "quality_edge": 2.0,
+            "quality_sources": 2,
+            "prior_games": 5,
+            "week": 6,
+            "market_total": 48.0,
+            "actual_score_points": 23.0,
+        })
+    policy = bt._select_leverage_policy(rows, rows)
+    assert policy["candidate_count"] == 30
+    assert policy["validation_rows"] == 50
