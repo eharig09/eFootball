@@ -276,8 +276,8 @@ def build(repository, *, from_season: int = 2022, to_season: int = 2025,
                 and prev_won
                 and prev_opponent_elo is not None
                 and float(prev_opponent_elo) >= 1600.0
-                and prev_market_surprise is not None
-                and float(prev_market_surprise) >= 10.0
+                and prev_elo_surprise is not None
+                and float(prev_elo_surprise) >= 10.0
             )
             upset_win = int(
                 bool(previous) and prev_won
