@@ -21,6 +21,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--year", type=int, default=None,
                    help="Shortcut for --from-year YEAR --to-year YEAR.")
     p.add_argument("--min-prior-games", type=int, default=1)
+    p.add_argument("--points-train-from-year", type=int, default=2022,
+                   help="Earliest season allowed into each prior-season xPoints fold.")
     p.add_argument("--backtest-version", default=BACKTEST_VERSION)
     p.add_argument("--database", default=None)
     return p
@@ -48,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
             repository, from_season=int(first), to_season=int(last),
             backtest_version=args.backtest_version,
             min_prior_games=args.min_prior_games,
+            points_train_from_season=args.points_train_from_year,
         )
     else:
         payload = report(
