@@ -259,6 +259,9 @@ def _football_lab_margin_lookup(repository: CFBRepository,
 def build_lens_rows(repository: CFBRepository,
                     *, test_season: int = 2025) -> list[dict[str, Any]]:
     narrative_rows = v2._load_rows(repository)
+    home_narrative = {
+        int(r["game_id"]): r for r in narrative_rows if r["side"] == "home"
+    }
     line_rate, _ = v2._choose_line_rate(
         narrative_rows, validation_season=int(test_season) - 1)
     base = nc._composite_games(
@@ -279,11 +282,7 @@ def build_lens_rows(repository: CFBRepository,
         gid, season = int(row["game_id"]), int(row["season"])
         market_residual = float(row["market_margin_residual"])
         # Recover the market expected margin from actual margin - residual.
-        nrow = next(
-            (r for r in narrative_rows
-             if int(r["game_id"]) == gid and r["side"] == "home"),
-            None,
-        )
+        nrow = home_narrative.get(gid)
         if not nrow or nrow.get("market_expected_margin") is None:
             continue
         market = float(nrow["market_expected_margin"])
