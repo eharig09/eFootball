@@ -23,15 +23,23 @@ from sports_aggregator.cfb.game_projection import project_matchup
 from sports_aggregator.cfb.repository import CFBRepository, schema_once
 from sports_aggregator.cfb.team_game_drive_outcomes import (
     METRIC_VERSION as OUTCOME_VERSION,
+    build as build_outcomes,
     initialize as initialize_outcomes,
 )
 from sports_aggregator.cfb.team_game_pace import (
     METRIC_VERSION as PACE_VERSION,
+    build as build_pace,
     initialize as initialize_pace,
 )
 from sports_aggregator.cfb.team_game_scoring import (
     METRIC_VERSION as SCORING_VERSION,
+    build as build_scoring,
     initialize as initialize_scoring,
+)
+from sports_aggregator.cfb.team_game_special_teams import (
+    METRIC_VERSION as SPECIAL_VERSION,
+    build as build_special_teams,
+    initialize as initialize_special_teams,
 )
 
 BACKTEST_VERSION = "game-projection-backtest-v1"
@@ -98,6 +106,7 @@ def initialize(repository: CFBRepository) -> None:
     initialize_pace(repository)
     initialize_scoring(repository)
     initialize_outcomes(repository)
+    initialize_special_teams(repository)
     with closing(repository._connect()) as connection:
         connection.executescript(SCHEMA)
         connection.commit()
@@ -105,6 +114,82 @@ def initialize(repository: CFBRepository) -> None:
 
 def _float(value: Any) -> float | None:
     return float(value) if value is not None else None
+
+
+def source_coverage(repository: CFBRepository, *, from_season: int,
+                    to_season: int) -> dict[str, Any]:
+    """Row coverage for the production actual tables the live adapter reads."""
+    initialize(repository)
+    with repository._reader() as connection:
+        completed_games = int(connection.execute(
+            """SELECT COUNT(*) FROM games
+               WHERE completed=1 AND season BETWEEN ? AND ?""",
+            (int(from_season), int(to_season)),
+        ).fetchone()[0])
+        def count(table: str, version: str) -> int:
+            return int(connection.execute(
+                f"""SELECT COUNT(*) FROM {table} t
+                    JOIN games g USING(game_id)
+                    WHERE t.metric_version=? AND g.season BETWEEN ? AND ?""",
+                (version, int(from_season), int(to_season)),
+            ).fetchone()[0])
+        pace_rows = count("cfb_team_game_pace", PACE_VERSION)
+        scoring_rows = count("cfb_team_game_scoring", SCORING_VERSION)
+        special_rows = count("cfb_team_game_special_teams", SPECIAL_VERSION)
+        outcome_rows = count("cfb_team_game_drive_outcomes", OUTCOME_VERSION)
+        pbp_rows = int(connection.execute(
+            """SELECT COUNT(*) FROM cfb_plays
+               WHERE season BETWEEN ? AND ?""",
+            (int(from_season), int(to_season)),
+        ).fetchone()[0])
+        derived_rows = int(connection.execute(
+            """SELECT COUNT(*) FROM cfb_play_metrics m
+               JOIN cfb_plays p USING(play_id)
+               WHERE m.metric_version='pbp-v1'
+                 AND p.season BETWEEN ? AND ?""",
+            (int(from_season), int(to_season)),
+        ).fetchone()[0])
+    expected_team_rows = completed_games * 2
+    return {
+        "from_season": int(from_season),
+        "to_season": int(to_season),
+        "completed_games": completed_games,
+        "expected_team_game_rows": expected_team_rows,
+        "pbp_rows": pbp_rows,
+        "derived_play_rows": derived_rows,
+        "team_game_pace_rows": pace_rows,
+        "team_game_scoring_rows": scoring_rows,
+        "team_game_special_teams_rows": special_rows,
+        "team_game_drive_outcomes_rows": outcome_rows,
+    }
+
+
+def prepare_actuals(repository: CFBRepository, *, from_season: int,
+                    to_season: int) -> dict[str, Any]:
+    """Build historical copies of the same actual tables production inference reads."""
+    if from_season > to_season:
+        raise ValueError("from_season must not be after to_season")
+    before = source_coverage(repository, from_season=from_season, to_season=to_season)
+    if before["pbp_rows"] <= 0:
+        raise ValueError(
+            "No historical cfb_plays rows exist for the requested seasons. "
+            "Backfill/derive PBP before preparing projection backtest actuals."
+        )
+    if before["derived_play_rows"] <= 0:
+        raise ValueError(
+            "Historical cfb_plays exist but cfb_play_metrics (pbp-v1) does not. "
+            "Run the PBP derive step before preparing projection backtest actuals."
+        )
+    results = {
+        "pace": build_pace(repository, from_season=from_season, to_season=to_season),
+        "scoring": build_scoring(repository, from_season=from_season, to_season=to_season),
+        "special_teams": build_special_teams(
+            repository, from_season=from_season, to_season=to_season),
+        "drive_outcomes": build_outcomes(
+            repository, from_season=from_season, to_season=to_season),
+    }
+    after = source_coverage(repository, from_season=from_season, to_season=to_season)
+    return {"before": before, "builds": results, "after": after}
 
 
 def _market_by_game(repository: CFBRepository, game_ids: Iterable[int]) -> dict[int, dict[str, float | None]]:
@@ -245,6 +330,16 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
             (int(from_season), int(to_season))
         )]
 
+    coverage = source_coverage(
+        repository, from_season=from_season, to_season=to_season)
+    if games and coverage["team_game_pace_rows"] == 0:
+        raise ValueError(
+            "Historical projection inputs are not prepared: cfb_team_game_pace has "
+            f"0 rows for {from_season}-{to_season}. Run "
+            "'python -m sports_aggregator.cfb.projection_backtest_cli prepare "
+            f"--from-year {from_season} --to-year {to_season}' first."
+        )
+
     actuals = _actuals(repository, (game["game_id"] for game in games))
     markets = _market_by_game(repository, (game["game_id"] for game in games))
     # One frozen model per test season. A 2025 game, for example, may use a
@@ -345,6 +440,7 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
         "games_projected": games_projected,
         "games_skipped_no_history": games_skipped,
         "team_game_rows": len(rows),
+        "source_coverage": coverage,
         "points_train_from_season": int(points_train_from_season),
         "temporal_points_models": {
             str(season): (
