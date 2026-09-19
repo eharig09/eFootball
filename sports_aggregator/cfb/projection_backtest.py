@@ -975,6 +975,13 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
         "calibration": {
             "projected_points": _points_calibration(rows),
             "temporal_candidate": _temporal_point_calibration(all_rows, rows),
+            "rolling_holdouts": _temporal_point_calibration(
+                all_rows,
+                [
+                    row for row in all_rows
+                    if int(row["season"]) > min(int(item["season"]) for item in all_rows)
+                ] if all_rows else [],
+            ),
         },
         "yardage_error_decomposition": _yardage_decomposition(rows),
         "temporal_uncertainty": _uncertainty_from_prior_seasons(all_rows, rows),
