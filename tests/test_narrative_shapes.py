@@ -188,3 +188,32 @@ def test_bucket_metrics_respects_fixed_magnitude_band():
         [row], scales, 0.0, low=1.25, high=1.50)
     assert inside["n"] == 1
     assert outside["n"] == 0
+
+
+from sports_aggregator.cfb import composite_input_repair as cir
+
+
+def test_family_score_requires_only_populated_families():
+    row = {
+        "football_lab_family": 2.0,
+        "elo_family": 1.0,
+        "external_power_family": None,
+        "market_family": 1.5,
+        "narrative_family": None,
+    }
+    scales = {key: 1.0 for key in cir.FAMILY_KEYS}
+    score = cir._score(row, scales)
+    assert score["available"] == 3
+    assert score["direction"] == 1
+    assert score["agreement"] == 1.0
+
+
+def test_scoreboard_calibration_maps_offense_margin_to_scoreboard_margin():
+    games = {
+        1: {"home": {"season": 2022, "projected_offensive_points": 30.0, "actual_score_points": 28.0},
+            "away": {"season": 2022, "projected_offensive_points": 20.0, "actual_score_points": 21.0}},
+        2: {"home": {"season": 2022, "projected_offensive_points": 24.0, "actual_score_points": 24.0},
+            "away": {"season": 2022, "projected_offensive_points": 20.0, "actual_score_points": 21.0}},
+    }
+    # Function intentionally requires a real sample before fitting.
+    assert cir._fit_scoreboard_calibration(games, {2022}) is None
