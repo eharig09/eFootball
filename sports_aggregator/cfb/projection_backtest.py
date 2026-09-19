@@ -1582,6 +1582,7 @@ def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
     anchored_pairs = []
     selective_pairs = []
     leverage_pairs = []
+    selective_direction_pairs = []
     by_season = {}
     bucket_rows: dict[str, list[tuple[float, float]]] = defaultdict(list)
     signed_bucket_rows: dict[str, list[tuple[float, float]]] = defaultdict(list)
@@ -1658,10 +1659,11 @@ def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
             selective = max(0.0, float(market) + applied)
             season_selective.append((selective, float(actual)))
             selective_pairs.append((selective, float(actual)))
+            actual_residual = float(actual) - float(market)
             if applied != 0.0:
                 selective_adjusted_rows += 1
+                selective_direction_pairs.append((applied, actual_residual))
 
-            actual_residual = float(actual) - float(market)
             season_leverage.append((leverage, actual_residual))
             leverage_pairs.append((leverage, actual_residual))
             bucket_rows[_leverage_bucket(leverage)].append((leverage, actual_residual))
@@ -1747,6 +1749,8 @@ def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
             else None
         ),
         "leverage_prediction": _metrics(leverage_pairs),
+        "directional": _directional_diagnostics(leverage_pairs),
+        "selective_directional_adjusted_only": _directional_diagnostics(selective_direction_pairs),
         "by_absolute_leverage": {
             key: summarize_bucket(bucket_rows.get(key, []))
             for key in ("0-1", "1-2", "2-3", "3-5", "5+")
@@ -1764,6 +1768,262 @@ def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
             "Predicted leverage is clipped to +/-10 points before adding it to the market anchor.",
             "Selective leverage chooses a minimum edge threshold and shrinkage factor using only the latest prior validation season; shrink=0 is allowed so validation can choose Vegas unchanged.",
             "Pure Football Lab remains separately scored so market anchoring does not replace the independent model benchmark.",
+        ],
+    }
+
+
+def _directional_diagnostics(values: list[tuple[float, float]]) -> dict[str, Any]:
+    """Separate sign accuracy from edge-size calibration."""
+    nonzero = [(float(pred), float(actual)) for pred, actual in values if pred != 0 and actual != 0]
+    if not nonzero:
+        return {
+            "n": 0, "direction_hit_rate": None, "magnitude_mae": None,
+            "mean_magnitude_error": None, "overstated_rate_when_correct": None,
+            "understated_rate_when_correct": None,
+        }
+    correct = [(pred, actual) for pred, actual in nonzero if pred * actual > 0]
+    magnitude_errors = [abs(pred) - abs(actual) for pred, actual in nonzero]
+    correct_over = sum(1 for pred, actual in correct if abs(pred) > abs(actual))
+    correct_under = sum(1 for pred, actual in correct if abs(pred) < abs(actual))
+    return {
+        "n": len(nonzero),
+        "direction_hit_rate": round(len(correct) / len(nonzero), 4),
+        "correct_direction_n": len(correct),
+        "wrong_direction_n": len(nonzero) - len(correct),
+        "magnitude_mae": round(
+            sum(abs(abs(pred) - abs(actual)) for pred, actual in nonzero) / len(nonzero), 4),
+        "mean_magnitude_error": round(sum(magnitude_errors) / len(magnitude_errors), 4),
+        "overstated_rate_when_correct": (
+            round(correct_over / len(correct), 4) if correct else None),
+        "understated_rate_when_correct": (
+            round(correct_under / len(correct), 4) if correct else None),
+        "mean_predicted_edge_when_correct": (
+            round(sum(abs(pred) for pred, _ in correct) / len(correct), 4) if correct else None),
+        "mean_realized_edge_when_correct": (
+            round(sum(abs(actual) for _, actual in correct) / len(correct), 4) if correct else None),
+    }
+
+
+def _game_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    games: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in rows:
+        games[int(row["game_id"])][str(row["side"])] = row
+    output = []
+    for game_id, sides in games.items():
+        home = sides.get("home"); away = sides.get("away")
+        if not home or not away:
+            continue
+        market_total = home.get("market_total")
+        hs = home.get("actual_score_points"); ass = away.get("actual_score_points")
+        hp = home.get("projected_offensive_points"); ap = away.get("projected_offensive_points")
+        if None in (market_total, hs, ass, hp, ap):
+            continue
+        output.append({
+            "game_id": game_id,
+            "season": int(home["season"]),
+            "week": home.get("week"),
+            "kickoff": home.get("kickoff"),
+            "market_total": float(market_total),
+            "market_spread": home.get("market_spread"),
+            "actual_total": float(hs) + float(ass),
+            "pure_total": float(hp) + float(ap),
+            "projected_drives": float(home.get("projected_drives") or 0.0) + float(away.get("projected_drives") or 0.0),
+            "projected_plays": float(home.get("projected_plays") or 0.0) + float(away.get("projected_plays") or 0.0),
+            "projected_total_yards": float(home.get("projected_total_yards") or 0.0) + float(away.get("projected_total_yards") or 0.0),
+            "projected_giveaways": float(home.get("projected_giveaways") or 0.0) + float(away.get("projected_giveaways") or 0.0),
+            "projected_red_zone_trips": float(home.get("projected_red_zone_trips") or 0.0) + float(away.get("projected_red_zone_trips") or 0.0),
+            "projected_red_zone_touchdowns": float(home.get("projected_red_zone_touchdowns") or 0.0) + float(away.get("projected_red_zone_touchdowns") or 0.0),
+            "home_ppd": home.get("projected_points_per_drive"),
+            "away_ppd": away.get("projected_points_per_drive"),
+            "home_quality_edge": home.get("quality_edge"),
+            "away_quality_edge": away.get("quality_edge"),
+            "quality_sources": float(home.get("quality_sources") or 0.0) + float(away.get("quality_sources") or 0.0),
+            "min_prior_games": min(int(home.get("prior_games") or 0), int(away.get("prior_games") or 0)),
+        })
+    return output
+
+
+TOTAL_LEVERAGE_FEATURE_NAMES = (
+    "pure_total_gap_vs_market",
+    "projected_total_drives",
+    "projected_total_plays",
+    "projected_scoring_environment_ppd",
+    "projected_total_yards",
+    "projected_giveaways",
+    "projected_red_zone_trips",
+    "projected_red_zone_touchdowns",
+    "abs_market_spread",
+    "quality_edge_separation",
+    "quality_sources",
+    "min_prior_games",
+    "week",
+    "market_total",
+)
+
+
+def _total_leverage_features(game: dict[str, Any]) -> list[float] | None:
+    required = (
+        game.get("market_total"), game.get("pure_total"),
+        game.get("home_ppd"), game.get("away_ppd"),
+    )
+    if any(value is None for value in required):
+        return None
+    return [
+        float(game["pure_total"]) - float(game["market_total"]),
+        float(game["projected_drives"]),
+        float(game["projected_plays"]),
+        (float(game["home_ppd"]) + float(game["away_ppd"])) / 2.0,
+        float(game["projected_total_yards"]),
+        float(game["projected_giveaways"]),
+        float(game["projected_red_zone_trips"]),
+        float(game["projected_red_zone_touchdowns"]),
+        abs(float(game.get("market_spread") or 0.0)),
+        abs(float(game.get("home_quality_edge") or 0.0) - float(game.get("away_quality_edge") or 0.0)),
+        float(game.get("quality_sources") or 0.0),
+        float(game.get("min_prior_games") or 0.0),
+        float(game.get("week") or 0.0),
+        float(game["market_total"]),
+    ]
+
+
+def _fit_total_leverage(games: list[dict[str, Any]], *, l2: float = 20.0) -> dict[str, Any] | None:
+    examples = []
+    for game in games:
+        features = _total_leverage_features(game)
+        if features is None:
+            continue
+        examples.append((features, float(game["actual_total"]) - float(game["market_total"])))
+    model = _ridge_fit_generic(examples, l2=l2)
+    if not model:
+        return None
+    return {**model, "training_rows": len(examples), "features": TOTAL_LEVERAGE_FEATURE_NAMES, "l2": l2}
+
+
+def _predict_total_leverage(model: dict[str, Any] | None, game: dict[str, Any],
+                            *, clip: float = 14.0) -> float | None:
+    features = _total_leverage_features(game)
+    prediction = _ridge_predict_generic(model, features) if features is not None else None
+    if prediction is None:
+        return None
+    return max(-clip, min(clip, float(prediction)))
+
+
+def _select_total_leverage_policy(fit_games: list[dict[str, Any]],
+                                  validation_games: list[dict[str, Any]]) -> dict[str, Any]:
+    model = _fit_total_leverage(fit_games)
+    if not model:
+        return {"threshold": None, "shrink": 0.0, "validation_rows": 0, "validation_mae": None}
+    candidates = []
+    for threshold in (0.0, 1.5, 3.0, 4.5, 6.0):
+        for shrink in (0.0, 0.25, 0.50, 0.75, 1.0):
+            pairs = []
+            adjusted = 0
+            for game in validation_games:
+                leverage = _predict_total_leverage(model, game)
+                if leverage is None:
+                    continue
+                applied = shrink * leverage if abs(leverage) >= threshold else 0.0
+                adjusted += int(applied != 0.0)
+                pairs.append((float(game["market_total"]) + applied, float(game["actual_total"])))
+            metrics = _metrics(pairs)
+            if metrics["mae"] is not None:
+                candidates.append({
+                    "threshold": threshold, "shrink": shrink,
+                    "mae": float(metrics["mae"]), "rmse": float(metrics["rmse"]),
+                    "n": int(metrics["n"]), "adjusted_rows": adjusted,
+                })
+    if not candidates:
+        return {"threshold": None, "shrink": 0.0, "validation_rows": 0, "validation_mae": None}
+    best = min(candidates, key=lambda item: (item["mae"], item["rmse"]))
+    return {
+        "threshold": best["threshold"], "shrink": best["shrink"],
+        "validation_rows": best["n"], "validation_mae": round(best["mae"], 4),
+        "validation_rmse": round(best["rmse"], 4),
+        "adjusted_rows": best["adjusted_rows"], "candidate_count": len(candidates),
+    }
+
+
+def _market_total_leverage_backtest(all_rows: list[dict[str, Any]],
+                                    test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    all_games = _game_records(all_rows)
+    test_games = _game_records(test_rows)
+    market_pairs = []; pure_pairs = []; anchored_pairs = []; selective_pairs = []
+    leverage_pairs = []; selective_direction_pairs = []
+    by_season = {}; policies = {}; models = {}
+    selective_adjusted = 0
+
+    for season in sorted({int(game["season"]) for game in test_games}):
+        training = [game for game in all_games if int(game["season"]) < season]
+        prior_seasons = sorted({int(game["season"]) for game in training})
+        if len(prior_seasons) >= 2:
+            validation_season = prior_seasons[-1]
+            fit_games = [game for game in training if int(game["season"]) < validation_season]
+            validation_games = [game for game in training if int(game["season"]) == validation_season]
+            policy = _select_total_leverage_policy(fit_games, validation_games)
+            policy["validation_season"] = validation_season
+        else:
+            policy = {"threshold": None, "shrink": 0.0, "validation_rows": 0, "validation_mae": None, "validation_season": None}
+        policies[str(season)] = policy
+        model = _fit_total_leverage(training)
+        season_market = []; season_anchored = []; season_selective = []
+        for game in test_games:
+            if int(game["season"]) != season:
+                continue
+            market = float(game["market_total"]); actual = float(game["actual_total"])
+            pure = float(game["pure_total"])
+            market_pairs.append((market, actual)); season_market.append((market, actual))
+            pure_pairs.append((pure, actual))
+            leverage = _predict_total_leverage(model, game)
+            if leverage is None:
+                continue
+            anchored = market + leverage
+            anchored_pairs.append((anchored, actual)); season_anchored.append((anchored, actual))
+            actual_residual = actual - market
+            leverage_pairs.append((leverage, actual_residual))
+            threshold = policy.get("threshold"); shrink = float(policy.get("shrink") or 0.0)
+            applied = shrink * leverage if threshold is not None and abs(leverage) >= float(threshold) else 0.0
+            selective = market + applied
+            selective_pairs.append((selective, actual)); season_selective.append((selective, actual))
+            if applied != 0.0:
+                selective_adjusted += 1
+                selective_direction_pairs.append((applied, actual_residual))
+        by_season[str(season)] = {
+            "market_total": _metrics(season_market),
+            "market_plus_total_leverage": _metrics(season_anchored),
+            "market_plus_selective_total_leverage": _metrics(season_selective),
+            "selected_policy": policy,
+        }
+        models[str(season)] = (
+            {"training_rows": model["training_rows"], "features": list(model["features"]), "l2": model["l2"]}
+            if model else None
+        )
+
+    market = _metrics(market_pairs); anchored = _metrics(anchored_pairs)
+    selective = _metrics(selective_pairs); pure = _metrics(pure_pairs)
+    return {
+        "market_total_baseline": market,
+        "pure_football_lab_offensive_total_vs_scoreboard": pure,
+        "market_plus_total_leverage": anchored,
+        "market_plus_selective_total_leverage": selective,
+        "mae_delta_vs_market": (
+            round(anchored["mae"] - market["mae"], 4)
+            if anchored["mae"] is not None and market["mae"] is not None else None),
+        "selective_mae_delta_vs_market": (
+            round(selective["mae"] - market["mae"], 4)
+            if selective["mae"] is not None and market["mae"] is not None else None),
+        "directional": _directional_diagnostics(leverage_pairs),
+        "selective_directional_adjusted_only": _directional_diagnostics(selective_direction_pairs),
+        "selective_adjusted_rows": selective_adjusted,
+        "selective_adjusted_rate": (
+            round(selective_adjusted / selective["n"], 4) if selective["n"] else None),
+        "policies": policies,
+        "models": models,
+        "feature_names": list(TOTAL_LEVERAGE_FEATURE_NAMES),
+        "notes": [
+            "Target is final game total minus Vegas market total.",
+            "Positive leverage means Football Lab expects an over environment; negative means under.",
+            "Pure Football Lab offensive total remains diagnostic because it excludes non-offensive scoring.",
+            "Selective threshold/shrinkage is tuned only on the latest prior validation season.",
         ],
     }
 
@@ -1885,6 +2145,7 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
         "points_quality_ablation": _quality_ablation(
             repository, rows, backtest_version=backtest_version),
         "market_anchor_leverage": _market_anchor_leverage_backtest(all_rows, rows),
+        "market_total_leverage": _market_total_leverage_backtest(all_rows, rows),
         "calibration": {
             "projected_points": _points_calibration(rows),
             "temporal_candidate": _temporal_point_calibration(all_rows, rows),
