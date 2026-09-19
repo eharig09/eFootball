@@ -11,6 +11,7 @@ from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb import narrative_shapes
 from sports_aggregator.cfb import narrative_shapes_v2
 from sports_aggregator.cfb import narrative_composite
+from sports_aggregator.cfb import extreme_tail_composite
 
 
 def main() -> None:
@@ -41,6 +42,9 @@ def main() -> None:
     composite = sub.add_parser("composite")
     composite.add_argument("--year", type=int, default=2025)
 
+    extreme_tail = sub.add_parser("extreme-tail")
+    extreme_tail.add_argument("--year", type=int, default=2025)
+
     load_dotenv()
     args = parser.parse_args()
     repository = CFBRepository(
@@ -69,6 +73,11 @@ def main() -> None:
         )
     elif args.command == "composite":
         payload = narrative_composite.composite_report(
+            repository,
+            test_season=args.year,
+        )
+    elif args.command == "extreme-tail":
+        payload = extreme_tail_composite.report(
             repository,
             test_season=args.year,
         )
