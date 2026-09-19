@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+
+from dotenv import load_dotenv
 
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb import team_shapes
@@ -24,8 +27,10 @@ def main() -> None:
     report.add_argument("--neighbors", type=int, default=25)
     report.add_argument("--min-prior-games", type=int, default=3)
 
+    load_dotenv()
     args = parser.parse_args()
-    repository = CFBRepository(args.db) if args.db else CFBRepository()
+    repository = CFBRepository(
+        args.db or os.getenv("CFB_DATABASE_PATH", "instance/cfb.sqlite3"))
 
     if args.command == "build":
         result = team_shapes.build(
