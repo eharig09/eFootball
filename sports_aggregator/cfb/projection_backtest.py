@@ -785,6 +785,7 @@ def _yardage_decomposition(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _uncertainty_from_prior_seasons(all_rows: list[dict[str, Any]],
                                     test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Empirical intervals trained only on prior seasons, conditioned on week band when possible."""
     results = {}
     for target, predicted_key, actual_key in (
         ("offensive_points", "projected_offensive_points", "actual_offensive_points"),
@@ -794,24 +795,36 @@ def _uncertainty_from_prior_seasons(all_rows: list[dict[str, Any]],
         widths50 = []; widths80 = []
         evaluated = 0
         per_season = {}
+        band_usage: dict[str, int] = defaultdict(int)
         for season in sorted({int(row["season"]) for row in test_rows}):
             training = [
                 row for row in all_rows
                 if int(row["season"]) < season
                 and row.get(predicted_key) is not None and row.get(actual_key) is not None
             ]
-            residuals = [
+            residuals_all = [
                 float(row[actual_key]) - float(row[predicted_key]) for row in training
             ]
-            if len(residuals) < 100:
-                per_season[str(season)] = {"training_rows": len(residuals), "available": False}
+            if len(residuals_all) < 100:
+                per_season[str(season)] = {"training_rows": len(residuals_all), "available": False}
                 continue
-            q10 = _quantile(residuals, .10); q25 = _quantile(residuals, .25)
-            q75 = _quantile(residuals, .75); q90 = _quantile(residuals, .90)
+
+            by_band: dict[str, list[float]] = defaultdict(list)
+            for row in training:
+                by_band[_bucket_week(row.get("week"))].append(
+                    float(row[actual_key]) - float(row[predicted_key]))
             season_eval = 0; season50 = season80 = 0
             for row in test_rows:
                 if int(row["season"]) != season or row.get(predicted_key) is None or row.get(actual_key) is None:
                     continue
+                band = _bucket_week(row.get("week"))
+                residuals = by_band.get(band, [])
+                source = band if len(residuals) >= 100 else "all_weeks"
+                if source == "all_weeks":
+                    residuals = residuals_all
+                band_usage[source] += 1
+                q10 = _quantile(residuals, .10); q25 = _quantile(residuals, .25)
+                q75 = _quantile(residuals, .75); q90 = _quantile(residuals, .90)
                 predicted = float(row[predicted_key]); actual = float(row[actual_key])
                 season_eval += 1; evaluated += 1
                 lo50, hi50 = predicted + q25, predicted + q75
@@ -822,12 +835,14 @@ def _uncertainty_from_prior_seasons(all_rows: list[dict[str, Any]],
                 if lo80 <= actual <= hi80:
                     coverage80 += 1; season80 += 1
             per_season[str(season)] = {
-                "training_rows": len(residuals),
+                "training_rows": len(residuals_all),
                 "available": True,
-                "residual_quantiles": {"p10": q10, "p25": q25, "p75": q75, "p90": q90},
                 "evaluated": season_eval,
                 "coverage_50": round(season50 / season_eval, 4) if season_eval else None,
                 "coverage_80": round(season80 / season_eval, 4) if season_eval else None,
+                "week_band_residual_rows": {
+                    key: len(values) for key, values in sorted(by_band.items())
+                },
             }
         results[target] = {
             "evaluated": evaluated,
@@ -835,9 +850,34 @@ def _uncertainty_from_prior_seasons(all_rows: list[dict[str, Any]],
             "coverage_80": round(coverage80 / evaluated, 4) if evaluated else None,
             "average_width_50": round(sum(widths50) / len(widths50), 3) if widths50 else None,
             "average_width_80": round(sum(widths80) / len(widths80), 3) if widths80 else None,
+            "interval_source_usage": dict(sorted(band_usage.items())),
             "by_test_season": per_season,
         }
     return results
+
+
+def _quality_ablation(repository: CFBRepository, rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Reuse xPoints' matched temporal ablation for the report's test range."""
+    seasons = sorted({int(row["season"]) for row in rows})
+    if not seasons:
+        return None
+    test_from, test_to = seasons[0], seasons[-1]
+    with repository._reader() as connection:
+        first = connection.execute(
+            """SELECT MIN(season) FROM cfb_projection_backtest
+               WHERE backtest_version=? AND season<?""",
+            (BACKTEST_VERSION, test_from),
+        ).fetchone()[0]
+    if first is None:
+        return None
+    from sports_aggregator.cfb.xpoints import evaluate as evaluate_xpoints
+    return evaluate_xpoints(
+        repository,
+        train_from=int(first),
+        train_to=test_from - 1,
+        test_from=test_from,
+        test_to=test_to,
+    )
 
 
 def _game_scores(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -929,6 +969,7 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
         "by_quality_edge": by_quality_edge,
         "by_quality_sources": by_quality_sources,
         "by_market_disagreement": by_market_disagreement,
+        "points_quality_ablation": _quality_ablation(repository, rows),
         "calibration": {
             "projected_points": _points_calibration(rows),
             "temporal_candidate": _temporal_point_calibration(all_rows, rows),
