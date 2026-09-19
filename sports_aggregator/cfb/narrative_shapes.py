@@ -540,6 +540,32 @@ def report(repository, *, test_season: int = 2025,
             ),
         }
 
+    compound_states = []
+    for i, first in enumerate(CATEGORY_COLUMNS):
+        for second in CATEGORY_COLUMNS[i + 1:]:
+            train_rows = [
+                r for r in train if int(r.get(first) or 0) and int(r.get(second) or 0)
+            ]
+            test_rows = [
+                r for r in test if int(r.get(first) or 0) and int(r.get(second) or 0)
+            ]
+            train_summary = _category_summary(train_rows)
+            test_summary = _category_summary(test_rows)
+            if train_summary["n"] < int(min_train_rows) or test_summary["n"] < int(min_test_rows):
+                continue
+            compound_states.append({
+                "narratives": [first, second],
+                "train": train_summary,
+                "test": test_summary,
+                "direction_persisted": (
+                    (train_summary["mean_market_residual"] > 0) ==
+                    (test_summary["mean_market_residual"] > 0)
+                ),
+            })
+    compound_states.sort(
+        key=lambda item: abs(float(item["test"]["mean_market_residual"] or 0.0)),
+        reverse=True)
+
     # Team and opponent narrative interaction.  Use only the most interpretable
     # single-tag pairs; multi-tag state remains available in tags_json.
     by_game_team = {(int(r["game_id"]), str(r["team"])): r for r in rows}
@@ -626,6 +652,7 @@ def report(repository, *, test_season: int = 2025,
                                  for label, bin_rows in sorted(bins.items())},
         },
         "categories": categories,
+        "compound_states": compound_states[:50],
         "interactions": interaction_rows[:50],
         "notes": [
             "All narrative flags describe information available before the target game.",
