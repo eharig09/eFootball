@@ -1,0 +1,66 @@
+"""CLI for full-chain, walk-forward CFB projection backtesting."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+
+from dotenv import load_dotenv
+
+from sports_aggregator.cfb.projection_backtest import (
+    BACKTEST_VERSION, build, report,
+)
+from sports_aggregator.cfb.repository import CFBRepository
+
+
+def parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Walk-forward backtest of the live CFB projection")
+    p.add_argument("command", choices=("run", "report"))
+    p.add_argument("--from-year", type=int, default=None)
+    p.add_argument("--to-year", type=int, default=None)
+    p.add_argument("--year", type=int, default=None,
+                   help="Shortcut for --from-year YEAR --to-year YEAR.")
+    p.add_argument("--min-prior-games", type=int, default=1)
+    p.add_argument("--points-train-from-year", type=int, default=2022,
+                   help="Earliest season allowed into each prior-season xPoints fold.")
+    p.add_argument("--backtest-version", default=BACKTEST_VERSION)
+    p.add_argument("--database", default=None)
+    return p
+
+
+def _years(args, *, required: bool) -> tuple[int | None, int | None]:
+    if args.year is not None:
+        return args.year, args.year
+    first, last = args.from_year, args.to_year
+    if required and (first is None or last is None):
+        raise SystemExit("run requires --year or both --from-year and --to-year")
+    if first is not None and last is not None and first > last:
+        raise SystemExit("--from-year must not be after --to-year")
+    return first, last
+
+
+def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
+    args = parser().parse_args(argv)
+    repository = CFBRepository(
+        args.database or os.getenv("CFB_DATABASE_PATH", "instance/cfb.sqlite3"))
+    first, last = _years(args, required=args.command == "run")
+    if args.command == "run":
+        payload = build(
+            repository, from_season=int(first), to_season=int(last),
+            backtest_version=args.backtest_version,
+            min_prior_games=args.min_prior_games,
+            points_train_from_season=args.points_train_from_year,
+        )
+    else:
+        payload = report(
+            repository, from_season=first, to_season=last,
+            backtest_version=args.backtest_version,
+            min_prior_games=args.min_prior_games,
+        )
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

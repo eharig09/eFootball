@@ -516,10 +516,14 @@ def _project_side(offense: dict[str, Any], defense: dict[str, Any],
     }
 
 
+_LOAD_POINTS_MODEL = object()
+
+
 def project_matchup(repository, home_team: str, away_team: str, *, as_of_date: str,
                     window: int = TRAILING_WINDOW_GAMES,
                     half_life_games: float | None = None,
-                    game_id: int | None = None) -> dict[str, Any]:
+                    game_id: int | None = None,
+                    points_model_override: dict[str, Any] | None | object = _LOAD_POINTS_MODEL) -> dict[str, Any]:
     """Expected drives/plays/dropbacks/rush attempts/yardage for both sides of one game.
 
     Each side's numbers use its own opponent-adjusted Baseline C at every
@@ -551,8 +555,14 @@ def project_matchup(repository, home_team: str, away_team: str, *, as_of_date: s
                                        window=window, half_life_games=half_life_games)
     points_league = points_environment(repository, before_date=as_of_date)
     quality = matchup_quality_snapshot(repository, game_id) if game_id is not None else {}
-    from sports_aggregator.cfb.xpoints import load_model as load_points_model
-    points_model = load_points_model(repository)
+    if points_model_override is _LOAD_POINTS_MODEL:
+        from sports_aggregator.cfb.xpoints import load_model as load_points_model
+        points_model = load_points_model(repository)
+    else:
+        # Backtests can pass a fold-specific model trained only on seasons
+        # available before this historical kickoff, or None to evaluate the
+        # deployable matchup fallback without leaking today's persisted model.
+        points_model = points_model_override
     home = _project_side(home_snapshot, away_snapshot, home_scoring, away_scoring, league,
                          home_special, away_special, field_environment,
                          home_points, away_points, points_league, quality.get("home"), points_model)
