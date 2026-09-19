@@ -181,3 +181,22 @@ def test_interval_summary_rewards_narrower_equally_calibrated_intervals():
     wide_summary = bt._interval_summary(wide, alpha=0.20)
     assert narrow_summary["coverage"] == wide_summary["coverage"] == 1.0
     assert narrow_summary["interval_score"] < wide_summary["interval_score"]
+
+
+def test_chain_simulation_preserves_drive_ppd_structure():
+    row = {
+        "projected_drives": 10.0,
+        "projected_points_per_drive": 2.0,
+    }
+    sims = bt._chain_simulated_points(row, [(1.0, 0.5), (-1.0, -0.5)])
+    assert sims == [27.5, 13.5]
+
+
+def test_paired_chain_residuals_keeps_component_errors_together():
+    rows = [{
+        "projected_drives": 10.0,
+        "actual_drives": 12.0,
+        "projected_points_per_drive": 2.0,
+        "actual_points_per_drive": 1.5,
+    }]
+    assert bt._paired_chain_residuals(rows) == [(2.0, -0.5)]
