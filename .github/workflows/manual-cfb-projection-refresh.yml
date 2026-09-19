@@ -1,22 +1,35 @@
-name: Manual CFB Projection Refresh
+name: Manual CFB Refresh
 
 on:
   workflow_dispatch:
+    inputs:
+      segment:
+        description: Refresh segment to run
+        required: true
+        default: projections
+        type: choice
+        options:
+          - projections
+          - analytics
+          - core
+          - models
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger projections refresh on Render
+      - name: Trigger selected CFB refresh on Render
         env:
           CFB_REFRESH_URL: ${{ secrets.CFB_REFRESH_URL }}
           CFB_REFRESH_TOKEN: ${{ secrets.CFB_REFRESH_TOKEN }}
+          CFB_REFRESH_SEGMENT: ${{ inputs.segment }}
         run: |
           if [ -z "$CFB_REFRESH_URL" ] || [ -z "$CFB_REFRESH_TOKEN" ]; then
             echo "Missing CFB_REFRESH_URL or CFB_REFRESH_TOKEN repository secret."
             exit 1
           fi
+          echo "Triggering CFB refresh segment: $CFB_REFRESH_SEGMENT"
           curl --fail-with-body --show-error --silent \
             -X POST \
             -H "Authorization: Bearer $CFB_REFRESH_TOKEN" \
-            "${CFB_REFRESH_URL}?profile=light&segment=projections"
+            "${CFB_REFRESH_URL}?profile=light&segment=${CFB_REFRESH_SEGMENT}"
