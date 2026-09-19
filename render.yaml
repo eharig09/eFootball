@@ -135,10 +135,11 @@ services:
   - type: cron
     name: cfb-projection-refresh-trigger
     runtime: python
-    # Keep the live matchup model current without rerunning the full analytics
-    # suite. The web service owns the persistent SQLite disk, so this cron only
-    # triggers the lock-safe projections segment over the authenticated hook.
-    schedule: "15 */2 * * *"
+    # Rebuild the live matchup model's team-game inputs once overnight.
+    # Render cron uses UTC: 09:15 UTC is about 05:15 Eastern during daylight
+    # time and 04:15 Eastern during standard time. Faster-moving context such
+    # as lines/weather remains on the lighter refresh paths.
+    schedule: "15 9 * * *"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m sports_aggregator.render_trigger
     envVars:
