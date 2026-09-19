@@ -439,10 +439,11 @@ def evaluate(repository, *, train_from: int, train_to: int, test_from: int, test
     }
     ablation = {}
     variant_coverage = {}
+    matched_deltas = {}
     for label, feature_keys in variants.items():
         # Evaluate each quality lens on the rows where *that lens* is
         # available. Requiring Elo, FPI, CORE and Vegas simultaneously made
-        # the intersection empty even though each source had useful coverage.
+        # the intersection empty even though individual sources have coverage.
         matched_train = [
             row for row in train
             if row["team_prior_games"] >= min_prior_games
@@ -455,7 +456,23 @@ def evaluate(repository, *, train_from: int, train_to: int, test_from: int, test
         ]
         variant_coefficients, variant_means, variant_scales = _fit_standardized(
             matched_train, feature_keys) if matched_train else (None, None, None)
+
+        # Fit the no-quality baseline on the *same* rows. This makes the delta
+        # an apples-to-apples estimate of whether the added lens helps rather
+        # than a comparison contaminated by different source coverage.
+        base_train = [
+            row for row in matched_train
+            if all(row[key] is not None for key in base_features)
+        ]
+        base_test = [
+            row for row in matched_test
+            if all(row[key] is not None for key in base_features)
+        ]
+        base_coefficients, base_means, base_scales = _fit_standardized(
+            base_train, base_features) if base_train else (None, None, None)
+
         pairs = []
+        base_pairs = []
         if variant_coefficients is not None:
             for row in matched_test:
                 predicted = variant_coefficients[0] + sum(
@@ -463,15 +480,65 @@ def evaluate(repository, *, train_from: int, train_to: int, test_from: int, test
                     * (float(row[key]) - variant_means[key]) / variant_scales[key]
                     for index, key in enumerate(feature_keys))
                 pairs.append((max(0.0, predicted), float(row["actual_points_per_drive"])))
-        ablation[label] = _finish(pairs)
+        if base_coefficients is not None:
+            for row in base_test:
+                predicted = base_coefficients[0] + sum(
+                    base_coefficients[index + 1]
+                    * (float(row[key]) - base_means[key]) / base_scales[key]
+                    for index, key in enumerate(base_features))
+                base_pairs.append((max(0.0, predicted), float(row["actual_points_per_drive"])))
+
+        variant_metrics = _finish(pairs)
+        base_metrics = _finish(base_pairs)
+        ablation[label] = variant_metrics
         variant_coverage[label] = {
             "training_rows": len(matched_train),
             "test_rows": len(matched_test),
         }
+        matched_deltas[label] = {
+            "same_sample_base": base_metrics,
+            "variant": variant_metrics,
+            "mae_delta_vs_base": (
+                round(variant_metrics["mae"] - base_metrics["mae"], 5)
+                if variant_metrics["mae"] is not None and base_metrics["mae"] is not None
+                else None
+            ),
+            "rmse_delta_vs_base": (
+                round(variant_metrics["rmse"] - base_metrics["rmse"], 5)
+                if variant_metrics["rmse"] is not None and base_metrics["rmse"] is not None
+                else None
+            ),
+        }
+
+    source_fields = {
+        "elo": "elo_difference",
+        "fpi": "fpi_margin",
+        "core": "core_margin",
+        "vegas": "vegas_margin",
+        "quality_blend": "opponent_quality_blend",
+    }
+    quality_source_coverage = {
+        name: {
+            "training_rows": sum(
+                1 for row in train
+                if row["team_prior_games"] >= min_prior_games and row.get(field) is not None
+            ),
+            "test_rows": sum(
+                1 for row in test
+                if row["team_prior_games"] >= min_prior_games and row.get(field) is not None
+            ),
+        }
+        for name, field in source_fields.items()
+    }
     return {"dataset_version": dataset_version, "train_seasons": [train_from, train_to],
             "test_seasons": [test_from, test_to], "training_rows": len(eligible_train),
             "test_rows": evaluated, "features": list(ADVANCED_FEATURES),
             "standardized_coefficients": coefficients,
             "points_per_drive": {label: _finish(values) for label, values in scores.items()},
-            "quality_ablation": {"coverage": variant_coverage, **ablation},
+            "quality_ablation": {
+                "coverage": variant_coverage,
+                "source_coverage": quality_source_coverage,
+                "matched_deltas": matched_deltas,
+                **ablation,
+            },
             "note": "All features are strictly pregame. Market uses actual drive count only as a diagnostic and is not deployable."}
