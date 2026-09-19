@@ -138,3 +138,53 @@ def test_tag_intensity_uses_underlying_narrative_magnitude():
     }
     assert nc._tag_intensity("bad_loss", row, {}) == 18.0
     assert nc._tag_intensity("upset_loss", row, {}) == 25.0
+
+
+from sports_aggregator.cfb import extreme_tail_composite as etc
+
+
+def test_extreme_tail_score_counts_only_strong_votes():
+    row = {
+        "football_lab_edge": 1.2,
+        "elo_edge": 0.8,
+        "fpi_edge": 0.2,
+        "core_edge": -0.1,
+        "line_elo_edge": 1.0,
+        "narrative_interaction_edge": None,
+    }
+    scales = {key: 1.0 for key in nc.SIGNAL_KEYS}
+    score = etc._score_with_keys(row, scales, nc.SIGNAL_KEYS)
+    assert score["direction"] == 1
+    assert score["available"] == 5
+    assert score["strong_positive"] == 3
+    assert score["strong_negative"] == 0
+    assert score["strong_agreement_count"] == 3
+
+
+def test_signal_audit_flags_constant_or_missing_lenses():
+    rows = [
+        {"fpi_edge": None, "core_edge": 0.0},
+        {"fpi_edge": None, "core_edge": 0.0},
+    ]
+    for row in rows:
+        for key in nc.SIGNAL_KEYS:
+            row.setdefault(key, None)
+    audit = etc._signal_audit(rows)
+    assert audit["fpi_edge"]["constant_or_missing"] is True
+    assert audit["fpi_edge"]["coverage_rate"] == 0.0
+    assert audit["core_edge"]["constant_or_missing"] is True
+    assert audit["core_edge"]["unique_values"] == 1
+
+
+def test_bucket_metrics_respects_fixed_magnitude_band():
+    row = {
+        "market_margin_residual": 3.0,
+        **{key: 1.0 for key in nc.SIGNAL_KEYS},
+    }
+    scales = {key: 1.0 for key in nc.SIGNAL_KEYS}
+    inside = etc._bucket_metrics(
+        [row], scales, 0.0, low=0.75, high=1.25)
+    outside = etc._bucket_metrics(
+        [row], scales, 0.0, low=1.25, high=1.50)
+    assert inside["n"] == 1
+    assert outside["n"] == 0
