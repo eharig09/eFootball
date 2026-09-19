@@ -89,3 +89,52 @@ def test_v2_market_tags_use_centered_state():
     assert "market_darling" in tags
     assert "market_lag" in tags
     assert "market_chase" not in tags
+
+
+from sports_aggregator.cfb import narrative_composite as nc
+
+
+def test_composite_score_rewards_agreement_and_magnitude():
+    row = {
+        "football_lab_edge": 2.0,
+        "elo_edge": 1.0,
+        "fpi_edge": 3.0,
+        "core_edge": -0.5,
+        "line_elo_edge": None,
+        "narrative_interaction_edge": 1.5,
+    }
+    scales = {key: 1.0 for key in nc.SIGNAL_KEYS}
+    score = nc._score(row, scales)
+    assert score["available"] == 5
+    assert score["direction"] == 1
+    assert score["agreement_ratio"] == 0.8
+    assert score["score"] > 0.0
+
+
+def test_subset_metrics_filters_on_agreement_and_magnitude():
+    scales = {key: 1.0 for key in nc.SIGNAL_KEYS}
+    row = {
+        "market_margin_residual": 4.0,
+        **{key: 1.0 for key in nc.SIGNAL_KEYS},
+    }
+    kept = nc._subset_metrics(
+        [row], scales, 1.0,
+        min_agreement=1.0, min_magnitude=0.5, min_signals=5,
+    )
+    assert kept["n"] == 1
+    assert kept["directional_hit_rate"] == 1.0
+    dropped = nc._subset_metrics(
+        [row], scales, 1.0,
+        min_agreement=1.0, min_magnitude=2.0, min_signals=5,
+    )
+    assert dropped["n"] == 0
+
+
+def test_tag_intensity_uses_underlying_narrative_magnitude():
+    row = {
+        "previous_market_surprise": -18.0,
+        "previous_elo_surprise": -12.0,
+        "previous_market_expected_margin": 7.0,
+    }
+    assert nc._tag_intensity("bad_loss", row, {}) == 18.0
+    assert nc._tag_intensity("upset_loss", row, {}) == 25.0
