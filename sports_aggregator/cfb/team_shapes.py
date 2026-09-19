@@ -716,6 +716,236 @@ def full_chain_ablation(repository: CFBRepository, *, test_season: int,
     }
 
 
+
+def _residual_adjustment(raw_effect: float, n: int, *, shrink_k: float,
+                         threshold: float) -> float:
+    if abs(float(raw_effect)) < float(threshold):
+        return 0.0
+    weight = float(n) / (float(n) + float(shrink_k)) if shrink_k > 0 else 1.0
+    return float(raw_effect) * weight
+
+
+def residual_chain_ablation(repository: CFBRepository, *, test_season: int,
+                            shape_version: str = SHAPE_VERSION, clusters: int = 8,
+                            min_prior_games: int = 3, min_pair_rows: int = 25,
+                            backtest_version: str = "game-projection-backtest-v1") -> dict[str, Any]:
+    """Walk-forward residualized shape interaction on top of production PPD."""
+    initialize(repository)
+    validation_season = int(test_season) - 1
+    with repository._reader() as connection:
+        shape_rows = [dict(row) for row in connection.execute(
+            """SELECT * FROM cfb_team_shape_backtest
+               WHERE shape_version=? AND prior_games>=?
+               ORDER BY season,week,kickoff,game_id,side""",
+            (shape_version, int(min_prior_games)),
+        )]
+        projection_rows = {
+            (int(row["game_id"]), str(row["team"])): dict(row)
+            for row in connection.execute(
+                """SELECT game_id,team,season,projected_drives,
+                          projected_points_per_drive,projected_offensive_points,
+                          actual_points_per_drive,actual_offensive_points
+                   FROM cfb_projection_backtest
+                   WHERE backtest_version=?""",
+                (backtest_version,),
+            )
+        }
+
+    def fit_model(train_rows: list[dict[str, Any]]) -> dict[str, Any]:
+        complete = [row for row in train_rows if all(row.get(key) is not None for key in FEATURES)]
+        scaler = _fit_scaler(complete)
+        vectors = [_vector(row, scaler) for row in complete]
+        vectors = [vector for vector in vectors if vector is not None]
+        centroids = _kmeans(vectors, k=int(clusters))
+        lookup = {(int(row["game_id"]), str(row["team"])): row for row in train_rows}
+        own_residuals: dict[int, list[float]] = defaultdict(list)
+        pair_residuals: dict[tuple[int, int], list[float]] = defaultdict(list)
+        for row in train_rows:
+            projection = projection_rows.get((int(row["game_id"]), str(row["team"])))
+            opponent = lookup.get((int(row["game_id"]), str(row["opponent"])))
+            vec = _vector(row, scaler)
+            opp_vec = _vector(opponent, scaler) if opponent else None
+            if not projection or vec is None or opp_vec is None:
+                continue
+            projected = projection.get("projected_points_per_drive")
+            actual = projection.get("actual_points_per_drive")
+            if projected is None or actual is None:
+                continue
+            own = _cluster(vec, centroids)
+            opp = _cluster(opp_vec, centroids)
+            residual = float(actual) - float(projected)
+            own_residuals[own].append(residual)
+            pair_residuals[(own, opp)].append(residual)
+        cells = {}
+        for key, values in pair_residuals.items():
+            own_values = own_residuals.get(key[0], [])
+            if len(values) < int(min_pair_rows) or not own_values:
+                continue
+            pair_mean = sum(values) / len(values)
+            own_mean = sum(own_values) / len(own_values)
+            cells[key] = {
+                "n": len(values),
+                "pair_residual_mean": pair_mean,
+                "own_shape_residual_mean": own_mean,
+                "interaction_residual": pair_mean - own_mean,
+            }
+        return {"scaler": scaler, "centroids": centroids, "cells": cells}
+
+    def evaluate(rows: list[dict[str, Any]], model: dict[str, Any],
+                 *, shrink_k: float, threshold: float) -> dict[str, Any]:
+        lookup = {(int(row["game_id"]), str(row["team"])): row for row in rows}
+        base_ppd, adjusted_ppd = [], []
+        base_points, adjusted_points = [], []
+        applied = 0
+        effects = []
+        for row in rows:
+            projection = projection_rows.get((int(row["game_id"]), str(row["team"])))
+            opponent = lookup.get((int(row["game_id"]), str(row["opponent"])))
+            vec = _vector(row, model["scaler"])
+            opp_vec = _vector(opponent, model["scaler"]) if opponent else None
+            if not projection or vec is None or opp_vec is None:
+                continue
+            projected_ppd = projection.get("projected_points_per_drive")
+            actual_ppd = projection.get("actual_points_per_drive")
+            if projected_ppd is None or actual_ppd is None:
+                continue
+            own = _cluster(vec, model["centroids"])
+            opp = _cluster(opp_vec, model["centroids"])
+            cell = model["cells"].get((own, opp))
+            adjustment = 0.0
+            if cell:
+                adjustment = _residual_adjustment(
+                    cell["interaction_residual"], cell["n"],
+                    shrink_k=float(shrink_k), threshold=float(threshold))
+                if adjustment != 0.0:
+                    applied += 1
+                    effects.append(adjustment)
+            base = float(projected_ppd)
+            adj = max(0.0, base + adjustment)
+            actual = float(actual_ppd)
+            base_ppd.append((base, actual))
+            adjusted_ppd.append((adj, actual))
+
+            actual_points = projection.get("actual_offensive_points")
+            projected_points = projection.get("projected_offensive_points")
+            drives = projection.get("projected_drives")
+            if actual_points is not None and projected_points is not None and drives is not None:
+                base_points.append((float(projected_points), float(actual_points)))
+                adjusted_points.append((
+                    float(projected_points) + float(drives) * adjustment,
+                    float(actual_points),
+                ))
+        ppd_base = _metrics(base_ppd)
+        ppd_adj = _metrics(adjusted_ppd)
+        points_base = _metrics(base_points)
+        points_adj = _metrics(adjusted_points)
+        return {
+            "rows": ppd_base["n"],
+            "adjusted_rows": applied,
+            "adjusted_rate": round(applied / ppd_base["n"], 4) if ppd_base["n"] else 0.0,
+            "mean_applied_adjustment": (
+                round(sum(effects) / len(effects), 4) if effects else 0.0
+            ),
+            "points_per_drive": {
+                "production_baseline": ppd_base,
+                "residual_shape_adjusted": ppd_adj,
+                "mae_delta_vs_production": round(ppd_adj["mae"] - ppd_base["mae"], 4),
+                "rmse_delta_vs_production": round(ppd_adj["rmse"] - ppd_base["rmse"], 4),
+            },
+            "offensive_points": {
+                "production_baseline": points_base,
+                "residual_shape_adjusted": points_adj,
+                "mae_delta_vs_production": round(points_adj["mae"] - points_base["mae"], 4),
+                "rmse_delta_vs_production": round(points_adj["rmse"] - points_base["rmse"], 4),
+            },
+        }
+
+    policy_train = [row for row in shape_rows if int(row["season"]) < validation_season]
+    validation = [row for row in shape_rows if int(row["season"]) == validation_season]
+    policy_model = fit_model(policy_train)
+    candidates = []
+    for threshold in (0.0, 0.05, 0.10, 0.15):
+        for shrink_k in (0.0, 25.0, 50.0, 100.0):
+            result = evaluate(
+                validation, policy_model, shrink_k=shrink_k, threshold=threshold)
+            candidates.append({
+                "threshold": threshold,
+                "shrink_k": shrink_k,
+                "validation": result,
+            })
+    selected = min(
+        candidates,
+        key=lambda item: (
+            item["validation"]["points_per_drive"]["residual_shape_adjusted"]["mae"],
+            item["validation"]["points_per_drive"]["residual_shape_adjusted"]["rmse"],
+        ),
+    )
+
+    final_train = [row for row in shape_rows if int(row["season"]) < int(test_season)]
+    test = [row for row in shape_rows if int(row["season"]) == int(test_season)]
+    final_model = fit_model(final_train)
+    test_result = evaluate(
+        test, final_model,
+        shrink_k=float(selected["shrink_k"]),
+        threshold=float(selected["threshold"]),
+    )
+    strongest = sorted(
+        (
+            {
+                "own_shape": own,
+                "opponent_shape": opp,
+                "training_rows": cell["n"],
+                "pair_residual_mean": round(cell["pair_residual_mean"], 4),
+                "own_shape_residual_mean": round(cell["own_shape_residual_mean"], 4),
+                "interaction_residual": round(cell["interaction_residual"], 4),
+                "shrunk_adjustment": round(_residual_adjustment(
+                    cell["interaction_residual"], cell["n"],
+                    shrink_k=float(selected["shrink_k"]),
+                    threshold=float(selected["threshold"])), 4),
+            }
+            for (own, opp), cell in final_model["cells"].items()
+        ),
+        key=lambda item: abs(item["shrunk_adjustment"]),
+        reverse=True,
+    )[:15]
+
+    return {
+        "test_season": int(test_season),
+        "validation_season": validation_season,
+        "clusters": int(clusters),
+        "min_pair_rows": int(min_pair_rows),
+        "policy_fit_seasons": (
+            [min(int(row["season"]) for row in policy_train),
+             max(int(row["season"]) for row in policy_train)]
+            if policy_train else None
+        ),
+        "final_fit_seasons": (
+            [min(int(row["season"]) for row in final_train),
+             max(int(row["season"]) for row in final_train)]
+            if final_train else None
+        ),
+        "selected_policy": {
+            "threshold": selected["threshold"],
+            "shrink_k": selected["shrink_k"],
+            "validation": selected["validation"],
+        },
+        "candidate_count": len(candidates),
+        "test": test_result,
+        "strongest_final_residual_interactions": strongest,
+        "volume_source": (
+            "Production xDrives/projected_drives is fixed. Shape only attempts "
+            "to explain residual PPD error left after the production model."
+        ),
+        "notes": [
+            "Residual target is actual PPD minus production projected PPD.",
+            "Interaction residual subtracts the own-shape mean residual before adjustment.",
+            "Threshold/shrinkage policy is selected on the prior validation season, not on the test season.",
+            "Final residual cells are refit through the season before the held-out test.",
+            "QB remains excluded.",
+        ],
+    }
+
+
 def report(repository: CFBRepository, *, test_season: int,
            shape_version: str = SHAPE_VERSION, clusters: int = 8,
            neighbors: int = 25, min_prior_games: int = 3) -> dict[str, Any]:
