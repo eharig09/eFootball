@@ -145,6 +145,7 @@ def _interaction_observations(rows: list[dict[str, Any]],
                     "narrative_a": first,
                     "narrative_b": second,
                     "residual": oriented,
+                    "home_orientation_sign": 1.0 if htag == first else -1.0,
                     "intensity_a": ai,
                     "intensity_b": bi,
                 })
@@ -348,10 +349,9 @@ def _composite_games(repository: CFBRepository, *, test_season: int,
             prior = prior_means.get(key)
             if prior is None:
                 continue
-            # x residual is oriented from narrative_a. Convert that historical
-            # expectation back to the current home-team perspective.
-            same_orientation = float(x["residual"]) == float(home["market_margin_residual"])
-            narrative_edges.append(prior if same_orientation else -prior)
+            # Historical interaction means are oriented from narrative_a.
+            # Convert them back to the current home-team perspective.
+            narrative_edges.append(float(prior) * float(x["home_orientation_sign"]))
         narrative_edge = _mean(narrative_edges)
 
         out.append({
@@ -510,12 +510,12 @@ def composite_report(repository: CFBRepository, *, test_season: int = 2025) -> d
                 min_magnitude=magnitude, min_signals=4),
         })
 
-    # Refit normalization/slope through 2024 only after policy selection, then
-    # re-evaluate held-out 2025 with the frozen policy.
+    # Refit only the calibration slope through 2024 after policy selection.
+    # Keep 2022-23 normalization frozen so the selected magnitude threshold
+    # retains exactly the same meaning in the held-out season.
     final_train = [r for r in games if int(r["season"]) < int(test_season)]
-    final_scales = _normalization(final_train)
-    final_slope = _fit_slope(final_train, final_scales)
-    final_test = _subset_metrics(test, final_scales, final_slope, **policy)
+    final_slope = _fit_slope(final_train, scales)
+    final_test = _subset_metrics(test, scales, final_slope, **policy)
 
     return {
         "version": "multi-lens-composite-v1",
