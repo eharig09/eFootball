@@ -30,6 +30,13 @@ def test_every_analytics_step_is_a_real_refresh_step():
     assert not missing, missing
 
 
+def test_matchup_rushing_detail_is_reachable_in_production():
+    """Run-direction and red-zone rushing panels both depend on cfbd_rushing_plays."""
+    assert "rushing-detail" in ANALYTICS_STEPS
+    order = [step.name for step in steps(2026) if step.name in ANALYTICS_STEPS]
+    assert order.index("pbp") < order.index("rushing-detail")
+
+
 def test_every_projection_step_is_a_real_refresh_step():
     plan = {step.name for step in steps(2026) if "refresh" in step.phases}
     missing = [name for name in PROJECTION_STEPS if name not in plan]
