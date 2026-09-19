@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb import narrative_shapes
+from sports_aggregator.cfb import narrative_shapes_v2
 
 
 def main() -> None:
@@ -27,6 +28,11 @@ def main() -> None:
     report.add_argument("--min-train-rows", type=int, default=30)
     report.add_argument("--min-test-rows", type=int, default=12)
 
+    report_v2 = sub.add_parser("report-v2")
+    report_v2.add_argument("--year", type=int, default=2025)
+    report_v2.add_argument("--min-train-rows", type=int, default=30)
+    report_v2.add_argument("--min-test-rows", type=int, default=12)
+
     load_dotenv()
     args = parser.parse_args()
     repository = CFBRepository(
@@ -39,6 +45,13 @@ def main() -> None:
             to_season=args.to_year,
             home_field_points=args.home_field_points,
             line_learning_rate=args.line_learning_rate,
+        )
+    elif args.command == "report-v2":
+        payload = narrative_shapes_v2.report(
+            repository,
+            test_season=args.year,
+            min_train_rows=args.min_train_rows,
+            min_test_rows=args.min_test_rows,
         )
     else:
         payload = narrative_shapes.report(
