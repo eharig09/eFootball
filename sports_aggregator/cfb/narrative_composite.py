@@ -303,6 +303,11 @@ def _composite_games(repository: CFBRepository, *, test_season: int,
     lookup = {(int(r["game_id"]), str(r["team"])): r for r in rows}
     projections = _projection_rows(repository)
     interaction_obs = _interaction_observations(rows, line_state)
+    seasons = sorted({int(r["season"]) for r in rows})
+    prior_means_by_season = {
+        season: _prior_interaction_means(interaction_obs, season)
+        for season in seasons
+    }
 
     interactions_by_game: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for x in interaction_obs:
@@ -342,7 +347,7 @@ def _composite_games(repository: CFBRepository, *, test_season: int,
             )
             line_edge = line_pred_margin - market_margin
 
-        prior_means = _prior_interaction_means(interaction_obs, season)
+        prior_means = prior_means_by_season.get(season, {})
         narrative_edges = []
         for x in interactions_by_game.get(gid, []):
             key = (x["narrative_a"], x["narrative_b"])
@@ -474,6 +479,10 @@ def composite_report(repository: CFBRepository, *, test_season: int = 2025) -> d
                     "validation": metrics,
                 })
     eligible = [g for g in grid if g["validation"]["n"] >= 50]
+    if not eligible:
+        eligible = [g for g in grid if g["validation"]["n"] > 0]
+    if not eligible:
+        raise ValueError("No composite validation rows satisfy any threshold policy")
     # Select for actual prediction improvement first; tie-break on directional
     # quality and then sample size.  2025 is not consulted.
     selected = min(
@@ -545,6 +554,7 @@ def composite_report(repository: CFBRepository, *, test_season: int = 2025) -> d
         "notes": [
             "2025 never selects the composite policy.",
             "Physical team-shape adjustments are not separately double-counted; production Football Lab is one lens.",
+            "Football Lab edge uses the historical production offense-only expected-points margin versus the market spread; interpret it as a model-strength lens, not a final-score identity.",
             "Narrative interaction edge uses only interaction history from seasons before each game.",
             "Composite magnitude is the mean standardized signed edge across available lenses.",
             "Agreement is the fraction of available lenses sharing the composite direction.",
