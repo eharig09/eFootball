@@ -158,3 +158,26 @@ def test_conditional_residuals_falls_back_when_specific_bucket_is_sparse():
     )
     assert len(residuals) >= 100
     assert source in {"week=0-3|projection=20_24|prior=1-2", "week=0-3|projection=20_24", "projection=20_24", "week=0-3", "global"}
+
+
+def test_generic_ridge_can_learn_larger_error_scale():
+    rows = []
+    for x in range(1, 40):
+        features = [float(x), 1.0]
+        target = 0.1 * float(x)
+        rows.append((features, target))
+    model = bt._ridge_fit_generic(rows, l2=0.01)
+    assert model is not None
+    low = bt._ridge_predict_generic(model, [5.0, 1.0])
+    high = bt._ridge_predict_generic(model, [30.0, 1.0])
+    assert low is not None and high is not None
+    assert high > low
+
+
+def test_interval_summary_rewards_narrower_equally_calibrated_intervals():
+    narrow = [(20.0, 15.0, 25.0), (30.0, 25.0, 35.0)]
+    wide = [(20.0, 5.0, 35.0), (30.0, 15.0, 45.0)]
+    narrow_summary = bt._interval_summary(narrow, alpha=0.20)
+    wide_summary = bt._interval_summary(wide, alpha=0.20)
+    assert narrow_summary["coverage"] == wide_summary["coverage"] == 1.0
+    assert narrow_summary["interval_score"] < wide_summary["interval_score"]
