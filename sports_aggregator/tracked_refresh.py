@@ -62,7 +62,11 @@ CORE_STEPS = ["weather", "pregame-snapshot"]
 ANALYTICS_STEPS = [
     "pbp", "pbp-derive", "epa", "play-detail", "build-tendencies",
     "team-advanced", "win-probability", "passing-detail", "passing-qb",
-    "coordinators",
+    # The matchup page reads cfbd_rushing_plays for both run-direction and
+    # red-zone rushing panels. This step existed in bootstrap but was omitted
+    # from the production analytics segment, so those panels silently vanished
+    # as the deployed table went stale/empty.
+    "rushing-detail", "coordinators",
     "nfl-core-foundation", "nfl-core-stats", "nfl-core-depth", "nfl-core-pbp",
 ]
 
