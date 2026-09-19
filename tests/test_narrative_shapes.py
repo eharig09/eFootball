@@ -376,3 +376,50 @@ def test_classified_rows_preserve_walk_forward_state():
     assert len(classified) == 1
     assert classified[0]["confirmation_count"] == 2
     assert classified[0]["aligned_residual"] == 4.0
+
+
+from sports_aggregator.cfb import convergence_robustness as cr
+
+
+def test_robustness_summary_reuses_validation_uncertainty():
+    rows = [
+        {"aligned_residual": 3.0, "hit": True},
+        {"aligned_residual": -1.0, "hit": False},
+        {"aligned_residual": 2.0, "hit": True},
+    ]
+    summary = cr._summary(rows, seed=11)
+    assert summary["n"] == 3
+    assert summary["wins"] == 2
+    assert summary["hit_rate"] == 0.6667
+
+
+def test_robustness_slice_groups_fixed_categories():
+    rows = [
+        {"market_role": "favorite", "aligned_residual": 2.0, "hit": True},
+        {"market_role": "underdog", "aligned_residual": -1.0, "hit": False},
+        {"market_role": "favorite", "aligned_residual": 4.0, "hit": True},
+    ]
+    result = cr._slice(rows, "market_role", seed_base=20)
+    lookup = {item["value"]: item for item in result}
+    assert lookup["favorite"]["n"] == 2
+    assert lookup["favorite"]["hit_rate"] == 1.0
+    assert lookup["underdog"]["n"] == 1
+
+
+def test_compact_console_summary_excludes_game_rows():
+    payload = {
+        "version": "x",
+        "test_through_season": 2025,
+        "full_convergence": {
+            "n": 10, "hit_rate": 0.6, "hit_rate_ci95": [0.3, 0.8],
+            "mean_aligned_residual": 2.0,
+            "mean_aligned_residual_bootstrap_ci95": [0.1, 4.0],
+        },
+        "context_supported_full_convergence": {
+            "n": 5, "hit_rate": 0.8, "mean_aligned_residual": 3.0,
+        },
+        "game_rows": [{"huge": "payload"}],
+    }
+    compact = cr.compact_console_summary(payload, {"json": "/tmp/x.json"})
+    assert "game_rows" not in compact
+    assert compact["files"]["json"] == "/tmp/x.json"
