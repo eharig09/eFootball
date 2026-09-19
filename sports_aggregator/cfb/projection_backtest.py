@@ -620,6 +620,267 @@ def _market_disagreement_bucket(row: dict[str, Any]) -> str:
     return "6+"
 
 
+POINT_CALIBRATION_BINS = (
+    ("under_15", None, 15.0),
+    ("15_19", 15.0, 20.0),
+    ("20_24", 20.0, 25.0),
+    ("25_29", 25.0, 30.0),
+    ("30_34", 30.0, 35.0),
+    ("35_39", 35.0, 40.0),
+    ("40_plus", 40.0, None),
+)
+
+
+def _point_bin(value: float) -> str:
+    for label, low, high in POINT_CALIBRATION_BINS:
+        if (low is None or value >= low) and (high is None or value < high):
+            return label
+    return "40_plus"
+
+
+def _fit_point_calibrator(rows: list[dict[str, Any]], *, pseudo_rows: float = 50.0) -> dict[str, Any] | None:
+    """Shrink empirical point residuals by projection band.
+
+    This is intentionally simple and transparent. It only learns a correction
+    from seasons before the test row, and sparse extreme bins are pulled
+    strongly toward the global residual rather than trusted literally.
+    """
+    eligible = [
+        row for row in rows
+        if row.get("projected_offensive_points") is not None
+        and row.get("actual_offensive_points") is not None
+    ]
+    if not eligible:
+        return None
+    residuals = [
+        float(row["actual_offensive_points"]) - float(row["projected_offensive_points"])
+        for row in eligible
+    ]
+    global_residual = sum(residuals) / len(residuals)
+    grouped: dict[str, list[float]] = defaultdict(list)
+    for row in eligible:
+        predicted = float(row["projected_offensive_points"])
+        grouped[_point_bin(predicted)].append(
+            float(row["actual_offensive_points"]) - predicted)
+    corrections = {}
+    for label, _, _ in POINT_CALIBRATION_BINS:
+        values = grouped.get(label, [])
+        if not values:
+            corrections[label] = global_residual
+            continue
+        local = sum(values) / len(values)
+        weight = len(values) / (len(values) + pseudo_rows)
+        corrections[label] = weight * local + (1.0 - weight) * global_residual
+    return {
+        "training_rows": len(eligible),
+        "global_residual": global_residual,
+        "corrections": corrections,
+        "pseudo_rows": pseudo_rows,
+    }
+
+
+def _apply_point_calibrator(model: dict[str, Any] | None, predicted: float | None) -> float | None:
+    if predicted is None:
+        return None
+    value = float(predicted)
+    if not model:
+        return value
+    return max(0.0, value + float(model["corrections"].get(_point_bin(value), 0.0)))
+
+
+def _temporal_point_calibration(all_rows: list[dict[str, Any]],
+                                test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    pairs = []
+    by_season = {}
+    models = {}
+    for season in sorted({int(row["season"]) for row in test_rows}):
+        training = [row for row in all_rows if int(row["season"]) < season]
+        model = _fit_point_calibrator(training)
+        season_rows = [row for row in test_rows if int(row["season"]) == season]
+        season_pairs = [
+            (_apply_point_calibrator(model, row.get("projected_offensive_points")),
+             row.get("actual_offensive_points"))
+            for row in season_rows
+        ]
+        season_pairs = [(p, a) for p, a in season_pairs if p is not None and a is not None]
+        pairs.extend(season_pairs)
+        by_season[str(season)] = _metrics(season_pairs)
+        models[str(season)] = (
+            {
+                "training_rows": model["training_rows"],
+                "global_residual": round(model["global_residual"], 4),
+                "corrections": {k: round(v, 4) for k, v in model["corrections"].items()},
+                "pseudo_rows": model["pseudo_rows"],
+            }
+            if model else None
+        )
+    raw = _metrics(
+        (row.get("projected_offensive_points"), row.get("actual_offensive_points"))
+        for row in test_rows)
+    calibrated = _metrics(pairs)
+    delta = (
+        round(calibrated["mae"] - raw["mae"], 4)
+        if raw["mae"] is not None and calibrated["mae"] is not None else None
+    )
+    return {
+        "raw": raw,
+        "calibrated": calibrated,
+        "mae_delta_vs_raw": delta,
+        "by_test_season": by_season,
+        "models": models,
+        "note": "Each test season is calibrated only from earlier backtest seasons.",
+    }
+
+
+def _yardage_decomposition(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    full = []
+    actual_volume_predicted_efficiency = []
+    predicted_volume_actual_efficiency = []
+    pass_actual_volume = []
+    pass_actual_efficiency = []
+    rush_actual_volume = []
+    rush_actual_efficiency = []
+
+    for row in rows:
+        pd = row.get("projected_dropbacks"); rd = row.get("projected_rush_attempts")
+        pp = row.get("projected_pass_yards"); rp = row.get("projected_rush_yards")
+        ad = row.get("actual_dropbacks"); ar = row.get("actual_rush_attempts")
+        ap = row.get("actual_pass_yards"); rr = row.get("actual_rush_yards")
+        at = row.get("actual_total_yards")
+        if None in (pd, rd, pp, rp, ad, ar, ap, rr, at):
+            continue
+        pd=float(pd); rd=float(rd); pp=float(pp); rp=float(rp)
+        ad=float(ad); ar=float(ar); ap=float(ap); rr=float(rr); at=float(at)
+        pred_ypd = pp / pd if pd else None
+        pred_ypr = rp / rd if rd else None
+        actual_ypd = ap / ad if ad else None
+        actual_ypr = rr / ar if ar else None
+        full.append((pp + rp, at))
+        if pred_ypd is not None and pred_ypr is not None:
+            actual_volume_predicted_efficiency.append((ad * pred_ypd + ar * pred_ypr, at))
+            pass_actual_volume.append((ad * pred_ypd, ap))
+            rush_actual_volume.append((ar * pred_ypr, rr))
+        if actual_ypd is not None and actual_ypr is not None:
+            predicted_volume_actual_efficiency.append((pd * actual_ypd + rd * actual_ypr, at))
+            pass_actual_efficiency.append((pd * actual_ypd, ap))
+            rush_actual_efficiency.append((rd * actual_ypr, rr))
+    return {
+        "full_projection": _metrics(full),
+        "actual_volume_with_projected_efficiency": _metrics(actual_volume_predicted_efficiency),
+        "projected_volume_with_actual_efficiency": _metrics(predicted_volume_actual_efficiency),
+        "pass_yards": {
+            "actual_dropbacks_with_projected_efficiency": _metrics(pass_actual_volume),
+            "projected_dropbacks_with_actual_efficiency": _metrics(pass_actual_efficiency),
+        },
+        "rush_yards": {
+            "actual_attempts_with_projected_efficiency": _metrics(rush_actual_volume),
+            "projected_attempts_with_actual_efficiency": _metrics(rush_actual_efficiency),
+        },
+        "interpretation": (
+            "If using actual volume lowers MAE more, volume/mix is the larger error source. "
+            "If using actual efficiency lowers MAE more, per-play efficiency is the larger source."
+        ),
+    }
+
+
+def _uncertainty_from_prior_seasons(all_rows: list[dict[str, Any]],
+                                    test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Empirical intervals trained only on prior seasons, conditioned on week band when possible."""
+    results = {}
+    for target, predicted_key, actual_key in (
+        ("offensive_points", "projected_offensive_points", "actual_offensive_points"),
+        ("total_yards", "projected_total_yards", "actual_total_yards"),
+    ):
+        coverage50 = coverage80 = 0
+        widths50 = []; widths80 = []
+        evaluated = 0
+        per_season = {}
+        band_usage: dict[str, int] = defaultdict(int)
+        for season in sorted({int(row["season"]) for row in test_rows}):
+            training = [
+                row for row in all_rows
+                if int(row["season"]) < season
+                and row.get(predicted_key) is not None and row.get(actual_key) is not None
+            ]
+            residuals_all = [
+                float(row[actual_key]) - float(row[predicted_key]) for row in training
+            ]
+            if len(residuals_all) < 100:
+                per_season[str(season)] = {"training_rows": len(residuals_all), "available": False}
+                continue
+
+            by_band: dict[str, list[float]] = defaultdict(list)
+            for row in training:
+                by_band[_bucket_week(row.get("week"))].append(
+                    float(row[actual_key]) - float(row[predicted_key]))
+            season_eval = 0; season50 = season80 = 0
+            for row in test_rows:
+                if int(row["season"]) != season or row.get(predicted_key) is None or row.get(actual_key) is None:
+                    continue
+                band = _bucket_week(row.get("week"))
+                residuals = by_band.get(band, [])
+                source = band if len(residuals) >= 100 else "all_weeks"
+                if source == "all_weeks":
+                    residuals = residuals_all
+                band_usage[source] += 1
+                q10 = _quantile(residuals, .10); q25 = _quantile(residuals, .25)
+                q75 = _quantile(residuals, .75); q90 = _quantile(residuals, .90)
+                predicted = float(row[predicted_key]); actual = float(row[actual_key])
+                season_eval += 1; evaluated += 1
+                lo50, hi50 = predicted + q25, predicted + q75
+                lo80, hi80 = predicted + q10, predicted + q90
+                widths50.append(hi50 - lo50); widths80.append(hi80 - lo80)
+                if lo50 <= actual <= hi50:
+                    coverage50 += 1; season50 += 1
+                if lo80 <= actual <= hi80:
+                    coverage80 += 1; season80 += 1
+            per_season[str(season)] = {
+                "training_rows": len(residuals_all),
+                "available": True,
+                "evaluated": season_eval,
+                "coverage_50": round(season50 / season_eval, 4) if season_eval else None,
+                "coverage_80": round(season80 / season_eval, 4) if season_eval else None,
+                "week_band_residual_rows": {
+                    key: len(values) for key, values in sorted(by_band.items())
+                },
+            }
+        results[target] = {
+            "evaluated": evaluated,
+            "coverage_50": round(coverage50 / evaluated, 4) if evaluated else None,
+            "coverage_80": round(coverage80 / evaluated, 4) if evaluated else None,
+            "average_width_50": round(sum(widths50) / len(widths50), 3) if widths50 else None,
+            "average_width_80": round(sum(widths80) / len(widths80), 3) if widths80 else None,
+            "interval_source_usage": dict(sorted(band_usage.items())),
+            "by_test_season": per_season,
+        }
+    return results
+
+
+def _quality_ablation(repository: CFBRepository, rows: list[dict[str, Any]], *,
+                      backtest_version: str) -> dict[str, Any] | None:
+    """Reuse xPoints' matched temporal ablation for the report's test range."""
+    seasons = sorted({int(row["season"]) for row in rows})
+    if not seasons:
+        return None
+    test_from, test_to = seasons[0], seasons[-1]
+    with repository._reader() as connection:
+        first = connection.execute(
+            """SELECT MIN(season) FROM cfb_projection_backtest
+               WHERE backtest_version=? AND season<?""",
+            (backtest_version, test_from),
+        ).fetchone()[0]
+    if first is None:
+        return None
+    from sports_aggregator.cfb.xpoints import evaluate as evaluate_xpoints
+    return evaluate_xpoints(
+        repository,
+        train_from=int(first),
+        train_to=test_from - 1,
+        test_from=test_from,
+        test_to=test_to,
+    )
+
+
 def _game_scores(rows: list[dict[str, Any]]) -> dict[str, Any]:
     games: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
     for row in rows:
@@ -678,6 +939,11 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
             f"""SELECT * FROM cfb_projection_backtest
                 WHERE {' AND '.join(clauses)}
                 ORDER BY season,week,kickoff,game_id,side""", params)]
+        all_rows = [dict(row) for row in connection.execute(
+            """SELECT * FROM cfb_projection_backtest
+               WHERE backtest_version=? AND prior_games>=?
+               ORDER BY season,week,kickoff,game_id,side""",
+            (backtest_version, int(min_prior_games)))]
 
     market_points = _metrics(
         (row["market_implied_points"], row["actual_score_points"]) for row in rows
@@ -704,9 +970,14 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
         "by_quality_edge": by_quality_edge,
         "by_quality_sources": by_quality_sources,
         "by_market_disagreement": by_market_disagreement,
+        "points_quality_ablation": _quality_ablation(
+            repository, rows, backtest_version=backtest_version),
         "calibration": {
             "projected_points": _points_calibration(rows),
+            "temporal_candidate": _temporal_point_calibration(all_rows, rows),
         },
+        "yardage_error_decomposition": _yardage_decomposition(rows),
+        "temporal_uncertainty": _uncertainty_from_prior_seasons(all_rows, rows),
         "empirical_residual_bands": {
             "offensive_points": _residual_band(
                 rows, "projected_offensive_points", "actual_offensive_points"),
