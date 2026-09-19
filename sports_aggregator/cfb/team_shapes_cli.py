@@ -31,6 +31,12 @@ def main() -> None:
     robust.add_argument("--year", type=int, required=True)
     robust.add_argument("--min-prior-games", type=int, default=3)
 
+    chain = sub.add_parser("chain")
+    chain.add_argument("--year", type=int, required=True)
+    chain.add_argument("--clusters", type=int, default=8)
+    chain.add_argument("--min-prior-games", type=int, default=3)
+    chain.add_argument("--min-pair-rows", type=int, default=25)
+
     load_dotenv()
     args = parser.parse_args()
     repository = CFBRepository(
@@ -48,6 +54,14 @@ def main() -> None:
             repository,
             test_season=args.year,
             min_prior_games=args.min_prior_games,
+        )
+    elif args.command == "chain":
+        result = team_shapes.full_chain_ablation(
+            repository,
+            test_season=args.year,
+            clusters=args.clusters,
+            min_prior_games=args.min_prior_games,
+            min_pair_rows=args.min_pair_rows,
         )
     else:
         result = team_shapes.report(
