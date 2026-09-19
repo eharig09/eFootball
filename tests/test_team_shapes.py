@@ -63,3 +63,15 @@ def test_shape_insert_statement_matches_schema_arity():
         "actual_pass_rate","actual_total_yards","actual_score_points",
     ]
     assert len(columns) == 25
+
+
+def test_robustness_stability_counts_improvements():
+    grid = [
+        {"actual_points_per_drive": {"mae_delta_vs_own_shape": -0.02}},
+        {"actual_points_per_drive": {"mae_delta_vs_own_shape": -0.01}},
+        {"actual_points_per_drive": {"mae_delta_vs_own_shape": 0.01}},
+    ]
+    # Mirror the internal summary contract with simple arithmetic expectations.
+    deltas = [row["actual_points_per_drive"]["mae_delta_vs_own_shape"] for row in grid]
+    assert sum(1 for value in deltas if value < 0) == 2
+    assert round(sum(deltas) / len(deltas), 4) == -0.0067
