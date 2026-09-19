@@ -200,3 +200,60 @@ def test_paired_chain_residuals_keeps_component_errors_together():
         "actual_points_per_drive": 1.5,
     }]
     assert bt._paired_chain_residuals(rows) == [(2.0, -0.5)]
+
+
+def test_market_leverage_prediction_clips_extreme_adjustments():
+    row = {
+        "market_implied_points": 20.0,
+        "projected_offensive_points": 35.0,
+        "projected_drives": 12.0,
+        "projected_plays": 70.0,
+        "projected_points_per_drive": 3.0,
+        "projected_total_yards": 450.0,
+        "projected_giveaways": 1.0,
+        "projected_red_zone_trips": 5.0,
+        "projected_red_zone_touchdowns": 4.0,
+        "quality_edge": 8.0,
+        "quality_sources": 3,
+        "prior_games": 8,
+        "week": 9,
+        "market_total": 55.0,
+    }
+    features = bt._leverage_features(row)
+    assert features is not None
+    model = {
+        "coefficients": [100.0] + [0.0] * len(features),
+        "means": [0.0] * len(features),
+        "scales": [1.0] * len(features),
+    }
+    assert bt._predict_market_leverage(model, row, clip=10.0) == 10.0
+
+
+def test_leverage_bucket_thresholds():
+    assert bt._leverage_bucket(0.5) == "0-1"
+    assert bt._leverage_bucket(-1.5) == "1-2"
+    assert bt._leverage_bucket(2.5) == "2-3"
+    assert bt._leverage_bucket(-4.0) == "3-5"
+    assert bt._leverage_bucket(6.0) == "5+"
+
+
+def test_market_leverage_features_include_model_market_gap():
+    row = {
+        "market_implied_points": 24.0,
+        "projected_offensive_points": 29.0,
+        "projected_drives": 11.0,
+        "projected_plays": 68.0,
+        "projected_points_per_drive": 2.6,
+        "projected_total_yards": 410.0,
+        "projected_giveaways": 1.1,
+        "projected_red_zone_trips": 4.0,
+        "projected_red_zone_touchdowns": 2.5,
+        "quality_edge": 3.0,
+        "quality_sources": 2,
+        "prior_games": 6,
+        "week": 7,
+        "market_total": 51.0,
+    }
+    features = bt._leverage_features(row)
+    assert features is not None
+    assert features[0] == 5.0
