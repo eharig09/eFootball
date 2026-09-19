@@ -120,3 +120,41 @@ def test_temporal_point_calibration_uses_only_prior_seasons():
     # If the 2025 result leaked into training this correction would move back
     # toward zero rather than remaining negative.
     assert model["corrections"]["40_plus"] < 0.0
+
+
+def test_interval_score_penalizes_width_and_misses():
+    narrow_hit = bt._interval_score(20.0, 18.0, 22.0, alpha=0.20)
+    wide_hit = bt._interval_score(20.0, 10.0, 30.0, alpha=0.20)
+    miss = bt._interval_score(25.0, 18.0, 22.0, alpha=0.20)
+    assert narrow_hit == 4.0
+    assert wide_hit == 20.0
+    assert miss > wide_hit
+
+
+def test_conditional_residuals_falls_back_when_specific_bucket_is_sparse():
+    training = [
+        {
+            "week": 2,
+            "prior_games": 2,
+            "quality_edge": 1.0,
+            "projected_offensive_points": 20.0 + (i % 3),
+            "actual_offensive_points": 21.0 + (i % 3),
+        }
+        for i in range(120)
+    ]
+    row = {
+        "week": 2,
+        "prior_games": 2,
+        "quality_edge": 9.0,
+        "projected_offensive_points": 21.0,
+    }
+    residuals, source = bt._conditional_residuals(
+        training,
+        row,
+        "projected_offensive_points",
+        "actual_offensive_points",
+        method="conditional_hierarchy",
+        min_rows=100,
+    )
+    assert len(residuals) >= 100
+    assert source in {"week=0-3|projection=20_24|prior=1-2", "week=0-3|projection=20_24", "projection=20_24", "week=0-3", "global"}
