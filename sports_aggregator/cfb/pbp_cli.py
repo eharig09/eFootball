@@ -26,10 +26,36 @@ from sports_aggregator.cfb.pace import game_pace_summary
 from sports_aggregator.cfb.play_by_play import replace_week_plays, derive_week
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb.team_game_advanced import build as build_team_game_advanced
+from sports_aggregator.cfb.team_game_pace import build as build_team_pace
+from sports_aggregator.cfb.team_game_scoring import build as build_team_scoring
+from sports_aggregator.cfb.team_game_special_teams import build as build_team_special_teams
+from sports_aggregator.cfb.team_game_drive_outcomes import build as build_team_drive_outcomes
 from sports_aggregator.cfb.win_probability import fit_model as fit_wp, score_plays as score_wp
 from sports_aggregator.cfb.win_probability_v2 import fit_model as fit_wp_v2, score_plays as score_wp_v2
 from sports_aggregator.cfb.wp_calibration import fit_calibration as fit_wp_calibration
 from sports_aggregator.cfb.wp_calibration import score_calibrated as score_wp_calibrated
+from sports_aggregator.cfb.xdrives import build_dataset as build_xdrives_dataset
+from sports_aggregator.cfb.xdrives import evaluate_advanced_model as evaluate_xdrives_advanced
+from sports_aggregator.cfb.xdrives import evaluate_baselines as evaluate_xdrives_baselines
+from sports_aggregator.cfb.xdrives import fit_advanced_model as fit_xdrives_advanced
+from sports_aggregator.cfb.xplays import build_dataset as build_xplays_dataset
+from sports_aggregator.cfb.xplays import evaluate_baselines as evaluate_xplays_baselines
+from sports_aggregator.cfb.xplays import evaluate_expected_plays
+from sports_aggregator.cfb.xvolume import build_dataset as build_xvolume_dataset
+from sports_aggregator.cfb.xvolume import evaluate_baselines as evaluate_xvolume_baselines
+from sports_aggregator.cfb.xvolume import evaluate_expected_volume
+from sports_aggregator.cfb.xyards import build_dataset as build_xyards_dataset
+from sports_aggregator.cfb.xyards import evaluate_baselines as evaluate_xyards_baselines
+from sports_aggregator.cfb.xyards import evaluate_expected_yardage
+from sports_aggregator.cfb.xturnovers import build_dataset as build_xturnovers_dataset
+from sports_aggregator.cfb.xturnovers import evaluate_baselines as evaluate_xturnovers_baselines
+from sports_aggregator.cfb.xredzone import build_dataset as build_xredzone_dataset
+from sports_aggregator.cfb.xredzone import evaluate_baselines as evaluate_xredzone_baselines
+from sports_aggregator.cfb.xfieldposition import build_dataset as build_xfieldposition_dataset
+from sports_aggregator.cfb.xfieldposition import evaluate_baselines as evaluate_xfieldposition_baselines
+from sports_aggregator.cfb.xpoints import build_dataset as build_xpoints_dataset
+from sports_aggregator.cfb.xpoints import evaluate as evaluate_xpoints
+from sports_aggregator.cfb.xpoints import fit_model as fit_xpoints
 
 
 def parser() -> argparse.ArgumentParser:
@@ -39,7 +65,17 @@ def parser() -> argparse.ArgumentParser:
         "fit-edp", "score-edp", "validate-edp",
         "fit-ep", "score-epa", "validate-ep", "validate-epa", "build-team-advanced",
         "fit-wp", "score-wp", "fit-wp-v2", "score-wp-v2", "validate-wp",
-        "fit-wp-calibration", "score-wp-calibrated", "rebuild-values", "pace"))
+        "fit-wp-calibration", "score-wp-calibrated", "rebuild-values", "pace",
+        "build-team-pace", "build-xdrives-dataset", "evaluate-xdrives-baselines",
+        "fit-xdrives-advanced", "evaluate-xdrives-advanced",
+        "build-xplays-dataset", "evaluate-xplays-baselines", "evaluate-expected-plays",
+        "build-xvolume-dataset", "evaluate-xvolume-baselines", "evaluate-expected-volume",
+        "build-xyards-dataset", "evaluate-xyards-baselines", "evaluate-expected-yardage",
+        "build-team-scoring", "build-xturnovers-dataset", "evaluate-xturnovers-baselines",
+        "build-xredzone-dataset", "evaluate-xredzone-baselines",
+        "build-team-special-teams", "build-xfieldposition-dataset",
+        "evaluate-xfieldposition-baselines", "build-team-drive-outcomes",
+        "build-xpoints-dataset", "evaluate-xpoints", "fit-xpoints"))
     p.add_argument("--year", type=int, default=datetime.now().year)
     p.add_argument("--from-year", type=int, default=None)
     p.add_argument("--to-year", type=int, default=None)
@@ -55,6 +91,17 @@ def parser() -> argparse.ArgumentParser:
                    help="Damping multiplier for wp-v2 Newton steps (0-1).")
     p.add_argument("--l2", type=float, default=0.0005,
                    help="L2 regularization for wp-v2.")
+    p.add_argument("--xdrives-l2", type=float, default=None,
+                   help="Ridge penalty for fit-xdrives-advanced/evaluate-xdrives-advanced "
+                        "(defaults to xdrives.ADVANCED_MODEL_L2).")
+    p.add_argument("--train-from-year", type=int, default=None,
+                   help="evaluate-xdrives-advanced: first training season.")
+    p.add_argument("--train-to-year", type=int, default=None,
+                   help="evaluate-xdrives-advanced: last training season.")
+    p.add_argument("--test-from-year", type=int, default=None,
+                   help="evaluate-xdrives-advanced: first held-out test season.")
+    p.add_argument("--test-to-year", type=int, default=None,
+                   help="evaluate-xdrives-advanced: last held-out test season.")
     p.add_argument("--force", action="store_true")
     p.add_argument("--database", default=None)
     return p
@@ -244,6 +291,115 @@ def main(argv: list[str] | None = None, *, client=None) -> int:
             return 0
         print(json.dumps(build_team_game_advanced(
             repository, from_season=first, to_season=last, model_version=version), indent=2))
+        return 0
+
+    if args.command == "build-team-pace":
+        print(json.dumps(build_team_pace(repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "build-xdrives-dataset":
+        print(json.dumps(build_xdrives_dataset(repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-xdrives-baselines":
+        print(json.dumps(evaluate_xdrives_baselines(repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "fit-xdrives-advanced":
+        kwargs = {} if args.xdrives_l2 is None else {"l2": args.xdrives_l2}
+        print(json.dumps(fit_xdrives_advanced(
+            repository, from_season=first, to_season=last, **kwargs), indent=2))
+        return 0
+    if args.command == "evaluate-xdrives-advanced":
+        missing = [name for name in ("train_from_year", "train_to_year", "test_from_year", "test_to_year")
+                   if getattr(args, name) is None]
+        if missing:
+            raise SystemExit(f"evaluate-xdrives-advanced requires --{', --'.join(n.replace('_', '-') for n in missing)}")
+        kwargs = {} if args.xdrives_l2 is None else {"l2": args.xdrives_l2}
+        print(json.dumps(evaluate_xdrives_advanced(
+            repository, train_from=args.train_from_year, train_to=args.train_to_year,
+            test_from=args.test_from_year, test_to=args.test_to_year, **kwargs), indent=2))
+        return 0
+
+    if args.command == "build-xplays-dataset":
+        print(json.dumps(build_xplays_dataset(repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-xplays-baselines":
+        print(json.dumps(evaluate_xplays_baselines(repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-expected-plays":
+        print(json.dumps(evaluate_expected_plays(repository, from_season=first, to_season=last), indent=2))
+        return 0
+
+    if args.command == "build-xvolume-dataset":
+        print(json.dumps(build_xvolume_dataset(repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-xvolume-baselines":
+        print(json.dumps(evaluate_xvolume_baselines(repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-expected-volume":
+        print(json.dumps(evaluate_expected_volume(repository, from_season=first, to_season=last), indent=2))
+        return 0
+
+    if args.command == "build-xyards-dataset":
+        print(json.dumps(build_xyards_dataset(repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-xyards-baselines":
+        print(json.dumps(evaluate_xyards_baselines(repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-expected-yardage":
+        print(json.dumps(evaluate_expected_yardage(repository, from_season=first, to_season=last), indent=2))
+        return 0
+
+    if args.command == "build-team-scoring":
+        print(json.dumps(build_team_scoring(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "build-xturnovers-dataset":
+        print(json.dumps(build_xturnovers_dataset(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-xturnovers-baselines":
+        print(json.dumps(evaluate_xturnovers_baselines(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "build-xredzone-dataset":
+        print(json.dumps(build_xredzone_dataset(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-xredzone-baselines":
+        print(json.dumps(evaluate_xredzone_baselines(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "build-team-special-teams":
+        print(json.dumps(build_team_special_teams(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "build-xfieldposition-dataset":
+        print(json.dumps(build_xfieldposition_dataset(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-xfieldposition-baselines":
+        print(json.dumps(evaluate_xfieldposition_baselines(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "build-team-drive-outcomes":
+        print(json.dumps(build_team_drive_outcomes(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "build-xpoints-dataset":
+        print(json.dumps(build_xpoints_dataset(
+            repository, from_season=first, to_season=last), indent=2))
+        return 0
+    if args.command == "evaluate-xpoints":
+        train_from = args.train_from_year or first
+        train_to = args.train_to_year or max(train_from, last - 1)
+        test_from = args.test_from_year or last
+        test_to = args.test_to_year or last
+        print(json.dumps(evaluate_xpoints(
+            repository, train_from=train_from, train_to=train_to,
+            test_from=test_from, test_to=test_to), indent=2))
+        return 0
+    if args.command == "fit-xpoints":
+        print(json.dumps(fit_xpoints(
+            repository, from_season=first, to_season=last), indent=2))
         return 0
 
     if args.command == "fit-wp":

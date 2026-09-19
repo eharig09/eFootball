@@ -28,8 +28,12 @@ from sports_aggregator.nfl.teams import unit_continuity
 from sports_aggregator.nfl.nflverse import NflverseClient, NflverseError, current_season
 from sports_aggregator.nfl.charts import player_charts, team_charts
 from sports_aggregator.nfl.explorer import scatter_plot
-from sports_aggregator.nfl.passing import pass_matchup_packet, pass_zone_packet
-from sports_aggregator.nfl.rushing import run_direction_packet, run_matchup_packet
+from sports_aggregator.nfl.passing import (
+    pass_matchup_packet, pass_zone_packet, receiver_position_breakdown,
+)
+from sports_aggregator.nfl.rushing import (
+    run_direction_packet, run_matchup_packet, rusher_position_breakdown,
+)
 from sports_aggregator.nfl.personnel import _score
 from sports_aggregator.nfl.postgame import postgame_packet
 from sports_aggregator.nfl.production_seed import LOCK_NAME, STATE_NAME, maybe_launch
@@ -694,6 +698,20 @@ class NFLCanonicalSyncTests(unittest.TestCase):
 
 
 class NFLPassingProfileTests(unittest.TestCase):
+    def test_opponent_receivers_aggregate_to_position_stat_lines(self):
+        rows = receiver_position_breakdown([
+            {"position": "WR", "targets": 6, "receptions": 4,
+             "receiving_yards": 58, "touchdowns": 1},
+            {"position": "WR", "targets": 3, "receptions": 2,
+             "receiving_yards": 21, "touchdowns": 0},
+            {"position": "TE", "targets": 2, "receptions": 1,
+             "receiving_yards": 9, "touchdowns": 0},
+        ])
+        self.assertEqual(rows[0], {
+            "position": "WR", "players": 2, "targets": 9, "receptions": 6,
+            "yards": 79, "touchdowns": 1, "detail": "6/9 · 79 yd · 1 TD",
+        })
+
     def test_targeted_passes_are_queryable_by_quarterback_and_defense(self):
         with tempfile.TemporaryDirectory() as directory:
             repository = NFLRepository(Path(directory) / "nfl.sqlite3")
@@ -742,6 +760,18 @@ class NFLPassingProfileTests(unittest.TestCase):
 
 
 class NFLRushDirectionAndSituationalTests(unittest.TestCase):
+    def test_opponent_rushers_aggregate_to_position_stat_lines(self):
+        rows = rusher_position_breakdown([
+            {"position": "RB", "attempts": 8, "rushing_yards": 44,
+             "touchdowns": 1, "total_epa": 1.2},
+            {"position": "RB", "attempts": 2, "rushing_yards": 5,
+             "touchdowns": 0, "total_epa": -.2},
+        ])
+        self.assertEqual(rows[0]["players"], 2)
+        self.assertEqual((rows[0]["attempts"], rows[0]["yards"],
+                          rows[0]["touchdowns"]), (10, 49, 1))
+        self.assertAlmostEqual(rows[0]["epa_per_attempt"], .1)
+
     def test_run_direction_classifies_the_standard_seven_cell_chart(self):
         classify = NFLRepository._run_direction
         self.assertEqual(classify("left", "end"), "left end")
@@ -1308,6 +1338,25 @@ class RushingMatchupNgsTests(unittest.TestCase):
 
 
 class ViewTableHelperTests(unittest.TestCase):
+    def test_matchup_templates_use_the_compact_edge_hierarchy(self):
+        root = Path(__file__).parents[1]
+        passing = (root / "templates" / "_nfl_passing.html").read_text(encoding="utf-8")
+        rushing = (root / "templates" / "_nfl_rushing.html").read_text(encoding="utf-8")
+        page = (root / "templates" / "nfl_game.html").read_text(encoding="utf-8")
+        css = (root / "static" / "nfl_components.css").read_text(encoding="utf-8")
+        self.assertIn('class="matchup-edge-value"', passing)
+        self.assertIn('class="pass-matchup-table" role="table"', passing)
+        self.assertIn('role="rowheader"', passing)
+        position_macro = passing.split("{% macro position_breakdown", 1)[1].split(
+            "{% endmacro %}", 1)[0]
+        self.assertIn("group.detail", position_macro)
+        self.assertNotIn("player_list", position_macro)
+        self.assertIn("zone.short_label", rushing)
+        self.assertIn('class="run-direction-grid" role="list"', rushing)
+        self.assertEqual(page.count('class="matchup-edge-guide"'), 2)
+        self.assertIn(".passing-comparison-stack{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))", css)
+        self.assertIn("min-height:62px", css)
+
     def test_zone_matchup_table_columns_align_via_real_table_not_css_grid(self):
         item = {
             "offense": "CAR", "defense": "ATL",

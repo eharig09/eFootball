@@ -46,17 +46,25 @@
 .prod-zone.positive { background: color-mix(in srgb, var(--green) 24%, var(--tint)); }
 .prod-zone.negative { background: color-mix(in srgb, var(--red) 24%, var(--tint)); }
 .prod-zone-tip { position: absolute; left: 50%; bottom: calc(100% + 6px); z-index: 20;
-    display: none; width: 200px; padding: 8px 10px; transform: translateX(-50%);
+    display: none; box-sizing: border-box; width: 300px; max-width: calc(100vw - 20px);
+    padding: 11px; transform: translateX(-50%);
     border: 1px solid var(--line-strong); background: var(--surface-strong); border-radius: 5px;
     color: var(--on-strong); box-shadow: var(--shadow-panel); text-align: left; }
 .prod-zone-tip:after { content: ""; position: absolute; top: 100%; left: 50%;
     border: 6px solid transparent; border-top-color: var(--surface-strong); transform: translateX(-50%); }
-.prod-zone:hover .prod-zone-tip, .prod-zone:focus .prod-zone-tip { display: block; }
+.prod-zone:hover .prod-zone-tip, .prod-zone:focus .prod-zone-tip,
+.prod-situational-cell:hover > .prod-zone-tip,
+.prod-situational-cell:focus > .prod-zone-tip { display: block; }
 .prod-zone-tip strong { display: block; margin-bottom: 5px; color: var(--on-strong-muted);
     font-size: .52rem; letter-spacing: .06em; text-transform: uppercase; }
-.prod-zone-tip span { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0;
-    border-top: 1px solid var(--on-strong-line); font-size: .6rem; }
-.prod-zone-tip span b { white-space: nowrap; font-size: .58rem; }
+.prod-tooltip-players > span, .prod-position-breakdown > span { display: grid;
+    grid-template-columns: minmax(72px, auto) minmax(0, 1fr); align-items: baseline;
+    gap: 10px; padding: 6px 0; border-top: 1px solid var(--on-strong-line); }
+.prod-tooltip-players i, .prod-position-breakdown i { color: var(--on-strong-muted);
+    font-size: .55rem; font-style: normal; text-transform: uppercase; }
+.prod-tooltip-players i b { color: var(--on-strong); font-size: .68rem; }
+.prod-tooltip-players > span > b, .prod-position-breakdown > span > b { color: var(--on-strong);
+    font-size: .57rem; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; text-align: right; }
 
 /* Recent form */
 .prod-form h3 { margin: 0 0 8px; font: 800 .85rem var(--display-font); }

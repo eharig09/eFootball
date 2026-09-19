@@ -73,6 +73,7 @@
     <section class="section" id="pass-defense" data-nfl-panel="matchups">
         <div class="section-head"><div><p class="eyebrow">{{ pass_profile_season }} quarterback usage vs opponent results{% if pass_profile_season != game.season %} &middot; prior-season baseline{% endif %}</p><h2>Charted passing: offense against defense</h2></div></div>
         <p class="section-note">One grid per offense joins quarterback results to what the opposing defense allowed in the same zone. Positive edge favors the offense; negative edge favors the defense. Interaction share combines both sides' usage and is descriptive, not a projection or coverage assignment.</p>
+        <div class="matchup-edge-guide" aria-label="How to read passing matchup cells"><b>Edge</b><span><i class="offense-dot"></i> Positive favors offense</span><span><i class="defense-dot"></i> Negative favors defense</span><span>O/D = offense / defense sample</span></div>
         <div class="passing-comparison-stack">{% for comparison in passing_comparisons %}{% if comparison.matchup.has_data %}{{ pass_matchup_grid(comparison) }}{% else %}<div class="empty pass-comparison-empty">No qualifying offense/defense comparison is stored for {{ comparison.offense }}.</div>{% endif %}{% endfor %}</div>
     </section>
     {% endif %}
@@ -81,6 +82,7 @@
     <section class="section" id="rush-defense" data-nfl-panel="matchups">
         <div class="section-head"><div><p class="eyebrow">{{ pass_profile_season }} rushing usage vs opponent results{% if pass_profile_season != game.season %} &middot; prior-season baseline{% endif %}</p><h2>Charted rushing: offense against defense</h2></div></div>
         <p class="section-note">One grid per offense joins the leading rusher's results to what the opposing defense allowed by the same run direction (the standard left end/tackle/guard &middot; middle &middot; right guard/tackle/end broadcast chart). Positive edge favors the offense; negative edge favors the defense.</p>
+        <div class="matchup-edge-guide" aria-label="How to read rushing matchup cells"><b>Edge</b><span><i class="offense-dot"></i> Positive favors offense</span><span><i class="defense-dot"></i> Negative favors defense</span><span>O/D = offense / defense sample</span></div>
         <div class="passing-comparison-stack">{% for comparison in run_direction_comparisons %}{% if comparison.matchup.has_data %}{{ run_matchup_grid(comparison) }}{% else %}<div class="empty pass-comparison-empty">No qualifying offense/defense comparison is stored for {{ comparison.offense }}.</div>{% endif %}{% endfor %}</div>
     </section>
     {% endif %}

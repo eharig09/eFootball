@@ -250,6 +250,19 @@ def team_season_splits(repository: CFBRepository, team: str, season: int, *,
     return {"team": team, "season": int(season), "offense": offense, "defense": defense}
 
 
+def _receiver_position_rows(grouped: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for position, values in grouped.items():
+        epa_plays = values["epa_plays"]
+        rows.append({
+            "position": position, "players": len(values["players"]),
+            "targets": values["targets"], "receptions": values["receptions"],
+            "yards": values["yards"], "touchdowns": values["touchdowns"],
+            "epa_per_attempt": values["epa"] / epa_plays if epa_plays else None,
+        })
+    return sorted(rows, key=lambda item: (-item["targets"], item["position"]))
+
+
 def team_season_field(repository: CFBRepository, team: str, season: int, *,
                       role: str = "offense", model_version: str = MODEL_VERSION,
                       ) -> dict[str, Any]:
@@ -304,15 +317,24 @@ def team_season_field(repository: CFBRepository, team: str, season: int, *,
                 touchdown = bool(row["scoring"]) and "touchdown" in str(row["play_text"] or "").casefold()
                 receiver["touchdowns"] += int(touchdown)
             if role == "defense":
-                zone["positions"][position] = zone["positions"].get(position, 0) + 1
+                group = zone["positions"].setdefault(position, {
+                    "players": set(), "targets": 0, "receptions": 0, "yards": 0,
+                    "touchdowns": 0, "epa": 0.0, "epa_plays": 0,
+                })
+                group["players"].add(str(row["target_id"] or target))
+                group["targets"] += 1
+                group["receptions"] += int(complete)
+                group["yards"] += round(float(row["total_yards"] or 0)) if complete else 0
+                group["touchdowns"] += int(touchdown) if complete else 0
+                if row["epa"] is not None:
+                    group["epa"] += float(row["epa"]); group["epa_plays"] += 1
     output = {}
     for key, zone in zones.items():
         receivers = sorted(zone.pop("receivers").values(),
                            key=lambda item: (-item["receptions"], -item["yards"], item["name"]))
         positions = zone.pop("positions")
-        allowed_by_position = sorted(
-            ({"position": position, "targets": count} for position, count in positions.items()),
-            key=lambda item: (-item["targets"], item["position"])) if role == "defense" else []
+        allowed_by_position = (_receiver_position_rows(positions)
+                               if role == "defense" else [])
         output[key] = {**zone,
                        "epa_per_attempt": zone["epa"] / zone["epa_plays"] if zone["epa_plays"] else None,
                        "receivers": receivers[:5], "allowed_by_position": allowed_by_position}
@@ -378,13 +400,24 @@ def team_season_situational(repository: CFBRepository, team: str, season: int, *
                                     and "touchdown" in str(row["play_text"] or "").casefold())
                         receiver["touchdowns"] += int(touchdown)
                     if role == "defense":
-                        zone["positions"][position] = zone["positions"].get(position, 0) + 1
+                        group = zone["positions"].setdefault(position, {
+                            "players": set(), "targets": 0, "receptions": 0,
+                            "yards": 0, "touchdowns": 0, "epa": 0.0,
+                            "epa_plays": 0,
+                        })
+                        group["players"].add(str(row["target_id"] or target))
+                        group["targets"] += 1
+                        group["receptions"] += int(complete)
+                        group["yards"] += (round(float(row["total_yards"] or 0))
+                                           if complete else 0)
+                        group["touchdowns"] += int(touchdown) if complete else 0
+                        if row["epa"] is not None:
+                            group["epa"] += float(row["epa"]); group["epa_plays"] += 1
             receivers = sorted(zone.pop("receivers").values(),
                               key=lambda item: (-item["receptions"], -item["yards"], item["name"]))
             positions = zone.pop("positions")
-            allowed_by_position = sorted(
-                ({"position": position, "targets": count} for position, count in positions.items()),
-                key=lambda item: (-item["targets"], item["position"])) if role == "defense" else []
+            allowed_by_position = (_receiver_position_rows(positions)
+                                   if role == "defense" else [])
             situations[key] = {**zone,
                                "epa_per_attempt": zone["epa"] / zone["epa_plays"] if zone["epa_plays"] else None,
                                "receivers": receivers[:8], "allowed_by_position": allowed_by_position}

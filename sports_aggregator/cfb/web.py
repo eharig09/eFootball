@@ -25,6 +25,8 @@ from sports_aggregator.cfb.identity import (
 from sports_aggregator.cfb.history import (
     matchup_history, matchup_player_history, team_game_history,
     team_historical_stats, upcoming_player_opponent_history)
+from sports_aggregator.cfb.game_projection import narrative as projection_narrative
+from sports_aggregator.cfb.game_projection import project_matchup
 from sports_aggregator.cfb.lines import game_lines, lines_by_game
 from sports_aggregator.cfb import meta as page_meta_for
 from sports_aggregator.cfb import syndication
@@ -73,6 +75,15 @@ def _season() -> int:
 def _current_season() -> int:
     """Configured live season, unaffected by historical navigation parameters."""
     return current_app.config.get("CFB_DEFAULT_SEASON") or datetime.now().year
+
+
+def _game_projection(repository: CFBRepository, game: dict) -> dict:
+    """One canonical projection packet for HTML and API consumers."""
+    return project_matchup(
+        repository, game["home_team"], game["away_team"],
+        as_of_date=game.get("start_date") or datetime.now(timezone.utc).isoformat(),
+        game_id=game.get("game_id"),
+    )
 
 
 def _reporting():
@@ -344,6 +355,16 @@ def elo_ratings():
     for row in snapshot["rankings"][:5]:
         leaders.append({**row, "identity": team_identity(brands.get(row["team_id"]) or {})})
 
+    movement = {}
+    for horizon, groups in snapshot["movement"].items():
+        movement[horizon] = {
+            direction: [
+                {**row, "identity": team_identity(brands.get(row["team_id"]) or {})}
+                for row in teams
+            ]
+            for direction, teams in groups.items()
+        }
+
     conferences = []
     averages = [row["average_elo"] for row in snapshot["conferences"]]
     floor = min(averages, default=0)
@@ -365,6 +386,7 @@ def elo_ratings():
         seasons=snapshot["available_seasons"],
         summary=snapshot["summary"],
         leaders=leaders,
+        movement=movement,
         conferences=conferences,
         rankings_table=views.elo_rankings_table(snapshot, season, brands),
     )
@@ -670,6 +692,10 @@ def game_preview(game_id: int):
     away_quality = repository.team_quality_snapshot(game["away_team_id"], season)
     home_leaders = repository.team_player_leaders(game["home_team"], season, 5)
     away_leaders = repository.team_player_leaders(game["away_team"], season, 5)
+    home_impact = views.impact_player_index(
+        repository.team_impact_players(game["home_team"], season))
+    away_impact = views.impact_player_index(
+        repository.team_impact_players(game["away_team"], season))
     home_pff = repository.pff_team_context(game["home_team_id"], 2025, 8)
     away_pff = repository.pff_team_context(game["away_team_id"], 2025, 8)
     pff_matchups = repository.pff_matchups(game["home_team_id"], game["away_team_id"], 2025)
@@ -711,6 +737,7 @@ def game_preview(game_id: int):
     weather = weather_for_game(repository, game_id)
     away_arrivals = repository.roster_movements(game["away_team_id"], season)["arrivals"]
     home_arrivals = repository.roster_movements(game["home_team_id"], season)["arrivals"]
+    projection = _game_projection(repository, game)
     return render_template(
         "cfb_game.html",
         meta=page_meta_for.game_meta(
@@ -725,6 +752,9 @@ def game_preview(game_id: int):
         model_table=views.model_comparison_table(
             game, fpi, market, elo, core_by_team),
         model_probability=model_probability_track(game, fpi, elo, market),
+        projection=projection,
+        projection_lines=projection_narrative(projection),
+        projection_table=views.game_projection_table(projection),
         game_shape=game_shape(
             game["away_team"], game["home_team"], away_pace, home_pace,
             away_drives, home_drives, away_stats.get("advanced"), home_stats.get("advanced")),
@@ -735,21 +765,21 @@ def game_preview(game_id: int):
         away_arrivals_table=views.arrivals_table(
             views.arrivals_of_kind(
                 away_arrivals, ("TRANSFER_IN", "NEWCOMER"))[:5],
-            season, caption=f"{game['away_team']} portal"),
+            season, caption=f"{game['away_team']} portal", impact=away_impact),
         away_signees_table=views.arrivals_table(
             views.arrivals_of_kind(away_arrivals, ("SIGNEE",))[:5],
-            season, caption=f"{game['away_team']} signees"),
+            season, caption=f"{game['away_team']} signees", impact=away_impact),
         home_arrivals_table=views.arrivals_table(
             views.arrivals_of_kind(
                 home_arrivals, ("TRANSFER_IN", "NEWCOMER"))[:5],
-            season, caption=f"{game['home_team']} portal"),
+            season, caption=f"{game['home_team']} portal", impact=home_impact),
         home_signees_table=views.arrivals_table(
             views.arrivals_of_kind(home_arrivals, ("SIGNEE",))[:5],
-            season, caption=f"{game['home_team']} signees"),
+            season, caption=f"{game['home_team']} signees", impact=home_impact),
         away_portal_in_table=views.transfer_impact_table(
             rank_transfers(repository, season=season, team_id=game["away_team_id"],
                            direction="in", limit=12), season,
-            caption=f"{game['away_team']} portal additions"),
+            caption=f"{game['away_team']} portal additions", impact=away_impact),
         away_portal_out_table=views.transfer_impact_table(
             rank_transfers(repository, season=season, team_id=game["away_team_id"],
                            direction="out", limit=12), season,
@@ -757,7 +787,7 @@ def game_preview(game_id: int):
         home_portal_in_table=views.transfer_impact_table(
             rank_transfers(repository, season=season, team_id=game["home_team_id"],
                            direction="in", limit=12), season,
-            caption=f"{game['home_team']} portal additions"),
+            caption=f"{game['home_team']} portal additions", impact=home_impact),
         home_portal_out_table=views.transfer_impact_table(
             rank_transfers(repository, season=season, team_id=game["home_team_id"],
                            direction="out", limit=12), season,
@@ -775,7 +805,8 @@ def game_preview(game_id: int):
             pff_game_units, game["away_team"], game["home_team"],
         ),
         game=game,
-        metrics_table=views.matchup_metrics_table(game),
+        metrics_table=views.matchup_metrics_table(
+            game, repository.advanced_metric_ranks(season)),
         totals_table=views.matchup_summary_table(
             game, away_stats, home_stats, stats_year, stats_mode),
         opponent_quality_table=views.opponent_quality_table(
@@ -788,13 +819,15 @@ def game_preview(game_id: int):
         ),
         away_returning_table=views.pff_players_table(
             [row for row in away_pff["players"] if row.get("roster_status") == "RETURNING"],
-            season, caption=f"{game['away_team']} returning", dense=True),
+            season, caption=f"{game['away_team']} returning", dense=True,
+            impact=away_impact),
         away_departed_table=views.pff_departures_table(
             [row for row in away_pff["players"] if row.get("roster_status") not in
              (None, "RETURNING")], season, caption=f"{game['away_team']} departed"),
         home_returning_table=views.pff_players_table(
             [row for row in home_pff["players"] if row.get("roster_status") == "RETURNING"],
-            season, caption=f"{game['home_team']} returning", dense=True),
+            season, caption=f"{game['home_team']} returning", dense=True,
+            impact=home_impact),
         home_departed_table=views.pff_departures_table(
             [row for row in home_pff["players"] if row.get("roster_status") not in
              (None, "RETURNING")], season, caption=f"{game['home_team']} departed"),
@@ -1351,6 +1384,7 @@ def game_preview_api(game_id: int):
     ) if game.get("home_conference") else []
     return jsonify({
         "game": game,
+        "projection": _game_projection(repository, game),
         "pff_season": 2025,
         "pff_units": repository.pff_game_units(
             game["home_team_id"], game["away_team_id"], 2025
@@ -1375,6 +1409,17 @@ def game_preview_api(game_id: int):
             ("Home-conference context", home_conference_stories), limit=20,
         ),
     })
+
+
+@cfb_pages.get("/api/v1/cfb/games/<int:game_id>/projection")
+def game_projection_api(game_id: int):
+    """Team opportunity/yardage contract for the matchup and future allocators."""
+    repository = _repository()
+    game = repository.get_game(game_id)
+    if game is None:
+        abort(404)
+    projection = _game_projection(repository, game)
+    return jsonify({"game_id": game_id, **projection})
 
 
 @cfb_pages.get("/api/v1/cfb/games/<int:game_id>/content")

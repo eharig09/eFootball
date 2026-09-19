@@ -11,6 +11,27 @@ DEPTHS = (("deep", "20+ yards"), ("intermediate", "10–19 yards"),
 LOCATIONS = ("left", "middle", "right")
 
 
+def receiver_position_breakdown(players: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Aggregate opponent receiving production without listing every player."""
+    grouped: dict[str, dict[str, Any]] = {}
+    for player in players:
+        position = str(player.get("position") or "UNK").upper()
+        row = grouped.setdefault(position, {
+            "position": position, "players": 0, "targets": 0, "receptions": 0,
+            "yards": 0, "touchdowns": 0,
+        })
+        row["players"] += 1
+        row["targets"] += int(player.get("targets") or 0)
+        row["receptions"] += int(player.get("receptions") or 0)
+        row["yards"] += round(float(player.get("receiving_yards") or 0))
+        row["touchdowns"] += int(player.get("touchdowns") or 0)
+    rows = sorted(grouped.values(), key=lambda row: (-row["targets"], row["position"]))
+    for row in rows:
+        row["detail"] = (f"{row['receptions']}/{row['targets']} · {row['yards']} yd · "
+                         f"{row['touchdowns']} TD")
+    return rows
+
+
 def pass_zone_packet(profile: dict[str, Any], *, receiver: bool = False,
                      contributors: list[dict[str, Any]] | None = None,
                      defenders: list[dict[str, Any]] | None = None,
@@ -35,8 +56,11 @@ def pass_zone_packet(profile: dict[str, Any], *, receiver: bool = False,
         cells = []
         for location in LOCATIONS:
             item = indexed.get((depth, location))
+            zone_contributors = contributor_index.get((depth, location), [])
             cells.append({"location": location.title(), **(item or {}),
-                          "contributors": contributor_index.get((depth, location), [])[:8],
+                          "contributors": zone_contributors[:8],
+                          "contributor_position_summary": receiver_position_breakdown(
+                              zone_contributors),
                           "defenders": defender_index.get((depth, location), [])[:8]})
         rows.append({"depth": depth, "label": label, "cells": cells})
     sample_key = "targets" if receiver else "attempts"
@@ -105,6 +129,8 @@ def pass_matchup_packet(offense: dict[str, Any] | None,
                 # allowed in this exact zone -- "what positions beat this
                 # defense here", not this one game's specific recipients.
                 "defense_allowed": resist.get("contributors", []),
+                "defense_position_summary": resist.get(
+                    "contributor_position_summary", []),
             })
         rows.append({"depth": depth, "label": label, "cells": cells})
     return {"rows": rows,

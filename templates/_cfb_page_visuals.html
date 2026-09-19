@@ -1,3 +1,59 @@
+{% macro production_tooltip(attacker, defender, players, groups, kind) %}
+{% if players or groups %}<div class="prod-zone-tip" role="tooltip">
+  {% if players %}<strong>{{ attacker }} {{ 'targets' if kind == 'passing' else 'rushers' }}</strong>
+  <div class="prod-tooltip-players">{% for player in players %}<span><i><b>{{ player.name }}</b>{% if player.position %} {{ player.position }}{% endif %}</i><b>{% if kind == 'passing' %}{{ player.receptions }} rec &middot; {{ player.yards }} yd &middot; {{ player.touchdowns }} TD{% else %}{{ player.attempts }} att &middot; {{ player.yards }} yd &middot; {{ player.touchdowns }} TD{% endif %}</b></span>{% endfor %}</div>{% endif %}
+  {% if groups %}<strong>{{ defender }} allows by position</strong>
+  <div class="prod-position-breakdown">{% for entry in groups %}<span><i>{{ entry.position }} &middot; {{ entry.players }} player{{ '' if entry.players == 1 else 's' }}</i><b>{% if kind == 'passing' %}{{ entry.receptions }}/{{ entry.targets }} &middot; {{ entry.yards }} yd &middot; {{ entry.touchdowns }} TD &middot; {{ entry.epa_per_attempt | cell('signed2') }} EPA/att{% else %}{{ entry.attempts }} att &middot; {{ entry.yards }} yd &middot; {{ entry.touchdowns }} TD &middot; {{ entry.epa_per_attempt | cell('signed2') }} EPA/att{% endif %}</b></span>{% endfor %}</div>{% endif %}
+</div>{% endif %}
+{% endmacro %}
+
+{% macro compact_passing_matchups(panels, situational_panels) %}
+{% if panels and panels | sum(attribute='attempts') %}<section class="section cfb-compact-matchups" data-mobile-tab-panel="matchups">
+  <div class="section-head-row"><div><h2>Passing field matchup</h2><div class="section-note">EPA/attempt edge by field zone. Positive favors the offense; negative favors the defense. O/D is the offense and defense attempt sample.</div></div></div>
+  <div class="cfb-compact-stack">{% for panel in panels %}{% set situation=(situational_panels | selectattr('attacker', 'equalto', panel.attacker) | first) %}
+    <article class="cfb-compact-card">
+      <header><div><small>{{ panel.attacker }} offense</small><h3>{{ panel.attempts }} charted attempts</h3></div><span>vs</span><div><small>{{ panel.defender }} defense</small><h3>{{ panel.allowed_attempts }} allowed</h3></div></header>
+      <div class="cfb-compact-field" role="table" aria-label="{{ panel.attacker }} passing offense against {{ panel.defender }} defense by field zone">
+        <div class="cfb-compact-field-head" role="row"><span role="columnheader">Depth</span><b role="columnheader">Left</b><b role="columnheader">Middle</b><b role="columnheader">Right</b></div>
+        {% for depth, label in [('deep','Deep 20+'),('intermediate','Intermediate 10–19'),('short','Short 0–9'),('behind_line','Behind LOS')] %}<div class="cfb-compact-field-row" role="row"><strong role="rowheader">{{ label }}</strong>
+          {% for direction in ['left','middle','right'] %}{% set zone=(panel.zones | selectattr('depth','equalto',depth) | selectattr('direction','equalto',direction) | first) %}<div class="cfb-edge-cell {{ 'positive' if zone.edge is not none and zone.edge > 0.05 else 'negative' if zone.edge is not none and zone.edge < -0.05 else 'neutral' }}" role="cell"{% if zone.offense.receivers or zone.defense.allowed_by_position %} tabindex="0"{% endif %}>
+            <div class="cfb-edge-value"><b>{{ zone.edge | cell('signed2') if zone.edge is not none else '—' }}</b><span>{{ 'Offense' if zone.edge is not none and zone.edge > 0.05 else 'Defense' if zone.edge is not none and zone.edge < -0.05 else 'Even' }}</span></div>
+            <small><b>O {{ zone.offense.epa_per_attempt | cell('signed2') }}</b><b>D {{ zone.defense.epa_per_attempt | cell('signed2') }}</b></small><em>{{ zone.offense.attempts }}/{{ zone.defense.attempts }} att</em>
+            {{ production_tooltip(panel.attacker, panel.defender, zone.offense.receivers, zone.defense.allowed_by_position, 'passing') }}
+          </div>{% endfor %}
+        </div>{% endfor %}
+      </div>
+      {% if situation and situation.rows %}<div class="cfb-compact-subsection"><header>High-value opportunities</header><div class="cfb-opportunity-strip">{% for row in situation.rows %}<div class="cfb-opportunity-cell {{ 'positive' if row.edge is not none and row.edge > 0.05 else 'negative' if row.edge is not none and row.edge < -0.05 else 'neutral' }}"{% if row.offense.receivers or row.defense.allowed_by_position %} tabindex="0"{% endif %}>
+        <span>{{ row.label }}</span><div class="cfb-edge-value"><b>{{ row.edge | cell('signed2') if row.edge is not none else '—' }}</b><span>{{ 'Offense' if row.edge is not none and row.edge > 0.05 else 'Defense' if row.edge is not none and row.edge < -0.05 else 'Even' }}</span></div>
+        <small><b>O {{ row.offense.epa_per_attempt | cell('signed2') }}</b><b>D {{ row.defense.epa_per_attempt | cell('signed2') }}</b></small><em>{{ row.offense.attempts }}/{{ row.defense.attempts }} att</em>
+        {{ production_tooltip(panel.attacker, panel.defender, row.offense.receivers, row.defense.allowed_by_position, 'passing') }}
+      </div>{% endfor %}</div></div>{% endif %}
+    </article>
+  {% endfor %}</div>
+</section>{% endif %}
+{% endmacro %}
+
+{% macro compact_rushing_matchups(panels, situational_panels) %}
+{% if panels and panels | sum(attribute='attempts') %}<section class="section cfb-compact-matchups" data-mobile-tab-panel="matchups">
+  <div class="section-head-row"><div><h2>Run direction matchup</h2><div class="section-note">EPA/attempt edge by left, middle, and right. Positive favors the offense; negative favors the defense. O/D is the offense and defense attempt sample.</div></div></div>
+  <div class="cfb-compact-stack">{% for panel in panels %}{% set situation=(situational_panels | selectattr('attacker', 'equalto', panel.attacker) | first) %}
+    <article class="cfb-compact-card">
+      <header><div><small>{{ panel.attacker }} offense</small><h3>{{ panel.attempts }} charted attempts</h3></div><span>vs</span><div><small>{{ panel.defender }} defense</small><h3>{{ panel.allowed_attempts }} allowed</h3></div></header>
+      <div class="cfb-run-direction-grid" role="list" aria-label="{{ panel.attacker }} rushing offense against {{ panel.defender }} defense by direction">{% for zone in panel.zones %}<div class="cfb-edge-cell {{ 'positive' if zone.edge is not none and zone.edge > 0.05 else 'negative' if zone.edge is not none and zone.edge < -0.05 else 'neutral' }}" role="listitem"{% if zone.offense.rushers or zone.defense.allowed_by_position %} tabindex="0"{% endif %}>
+        <span class="cfb-direction-label">{{ zone.direction | title }}</span><div class="cfb-edge-value"><b>{{ zone.edge | cell('signed2') if zone.edge is not none else '—' }}</b><span>{{ 'Offense' if zone.edge is not none and zone.edge > 0.05 else 'Defense' if zone.edge is not none and zone.edge < -0.05 else 'Even' }}</span></div>
+        <small><b>O {{ zone.offense.epa_per_attempt | cell('signed2') }}</b><b>D {{ zone.defense.epa_per_attempt | cell('signed2') }}</b></small><em>{{ zone.offense.attempts }}/{{ zone.defense.attempts }} att</em>
+        {{ production_tooltip(panel.attacker, panel.defender, zone.offense.rushers, zone.defense.allowed_by_position, 'rushing') }}
+      </div>{% endfor %}</div>
+      {% if situation and situation.rows %}<div class="cfb-compact-subsection"><header>Red-zone rushing</header><div class="cfb-opportunity-strip">{% for row in situation.rows %}<div class="cfb-opportunity-cell {{ 'positive' if row.edge is not none and row.edge > 0.05 else 'negative' if row.edge is not none and row.edge < -0.05 else 'neutral' }}"{% if row.offense.rushers or row.defense.allowed_by_position %} tabindex="0"{% endif %}>
+        <span>{{ row.label }}</span><div class="cfb-edge-value"><b>{{ row.edge | cell('signed2') if row.edge is not none else '—' }}</b><span>{{ 'Offense' if row.edge is not none and row.edge > 0.05 else 'Defense' if row.edge is not none and row.edge < -0.05 else 'Even' }}</span></div>
+        <small><b>O {{ row.offense.epa_per_attempt | cell('signed2') }}</b><b>D {{ row.defense.epa_per_attempt | cell('signed2') }}</b></small><em>{{ row.offense.attempts }}/{{ row.defense.attempts }} att</em>
+        {{ production_tooltip(panel.attacker, panel.defender, row.offense.rushers, row.defense.allowed_by_position, 'rushing') }}
+      </div>{% endfor %}</div></div>{% endif %}
+    </article>
+  {% endfor %}</div>
+</section>{% endif %}
+{% endmacro %}
+
 {% macro probability_track(data) %}
 {% if data %}<div class="prod-prob">
   <div class="prod-prob-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span></div>
@@ -76,9 +132,7 @@ document.querySelectorAll("[data-prod-trend]").forEach(function(shell){
       {% for depth, label in [('deep','Deep 20+'),('intermediate','Intermediate 10–19'),('short','Short 0–9'),('behind_line','Behind LOS')] %}<div class="prod-zone-row"><span>{{ label }}</span>
         {% for direction in ['left','middle','right'] %}{% set zone=(panel.zones | selectattr('depth','equalto',depth) | selectattr('direction','equalto',direction) | first) %}
         <button type="button" class="prod-zone {{ 'positive' if zone.edge is not none and zone.edge > 0.05 else 'negative' if zone.edge is not none and zone.edge < -0.05 else 'neutral' }}"><b>{{ zone.edge | cell('signed2') if zone.edge is not none else '—' }}</b><small>O {{ zone.offense.epa_per_attempt | cell('signed2') }} &middot; D {{ zone.defense.epa_per_attempt | cell('signed2') }}</small><em>{{ direction | title }}</em>
-          <span class="prod-zone-tip"><strong>{{ panel.attacker }} targets</strong>{% for receiver in zone.offense.receivers %}<span>{{ receiver.name }} <i>{{ receiver.position }}</i><b>{{ receiver.receptions }} rec &middot; {{ receiver.yards }} yds &middot; {{ receiver.touchdowns }} TD</b></span>{% else %}<span>No named targets</span>{% endfor %}
-            {% if zone.defense.allowed_by_position %}<strong>{{ panel.defender }} allows by position</strong>{% for entry in zone.defense.allowed_by_position %}<span>{{ entry.position }}<b>{{ entry.targets }} targets</b></span>{% endfor %}{% endif %}
-          </span>
+          {{ production_tooltip(panel.attacker, panel.defender, zone.offense.receivers, zone.defense.allowed_by_position, 'passing') }}
         </button>{% endfor %}
       </div>{% endfor %}<div class="prod-los">LINE OF SCRIMMAGE</div>
     </div>
@@ -91,12 +145,10 @@ document.querySelectorAll("[data-prod-trend]").forEach(function(shell){
   <div class="section-head-row"><div><h2>High-value opportunities</h2><div class="section-note">Red zone (inside the 20) and end zone (the target itself reaches the goal line) passing, same offense/defense EPA blend as the field above.</div></div></div>
   {% for panel in panels %}{% if panel.rows %}<div class="prod-situational-panel">
     <div class="prod-pass-meta"><b>{{ panel.attacker }} offense</b><i>vs</i><b>{{ panel.defender }} defense</b></div>
-    <div class="prod-situational-grid">{% for row in panel.rows %}<div class="prod-situational-cell {{ 'positive' if row.edge is not none and row.edge > 0.05 else 'negative' if row.edge is not none and row.edge < -0.05 else 'neutral' }}">
+    <div class="prod-situational-grid">{% for row in panel.rows %}<div class="prod-situational-cell {{ 'positive' if row.edge is not none and row.edge > 0.05 else 'negative' if row.edge is not none and row.edge < -0.05 else 'neutral' }}"{% if row.offense.receivers or row.defense.allowed_by_position %} tabindex="0"{% endif %}>
       <span>{{ row.label }}</span><b>{{ row.edge | cell('signed2') if row.edge is not none else '—' }}</b>
       <small>O {{ row.offense.epa_per_attempt | cell('signed2') }} ({{ row.offense.attempts }} att) &middot; D {{ row.defense.epa_per_attempt | cell('signed2') }} ({{ row.defense.attempts }} att)</small>
-      <span class="prod-zone-tip"><strong>{{ panel.attacker }} targets</strong>{% for receiver in row.offense.receivers %}<span>{{ receiver.name }} <i>{{ receiver.position }}</i><b>{{ receiver.receptions }} rec &middot; {{ receiver.yards }} yds &middot; {{ receiver.touchdowns }} TD</b></span>{% else %}<span>No named targets</span>{% endfor %}
-        {% if row.defense.allowed_by_position %}<strong>{{ panel.defender }} allows by position</strong>{% for entry in row.defense.allowed_by_position %}<span>{{ entry.position }}<b>{{ entry.targets }} targets</b></span>{% endfor %}{% endif %}
-      </span>
+      {{ production_tooltip(panel.attacker, panel.defender, row.offense.receivers, row.defense.allowed_by_position, 'passing') }}
     </div>{% endfor %}</div>
   </div>{% endif %}{% endfor %}
 </section>{% endif %}
@@ -107,12 +159,10 @@ document.querySelectorAll("[data-prod-trend]").forEach(function(shell){
   <div class="section-head-row"><div><h2>Run direction matchup</h2><div class="section-note">EPA/attempt edge &middot; this offense's average blended with what the defense allows here. CFBD charts left/middle/right only, no gap-width split. Hover or focus a zone for rusher production.</div></div><div class="prod-switch" role="group" aria-label="Rushing offense">{% for panel in panels %}<button type="button" class="{{ 'active' if loop.first else '' }}" data-prod-run-tab="{{ panel.attacker }}">{{ panel.attacker }} O</button>{% endfor %}</div></div>
   {% for panel in panels %}<div class="prod-run-panel" data-prod-run-panel="{{ panel.attacker }}"{% if not loop.first %} hidden{% endif %}>
     <div class="prod-pass-meta"><b>{{ panel.attacker }} offense</b><span>{{ panel.attempts }} charted att</span><i>vs</i><b>{{ panel.defender }} defense</b><span>{{ panel.allowed_attempts }} charted att</span></div>
-    <div class="prod-situational-grid">{% for zone in panel.zones %}<div class="prod-situational-cell {{ 'positive' if zone.edge is not none and zone.edge > 0.05 else 'negative' if zone.edge is not none and zone.edge < -0.05 else 'neutral' }}">
+    <div class="prod-situational-grid">{% for zone in panel.zones %}<div class="prod-situational-cell {{ 'positive' if zone.edge is not none and zone.edge > 0.05 else 'negative' if zone.edge is not none and zone.edge < -0.05 else 'neutral' }}"{% if zone.offense.rushers or zone.defense.allowed_by_position %} tabindex="0"{% endif %}>
       <span>{{ zone.direction | title }}</span><b>{{ zone.edge | cell('signed2') if zone.edge is not none else '—' }}</b>
       <small>O {{ zone.offense.epa_per_attempt | cell('signed2') }} ({{ zone.offense.attempts }} att) &middot; D {{ zone.defense.epa_per_attempt | cell('signed2') }} ({{ zone.defense.attempts }} att)</small>
-      <span class="prod-zone-tip"><strong>{{ panel.attacker }} rushers</strong>{% for rusher in zone.offense.rushers %}<span>{{ rusher.name }} <i>{{ rusher.position }}</i><b>{{ rusher.attempts }} att &middot; {{ rusher.yards }} yds &middot; {{ rusher.touchdowns }} TD</b></span>{% else %}<span>No named rushers</span>{% endfor %}
-        {% if zone.defense.allowed_by_position %}<strong>{{ panel.defender }} allows by position</strong>{% for entry in zone.defense.allowed_by_position %}<span>{{ entry.position }}<b>{{ entry.attempts }} att</b></span>{% endfor %}{% endif %}
-      </span>
+      {{ production_tooltip(panel.attacker, panel.defender, zone.offense.rushers, zone.defense.allowed_by_position, 'rushing') }}
     </div>{% endfor %}</div>
   </div>{% endfor %}
 </section>{% endif %}
@@ -123,12 +173,10 @@ document.querySelectorAll("[data-prod-trend]").forEach(function(shell){
   <div class="section-head-row"><div><h2>Red-zone rushing</h2><div class="section-note">Carries inside the 20, same offense/defense EPA blend as the run-direction field above. No end-zone split for a rush attempt.</div></div></div>
   {% for panel in panels %}{% if panel.rows %}<div class="prod-situational-panel">
     <div class="prod-pass-meta"><b>{{ panel.attacker }} offense</b><i>vs</i><b>{{ panel.defender }} defense</b></div>
-    <div class="prod-situational-grid">{% for row in panel.rows %}<div class="prod-situational-cell {{ 'positive' if row.edge is not none and row.edge > 0.05 else 'negative' if row.edge is not none and row.edge < -0.05 else 'neutral' }}">
+    <div class="prod-situational-grid">{% for row in panel.rows %}<div class="prod-situational-cell {{ 'positive' if row.edge is not none and row.edge > 0.05 else 'negative' if row.edge is not none and row.edge < -0.05 else 'neutral' }}"{% if row.offense.rushers or row.defense.allowed_by_position %} tabindex="0"{% endif %}>
       <span>{{ row.label }}</span><b>{{ row.edge | cell('signed2') if row.edge is not none else '—' }}</b>
       <small>O {{ row.offense.epa_per_attempt | cell('signed2') }} ({{ row.offense.attempts }} att) &middot; D {{ row.defense.epa_per_attempt | cell('signed2') }} ({{ row.defense.attempts }} att)</small>
-      <span class="prod-zone-tip"><strong>{{ panel.attacker }} rushers</strong>{% for rusher in row.offense.rushers %}<span>{{ rusher.name }} <i>{{ rusher.position }}</i><b>{{ rusher.attempts }} att &middot; {{ rusher.yards }} yds &middot; {{ rusher.touchdowns }} TD</b></span>{% else %}<span>No named rushers</span>{% endfor %}
-        {% if row.defense.allowed_by_position %}<strong>{{ panel.defender }} allows by position</strong>{% for entry in row.defense.allowed_by_position %}<span>{{ entry.position }}<b>{{ entry.attempts }} att</b></span>{% endfor %}{% endif %}
-      </span>
+      {{ production_tooltip(panel.attacker, panel.defender, row.offense.rushers, row.defense.allowed_by_position, 'rushing') }}
     </div>{% endfor %}</div>
   </div>{% endif %}{% endfor %}
 </section>{% endif %}

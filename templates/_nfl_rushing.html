@@ -3,13 +3,12 @@
 {% macro run_matchup_grid(comparison) %}
 <article class="pass-matchup-card" style="--offense-color:{{ comparison.offense_identity.color or '#3d8eb9' }};--defense-color:{{ comparison.defense_identity.color or '#a95757' }}">
     <header><div><small>{{ comparison.offense }} offense</small><h3>Team rushing{% if comparison.leading_runner %} <small>led by {{ comparison.leading_runner.player_name }}</small>{% endif %}</h3></div><span>vs</span><div><small>{{ comparison.defense }} defense</small><h3>Results allowed</h3></div></header>
-    <div class="pass-matchup-legend"><span class="offense-key">{{ comparison.offense }} advantage</span><span>Edge = rush EPA/att + defense EPA/att allowed (both favor the offense when positive)</span><span class="defense-key">{{ comparison.defense }} advantage</span></div>
-    <div class="run-direction-grid">{% for zone in comparison.matchup.cells %}<div class="pass-matchup-cell edge-{{ zone.lean }}-{{ zone.strength }}{% if zone.edge is none %} empty-zone{% endif %}"{% if zone.contributors or zone.defense_allowed %} tabindex="0"{% endif %}>
-        <span class="run-direction-label">{{ zone.label }}</span>
-        {% if zone.edge is not none %}<strong>{{ zone.edge|cell('signed2') }}</strong><span>{{ comparison.offense if zone.lean == 'offense' else comparison.defense if zone.lean == 'defense' else 'Even' }} edge</span><small>O {{ zone.offense_epa|cell('signed2') }} &middot; D {{ zone.defense_epa|cell('signed2') }} EPA/att<br>{{ zone.offense_attempts }}/{{ zone.defense_attempts }} att</small>{% else %}<strong>&mdash;</strong><span>No comparison</span><small>{{ zone.offense_attempts }}/{{ zone.defense_attempts }} O/D attempts</small>{% endif %}
+    <div class="run-direction-grid" role="list" aria-label="{{ comparison.offense }} rushing offense against {{ comparison.defense }} defense by direction">{% for zone in comparison.matchup.cells %}<div class="pass-matchup-cell edge-{{ zone.lean }}-{{ zone.strength }}{% if zone.edge is none %} empty-zone{% endif %}" role="listitem" aria-label="{{ zone.label }}: {% if zone.edge is not none %}{{ zone.edge|cell('signed2') }} edge; offense {{ zone.offense_epa|cell('signed2') }}, defense allowed {{ zone.defense_epa|cell('signed2') }} EPA per attempt; {{ zone.offense_attempts }} offense and {{ zone.defense_attempts }} defense attempts{% else %}no comparison; {{ zone.offense_attempts }} offense and {{ zone.defense_attempts }} defense attempts{% endif %}"{% if zone.contributors or zone.defense_allowed %} tabindex="0"{% endif %}>
+        <span class="run-direction-label" title="{{ zone.label }}">{{ zone.short_label }}</span>
+        {% if zone.edge is not none %}<div class="matchup-edge-value"><b>{{ zone.edge|cell('signed2') }}</b><span>{{ comparison.offense if zone.lean == 'offense' else comparison.defense if zone.lean == 'defense' else 'Even' }}</span></div><small><b>O {{ zone.offense_epa|cell('signed2') }}</b><b>D {{ zone.defense_epa|cell('signed2') }}</b></small><em>{{ zone.offense_attempts }}/{{ zone.defense_attempts }} att</em>{% else %}<div class="matchup-edge-value"><b>&mdash;</b><span>No comparison</span></div><em>{{ zone.offense_attempts }}/{{ zone.defense_attempts }} O/D attempts</em>{% endif %}
         {% if zone.contributors or zone.defense_allowed %}<div class="pass-zone-tooltip" role="tooltip">
             {% if zone.contributors %}<strong>{{ comparison.offense }} rushers</strong>{{ player_list(zone.contributors, 'rusher_name') }}{% endif %}
-            {{ position_breakdown(comparison.defense ~ ' allows by position', zone.defense_allowed, 'rusher_name') }}
+            {{ position_breakdown(comparison.defense ~ ' allows by position', zone.defense_position_summary) }}
         </div>{% endif %}
     </div>{% endfor %}</div>
     {% if comparison.situational %}<div class="situational-pass-strip">{% for row in comparison.situational %}
@@ -18,7 +17,7 @@
             <span><small>{{ comparison.defense }} allowed</small><b>{{ row.defense.attempts|cell('int') if row.defense else '&mdash;' }} att</b><small>{{ row.defense.touchdowns|cell('int') if row.defense else '&mdash;' }} TD &middot; {{ row.defense.epa_per_attempt|cell('signed2') if row.defense else '&mdash;' }} EPA/att</small></span></div>
             {% if row.contributors or row.defense_allowed %}<div class="pass-zone-tooltip" role="tooltip">
                 {% if row.contributors %}<strong>{{ comparison.offense }} rushers</strong>{{ player_list(row.contributors, 'rusher_name') }}{% endif %}
-                {{ position_breakdown(comparison.defense ~ ' allows by position', row.defense_allowed, 'rusher_name') }}
+                {{ position_breakdown(comparison.defense ~ ' allows by position', row.defense_position_summary) }}
             </div>{% endif %}
         </article>{% endfor %}</div>{% endif %}
 </article>

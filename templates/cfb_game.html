@@ -1,6 +1,6 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import conference_mark, data_table, linked_piece_meta, story_list, tabbed_tables, tabs_script %}
-{% from "_cfb_page_visuals.html" import game_shape_module, passing_field, passing_situational_strip, probability_track, recent_form, rushing_field, rushing_situational_strip, visual_scripts %}
+{% from "_cfb_page_visuals.html" import compact_passing_matchups, compact_rushing_matchups, game_shape_module, probability_track, recent_form, visual_scripts %}
 
 {% block title %}{{ game.away_team }} at {{ game.home_team }} | Game Preview{% endblock %}
 
@@ -80,6 +80,7 @@
 <nav class="mobile-page-tabs" data-mobile-page-tabs="always" role="tablist" aria-label="Matchup page sections">
     <button type="button" role="tab" data-mobile-tab="overview" aria-selected="true">Overview</button>
     <button type="button" role="tab" data-mobile-tab="stats" aria-selected="false">Stats</button>
+    <button type="button" role="tab" data-mobile-tab="projection" aria-selected="false">Projection</button>
     <button type="button" role="tab" data-mobile-tab="matchups" aria-selected="false">Matchups</button>
     <button type="button" role="tab" data-mobile-tab="players" aria-selected="false">Players</button>
     <button type="button" role="tab" data-mobile-tab="coverage" aria-selected="false">Coverage</button>
@@ -125,6 +126,72 @@
     {{ data_table(history_games_table) }}
 </section>
 
+<section class="section projection-workspace" data-mobile-tab-panel="projection">
+    <h2>Game projection</h2>
+    <div class="section-note">
+        An early, leak-safe, opponent-adjusted forecast built only from games before this
+        kickoff. It projects team opportunity and yardage, not points, win probability,
+        or a betting edge.
+    </div>
+    {% if not projection.insufficient_data %}
+    <div class="projection-flow" aria-label="Projection model sequence">
+        {% for key, label, fmt in [
+            ('drives', 'xDrives', 'f1'),
+            ('plays_per_drive', 'xPlays / drive', 'f2'),
+            ('plays', 'xPlays', 'f1'),
+            ('pass_rate', 'xPass rate', 'rate'),
+            ('total_yards', 'xTotal yards', 'f1')] %}
+        <div class="projection-stage">
+            <span>{{ label }}</span>
+            <div><b>{{ projection.away[key] | cell(fmt) }}</b><i>{{ game.away_team }}</i></div>
+            <div><b>{{ projection.home[key] | cell(fmt) }}</b><i>{{ game.home_team }}</i></div>
+        </div>
+        {% if not loop.last %}<span class="projection-arrow" aria-hidden="true">&rarr;</span>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+    {{ data_table(projection_table, 'projection-table') }}
+    <div class="projection-reads">
+        {% for line in projection_lines %}<p>{{ line }}</p>{% endfor %}
+    </div>
+</section>
+
+<section class="section" data-mobile-tab-panel="projection">
+    <h2>How the projection is built</h2>
+    <div class="section-note">
+        Each layer blends the offense's recency-weighted trailing rate with what the
+        opponent has allowed. The same Baseline C chain was backtested independently
+        for drives, plays per drive, play mix, and yards per opportunity.
+    </div>
+    <div class="projection-method">
+        {% for side, team, opponent, snapshot in [
+            ('away', game.away_team, game.home_team, projection.away_snapshot),
+            ('home', game.home_team, game.away_team, projection.home_snapshot)] %}
+        <article class="situation-card">
+            <h3>{{ team }} offense</h3>
+            <p><strong>{{ snapshot.games }}</strong> prior charted game{{ '' if snapshot.games == 1 else 's' }} in the trailing sample.</p>
+            <p class="projection-formula">Team tendency + {{ opponent }} allowed &divide; 2</p>
+            <div class="pace-lines">
+                <span><b>{{ projection[side].dropbacks | cell('f1') }}</b> <i>xDropbacks</i></span>
+                <span><b>{{ projection[side].rush_attempts | cell('f1') }}</b> <i>xRush attempts</i></span>
+                <span><b>{{ projection[side].pass_yards | cell('f1') }}</b> <i>xPass yards</i></span>
+                <span><b>{{ projection[side].rush_yards | cell('f1') }}</b> <i>xRush yards</i></span>
+                <span><b>{{ projection[side].giveaways | cell('f2') }}</b> <i>expected giveaways</i></span>
+                <span><b>{{ projection[side].red_zone_trips | cell('f2') }}</b> <i>red-zone trips</i></span>
+                <span><b>{{ projection[side].red_zone_touchdowns | cell('f2') }}</b> <i>red-zone TDs</i></span>
+                <span><b>{{ projection[side].start_yards_to_goal | cell('f1') }}</b> <i>start yds to goal</i></span>
+                <span><b>{{ projection[side].field_goal_accuracy | cell('rate') }}</b> <i>FG make rate</i></span>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    <div class="table-note">
+        This team-level opportunity layer is the input contract for future player
+        projections: player target, carry, and yardage shares can be allocated without
+        changing the game-volume model.
+    </div>
+</section>
+
 <section class="section" data-mobile-tab-panel="overview">
     <h2>Recent form</h2>
     <div class="section-note">
@@ -149,8 +216,9 @@
 <section class="section" data-mobile-tab-panel="stats">
     <h2>{{ game.season }} team quality</h2>
     <div class="section-note">
-        Current-season CFBD advanced metrics, each formatted to its own scale. Preseason
-        context signals appear until plays are recorded.
+        Current-season CFBD advanced metrics, each formatted to its own scale. Values
+        include national FBS rank and performance percentile; preseason context signals
+        appear until plays are recorded.
     </div>
     {% if game.advanced_metrics %}
         {{ data_table(metrics_table) }}
@@ -392,10 +460,8 @@
     {{ data_table(pff_units_table) }}
 </section>
 
-{{ passing_field(passing_field_panels) }}
-{{ passing_situational_strip(passing_situational_panels) }}
-{{ rushing_field(rushing_field_panels) }}
-{{ rushing_situational_strip(rushing_situational_panels) }}
+{{ compact_passing_matchups(passing_field_panels, passing_situational_panels) }}
+{{ compact_rushing_matchups(rushing_field_panels, rushing_situational_panels) }}
 
 <section class="section" data-mobile-tab-panel="matchups">
     <h2>Player and unit watches</h2>
@@ -411,12 +477,17 @@
     <h2>Players to know</h2>
     <div class="section-note">
         A departed star is context for last season; an arrival brings production earned
-                somewhere else.
+        somewhere else. Inline impact levels use recorded {{ game.season }} production;
+        the existing tables retain the underlying roster, grade, and recruiting context.
     </div>
     <div class="state-key">
         <span><i class="is-returning"></i> Returning</span>
         <span><i class="is-arrived"></i> Arrived</span>
         <span><i class="is-departed"></i> Departed</span>
+        <span class="impact-key-separator" aria-hidden="true"></span>
+        <span><i class="is-impact-primary"></i> Primary impact</span>
+        <span><i class="is-impact-notable"></i> Notable impact</span>
+        <span><i class="is-impact-emerging"></i> Emerging impact</span>
     </div>
     <div class="split">
         <div>

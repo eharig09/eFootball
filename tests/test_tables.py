@@ -182,6 +182,31 @@ class ViewTableTests(unittest.TestCase):
         self.assertIsNone(views.height_label(None))
         self.assertIsNone(views.height_label(0))
 
+    def test_current_impact_is_annotated_inline_on_existing_player_rows(self):
+        impact = views.impact_player_index([{
+            "player_id": "p1", "player": "Alex Example", "roles": ["Ground engine"],
+            "impact_level": "notable", "impact_label": "Notable impact",
+        }])
+        with self.app.test_request_context():
+            returning = views.pff_players_table([{
+                "cfbd_player_id": "p1", "player_name": "Alex Example",
+                "position": "RB", "cfbd_team": "Michigan",
+                "roster_status": "RETURNING", "interest_score": 81.2,
+            }], 2026, impact=impact)
+            arrival = views.arrivals_table([{
+                # Name fallback covers feeds whose player IDs do not align.
+                "player_id": "different-id", "name": "Alex Example", "position": "RB",
+                "movement_type": "TRANSFER_IN", "origin": "Wisconsin",
+            }], 2026, impact=impact)
+
+        self.assertEqual(returning.rows[0]["player_name_class"], "impact-notable")
+        self.assertEqual(returning.rows[0]["player_name_sub"],
+                         "Notable impact · Ground engine")
+        self.assertEqual(arrival.rows[0]["name_class"],
+                         "state-arrived impact-notable")
+        self.assertEqual(arrival.rows[0]["name_sub"],
+                         "Notable impact · Ground engine")
+
     def test_schedule_marks_wins_and_losses_from_the_team_perspective(self):
         schedule = [
             {"game_id": 1, "week": 1, "home_team_id": 5, "away_team_id": 9,
@@ -229,9 +254,19 @@ class ViewTableTests(unittest.TestCase):
                 "Wisconsin": {"offense_success_rate": .401, "offense_ppa": .118},
             },
         }
-        table = views.matchup_metrics_table(game)
+        table = views.matchup_metrics_table(game, {
+            "Michigan": {
+                "offense_success_rate": {"rank": 12, "of": 134, "percentile": 92},
+                "offense_ppa": {"rank": 8, "of": 134, "percentile": 95},
+            },
+            "Wisconsin": {
+                "offense_success_rate": {"rank": 55, "of": 134, "percentile": 59},
+            },
+        })
         by_metric = {row["metric"]: row for row in table.rows}
         self.assertEqual(by_metric["Success rate"]["home_offense"], "45.2%")
+        self.assertEqual(by_metric["Success rate"]["home_offense_sub"],
+                         "#12 of 134 · P92")
         self.assertEqual(by_metric["PPA per play"]["home_offense"], "0.231")
         self.assertEqual(by_metric["Havoc"]["home_offense"], "—")
 

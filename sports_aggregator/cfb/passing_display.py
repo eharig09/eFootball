@@ -108,6 +108,10 @@ NOTE = ("Where each team attacked and what it returned, split between the middle
         "allowed the ball to go: it describes value that was available, not a "
         "play-call recommendation.")
 
+MATCHUP_NOTE = ("Season-to-date EPA per play through the middle. Each offense is paired "
+                "with the defense it faces; the outside value is a baseline, not a "
+                "projection.")
+
 
 def _cell(bucket, *, minimum, best=False):
     """Rate on top, the totals it came from underneath.
@@ -156,6 +160,56 @@ def _matrix(columns, *, minimum, better_high=True):
     return ('<div class="mof-grid" style="--mof-columns:%d">'
             '<div class="mof-row mof-header"><div class="mof-label"></div>%s</div>%s</div>'
             % (width, head, "".join(body)))
+
+
+def _matchup_cell(data, source, *, minimum, best=False):
+    """A matchup-page cell with one primary value and one compact baseline.
+
+    The full report needs totals, yards and success rate. The preview needs a
+    quick comparison, so it keeps EPA/play prominent and puts only the sample
+    and outside EPA underneath it.
+    """
+    middle = data[source]["middle"]
+    outside = data[source]["outside"]
+    plays = middle.get("plays") or 0
+    thin = plays < minimum
+    mark = "best" if best and not thin else ""
+    outside_value = _f2(outside.get("epa_per_play"))
+    return (
+        '<div class="mof-cell%s"><strong class="%s">%s</strong>'
+        '<span><b>%d plays</b><i>Outside %s</i></span></div>'
+        % (" pass-thin" if thin else "", mark,
+           _f2(middle.get("epa_per_play")), plays, outside_value)
+    )
+
+
+def _matchup_matrix(attacker, defender, offense, defense, *, minimum):
+    """Three scannable middle-of-field rows for one possession matchup."""
+    columns = (("%s offense" % attacker, offense),
+               ("%s allowed" % defender, defense))
+    head = "".join('<div class="mof-head">%s</div>' % escape(label)
+                   for label, _data in columns)
+    body = []
+    for source, label in (("combined", "Overall"), ("run", "Run"), ("pass", "Pass")):
+        values = [data[source]["middle"].get("epa_per_play") for _label, data in columns]
+        counts = [data[source]["middle"].get("plays") or 0 for _label, data in columns]
+        usable = all(value is not None and count >= minimum
+                     for value, count in zip(values, counts))
+        winner = None
+        if usable and values[0] != values[1]:
+            winner = values.index(max(values))
+        cells = "".join(
+            _matchup_cell(data, source, minimum=minimum, best=(index == winner))
+            for index, (_label, data) in enumerate(columns)
+        )
+        emphasis = " mof-total" if source == "combined" else ""
+        body.append('<div class="mof-row%s"><div class="mof-label">%s</div>%s</div>'
+                    % (emphasis, label, cells))
+    return (
+        '<div class="mof-grid mof-matchup-matrix" style="--mof-columns:2">'
+        '<div class="mof-row mof-header"><div class="mof-label">EPA/play</div>%s</div>%s</div>'
+        % (head, "".join(body))
+    )
 
 
 #: Printed only where nothing above it already says what this is. The postgame
@@ -231,15 +285,24 @@ def render_matchup(repository, game):
                 '<p class="pass-thin">No classified run or pass direction is stored for '
                 '%s&rsquo;s offence yet.</p></div>' % (escape(attacker), escape(attacker)))
             continue
-        columns = [("%s with the ball" % attacker, offense),
-                   ("%s allowed" % defender, splits[defender]["defense"])]
+        matrix = _matchup_matrix(attacker, defender, offense,
+                                 splits[defender]["defense"],
+                                 minimum=MIN_SEASON_PLAYS)
         blocks.append('<div class="mof-block"><h3>When %s has the ball</h3>%s</div>'
-                      % (escape(attacker), _matrix(columns, minimum=MIN_SEASON_PLAYS)))
-    return _shell_middle(
-        "".join(blocks),
-        "Season to date. A split under %d plays is greyed and carries no edge mark. "
-        "Each block pairs one offence against the defence it faces, rather than "
-        "printing both teams twice." % MIN_SEASON_PLAYS)
+                      % (escape(attacker), matrix))
+    detail = (
+        '<details class="mof-method"><summary>How to read this</summary>'
+        '<p>Values are EPA per play through the middle; Outside is the same '
+        'team&rsquo;s baseline. A row under %d middle plays is muted and carries '
+        'no edge mark. Direction coverage varies by game, and the comparison '
+        'is descriptive rather than a play-call recommendation.</p></details>'
+        % MIN_SEASON_PLAYS
+    )
+    return Markup(
+        STYLE + '<section class="section pass-map mof-matchup">' + _TITLE
+        + '<div class="section-note">%s</div><div class="mof-matchup-grid">%s</div>%s</section>'
+        % (escape(MATCHUP_NOTE), "".join(blocks), detail)
+    )
 
 
 PHASE_COLUMNS = ((("quarters", 1), "Q1"), (("quarters", 2), "Q2"),

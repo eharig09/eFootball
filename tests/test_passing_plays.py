@@ -9,8 +9,9 @@ from sports_aggregator.cfb import passing_plays
 from sports_aggregator.cfb.models import Game, Team
 from sports_aggregator.cfb.passing_plays import (
     MIN_GAME_ATTEMPTS, coverage, game_splits, store_attempts, sync_season,
-    sync_week, team_season_splits,
+    sync_week, team_season_splits, _receiver_position_rows,
 )
+from sports_aggregator.cfb.rushing_plays import _rusher_position_rows
 from sports_aggregator.cfb.repository import CFBRepository, forget_initialized_schemas
 
 
@@ -68,6 +69,22 @@ class FakeClient:
 
 
 class PassingStoreTests(unittest.TestCase):
+    def test_cfb_opponent_production_aggregates_by_position(self):
+        passing = _receiver_position_rows({"WR": {
+            "players": {"a", "b"}, "targets": 7, "receptions": 5, "yards": 81,
+            "touchdowns": 1, "epa": 2.1, "epa_plays": 7,
+        }})
+        rushing = _rusher_position_rows({"RB": {
+            "players": {"c", "d"}, "attempts": 10, "yards": 52,
+            "touchdowns": 1, "epa": 1.5, "epa_plays": 10,
+        }})
+        self.assertEqual((passing[0]["players"], passing[0]["receptions"],
+                          passing[0]["targets"], passing[0]["yards"]), (2, 5, 7, 81))
+        self.assertAlmostEqual(passing[0]["epa_per_attempt"], .3)
+        self.assertEqual((rushing[0]["players"], rushing[0]["attempts"],
+                          rushing[0]["yards"]), (2, 10, 52))
+        self.assertAlmostEqual(rushing[0]["epa_per_attempt"], .15)
+
     def setUp(self):
         handle, self.path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(handle)

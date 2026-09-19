@@ -34,6 +34,33 @@
     <div><span>Latest source</span><b>{% if summary.latest_week is not none %}Week {{ summary.latest_week }}{% else %}—{% endif %}</b></div>
 </div>
 
+<section class="section elo-movement">
+    <div class="elo-section-head">
+        <div><div class="eyebrow">Rating movement</div><h2>Risers and fallers</h2></div>
+        <span>Current Elo compared with the prior observation and season opener</span>
+    </div>
+    <div class="elo-movement-grid">
+        {% for horizon, label, key in [('weekly', 'This week', 'weekly_change'), ('season', 'This season', 'season_change')] %}
+        {% set groups = movement[horizon] %}
+        <article class="elo-movement-panel">
+            <header><h3>{{ label }}</h3><span>{{ 'vs prior rating' if horizon == 'weekly' else 'vs first rating' }}</span></header>
+            <div class="elo-mover-columns">
+                {% for direction, title in [('risers', 'Risers'), ('fallers', 'Fallers')] %}
+                <div class="elo-mover-list {{ direction }}"><h4>{{ title }}</h4>
+                    {% for team in groups[direction] %}<a href="{{ url_for('cfb.team_preview', team_id=team.team_id) }}" style="--mover-team:{{ team.identity.accent }}">
+                        <span class="elo-mover-rank">#{{ team.rank }}</span>
+                        <span class="elo-mover-mark">{% if team.identity.logo %}<img src="{{ team.identity.logo_dark or team.identity.logo }}" alt="" loading="lazy">{% endif %}</span>
+                        <span class="elo-mover-team"><b>{{ team.team }}</b><small>{{ team.elo }} Elo &middot; {{ team.rating_context }}</small></span>
+                        <strong>{{ '%+d' | format(team[key]) }}</strong>
+                    </a>{% else %}<div class="elo-mover-empty">Not enough rating history yet.</div>{% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
 {% if leaders %}
 <section class="section elo-leaders">
     <div class="elo-section-head">
@@ -50,7 +77,7 @@
             </span>
             <span class="elo-leader-team">{{ team.team }}</span>
             <strong>{{ team.elo }}</strong>
-            <small>{{ team.conference or 'Independent' }}{% if team.change is not none %} · {{ '%+d' | format(team.change) }} last rating{% endif %}</small>
+            <small>{{ team.conference or 'Independent' }}{% if team.weekly_change is not none %} &middot; {{ '%+d' | format(team.weekly_change) }} weekly{% endif %}</small>
         </a>
         {% endfor %}
     </div>
@@ -90,8 +117,8 @@
         <h2 id="elo-method-title">One rating, kept in context</h2>
     </div>
     <div class="elo-method-grid">
-        <p><strong>Current Elo</strong> is CFBD's pregame Elo from the team's most recent dated game carrying a rating. This app displays that source; it does not blend Elo with polls, FPI, CORE, or betting lines.</p>
-        <p><strong>Change</strong> compares the current observation with the team's previous stored pregame rating. A blank means only one rated observation is available for that season.</p>
+        <p><strong>Current Elo</strong> is CFBD's pregame Elo from the team's earliest upcoming rated game. If none remains, the latest available pregame observation is used. This avoids jumping ahead to a later scheduled game.</p>
+        <p><strong>Weekly movement</strong> compares the current observation with the prior stored rating. <strong>Season movement</strong> compares it with the first stored rating of the season.</p>
         <p><strong>Season range</strong> is the lowest and highest pregame rating stored for the team. Conference strength is the simple average of current ratings for rated FBS members.</p>
     </div>
 </section>

@@ -1818,15 +1818,15 @@ class CFBRepository:
         with self._reader() as connection:
             rows = connection.execute(
                 """SELECT rated.team_id,rated.elo,rated.week,rated.start_date,
-                          rated.game_id,t.school,t.conference
+                          rated.game_id,rated.completed,t.school,t.conference
                      FROM (
                        SELECT game_id,home_team_id team_id,home_pregame_elo elo,
-                              week,start_date
+                              week,start_date,completed
                          FROM games
                         WHERE season=? AND home_pregame_elo IS NOT NULL
                        UNION ALL
                        SELECT game_id,away_team_id team_id,away_pregame_elo elo,
-                              week,start_date
+                              week,start_date,completed
                          FROM games
                         WHERE season=? AND away_pregame_elo IS NOT NULL
                      ) rated
@@ -1850,18 +1850,36 @@ class CFBRepository:
 
         rankings: list[dict[str, Any]] = []
         for team_rows in histories.values():
-            latest = team_rows[-1]
-            previous = team_rows[-2]["elo"] if len(team_rows) > 1 else None
-            values = [int(row["elo"]) for row in team_rows]
+            # A full schedule can contain Elo values on several future games.
+            # The first upcoming observation is the current rating; selecting
+            # the last dated row jumped the page months into the future. Once a
+            # season has no upcoming rated game, the last available pregame
+            # observation is the honest endpoint supplied by CFBD.
+            upcoming = [row for row in team_rows if not row["completed"]]
+            latest = upcoming[0] if upcoming else team_rows[-1]
+            current_index = team_rows.index(latest)
+            observed = team_rows[:current_index + 1]
+            previous_row = observed[-2] if len(observed) > 1 else None
+            first = observed[0]
+            previous = previous_row["elo"] if previous_row is not None else None
+            values = [int(row["elo"]) for row in observed]
+            weekly_change = (int(latest["elo"] - previous)
+                             if previous is not None else None)
+            season_change = (int(latest["elo"] - first["elo"])
+                             if len(observed) > 1 else None)
             rankings.append({
                 "team_id": latest["team_id"],
                 "team": latest["school"],
                 "conference": latest["conference"],
                 "elo": int(latest["elo"]),
                 "previous_elo": int(previous) if previous is not None else None,
-                "change": int(latest["elo"] - previous) if previous is not None else None,
+                "change": weekly_change,
+                "weekly_change": weekly_change,
+                "season_change": season_change,
                 "week": latest["week"],
-                "rated_games": len(team_rows),
+                "rating_context": (f"Entering Week {latest['week']}"
+                                   if not latest["completed"] else f"Week {latest['week']} pregame"),
+                "rated_games": len(observed),
                 "season_high": max(values),
                 "season_low": min(values),
             })
@@ -1891,11 +1909,28 @@ class CFBRepository:
         middle = len(values) // 2
         median = (values[middle] if len(values) % 2
                   else ((values[middle - 1] + values[middle]) / 2 if values else None))
+        def movers(key: str, rising: bool) -> list[dict[str, Any]]:
+            candidates = [row for row in rankings
+                          if row.get(key) is not None and (row[key] > 0 if rising else row[key] < 0)]
+            candidates.sort(key=lambda row: (-row[key], row["team"])
+                            if rising else (row[key], row["team"]))
+            return candidates[:5]
+
         return {
             "season": season,
             "available_seasons": available_seasons,
             "rankings": rankings,
             "conferences": conferences,
+            "movement": {
+                "weekly": {
+                    "risers": movers("weekly_change", True),
+                    "fallers": movers("weekly_change", False),
+                },
+                "season": {
+                    "risers": movers("season_change", True),
+                    "fallers": movers("season_change", False),
+                },
+            },
             "summary": {
                 "rated_teams": len(rankings),
                 "leader": rankings[0]["team"] if rankings else None,
@@ -2201,6 +2236,125 @@ class CFBRepository:
 
     def team_player_leaders(self, team: str, season: int, limit: int=8) -> dict[str,Any]:
         return self._stat_leaders(season=season,team=team,limit=limit)
+
+    def team_impact_players(self, team: str, season: int,
+                            limit: int = 12) -> list[dict[str, Any]]:
+        """Current producers who are materially affecting a team's games.
+
+        Unlike the preseason/PFF lists, this uses only statistics recorded for
+        the requested season. Qualifying producers are tiered by strength and
+        role leadership, and a dual-role player is merged rather than repeated.
+        """
+        self.initialize()
+        with self._reader() as connection:
+            rows = connection.execute(
+                """SELECT player_id,player,position,category,stat_type,numeric_value
+                   FROM player_season_stats
+                   WHERE season=? AND team=? AND numeric_value IS NOT NULL
+                   ORDER BY player,category,stat_type""", (season, team)).fetchall()
+
+        players: dict[str, dict[str, Any]] = {}
+        for raw in rows:
+            player = players.setdefault(str(raw["player_id"]), {
+                "player_id": str(raw["player_id"]), "player": raw["player"],
+                "position": raw["position"], "team": team, "stats": {},
+            })
+            player["stats"].setdefault(raw["category"], {})[raw["stat_type"]] = (
+                float(raw["numeric_value"]))
+
+        def stat(player: dict[str, Any], category: str, key: str) -> float:
+            return float(player["stats"].get(category, {}).get(key) or 0)
+
+        def number(value: float) -> str:
+            return f"{value:,.1f}".rstrip("0").rstrip(".")
+
+        candidates: list[tuple[str, str, Any, Any, Any, Any]] = [
+            ("Passing engine", "Current passing production",
+             lambda p: stat(p, "passing", "ATT") >= 10 or stat(p, "passing", "YDS") >= 100,
+             lambda p: stat(p, "passing", "YDS") + 20 * stat(p, "passing", "TD")
+                       - 10 * stat(p, "passing", "INT"),
+             lambda p: (f"{number(stat(p, 'passing', 'YDS'))} pass yd · "
+                        f"{number(stat(p, 'passing', 'TD'))} TD · "
+                        f"{number(stat(p, 'passing', 'INT'))} INT"),
+             lambda p: stat(p, "passing", "YDS") >= 500 or stat(p, "passing", "TD") >= 5),
+            ("Ground engine", "Current rushing production",
+             lambda p: stat(p, "rushing", "CAR") >= 5 and stat(p, "rushing", "YDS") >= 30,
+             lambda p: stat(p, "rushing", "YDS") + 20 * stat(p, "rushing", "TD"),
+             lambda p: (f"{number(stat(p, 'rushing', 'YDS'))} rush yd · "
+                        f"{number(stat(p, 'rushing', 'TD'))} TD · "
+                        f"{number(stat(p, 'rushing', 'YPC'))} avg"),
+             lambda p: stat(p, "rushing", "YDS") >= 200 or stat(p, "rushing", "TD") >= 3),
+            ("Primary target", "Current receiving production",
+             lambda p: stat(p, "receiving", "REC") >= 3 or stat(p, "receiving", "YDS") >= 40,
+             lambda p: stat(p, "receiving", "YDS") + 20 * stat(p, "receiving", "TD"),
+             lambda p: (f"{number(stat(p, 'receiving', 'REC'))} rec · "
+                        f"{number(stat(p, 'receiving', 'YDS'))} yd · "
+                        f"{number(stat(p, 'receiving', 'TD'))} TD"),
+             lambda p: stat(p, "receiving", "YDS") >= 150 or stat(p, "receiving", "TD") >= 2),
+            ("Defensive disruptor", "Current disruptive production",
+             lambda p: (stat(p, "defensive", "TOT") >= 8
+                        or stat(p, "defensive", "TFL") >= 1
+                        or stat(p, "defensive", "SACKS") >= 1
+                        or stat(p, "interceptions", "INT") >= 1
+                        or stat(p, "defensive", "PD") >= 2),
+             lambda p: (stat(p, "defensive", "TOT")
+                        + 3 * stat(p, "defensive", "TFL")
+                        + 5 * stat(p, "defensive", "SACKS")
+                        + 7 * stat(p, "interceptions", "INT")
+                        + 2 * stat(p, "defensive", "PD")
+                        + 10 * stat(p, "defensive", "TD")),
+             lambda p: (f"{number(stat(p, 'defensive', 'TOT'))} tackles · "
+                        f"{number(stat(p, 'defensive', 'TFL'))} TFL · "
+                        f"{number(stat(p, 'defensive', 'SACKS'))} sacks · "
+                        f"{number(stat(p, 'interceptions', 'INT'))} INT"),
+             lambda p: (stat(p, "defensive", "TOT")
+                        + 3 * stat(p, "defensive", "TFL")
+                        + 5 * stat(p, "defensive", "SACKS")
+                        + 7 * stat(p, "interceptions", "INT")
+                        + 2 * stat(p, "defensive", "PD")) >= 35),
+        ]
+
+        selected: dict[str, dict[str, Any]] = {}
+        for label, why, qualifies, score, detail, primary in candidates:
+            eligible = sorted(
+                (player for player in players.values() if qualifies(player)),
+                key=lambda player: (-score(player), player["player"]),
+            )
+            if not eligible:
+                continue
+            for rank, player in enumerate(eligible):
+                identifier = player["player_id"]
+                if identifier not in selected:
+                    selected[identifier] = {
+                        **{key: value for key, value in player.items() if key != "stats"},
+                        "roles": [], "evidence": [], "role_leader": False,
+                        "primary_signal": False, "impact_sort": 0.0,
+                    }
+                selected[identifier]["roles"].append(label)
+                selected[identifier]["evidence"].append({
+                    "label": why, "detail": detail(player),
+                })
+                selected[identifier]["role_leader"] |= rank == 0
+                selected[identifier]["primary_signal"] |= bool(primary(player))
+                selected[identifier]["impact_sort"] = max(
+                    selected[identifier]["impact_sort"], float(score(player)))
+
+        for player in selected.values():
+            primary_signal = player.pop("primary_signal")
+            role_leader = player.pop("role_leader")
+            if primary_signal or len(player["roles"]) > 1:
+                player["impact_level"], player["impact_label"] = "primary", "Primary impact"
+            elif role_leader:
+                player["impact_level"], player["impact_label"] = "notable", "Notable impact"
+            else:
+                player["impact_level"], player["impact_label"] = "emerging", "Emerging impact"
+        ranked = sorted(selected.values(), key=lambda player: (
+            {"primary": 0, "notable": 1, "emerging": 2}[player["impact_level"]],
+            -player["impact_sort"], player["player"],
+        ))
+        for player in ranked:
+            player.pop("impact_sort", None)
+        return ranked[:limit]
 
     def _teams_by_id(self) -> dict[int, dict[str, Any]]:
         """Every team row, read once per request.
@@ -2765,6 +2919,50 @@ class CFBRepository:
         return {"record":dict(record) if record else None,"advanced":dict(advanced) if advanced else None,
                 "core":dict(core) if core else None,"stats":stats,
                 "score":dict(score) if score else {"games":0,"points_for":None,"points_against":None}}
+
+    def advanced_metric_ranks(self, season: int) -> dict[str, dict[str, dict[str, Any]]]:
+        """National FBS rank and performance percentile for advanced metrics.
+
+        The source query is already restricted to FBS. Percentiles are always
+        oriented as performance percentiles (100 is best), even for measures
+        such as defensive success rate and offensive havoc allowed where a
+        lower raw value is favorable.
+        """
+        directions = {
+            "offense_success_rate": True, "defense_success_rate": False,
+            "offense_explosiveness": True, "defense_explosiveness": False,
+            "offense_ppa": True, "defense_ppa": False,
+            "offense_points_per_opportunity": True,
+            "defense_points_per_opportunity": False,
+            "offense_havoc": False, "defense_havoc": True,
+        }
+        self.initialize()
+        with self._reader() as connection:
+            rows = [dict(row) for row in connection.execute(
+                "SELECT * FROM team_advanced_stats WHERE season=? ORDER BY team",
+                (season,))]
+
+        result: dict[str, dict[str, dict[str, Any]]] = {
+            row["team"]: {} for row in rows}
+        for metric, higher_is_better in directions.items():
+            values = [float(row[metric]) for row in rows if row.get(metric) is not None]
+            values.sort(reverse=higher_is_better)
+            total = len(values)
+            if not total:
+                continue
+            rank_by_value = {value: 1 + sum(
+                other > value if higher_is_better else other < value
+                for other in values) for value in set(values)}
+            for row in rows:
+                if row.get(metric) is None:
+                    continue
+                rank = rank_by_value[float(row[metric])]
+                percentile = (100.0 if total == 1 else
+                              100.0 * (total - rank) / (total - 1))
+                result[row["team"]][metric] = {
+                    "rank": rank, "of": total, "percentile": round(percentile),
+                }
+        return result
 
     def opponent_quality(self, team_id: int, season: int) -> dict[str, Any]:
         """Cached schedule quality using contemporaneous and latest model ratings.

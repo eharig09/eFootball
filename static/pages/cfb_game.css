@@ -156,3 +156,50 @@ h1 b { color: var(--rust); }
 .situation-card .pace-lines { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; }
 .situation-card .pace-lines b { font-weight: 800; }
 .situation-card .pace-lines i { color: var(--muted); font-style: normal; }
+
+/* Current production is marked directly on the player already shown in each
+   roster table. An inset stripe can coexist with the arrival/departure border. */
+table.data td.impact-primary { box-shadow:inset 4px 0 var(--green); background:color-mix(in srgb,var(--green) 10%,var(--paper)); }
+table.data td.impact-notable { box-shadow:inset 3px 0 var(--gold); background:color-mix(in srgb,var(--gold) 7%,var(--paper)); }
+table.data td.impact-emerging { box-shadow:inset 2px 0 var(--blue); background:color-mix(in srgb,var(--blue) 5%,var(--paper)); }
+table.data td.impact-primary .sub,
+table.data td.impact-notable .sub,
+table.data td.impact-emerging .sub { display:table; width:auto; margin-top:3px; padding:1px 5px; border:1px solid currentColor; border-radius:999px; font-size:.48rem; font-weight:900; letter-spacing:.025em; line-height:1.45; }
+table.data td.impact-primary .sub { color:var(--green); }
+table.data td.impact-notable .sub { color:var(--gold); }
+table.data td.impact-emerging .sub { color:var(--blue); }
+.state-key .impact-key-separator { width:1px; height:12px; background:var(--line-strong); }
+.state-key .is-impact-primary { border-radius:50%; background:var(--green); }
+.state-key .is-impact-notable { border-radius:50%; background:var(--gold); }
+.state-key .is-impact-emerging { border-radius:50%; background:var(--blue); }
+
+/* The projection reads left-to-right as the model does: possessions create
+   plays, plays split into volume, and volume becomes yardage. */
+.projection-flow {
+    display:grid; grid-template-columns:repeat(9, minmax(0, auto));
+    align-items:stretch; gap:7px; margin:16px 0;
+}
+.projection-stage {
+    min-width:0; padding:10px; border-top:3px solid var(--team);
+    background:var(--paper); box-shadow:var(--shadow-panel);
+}
+.projection-stage > span {
+    display:block; margin-bottom:7px; color:var(--muted); font:.6rem/1.2 var(--display-font);
+    font-weight:900; letter-spacing:.05em; text-transform:uppercase;
+}
+.projection-stage div { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+.projection-stage div + div { margin-top:5px; padding-top:5px; border-top:1px solid var(--line); }
+.projection-stage b { font:800 1.05rem var(--display-font); font-variant-numeric:tabular-nums; }
+.projection-stage i { overflow:hidden; color:var(--muted); font-size:.58rem; font-style:normal; text-overflow:ellipsis; white-space:nowrap; }
+.projection-arrow { display:grid; place-items:center; color:var(--muted); font-weight:900; }
+.projection-reads { margin-top:12px; border-left:3px solid var(--team); padding-left:12px; }
+.projection-reads p { margin:5px 0; font-size:.78rem; line-height:1.45; }
+.projection-method { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:18px; }
+.projection-formula { color:var(--muted); font-size:.68rem; }
+@media (max-width: 900px) {
+    .projection-flow { grid-template-columns:repeat(5, minmax(110px, 1fr)); overflow-x:auto; padding-bottom:5px; }
+    .projection-arrow { display:none; }
+}
+@media (max-width: 620px) {
+    .projection-method { grid-template-columns:minmax(0, 1fr); }
+}

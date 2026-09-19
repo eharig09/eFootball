@@ -70,6 +70,63 @@ def height_label(inches: Any) -> str | None:
     return f"{total // 12}-{total % 12}"
 
 
+def game_projection_table(projection: dict[str, Any]) -> Table:
+    """The served x-stat chain, kept in one comparison table.
+
+    Values remain model outputs; the labeled quality edge discloses the model's
+    Elo/FPI/CORE/market context. The rows preserve the dependency order used by
+    the model so this table can later sit above player-level allocation.
+    """
+    away = projection["away"]
+    home = projection["home"]
+    definitions = (
+        ("xDrives", "drives", "f1"),
+        ("xPlays / drive", "plays_per_drive", "f2"),
+        ("xPlays", "plays", "f1"),
+        ("xPass rate", "pass_rate", "rate"),
+        ("xDropbacks", "dropbacks", "f1"),
+        ("xRush attempts", "rush_attempts", "f1"),
+        ("xYards / dropback", "yards_per_dropback", "f2"),
+        ("xYards / rush", "yards_per_rush", "f2"),
+        ("xPass yards", "pass_yards", "f1"),
+        ("xRush yards", "rush_yards", "f1"),
+        ("xTotal yards", "total_yards", "f1"),
+        ("Expected giveaways", "giveaways", "f2"),
+        ("Expected red-zone trips", "red_zone_trips", "f2"),
+        ("Expected red-zone TDs", "red_zone_touchdowns", "f2"),
+        ("Expected start: yards to goal", "start_yards_to_goal", "f1"),
+        ("Expected start after punt", "start_after_punt", "f1"),
+        ("Field-goal make rate", "field_goal_accuracy", "rate"),
+        ("Expected net punt yards", "net_punt_yards", "f1"),
+        ("Opponent-adjusted points / drive", "points_per_drive", "f2"),
+        ("Expected offensive points", "expected_points", "f1"),
+        ("Expected touchdowns", "expected_touchdowns", "f2"),
+        ("Expected field goals", "expected_field_goals", "f2"),
+        ("Recent scoring margin", "recent_margin", "signed"),
+        ("Schedule-strength adjustment / drive", "offense_schedule_adjustment", "signed"),
+        ("Opponent defense adjustment / drive", "opponent_defense_adjustment", "signed"),
+        ("Blended matchup quality edge", "opponent_quality_edge", "signed"),
+    )
+    rows = [{
+        "metric": label,
+        "away": format_value(away.get(key), fmt),
+        "home": format_value(home.get(key), fmt),
+    } for label, key, fmt in definitions]
+    return Table(
+        columns=[
+            Column("metric", "Projection layer", align="left", emphasis=True),
+            Column("away", projection["away_team"], align="right", emphasis=True),
+            Column("home", projection["home_team"], align="right", emphasis=True),
+        ],
+        rows=rows,
+        caption="Opponent-adjusted team projection",
+        note=("Trailing games strictly precede kickoff. Points/drive adjusts each team's "
+              "performance for its prior opponents, recent form, and the current matchup. "
+              "The quality edge blends available pregame Elo, FPI, CORE, and Vegas views."),
+        empty="Not enough prior charted games to produce this projection.",
+    )
+
+
 def _team_url(team_id: Any, season: int) -> str | None:
     return url_for("cfb.team_preview", team_id=team_id) if team_id else None
 
@@ -84,7 +141,8 @@ def elo_rankings_table(snapshot: dict[str, Any], season: int,
     rows = []
     for item in snapshot.get("rankings") or []:
         brand = team_identity(brands.get(item["team_id"]) or {})
-        change = item.get("change")
+        change = item.get("weekly_change")
+        season_change = item.get("season_change")
         rows.append({
             **item,
             "rank_sort": item["rank"],
@@ -95,11 +153,16 @@ def elo_rankings_table(snapshot: dict[str, Any], season: int,
             "team_color": brand.get("accent"),
             "team_color_dark": brand.get("accent_dark"),
             "conference_sub": None,
-            "change_sub": ("up" if change and change > 0 else
-                           "down" if change and change < 0 else
-                           "even" if change == 0 else None),
-            "change_class": ("win" if change and change > 0 else
-                             "loss" if change and change < 0 else None),
+            "weekly_change_sub": ("up" if change and change > 0 else
+                                  "down" if change and change < 0 else
+                                  "even" if change == 0 else None),
+            "weekly_change_class": ("win" if change and change > 0 else
+                                    "loss" if change and change < 0 else None),
+            "season_change_sub": ("up" if season_change and season_change > 0 else
+                                  "down" if season_change and season_change < 0 else
+                                  "even" if season_change == 0 else None),
+            "season_change_class": ("win" if season_change and season_change > 0 else
+                                    "loss" if season_change and season_change < 0 else None),
             "week_sort": item.get("week"),
             "week": f"Week {item['week']}" if item.get("week") is not None else "Dated game",
             "range": f"{item['season_low']}–{item['season_high']}",
@@ -113,8 +176,10 @@ def elo_rankings_table(snapshot: dict[str, Any], season: int,
             Column(key="conference", label="Conference"),
             Column(key="elo", label="Elo", format="int", emphasis=True,
                    title="Most recent stored CFBD pregame Elo"),
-            Column(key="change", label="Change", format="signed",
-                   title="Change from the team's prior stored pregame rating"),
+            Column(key="weekly_change", label="Weekly", format="signed",
+                   title="Change from the prior stored pregame rating"),
+            Column(key="season_change", label="Season", format="signed",
+                   title="Change from the team's first stored rating this season"),
             Column(key="week", label="As of", sort="number",
                    title="Week of the game carrying the current rating"),
             Column(key="range", label="Season range", sort="number",
@@ -904,15 +969,51 @@ def pff_grades_table(grades: Sequence[dict[str, Any]]) -> Table:
     )
 
 
+def impact_player_index(players: Sequence[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index current producers for annotation across differently sourced rosters."""
+    index = {}
+    for player in players:
+        identifier = player.get("player_id")
+        if identifier is not None:
+            index[f"id:{identifier}"] = player
+        name = normalize_alias(player.get("player") or "")
+        if name:
+            index[f"name:{name}"] = player
+    return index
+
+
+def _impact_annotation(impact: dict[str, dict[str, Any]] | None, identifier: Any,
+                       name: str | None) -> tuple[str | None, str | None]:
+    if not impact:
+        return None, None
+    player = impact.get(f"id:{identifier}") if identifier is not None else None
+    player = player or impact.get(f"name:{normalize_alias(name or '')}")
+    if not player:
+        return None, None
+    roles = " / ".join(player.get("roles") or [])
+    label = player.get("impact_label") or "Impact"
+    return f"impact-{player.get('impact_level') or 'emerging'}", (
+        f"{label} · {roles}" if roles else label)
+
+
+def _state_and_impact(state: str | None, impact_class: str | None) -> str | None:
+    return " ".join(part for part in (state, impact_class) if part) or None
+
+
 def pff_players_table(players: Sequence[dict[str, Any]], season: int, *,
-                      caption: str = "Players to know", dense: bool = False) -> Table:
+                      caption: str = "Players to know", dense: bool = False,
+                      impact: dict[str, dict[str, Any]] | None = None) -> Table:
     """Historical PFF players with their current roster status made explicit."""
     rows = []
     for player in players:
         identifier = player.get("player_page_id") or player.get("cfbd_player_id")
+        impact_class, impact_sub = _impact_annotation(
+            impact, identifier, player.get("player_name"))
         rows.append({
             "player_name": player.get("player_name"),
             "player_name_url": _player_url(identifier, season),
+            "player_name_class": impact_class,
+            "player_name_sub": impact_sub,
             "position": player.get("position"),
             "team": player.get("cfbd_team") or player.get("pff_team_name"),
             "roster_status": (player.get("roster_status") or "").replace("_", " ").title() or None,
@@ -1367,7 +1468,8 @@ def _comparison_visual(left: Any, right: Any, left_wins: bool, *,
     return _scale_visual(gap, left_wins, full_scale_gap=full_scale_gap)
 
 
-def matchup_metrics_table(game: dict[str, Any]) -> Table:
+def matchup_metrics_table(game: dict[str, Any],
+                          national_context: dict[str, dict[str, dict[str, Any]]] | None = None) -> Table:
     """Advanced metrics for both teams, one metric per row.
 
     Each metric keeps its own format, so a rate is not displayed with the same
@@ -1385,7 +1487,18 @@ def matchup_metrics_table(game: dict[str, Any]) -> Table:
     # A single column format cannot describe rows that mix rates with per-play
     # figures, so each value is pre-rendered against its own row format.
     for row in rows:
-        for key in ("away_offense", "away_defense", "home_offense", "home_defense"):
+        _, offense, defense, _ = next(
+            definition for definition in ADVANCED_METRICS if definition[0] == row["metric"])
+        for key, team, metric_key in (
+                ("away_offense", game["away_team"], offense),
+                ("away_defense", game["away_team"], defense),
+                ("home_offense", game["home_team"], offense),
+                ("home_defense", game["home_team"], defense)):
+            context = ((national_context or {}).get(team) or {}).get(metric_key)
+            if context:
+                row[f"{key}_sub"] = (
+                    f"#{context['rank']} of {context['of']} · "
+                    f"P{context['percentile']}")
             row[key] = format_value(row[key], row["format"])
     return Table(
         columns=[
@@ -1397,6 +1510,7 @@ def matchup_metrics_table(game: dict[str, Any]) -> Table:
         ],
         rows=rows,
         caption=f"{game['season']} advanced metrics",
+        note="National FBS rank and performance percentile; P100 is best",
         empty="No advanced metrics are stored; they populate once plays are recorded.",
     )
 
@@ -2285,7 +2399,7 @@ def arrivals_of_kind(arrivals, kinds):
     return [row for row in arrivals if row.get("movement_type") in wanted]
 
 
-def arrivals_table(arrivals, season, *, caption="Key arrivals"):
+def arrivals_table(arrivals, season, *, caption="Key arrivals", impact=None):
     """Key arrivals: transfers with production, signees with a rating.
 
     Used by the matchup page too, which previously listed portal additions
@@ -2295,10 +2409,13 @@ def arrivals_table(arrivals, season, *, caption="Key arrivals"):
     rows = []
     for row in arrivals:
         kind = (row.get("movement_type") or "").replace("_", " ").title()
+        impact_class, impact_sub = _impact_annotation(
+            impact, row.get("player_id"), row.get("name"))
         rows.append({
             "name": row.get("name"),
             "name_url": _player_url(row.get("player_id"), season),
-            "name_class": "state-arrived",
+            "name_class": _state_and_impact("state-arrived", impact_class),
+            "name_sub": impact_sub,
             "position": row.get("position"),
             "kind": kind,
             "origin": row.get("origin") or "—",
@@ -2327,19 +2444,27 @@ def arrivals_table(arrivals, season, *, caption="Key arrivals"):
 
 
 def transfer_impact_table(transfers, season, *, caption="Portal impact",
-                          departed: bool = False):
+                          departed: bool = False, impact=None):
     """Portal entries ranked by the evidence that they will matter."""
-    rows = [{
-        "player_name": row.get("player_name"),
-        "player_name_url": _player_url(row.get("player_id"), season),
-        "player_name_sub": row.get("impact_label"),
-        "player_name_class": "state-departed" if departed else "state-arrived",
-        "position": row.get("position"),
-        "origin": row.get("origin"),
-        "destination": row.get("destination") or "TBD",
-        "rating": row.get("rating"),
-        "impact_score": row.get("impact_score") if row.get("has_evidence") else None,
-    } for row in transfers]
+    rows = []
+    for row in transfers:
+        impact_class, impact_sub = _impact_annotation(
+            impact, row.get("player_id"), row.get("player_name"))
+        portal_read = row.get("impact_label")
+        sub = (f"{impact_sub} · Portal read: {portal_read}"
+               if impact_sub and portal_read else impact_sub or portal_read)
+        rows.append({
+            "player_name": row.get("player_name"),
+            "player_name_url": _player_url(row.get("player_id"), season),
+            "player_name_sub": sub,
+            "player_name_class": _state_and_impact(
+                "state-departed" if departed else "state-arrived", impact_class),
+            "position": row.get("position"),
+            "origin": row.get("origin"),
+            "destination": row.get("destination") or "TBD",
+            "rating": row.get("rating"),
+            "impact_score": row.get("impact_score") if row.get("has_evidence") else None,
+        })
     return Table(
         columns=[
             Column(key="player_name", label="Player", align="left", emphasis=True),

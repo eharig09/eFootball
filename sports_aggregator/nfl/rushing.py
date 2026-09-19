@@ -19,6 +19,36 @@ DIRECTION_LABELS = {
     "middle": "Middle", "right guard": "Right Guard", "right tackle": "Right Tackle",
     "right end": "Right End",
 }
+DIRECTION_SHORT_LABELS = {
+    "left end": "L end", "left tackle": "L tackle", "left guard": "L guard",
+    "middle": "Middle", "right guard": "R guard", "right tackle": "R tackle",
+    "right end": "R end",
+}
+
+
+def rusher_position_breakdown(players: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Aggregate opponent rushing production by listed position."""
+    grouped: dict[str, dict[str, Any]] = {}
+    for player in players:
+        position = str(player.get("position") or "UNK").upper()
+        row = grouped.setdefault(position, {
+            "position": position, "players": 0, "attempts": 0, "yards": 0,
+            "touchdowns": 0, "total_epa": 0.0,
+        })
+        row["players"] += 1
+        row["attempts"] += int(player.get("attempts") or 0)
+        row["yards"] += round(float(player.get("rushing_yards") or 0))
+        row["touchdowns"] += int(player.get("touchdowns") or 0)
+        row["total_epa"] += float(player.get("total_epa") or 0)
+    rows = sorted(grouped.values(), key=lambda row: (-row["attempts"], row["position"]))
+    for row in rows:
+        row["epa_per_attempt"] = (row["total_epa"] / row["attempts"]
+                                  if row["attempts"] else None)
+        epa = (f" · {row['epa_per_attempt']:+.2f} EPA/att"
+               if row["epa_per_attempt"] is not None else "")
+        row["detail"] = (f"{row['attempts']} att · {row['yards']} yd · "
+                         f"{row['touchdowns']} TD{epa}")
+    return rows
 
 
 def run_direction_packet(profile: dict[str, Any], *, contributors: list[dict[str, Any]] | None = None,
@@ -36,8 +66,11 @@ def run_direction_packet(profile: dict[str, Any], *, contributors: list[dict[str
     cells = []
     for direction in DIRECTIONS:
         item = indexed.get(direction)
+        direction_contributors = contributor_index.get(direction, [])
         cell = {"direction": direction, "label": DIRECTION_LABELS[direction], **(item or {}),
-               "contributors": contributor_index.get(direction, [])[:8],
+               "contributors": direction_contributors[:8],
+               "contributor_position_summary": rusher_position_breakdown(
+                   direction_contributors),
                "defenders": defender_index.get(direction, [])[:8]}
         value = cell.get("epa_per_attempt")
         if not cell.get("attempts") or value is None:
@@ -83,6 +116,7 @@ def run_matchup_packet(offense: dict[str, Any] | None,
                 ("defense" if edge < -.025 else "even")) if comparable else "neutral")
         cells.append({
             "direction": direction, "label": DIRECTION_LABELS[direction],
+            "short_label": DIRECTION_SHORT_LABELS[direction],
             "offense_attempts": attack_attempts, "defense_attempts": defense_attempts,
             "offense_epa": attack_epa, "defense_epa": defense_epa,
             "edge": edge, "lean": lean, "strength": strength,
@@ -92,6 +126,8 @@ def run_matchup_packet(offense: dict[str, Any] | None,
             # in this exact direction -- "what positions beat this defense
             # here", not this one game's specific ball carriers.
             "defense_allowed": resist.get("contributors", []),
+            "defense_position_summary": resist.get(
+                "contributor_position_summary", []),
         })
     return {"cells": cells,
             "has_data": bool(offense.get("has_data") and defense.get("has_data")),

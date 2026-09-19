@@ -214,12 +214,43 @@ class CFBRepositoryTests(unittest.TestCase):
         self.assertEqual([row["team"] for row in snapshot["rankings"]],
                          ["Michigan", "Wisconsin"])
         self.assertEqual(snapshot["rankings"][0]["rank"], 1)
-        self.assertEqual(snapshot["rankings"][0]["season_high"], 1768)
+        # Week 2 is the earliest upcoming observation. A later scheduled game
+        # must not make the current board jump forward to Week 3.
+        self.assertEqual(snapshot["rankings"][0]["season_high"], 1750)
         self.assertEqual(snapshot["rankings"][0]["season_low"], 1750)
-        self.assertEqual(snapshot["rankings"][0]["change"], 18)
+        self.assertIsNone(snapshot["rankings"][0]["weekly_change"])
         self.assertEqual(snapshot["conferences"][0]["average_elo"], 1715.0)
         self.assertEqual(snapshot["summary"]["median_elo"], 1715.0)
         self.assertIn(2026, snapshot["available_seasons"])
+
+    def test_elo_snapshot_builds_weekly_and_season_movers(self):
+        CFBDataSync(FakeCFBDClient(), self.repository).sync(2026)
+        now = datetime.now(timezone.utc)
+        games = []
+        for game_id, week, days, completed, home_elo, away_elo in (
+                (101, 1, -14, True, 1700, 1730),
+                (102, 2, -7, True, 1750, 1680),
+                (103, 3, 7, False, 1780, 1650)):
+            games.append(Game.from_cfbd({
+                **GAME_PAYLOAD[0], "id": game_id, "week": week,
+                "startDate": (now + timedelta(days=days)).isoformat(),
+                "completed": completed, "homePregameElo": home_elo,
+                "awayPregameElo": away_elo,
+            }))
+        self.repository.replace_games(2026, games)
+
+        snapshot = self.repository.elo_snapshot(2026)
+        by_team = {row["team"]: row for row in snapshot["rankings"]}
+        self.assertEqual(by_team["Michigan"]["weekly_change"], 30)
+        self.assertEqual(by_team["Michigan"]["season_change"], 80)
+        self.assertEqual(by_team["Wisconsin"]["weekly_change"], -30)
+        self.assertEqual(by_team["Wisconsin"]["season_change"], -80)
+        self.assertEqual(snapshot["movement"]["weekly"]["risers"][0]["team"],
+                         "Michigan")
+        self.assertEqual(snapshot["movement"]["weekly"]["fallers"][0]["team"],
+                         "Wisconsin")
+        self.assertEqual(snapshot["movement"]["season"]["risers"][0]["team"],
+                         "Michigan")
 
     def test_elo_page_and_api_use_the_same_snapshot(self):
         CFBDataSync(FakeCFBDClient(), self.repository).sync(2026)
@@ -233,9 +264,11 @@ class CFBRepositoryTests(unittest.TestCase):
         page = client.get("/college-football/elo/")
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"FBS Elo ratings", page.data)
+        self.assertIn(b"Risers and fallers", page.data)
         self.assertIn(b"Michigan", page.data)
         payload = client.get("/api/v1/cfb/elo").get_json()
         self.assertEqual(payload["rankings"][0]["team"], "Michigan")
+        self.assertIn("weekly", payload["movement"])
 
     def test_replace_player_ppa_only_touches_the_ppa_category(self):
         """`/ppa/players/season` isn't conference-scoped like the regular
@@ -271,6 +304,58 @@ class CFBRepositoryTests(unittest.TestCase):
         # Re-syncing PPA for the same season must not disturb "passing".
         self.repository.replace_player_ppa(2026, [])
         self.assertEqual(stored_categories(), {("passing", "YDS"): 3120.0})
+
+    def test_current_impact_players_are_production_led_and_merge_roles(self):
+        def rows(player_id, player, position, category, stats):
+            return [{
+                "season": 2026, "playerId": player_id, "player": player,
+                "team": "Michigan", "conference": "Big Ten", "position": position,
+                "category": category, "statType": key, "stat": value,
+            } for key, value in stats.items()]
+
+        stats = []
+        stats += rows("qb", "Impact Passer", "QB", "passing",
+                      {"ATT": 42, "YDS": 210, "TD": 1, "INT": 1})
+        stats += rows("rb", "Two Way Back", "RB", "rushing",
+                      {"CAR": 31, "YDS": 220, "TD": 3, "YPC": 7.1})
+        stats += rows("rb", "Two Way Back", "RB", "receiving",
+                      {"REC": 9, "YDS": 145, "TD": 2})
+        stats += rows("lb", "Impact Defender", "LB", "defensive",
+                      {"TOT": 18, "TFL": 4, "SACKS": 2, "PD": 1, "TD": 0})
+        stats += rows("wr", "Emerging Target", "WR", "receiving",
+                      {"REC": 3, "YDS": 50, "TD": 0})
+        stats += rows("reserve", "Small Sample", "WR", "receiving",
+                      {"REC": 1, "YDS": 12, "TD": 0})
+        self.repository.replace_player_stats(2026, stats)
+
+        impact = self.repository.team_impact_players("Michigan", 2026)
+        by_id = {row["player_id"]: row for row in impact}
+        self.assertEqual(set(by_id), {"qb", "rb", "lb", "wr"})
+        self.assertEqual(by_id["rb"]["roles"], ["Ground engine", "Primary target"])
+        self.assertEqual(len(by_id["rb"]["evidence"]), 2)
+        self.assertEqual(by_id["rb"]["impact_level"], "primary")
+        self.assertEqual(by_id["qb"]["impact_label"], "Notable impact")
+        self.assertEqual(by_id["wr"]["impact_level"], "emerging")
+        self.assertNotIn("role_leader", by_id["lb"])
+        self.assertNotIn("primary_signal", by_id["lb"])
+        self.assertNotIn("impact_sort", by_id["lb"])
+        self.assertNotIn("reserve", by_id)
+
+    def test_advanced_metric_ranks_always_treat_the_best_result_as_top_percentile(self):
+        CFBDataSync(FakeCFBDClient(), self.repository).sync(2026)
+
+        context = self.repository.advanced_metric_ranks(2026)
+        michigan = context["Michigan"]
+        wisconsin = context["Wisconsin"]
+        # Higher is better for offensive success and defensive havoc.
+        self.assertEqual(michigan["offense_success_rate"],
+                         {"rank": 1, "of": 2, "percentile": 100})
+        self.assertEqual(michigan["defense_havoc"]["rank"], 1)
+        # Lower is better for defensive efficiency and offensive havoc allowed.
+        self.assertEqual(michigan["defense_success_rate"]["rank"], 1)
+        self.assertEqual(michigan["offense_havoc"]["rank"], 1)
+        self.assertEqual(wisconsin["offense_success_rate"],
+                         {"rank": 2, "of": 2, "percentile": 0})
 
     def test_player_ppa_rank_applies_the_position_appropriate_volume_floor(self):
         """PPA has no play-count field of its own, so the qualifying floor
@@ -381,6 +466,12 @@ class CFBRepositoryTests(unittest.TestCase):
         self.assertEqual(client.get("/college-football/teams/1/history/stats/").status_code, 200)
         self.assertEqual(client.get("/college-football/games/100/").status_code, 200)
         self.assertIn(b"Matchups to watch", client.get("/college-football/games/100/").data)
+        self.assertIn(b'data-mobile-tab="projection"', client.get("/college-football/games/100/").data)
+        self.assertIn(b"Game projection", client.get("/college-football/games/100/").data)
+        projection = client.get("/api/v1/cfb/games/100/projection")
+        self.assertEqual(projection.status_code, 200)
+        self.assertEqual(projection.get_json()["away_team"], "Wisconsin")
+        self.assertIn("projection", client.get("/api/v1/cfb/games/100/preview").get_json())
         self.assertEqual(client.get("/api/v1/cfb/conferences/big-ten").status_code, 200)
         self.assertEqual(client.get("/api/v1/cfb/teams/1").get_json()["team"]["school"], "Michigan")
         self.assertEqual(client.get("/api/v1/cfb/games/100/preview").status_code, 200)

@@ -24,8 +24,12 @@ from sports_aggregator.nfl.landing import draft_projection, games_to_watch
 from sports_aggregator.nfl.nflverse import current_season
 from sports_aggregator.nfl.pff import NFLPFFService, PFF_EXPLORER_METRICS, season_scaled_minimum
 from sports_aggregator.nfl.personnel import position_rooms, significant_movements
-from sports_aggregator.nfl.passing import pass_matchup_packet, pass_zone_packet
-from sports_aggregator.nfl.rushing import run_direction_packet, run_matchup_packet
+from sports_aggregator.nfl.passing import (
+    pass_matchup_packet, pass_zone_packet, receiver_position_breakdown,
+)
+from sports_aggregator.nfl.rushing import (
+    run_direction_packet, run_matchup_packet, rusher_position_breakdown,
+)
 from sports_aggregator.nfl.postgame import postgame_packet
 from sports_aggregator.nfl.ranking import rank_lookup
 from sports_aggregator.nfl.repository import NFLRepository
@@ -877,7 +881,9 @@ def _game_packet(game_id: str) -> dict:
              "defense": defense_situational.get(key),
              "contributors": offense_situational_contributors.get(key, [])[:8],
              "defenders": defense_situational_defenders.get(key, [])[:8],
-             "defense_allowed": defense_situational_allowed.get(key, [])[:8]}
+             "defense_allowed": defense_situational_allowed.get(key, [])[:8],
+             "defense_position_summary": receiver_position_breakdown(
+                 defense_situational_allowed.get(key, []))}
             for key, label in (("red_zone", "Red zone"), ("end_zone", "End zone"))
             if offense_situational.get(key) or defense_situational.get(key)
         ]
@@ -919,6 +925,8 @@ def _game_packet(game_id: str) -> dict:
         defense_red_zone = repository.defense_rush_situational_profile(profile_season, defense)
         situational = []
         if offense_red_zone.get("attempts") or defense_red_zone.get("attempts"):
+            defense_allowed = repository.rush_situational_contributors(
+                profile_season, defense_team=defense)
             situational.append({
                 "key": "red_zone", "label": "Red zone",
                 "offense": offense_red_zone if offense_red_zone.get("attempts") else None,
@@ -927,8 +935,8 @@ def _game_packet(game_id: str) -> dict:
                     profile_season, offense_team=offense)[:8],
                 "defenders": repository.rush_situational_defenders(
                     profile_season, defense_team=defense)[:8],
-                "defense_allowed": repository.rush_situational_contributors(
-                    profile_season, defense_team=defense)[:8],
+                "defense_allowed": defense_allowed[:8],
+                "defense_position_summary": rusher_position_breakdown(defense_allowed),
             })
         run_direction_comparisons.append({
             "offense": offense, "defense": defense, "leading_runner": leading_runner,

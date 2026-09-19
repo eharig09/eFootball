@@ -222,6 +222,21 @@ class RenderTests(MiddleFixture):
         self.assertIn("Ohio State allowed", html)
         self.assertIn("<h2>", html)
 
+    def test_the_matchup_block_is_a_compact_middle_first_comparison(self):
+        for _ in range(30):
+            self.rush("Michigan", "Purdue", "middle", 1.0, game_id=2)
+            self.rush("Michigan", "Purdue", "left", 0.2, game_id=2)
+            self.rush("Ohio State", "Purdue", "middle", -1.0, game_id=3)
+        html = self.render("passing_matchup_splits",
+                           {"season": 2026, "away_team": "Michigan",
+                            "home_team": "Ohio State"})
+        self.assertIn('class="mof-matchup-grid"', html)
+        self.assertIn('class="mof-grid mof-matchup-matrix"', html)
+        self.assertIn("Overall", html)
+        self.assertIn("Outside +0.20", html)
+        self.assertIn("How to read this", html)
+        self.assertNotIn("Run â€” outside", html)
+
     def test_a_game_without_direction_says_so_rather_than_vanishing(self):
         html = self.render("passing_game_splits",
                            {"game_id": 1, "season": 2026,
