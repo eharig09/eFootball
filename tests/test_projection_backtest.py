@@ -309,3 +309,70 @@ def test_selective_leverage_policy_returns_validation_metadata():
     policy = bt._select_leverage_policy(rows, rows)
     assert policy["candidate_count"] == 30
     assert policy["validation_rows"] == 50
+
+
+def test_directional_diagnostics_separates_direction_and_magnitude():
+    result = bt._directional_diagnostics([
+        (3.0, 1.0),   # correct direction, overstated
+        (-2.0, -5.0), # correct direction, understated
+        (4.0, -2.0),  # wrong direction
+    ])
+    assert result["direction_hit_rate"] == 0.6667
+    assert result["overstated_rate_when_correct"] == 0.5
+    assert result["understated_rate_when_correct"] == 0.5
+    assert result["correct_direction_n"] == 2
+    assert result["wrong_direction_n"] == 1
+
+
+def test_total_leverage_features_use_market_total_as_anchor():
+    game = {
+        "market_total": 50.0,
+        "pure_total": 56.0,
+        "projected_drives": 22.0,
+        "projected_plays": 140.0,
+        "home_ppd": 2.7,
+        "away_ppd": 2.3,
+        "projected_total_yards": 820.0,
+        "projected_giveaways": 2.0,
+        "projected_red_zone_trips": 8.0,
+        "projected_red_zone_touchdowns": 5.0,
+        "market_spread": -7.0,
+        "home_quality_edge": 4.0,
+        "away_quality_edge": -4.0,
+        "quality_sources": 4.0,
+        "min_prior_games": 6,
+        "week": 8,
+    }
+    features = bt._total_leverage_features(game)
+    assert features is not None
+    assert features[0] == 6.0
+    assert features[3] == 2.5
+    assert features[-1] == 50.0
+
+
+def test_total_policy_can_leave_market_unchanged():
+    fit_games = []
+    validation_games = []
+    for i in range(40):
+        game = {
+            "market_total": 50.0,
+            "pure_total": 58.0 if i % 2 == 0 else 42.0,
+            "projected_drives": 22.0,
+            "projected_plays": 140.0,
+            "home_ppd": 2.6,
+            "away_ppd": 2.4,
+            "projected_total_yards": 800.0,
+            "projected_giveaways": 2.0,
+            "projected_red_zone_trips": 8.0,
+            "projected_red_zone_touchdowns": 5.0,
+            "market_spread": -3.0,
+            "home_quality_edge": 2.0,
+            "away_quality_edge": -2.0,
+            "quality_sources": 4.0,
+            "min_prior_games": 6,
+            "week": 8,
+        }
+        fit_games.append({**game, "actual_total": 58.0 if i % 2 == 0 else 42.0})
+        validation_games.append({**game, "actual_total": 50.0})
+    policy = bt._select_total_leverage_policy(fit_games, validation_games)
+    assert policy["shrink"] == 0.0
