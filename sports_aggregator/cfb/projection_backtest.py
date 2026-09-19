@@ -130,6 +130,42 @@ def _market_by_game(repository: CFBRepository, game_ids: Iterable[int]) -> dict[
     }
 
 
+def _temporal_points_model(repository: CFBRepository, *, train_from: int,
+                           train_to: int, min_prior_games: int = 3) -> dict[str, Any] | None:
+    """Fit an in-memory xPoints model without mutating the production model table."""
+    if train_to < train_from:
+        return None
+    from sports_aggregator.cfb import xpoints
+    xpoints.initialize(repository)
+    with repository._reader() as connection:
+        rows = [dict(row) for row in connection.execute(
+            """SELECT * FROM cfb_xpoints_dataset
+               WHERE dataset_version=? AND season BETWEEN ? AND ?""",
+            (xpoints.DATASET_VERSION, int(train_from), int(train_to)),
+        )]
+    eligible = [
+        row for row in rows
+        if int(row["team_prior_games"] or 0) >= int(min_prior_games)
+        and all(row.get(key) is not None for key in xpoints.ADVANCED_FEATURES)
+    ]
+    if not eligible:
+        return None
+    coefficients, means, scales = xpoints._fit_standardized(
+        eligible, xpoints.ADVANCED_FEATURES, l2=2.0)
+    if coefficients is None:
+        return None
+    return {
+        "model_version": f"backtest-xpoints-{train_from}-{train_to}",
+        "features": tuple(xpoints.ADVANCED_FEATURES),
+        "coefficients": coefficients,
+        "means": means,
+        "scales": scales,
+        "training_rows": len(eligible),
+        "from_season": int(train_from),
+        "to_season": int(train_to),
+    }
+
+
 def _actuals(repository: CFBRepository, game_ids: Iterable[int]) -> dict[tuple[int, str], dict[str, Any]]:
     ids = sorted({int(game_id) for game_id in game_ids})
     if not ids:
@@ -190,7 +226,8 @@ def _actuals(repository: CFBRepository, game_ids: Iterable[int]) -> dict[tuple[i
 
 def build(repository: CFBRepository, *, from_season: int, to_season: int,
           backtest_version: str = BACKTEST_VERSION,
-          min_prior_games: int = 1) -> dict[str, Any]:
+          min_prior_games: int = 1,
+          points_train_from_season: int = 2022) -> dict[str, Any]:
     """Rebuild walk-forward predictions for completed games in a season range."""
     if from_season > to_season:
         raise ValueError("from_season must not be after to_season")
@@ -210,6 +247,17 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
 
     actuals = _actuals(repository, (game["game_id"] for game in games))
     markets = _market_by_game(repository, (game["game_id"] for game in games))
+    # One frozen model per test season. A 2025 game, for example, may use a
+    # model trained through 2024 but never the persisted 2022-25 production
+    # model. The underlying xPoints rows are themselves strictly pregame.
+    temporal_models = {
+        season: _temporal_points_model(
+            repository,
+            train_from=int(points_train_from_season),
+            train_to=int(season) - 1,
+        )
+        for season in sorted({int(game["season"]) for game in games})
+    }
     now = datetime.now(timezone.utc).isoformat()
     rows: list[tuple[Any, ...]] = []
     games_projected = 0
@@ -222,6 +270,7 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
             str(game["away_team"]),
             as_of_date=str(game["start_date"]),
             game_id=int(game["game_id"]),
+            points_model_override=temporal_models.get(int(game["season"])),
         )
         market = markets.get(int(game["game_id"]), {})
         spread = market.get("spread")
@@ -296,6 +345,19 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
         "games_projected": games_projected,
         "games_skipped_no_history": games_skipped,
         "team_game_rows": len(rows),
+        "points_train_from_season": int(points_train_from_season),
+        "temporal_points_models": {
+            str(season): (
+                {
+                    "model_version": model["model_version"],
+                    "training_rows": model["training_rows"],
+                    "from_season": model["from_season"],
+                    "to_season": model["to_season"],
+                }
+                if model else None
+            )
+            for season, model in temporal_models.items()
+        },
     }
 
 
