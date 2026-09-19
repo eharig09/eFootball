@@ -83,3 +83,9 @@ def test_full_chain_contract_keeps_volume_outside_shape():
     source = ts.full_chain_ablation.__doc__ or ""
     assert "xDrives/xPlays" in source
     assert "Volume always comes" in source
+
+
+def test_residual_adjustment_applies_threshold_and_shrinkage():
+    assert ts._residual_adjustment(0.04, 100, shrink_k=50, threshold=0.05) == 0.0
+    assert round(ts._residual_adjustment(0.20, 50, shrink_k=50, threshold=0.05), 4) == 0.1
+    assert ts._residual_adjustment(-0.20, 50, shrink_k=0, threshold=0.05) == -0.20
