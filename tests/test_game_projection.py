@@ -145,6 +145,23 @@ class ProjectMatchupTests(ProjectionFixture):
         self.assertTrue(projection["insufficient_data"])
         self.assertIsNone(projection["home"]["drives"])
 
+    def test_explicit_points_model_override_avoids_persisted_model_load(self):
+        from unittest.mock import patch
+
+        self.game(1, home="Michigan", away="Ohio State", season=2026, week=1, start_date="2026-08-30")
+        self.game(2, home="Rutgers", away="Purdue", season=2026, week=1, start_date="2026-08-30")
+        self.pace(game_id=1, team="Michigan", opponent="Ohio State")
+        self.pace(game_id=1, team="Ohio State", opponent="Michigan")
+        self.pace(game_id=2, team="Rutgers", opponent="Purdue")
+        self.pace(game_id=2, team="Purdue", opponent="Rutgers")
+
+        with patch("sports_aggregator.cfb.xpoints.load_model",
+                   side_effect=AssertionError("persisted model must not be loaded")):
+            projection = gp.project_matchup(
+                self.repository, "Michigan", "Rutgers",
+                as_of_date="2026-09-06", points_model_override=None)
+        self.assertIsNone(projection["points_model"])
+
     def test_insufficient_data_flag_and_missing_side(self):
         self.game(1, home="Michigan", away="Ohio State", season=2026, week=1, start_date="2026-08-30")
         self.pace(game_id=1, team="Michigan", opponent="Ohio State", drives=10)
