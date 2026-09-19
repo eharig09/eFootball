@@ -1055,6 +1055,278 @@ def _uncertainty_sharpness_benchmark(all_rows: list[dict[str, Any]],
     return result
 
 
+def _ridge_fit_generic(rows: list[tuple[list[float], float]], *, l2: float = 5.0):
+    """Small standardized ridge helper for heteroskedastic scale modeling."""
+    if not rows:
+        return None
+    width = len(rows[0][0])
+    means = [
+        sum(features[i] for features, _ in rows) / len(rows)
+        for i in range(width)
+    ]
+    scales = []
+    for i in range(width):
+        variance = sum((features[i] - means[i]) ** 2 for features, _ in rows) / len(rows)
+        scales.append(math.sqrt(variance) or 1.0)
+    size = width + 1
+    xtx = [[0.0] * size for _ in range(size)]
+    xty = [0.0] * size
+    for features, target in rows:
+        x = [1.0] + [
+            (features[i] - means[i]) / scales[i] for i in range(width)
+        ]
+        for i in range(size):
+            xty[i] += x[i] * target
+            for j in range(size):
+                xtx[i][j] += x[i] * x[j]
+    for i in range(1, size):
+        xtx[i][i] += l2
+
+    # Gaussian elimination, kept local so the report module stays standalone.
+    augmented = [row[:] + [xty[index]] for index, row in enumerate(xtx)]
+    for col in range(size):
+        pivot = max(range(col, size), key=lambda r: abs(augmented[r][col]))
+        if abs(augmented[pivot][col]) < 1e-12:
+            return None
+        augmented[col], augmented[pivot] = augmented[pivot], augmented[col]
+        for r in range(col + 1, size):
+            factor = augmented[r][col] / augmented[col][col]
+            for c in range(col, size + 1):
+                augmented[r][c] -= factor * augmented[col][c]
+    coefficients = [0.0] * size
+    for r in range(size - 1, -1, -1):
+        coefficients[r] = (
+            augmented[r][size]
+            - sum(augmented[r][c] * coefficients[c] for c in range(r + 1, size))
+        ) / augmented[r][r]
+    return {"coefficients": coefficients, "means": means, "scales": scales}
+
+
+def _ridge_predict_generic(model: dict[str, Any] | None, features: list[float]) -> float | None:
+    if not model:
+        return None
+    value = float(model["coefficients"][0])
+    for i, feature in enumerate(features):
+        value += (
+            float(model["coefficients"][i + 1])
+            * (feature - float(model["means"][i]))
+            / float(model["scales"][i])
+        )
+    return value
+
+
+def _volatility_feature_rows(rows: list[dict[str, Any]], predicted_key: str,
+                             actual_key: str) -> tuple[list[tuple[list[float], float]], dict[str, list[float]], dict[str, list[float]]]:
+    """Build chronological scale-model examples without using a row's own result."""
+    ordered = sorted(rows, key=lambda row: (str(row.get("kickoff") or ""), int(row["game_id"]), str(row["team"])))
+    team_errors: dict[str, list[float]] = defaultdict(list)
+    opponent_errors: dict[str, list[float]] = defaultdict(list)
+    global_errors: list[float] = []
+    examples: list[tuple[list[float], float]] = []
+
+    def mean_abs(values: list[float]) -> float | None:
+        return sum(abs(value) for value in values[-12:]) / min(len(values), 12) if values else None
+
+    for row in ordered:
+        predicted = row.get(predicted_key); actual = row.get(actual_key)
+        if predicted is None or actual is None:
+            continue
+        team = str(row["team"]); opponent = str(row["opponent"])
+        global_scale = (
+            sum(abs(value) for value in global_errors[-1000:]) / min(len(global_errors), 1000)
+            if global_errors else None
+        )
+        team_scale = mean_abs(team_errors[team])
+        opponent_scale = mean_abs(opponent_errors[opponent])
+        fallback = global_scale or 10.0
+        team_scale = team_scale if team_scale is not None else fallback
+        opponent_scale = opponent_scale if opponent_scale is not None else fallback
+        market_gap = (
+            abs(float(row[predicted_key]) - float(row["market_implied_points"]))
+            if predicted_key == "projected_offensive_points"
+            and row.get("market_implied_points") is not None
+            else 0.0
+        )
+        features = [
+            math.log1p(max(float(predicted), 0.0)),
+            math.log1p(max(int(row.get("prior_games") or 0), 0)),
+            abs(float(row.get("quality_edge") or 0.0)),
+            float(row.get("quality_sources") or 0.0),
+            float(row.get("week") or 0.0),
+            float(team_scale),
+            float(opponent_scale),
+            market_gap,
+        ]
+        residual = float(actual) - float(predicted)
+        # Predict log absolute error so the resulting scale is positive.
+        examples.append((features, math.log(max(abs(residual), 0.5))))
+        team_errors[team].append(residual)
+        opponent_errors[opponent].append(residual)
+        global_errors.append(residual)
+    return examples, team_errors, opponent_errors
+
+
+def _volatility_features_for_test(row: dict[str, Any], predicted_key: str,
+                                  training: list[dict[str, Any]]) -> list[float] | None:
+    predicted = row.get(predicted_key)
+    if predicted is None:
+        return None
+
+    def errors_for(name: str, field: str) -> list[float]:
+        values = []
+        for item in training:
+            if str(item.get(field)) != name:
+                continue
+            p = item.get(predicted_key)
+            actual_key = (
+                "actual_offensive_points"
+                if predicted_key == "projected_offensive_points"
+                else "actual_total_yards"
+            )
+            a = item.get(actual_key)
+            if p is not None and a is not None:
+                values.append(float(a) - float(p))
+        return values[-12:]
+
+    all_residuals = _residual_pool(
+        training,
+        predicted_key,
+        "actual_offensive_points" if predicted_key == "projected_offensive_points" else "actual_total_yards",
+    )
+    fallback = (
+        sum(abs(v) for v in all_residuals[-1000:]) / min(len(all_residuals), 1000)
+        if all_residuals else 10.0
+    )
+    team_values = errors_for(str(row["team"]), "team")
+    opponent_values = errors_for(str(row["opponent"]), "opponent")
+    team_scale = (
+        sum(abs(v) for v in team_values) / len(team_values) if team_values else fallback
+    )
+    opponent_scale = (
+        sum(abs(v) for v in opponent_values) / len(opponent_values) if opponent_values else fallback
+    )
+    market_gap = (
+        abs(float(predicted) - float(row["market_implied_points"]))
+        if predicted_key == "projected_offensive_points"
+        and row.get("market_implied_points") is not None
+        else 0.0
+    )
+    return [
+        math.log1p(max(float(predicted), 0.0)),
+        math.log1p(max(int(row.get("prior_games") or 0), 0)),
+        abs(float(row.get("quality_edge") or 0.0)),
+        float(row.get("quality_sources") or 0.0),
+        float(row.get("week") or 0.0),
+        float(team_scale),
+        float(opponent_scale),
+        market_gap,
+    ]
+
+
+def _heteroskedastic_uncertainty(all_rows: list[dict[str, Any]],
+                                 test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Temporal scale model + conformal standardized residuals."""
+    targets = (
+        ("offensive_points", "projected_offensive_points", "actual_offensive_points"),
+        ("total_yards", "projected_total_yards", "actual_total_yards"),
+    )
+    output: dict[str, Any] = {}
+    for target, predicted_key, actual_key in targets:
+        rec50: list[tuple[float, float, float]] = []
+        rec80: list[tuple[float, float, float]] = []
+        scale_values: list[float] = []
+        by_season: dict[str, Any] = {}
+
+        for season in sorted({int(row["season"]) for row in test_rows}):
+            prior = [
+                row for row in all_rows
+                if int(row["season"]) < season
+                and row.get(predicted_key) is not None
+                and row.get(actual_key) is not None
+            ]
+            # Reserve the latest prior season as conformal calibration when possible.
+            prior_seasons = sorted({int(row["season"]) for row in prior})
+            if len(prior_seasons) < 2:
+                by_season[str(season)] = {"available": False}
+                continue
+            calibration_season = prior_seasons[-1]
+            fit_rows = [row for row in prior if int(row["season"]) < calibration_season]
+            calibration_rows = [row for row in prior if int(row["season"]) == calibration_season]
+            examples, _, _ = _volatility_feature_rows(fit_rows, predicted_key, actual_key)
+            model = _ridge_fit_generic(examples, l2=10.0)
+            if model is None or len(calibration_rows) < 100:
+                by_season[str(season)] = {"available": False}
+                continue
+
+            standardized: list[float] = []
+            for row in calibration_rows:
+                features = _volatility_features_for_test(row, predicted_key, fit_rows)
+                if features is None:
+                    continue
+                log_scale = _ridge_predict_generic(model, features)
+                if log_scale is None:
+                    continue
+                scale = max(math.exp(log_scale), 0.5)
+                residual = float(row[actual_key]) - float(row[predicted_key])
+                standardized.append(residual / scale)
+            if len(standardized) < 100:
+                by_season[str(season)] = {"available": False}
+                continue
+            q10 = _quantile(standardized, .10); q25 = _quantile(standardized, .25)
+            q75 = _quantile(standardized, .75); q90 = _quantile(standardized, .90)
+
+            season50: list[tuple[float, float, float]] = []
+            season80: list[tuple[float, float, float]] = []
+            training_for_test = fit_rows + calibration_rows
+            for row in test_rows:
+                if int(row["season"]) != season:
+                    continue
+                predicted = row.get(predicted_key); actual = row.get(actual_key)
+                if predicted is None or actual is None:
+                    continue
+                features = _volatility_features_for_test(row, predicted_key, training_for_test)
+                if features is None:
+                    continue
+                log_scale = _ridge_predict_generic(model, features)
+                if log_scale is None:
+                    continue
+                scale = max(math.exp(log_scale), 0.5)
+                scale_values.append(scale)
+                p = float(predicted); a = float(actual)
+                r50 = (a, p + scale * q25, p + scale * q75)
+                r80 = (a, p + scale * q10, p + scale * q90)
+                rec50.append(r50); rec80.append(r80)
+                season50.append(r50); season80.append(r80)
+
+            by_season[str(season)] = {
+                "available": True,
+                "fit_seasons": [min(int(row["season"]) for row in fit_rows), calibration_season - 1] if fit_rows else None,
+                "calibration_season": calibration_season,
+                "fit_rows": len(fit_rows),
+                "calibration_rows": len(calibration_rows),
+                "interval_50": _interval_summary(season50, alpha=.50),
+                "interval_80": _interval_summary(season80, alpha=.20),
+            }
+
+        output[target] = {
+            "interval_50": _interval_summary(rec50, alpha=.50),
+            "interval_80": _interval_summary(rec80, alpha=.20),
+            "predicted_scale": {
+                "mean": round(sum(scale_values) / len(scale_values), 3) if scale_values else None,
+                "median": _quantile(scale_values, .50),
+                "p10": _quantile(scale_values, .10),
+                "p90": _quantile(scale_values, .90),
+            },
+            "by_test_season": by_season,
+            "method": (
+                "Ridge model predicts log absolute error from projection level, prior games, "
+                "quality edge/source count, week, historical team/opponent error volatility, "
+                "and market disagreement for points; latest prior season calibrates standardized residuals."
+            ),
+        }
+    return output
+
+
 def _quality_ablation(repository: CFBRepository, rows: list[dict[str, Any]], *,
                       backtest_version: str) -> dict[str, Any] | None:
     """Reuse xPoints' matched temporal ablation for the report's test range."""
@@ -1185,6 +1457,7 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
         "yardage_error_decomposition": _yardage_decomposition(rows),
         "temporal_uncertainty": _uncertainty_from_prior_seasons(all_rows, rows),
         "uncertainty_sharpness_benchmark": _uncertainty_sharpness_benchmark(all_rows, rows),
+        "heteroskedastic_uncertainty": _heteroskedastic_uncertainty(all_rows, rows),
         "empirical_residual_bands": {
             "offensive_points": _residual_band(
                 rows, "projected_offensive_points", "actual_offensive_points"),
