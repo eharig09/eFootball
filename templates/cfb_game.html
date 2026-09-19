@@ -160,7 +160,7 @@
             </div>
             <div class="projection-headline-stats">
                 <div class="projection-headline-stat">
-                    <b>{{ p.total_yards | cell('f0') }}</b>
+                    <b>{{ p.total_yards | cell('int') }}</b>
                     <span>Total yards</span>
                 </div>
                 <div class="projection-headline-stat projection-quality
@@ -174,8 +174,8 @@
             </div>
             <div class="projection-team-foot">
                 <span><b>{{ p.points_per_drive | cell('f2') }}</b> pts/drive</span>
-                <span><b>{{ p.pass_yards | cell('f0') }}</b> pass yds</span>
-                <span><b>{{ p.rush_yards | cell('f0') }}</b> rush yds</span>
+                <span><b>{{ p.pass_yards | cell('int') }}</b> pass yds</span>
+                <span><b>{{ p.rush_yards | cell('int') }}</b> rush yds</span>
             </div>
         </article>
         {% if loop.first %}
