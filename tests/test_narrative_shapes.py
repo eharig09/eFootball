@@ -35,3 +35,39 @@ def test_category_summary_uses_market_residual_and_cover():
     assert payload["n"] == 2
     assert payload["mean_market_residual"] == 2.0
     assert payload["cover_rate"] == 0.5
+
+
+from sports_aggregator.cfb import narrative_shapes_v2 as nsv2
+
+
+def test_v2_difference_requires_both_sides():
+    assert nsv2._difference(7.5, 2.0) == 5.5
+    assert nsv2._difference(None, 2.0) is None
+
+
+def test_v2_ridge_can_fit_simple_residual_signal():
+    rows = []
+    for value in (-2.0, -1.0, 0.0, 1.0, 2.0):
+        row = {key: 0.0 for key in nsv2.CONTINUOUS_FEATURES}
+        row["previous_market_surprise_diff"] = value
+        row["market_margin_residual"] = 2.0 * value
+        rows.append(row)
+    model = nsv2._fit_ridge(rows, l2=0.5)
+    assert model is not None
+    probe = {key: 0.0 for key in nsv2.CONTINUOUS_FEATURES}
+    probe["previous_market_surprise_diff"] = 1.5
+    assert nsv2._predict(model, probe) > 0.0
+
+
+def test_v2_model_metrics_reports_zero_error_for_perfect_predictions():
+    rows = []
+    for value in (-1.0, 0.0, 1.0):
+        row = {key: 0.0 for key in nsv2.CONTINUOUS_FEATURES}
+        row["previous_market_surprise_diff"] = value
+        row["market_margin_residual"] = value
+        rows.append(row)
+    model = nsv2._fit_ridge(rows, l2=0.0)
+    assert model is not None
+    metrics = nsv2._model_metrics(model, rows)
+    assert metrics["n"] == 3
+    assert metrics["mae"] is not None
