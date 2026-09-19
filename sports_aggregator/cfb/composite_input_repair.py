@@ -274,9 +274,10 @@ def _correlation_matrix(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return matrix
 
 
-def _score(row: dict[str, Any], scales: dict[str, float]) -> dict[str, Any]:
+def _score(row: dict[str, Any], scales: dict[str, float],
+           keys: tuple[str, ...] = FAMILY_KEYS) -> dict[str, Any]:
     vals = []
-    for key in FAMILY_KEYS:
+    for key in keys:
         value = row.get(key)
         if value is None:
             continue
@@ -295,10 +296,11 @@ def _score(row: dict[str, Any], scales: dict[str, float]) -> dict[str, Any]:
 
 
 def _bucket(rows: list[dict[str, Any]], scales: dict[str, float],
-            low: float, high: float) -> dict[str, Any]:
+            low: float, high: float, *,
+            keys: tuple[str, ...] = FAMILY_KEYS) -> dict[str, Any]:
     vals = []
     for row in rows:
-        s = _score(row, scales)
+        s = _score(row, scales, keys)
         if s["score"] is None or s["available"] < 3:
             continue
         mag = abs(float(s["score"]))
@@ -331,17 +333,24 @@ def family_report(repository: CFBRepository, *, test_season: int = 2025) -> dict
     for season in [s for s in seasons if s > min(seasons) and s <= int(test_season)]:
         train = [r for r in rows if int(r["season"]) < season]
         test = [r for r in rows if int(r["season"]) == season]
+        counts = {
+            key: sum(1 for r in train if r.get(key) is not None)
+            for key in FAMILY_KEYS
+        }
+        active_families = tuple(key for key in FAMILY_KEYS if counts[key] >= 30)
         scales = {
             key: _std(r.get(key) for r in train if r.get(key) is not None)
-            for key in FAMILY_KEYS
+            for key in active_families
         }
         coverage = {
             key: {
-                "rows": sum(1 for r in train if r.get(key) is not None),
-                "coverage_rate": round(
-                    sum(1 for r in train if r.get(key) is not None) / len(train), 4)
+                "rows": counts[key],
+                "coverage_rate": round(counts[key] / len(train), 4)
                 if train else 0.0,
-                "std": round(scales[key], 4),
+                "std": round(
+                    _std(r.get(key) for r in train if r.get(key) is not None), 4)
+                    if counts[key] else None,
+                "active": key in active_families,
             }
             for key in FAMILY_KEYS
         }
@@ -349,13 +358,14 @@ def family_report(repository: CFBRepository, *, test_season: int = 2025) -> dict
         for low, high, label in MAGNITUDE_BUCKETS:
             buckets.append({
                 "bucket": label,
-                "metrics": _bucket(test, scales, low, high),
+                "metrics": _bucket(test, scales, low, high, keys=active_families),
             })
         walk.append({
             "season": season,
             "train_rows": len(train),
             "test_rows": len(test),
             "coverage": coverage,
+            "active_families": list(active_families),
             "correlations": _correlation_matrix(train),
             "magnitude_buckets": buckets,
         })
@@ -373,7 +383,8 @@ def family_report(repository: CFBRepository, *, test_season: int = 2025) -> dict
         "source_audit": source_audit(repository, from_season=min(seasons), to_season=int(test_season)),
         "walk_forward_years": walk,
         "notes": [
-            "Family composite requires at least three populated families for a game.",
+            "A family activates only after at least 30 prior observations exist for normalization.",
+            "Family composite requires at least three active populated families for a game.",
             "FPI/CORE stay absent if their source tables are not populated; no fallback value is invented.",
             "Football Lab family is scoreboard-aligned by prior-season calibration only.",
             "Correlation matrices are calculated on each season's training history before evaluating that season.",
