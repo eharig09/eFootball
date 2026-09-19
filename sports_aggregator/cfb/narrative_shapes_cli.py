@@ -15,6 +15,7 @@ from sports_aggregator.cfb import extreme_tail_composite
 from sports_aggregator.cfb import composite_input_repair
 from sports_aggregator.cfb import internal_power_lenses
 from sports_aggregator.cfb import conditional_convergence
+from sports_aggregator.cfb import convergence_validation
 
 
 def main() -> None:
@@ -64,6 +65,9 @@ def main() -> None:
 
     convergence = sub.add_parser("conditional-convergence")
     convergence.add_argument("--year", type=int, default=2025)
+
+    convergence_validation_parser = sub.add_parser("convergence-validation")
+    convergence_validation_parser.add_argument("--year", type=int, default=2025)
 
     load_dotenv()
     args = parser.parse_args()
@@ -125,6 +129,11 @@ def main() -> None:
         )
     elif args.command == "conditional-convergence":
         payload = conditional_convergence.report(
+            repository,
+            test_season=args.year,
+        )
+    elif args.command == "convergence-validation":
+        payload = convergence_validation.report(
             repository,
             test_season=args.year,
         )
