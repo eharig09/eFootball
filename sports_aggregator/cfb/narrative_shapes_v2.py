@@ -200,13 +200,18 @@ def _line_elo_pass(rows: list[dict[str, Any]], *, learning_rate: float,
 
         line_elo[home], line_elo[away] = post_home, post_away
 
+        # Update both teams' current pregame True Elo before calculating a
+        # population-centered gap so processing order cannot move the center.
+        if home_row.get("true_elo") is not None:
+            last_true[home] = float(home_row["true_elo"])
+        if away_row.get("true_elo") is not None:
+            last_true[away] = float(away_row["true_elo"])
+
         for row, team, opponent, pre_value, post_value in (
             (home_row, home, away, pre_home, post_home),
             (away_row, away, home, pre_away, post_away),
         ):
             true_elo = row.get("true_elo")
-            if true_elo is not None:
-                last_true[team] = float(true_elo)
             active_line = [float(v) for v in line_elo.values()]
             active_true = [float(v) for v in last_true.values()]
             line_mean = sum(active_line) / len(active_line) if active_line else 1500.0
