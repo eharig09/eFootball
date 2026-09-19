@@ -423,6 +423,109 @@ def _interaction_analysis(train: list[dict[str, Any]], test: list[dict[str, Any]
     return {"outcomes": result, "cells": cells, "min_pair_rows": min_pair_rows}
 
 
+def robustness_report(repository: CFBRepository, *, test_season: int,
+                      shape_version: str = SHAPE_VERSION,
+                      cluster_grid: tuple[int, ...] = (6, 8, 10, 12),
+                      neighbor_grid: tuple[int, ...] = (10, 25, 50),
+                      min_prior_games: int = 3) -> dict[str, Any]:
+    """Sweep reasonable shape definitions and summarize held-out stability."""
+    initialize(repository)
+    with repository._reader() as connection:
+        rows = [dict(row) for row in connection.execute(
+            """SELECT * FROM cfb_team_shape_backtest
+               WHERE shape_version=? AND prior_games>=?
+               ORDER BY season,week,kickoff,game_id,side""",
+            (shape_version, int(min_prior_games)),
+        )]
+    train = [row for row in rows if int(row["season"]) < int(test_season)]
+    test = [row for row in rows if int(row["season"]) == int(test_season)]
+    complete_train = [row for row in train if all(row.get(key) is not None for key in FEATURES)]
+    scaler = _fit_scaler(complete_train)
+    train_vectors = [_vector(row, scaler) for row in complete_train]
+    train_vectors = [vec for vec in train_vectors if vec is not None]
+
+    similarity_grid = []
+    for neighbors in neighbor_grid:
+        similarity = _neighbor_analysis(train, test, scaler, neighbors=int(neighbors))
+        row = {"neighbors": int(neighbors)}
+        for outcome, payload in similarity.items():
+            nn = payload["nearest_neighbor"]
+            base = payload["global_mean_baseline"]
+            row[outcome] = {
+                "nearest_neighbor_mae": nn["mae"],
+                "baseline_mae": base["mae"],
+                "mae_delta_vs_baseline": (
+                    round(nn["mae"] - base["mae"], 4)
+                    if nn["mae"] is not None and base["mae"] is not None else None
+                ),
+                "prediction_correlation": payload["prediction_correlation"],
+                "distance_error_correlation": payload["distance_vs_absolute_error_correlation"],
+            }
+        similarity_grid.append(row)
+
+    interaction_grid = []
+    for clusters in cluster_grid:
+        centroids = _kmeans(train_vectors, k=int(clusters))
+        interaction = _interaction_analysis(train, test, scaler, centroids)
+        row = {"clusters": int(clusters)}
+        for outcome, payload in interaction["outcomes"].items():
+            row[outcome] = {
+                "own_shape_mae": payload["own_shape_only"]["mae"],
+                "interaction_mae": payload["shape_interaction"]["mae"],
+                "mae_delta_vs_own_shape": payload["mae_delta_vs_own_shape"],
+            }
+        interaction_grid.append(row)
+
+    def stability(grid: list[dict[str, Any]], outcome: str, delta_key: str) -> dict[str, Any]:
+        deltas = [
+            float(item[outcome][delta_key])
+            for item in grid
+            if item.get(outcome, {}).get(delta_key) is not None
+        ]
+        if not deltas:
+            return {"runs": 0, "improved_runs": 0, "improved_rate": None,
+                    "mean_mae_delta": None, "best_mae_delta": None, "worst_mae_delta": None}
+        return {
+            "runs": len(deltas),
+            "improved_runs": sum(1 for value in deltas if value < 0),
+            "improved_rate": round(sum(1 for value in deltas if value < 0) / len(deltas), 4),
+            "mean_mae_delta": round(sum(deltas) / len(deltas), 4),
+            "best_mae_delta": round(min(deltas), 4),
+            "worst_mae_delta": round(max(deltas), 4),
+        }
+
+    return {
+        "shape_version": shape_version,
+        "test_season": int(test_season),
+        "train_seasons": (
+            [min(int(row["season"]) for row in train), max(int(row["season"]) for row in train)]
+            if train else None
+        ),
+        "training_rows": len(train),
+        "test_rows": len(test),
+        "cluster_grid": list(cluster_grid),
+        "neighbor_grid": list(neighbor_grid),
+        "similarity_grid": similarity_grid,
+        "interaction_grid": interaction_grid,
+        "stability": {
+            "similarity": {
+                outcome: stability(
+                    similarity_grid, outcome, "mae_delta_vs_baseline")
+                for outcome in OUTCOMES
+            },
+            "interactions": {
+                outcome: stability(
+                    interaction_grid, outcome, "mae_delta_vs_own_shape")
+                for outcome in OUTCOMES
+            },
+        },
+        "decision_rule": (
+            "Treat a shape signal as robust only if held-out MAE improves across most reasonable "
+            "neighbor/cluster choices, rather than only at a single tuned configuration."
+        ),
+    }
+
+
 def report(repository: CFBRepository, *, test_season: int,
            shape_version: str = SHAPE_VERSION, clusters: int = 8,
            neighbors: int = 25, min_prior_games: int = 3) -> dict[str, Any]:
