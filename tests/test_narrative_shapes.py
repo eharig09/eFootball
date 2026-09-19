@@ -321,3 +321,58 @@ def test_conditional_subset_requires_both_confirmation_families_by_default():
     rows = cc._subset(
         [row], scales, low=1.0, high=1.5, confirmation_count=2)
     assert len(rows) == 1
+
+
+from sports_aggregator.cfb import convergence_validation as cv
+
+
+def test_wilson_interval_contains_observed_rate():
+    low, high = cv._wilson_interval(60, 100)
+    assert low < 0.60 < high
+
+
+def test_bootstrap_interval_is_deterministic():
+    values = [1.0, 2.0, 3.0, 4.0]
+    first = cv._bootstrap_mean_interval(values, draws=200, seed=7)
+    second = cv._bootstrap_mean_interval(values, draws=200, seed=7)
+    assert first == second
+
+
+def test_validation_monotonicity_detects_ordering():
+    table = [{
+        "minimum_abs_margin_power_z": 1.0,
+        "confirmations": {
+            "0": {"n": 20, "hit_rate": 0.50, "mean_aligned_residual": 0.0},
+            "1": {"n": 20, "hit_rate": 0.55, "mean_aligned_residual": 1.0},
+            "2": {"n": 20, "hit_rate": 0.60, "mean_aligned_residual": 2.0},
+        },
+    }]
+    result = cv._monotonicity(table)[0]
+    assert result["hit_rate_monotonic_0_to_2"] is True
+    assert result["mean_residual_monotonic_0_to_2"] is True
+
+
+def test_classified_rows_preserve_walk_forward_state():
+    row = {
+        "game_id": 1,
+        "season": 2025,
+        "market_margin_residual": 4.0,
+        "margin_power_edge": 2.0,
+        "football_lab_edge": 1.0,
+        "elo_edge": 1.0,
+        "efficiency_power_edge": 1.0,
+        "line_elo_edge": 1.0,
+        "narrative_interaction_edge": 1.0,
+    }
+    scales = {
+        "margin_power_edge": 1.0,
+        "football_lab_edge": 1.0,
+        "elo_edge": 1.0,
+        "efficiency_power_edge": 1.0,
+        "line_elo_edge": 1.0,
+        "narrative_interaction_edge": 1.0,
+    }
+    classified = cv._classified_rows([row], scales, 2025)
+    assert len(classified) == 1
+    assert classified[0]["confirmation_count"] == 2
+    assert classified[0]["aligned_residual"] == 4.0
