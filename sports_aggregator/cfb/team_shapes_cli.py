@@ -37,6 +37,12 @@ def main() -> None:
     chain.add_argument("--min-prior-games", type=int, default=3)
     chain.add_argument("--min-pair-rows", type=int, default=25)
 
+    residual = sub.add_parser("residual-chain")
+    residual.add_argument("--year", type=int, required=True)
+    residual.add_argument("--clusters", type=int, default=8)
+    residual.add_argument("--min-prior-games", type=int, default=3)
+    residual.add_argument("--min-pair-rows", type=int, default=25)
+
     load_dotenv()
     args = parser.parse_args()
     repository = CFBRepository(
@@ -57,6 +63,14 @@ def main() -> None:
         )
     elif args.command == "chain":
         result = team_shapes.full_chain_ablation(
+            repository,
+            test_season=args.year,
+            clusters=args.clusters,
+            min_prior_games=args.min_prior_games,
+            min_pair_rows=args.min_pair_rows,
+        )
+    elif args.command == "residual-chain":
+        result = team_shapes.residual_chain_ablation(
             repository,
             test_season=args.year,
             clusters=args.clusters,
