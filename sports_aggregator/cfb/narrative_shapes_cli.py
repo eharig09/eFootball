@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb import narrative_shapes
 from sports_aggregator.cfb import narrative_shapes_v2
+from sports_aggregator.cfb import narrative_composite
 
 
 def main() -> None:
@@ -33,6 +34,13 @@ def main() -> None:
     report_v2.add_argument("--min-train-rows", type=int, default=30)
     report_v2.add_argument("--min-test-rows", type=int, default=12)
 
+    stability = sub.add_parser("stability")
+    stability.add_argument("--year", type=int, default=2025)
+    stability.add_argument("--min-year-rows", type=int, default=12)
+
+    composite = sub.add_parser("composite")
+    composite.add_argument("--year", type=int, default=2025)
+
     load_dotenv()
     args = parser.parse_args()
     repository = CFBRepository(
@@ -52,6 +60,17 @@ def main() -> None:
             test_season=args.year,
             min_train_rows=args.min_train_rows,
             min_test_rows=args.min_test_rows,
+        )
+    elif args.command == "stability":
+        payload = narrative_composite.stability_report(
+            repository,
+            test_season=args.year,
+            min_year_rows=args.min_year_rows,
+        )
+    elif args.command == "composite":
+        payload = narrative_composite.composite_report(
+            repository,
+            test_season=args.year,
         )
     else:
         payload = narrative_shapes.report(
