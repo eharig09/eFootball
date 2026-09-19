@@ -18,7 +18,8 @@ import pytest
 
 from sports_aggregator.bootstrap import steps
 from sports_aggregator.tracked_refresh import (
-    ANALYTICS_STEPS, CONTENT_STEPS, CORE_STEPS, MODEL_STEPS, ROSTER_STEPS, SEGMENTS,
+    ANALYTICS_STEPS, CONTENT_STEPS, CORE_STEPS, MODEL_STEPS, PROJECTION_STEPS,
+    ROSTER_STEPS, SEGMENTS,
     _segment_for_light,
 )
 
@@ -27,6 +28,19 @@ def test_every_analytics_step_is_a_real_refresh_step():
     plan = {step.name for step in steps(2026) if "refresh" in step.phases}
     missing = [name for name in ANALYTICS_STEPS if name not in plan]
     assert not missing, missing
+
+
+def test_every_projection_step_is_a_real_refresh_step():
+    plan = {step.name for step in steps(2026) if "refresh" in step.phases}
+    missing = [name for name in PROJECTION_STEPS if name not in plan]
+    assert not missing, missing
+
+
+def test_projection_actuals_follow_pbp_derivation():
+    order = [step.name for step in steps(2026) if step.name in PROJECTION_STEPS]
+    assert order.index("pbp") < order.index("pbp-derive")
+    for name in ("team-pace", "team-scoring", "team-special-teams", "team-drive-outcomes"):
+        assert order.index("pbp-derive") < order.index(name)
 
 
 def test_the_core_segment_names_the_pregame_snapshot():
@@ -69,7 +83,7 @@ def test_no_refresh_step_is_left_without_a_way_to_run():
     long the deployment lives.
     """
     reachable = (set(CONTENT_STEPS) | set(ROSTER_STEPS) | set(MODEL_STEPS)
-                 | set(ANALYTICS_STEPS) | set(CORE_STEPS)
+                 | set(ANALYTICS_STEPS) | set(PROJECTION_STEPS) | set(CORE_STEPS)
                  # Run by their own splitters inside a segment, or by a profile
                  # of their own rather than by name.
                  | {"cfbd-sync", "cfbd-current-player-stats", "local-articles"})
@@ -140,6 +154,17 @@ def test_an_unknown_segment_is_refused():
 
 def test_analytics_is_one_of_the_named_segments():
     assert "analytics" in SEGMENTS
+
+
+def test_projections_is_one_of_the_named_segments():
+    assert "projections" in SEGMENTS
+
+
+def test_render_has_a_projection_refresh_trigger():
+    render = Path("render.yaml").read_text(encoding="utf-8")
+    assert "name: cfb-projection-refresh-trigger" in render
+    assert "value: projections" in render
+    assert 'schedule: "15 */2 * * *"' in render
 
 
 def test_the_hook_passes_a_requested_segment_through():
