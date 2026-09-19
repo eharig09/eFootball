@@ -856,7 +856,8 @@ def _uncertainty_from_prior_seasons(all_rows: list[dict[str, Any]],
     return results
 
 
-def _quality_ablation(repository: CFBRepository, rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _quality_ablation(repository: CFBRepository, rows: list[dict[str, Any]], *,
+                      backtest_version: str) -> dict[str, Any] | None:
     """Reuse xPoints' matched temporal ablation for the report's test range."""
     seasons = sorted({int(row["season"]) for row in rows})
     if not seasons:
@@ -866,7 +867,7 @@ def _quality_ablation(repository: CFBRepository, rows: list[dict[str, Any]]) -> 
         first = connection.execute(
             """SELECT MIN(season) FROM cfb_projection_backtest
                WHERE backtest_version=? AND season<?""",
-            (BACKTEST_VERSION, test_from),
+            (backtest_version, test_from),
         ).fetchone()[0]
     if first is None:
         return None
@@ -969,7 +970,8 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
         "by_quality_edge": by_quality_edge,
         "by_quality_sources": by_quality_sources,
         "by_market_disagreement": by_market_disagreement,
-        "points_quality_ablation": _quality_ablation(repository, rows),
+        "points_quality_ablation": _quality_ablation(
+            repository, rows, backtest_version=backtest_version),
         "calibration": {
             "projected_points": _points_calibration(rows),
             "temporal_candidate": _temporal_point_calibration(all_rows, rows),
