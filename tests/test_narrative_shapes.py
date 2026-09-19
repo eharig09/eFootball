@@ -71,3 +71,21 @@ def test_v2_model_metrics_reports_zero_error_for_perfect_predictions():
     metrics = nsv2._model_metrics(model, rows)
     assert metrics["n"] == 3
     assert metrics["mae"] is not None
+
+
+def test_v2_market_tags_use_centered_state():
+    row = {
+        "game_id": 1,
+        "team": "A",
+        **{key: 0 for key in ns.CATEGORY_COLUMNS},
+    }
+    state = {
+        (1, "A"): {
+            "centered_line_gap": 90.0,
+            "perception_change_v2": -40.0,
+        }
+    }
+    tags = nsv2._v2_tags(row, state)
+    assert "market_darling" in tags
+    assert "market_lag" in tags
+    assert "market_chase" not in tags
