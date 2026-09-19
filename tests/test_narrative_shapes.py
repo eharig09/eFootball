@@ -217,3 +217,39 @@ def test_scoreboard_calibration_maps_offense_margin_to_scoreboard_margin():
     }
     # Function intentionally requires a real sample before fitting.
     assert cir._fit_scoreboard_calibration(games, {2022}) is None
+
+
+from sports_aggregator.cfb import internal_power_lenses as ipl
+
+
+def test_internal_srs_rewards_margin_after_hfa():
+    games = [
+        {"home_team":"A","away_team":"B","home_points":30,"away_points":20},
+        {"home_team":"A","away_team":"C","home_points":28,"away_points":14},
+        {"home_team":"B","away_team":"C","home_points":24,"away_points":21},
+    ]
+    ratings, counts = ipl._solve_srs(games)
+    assert counts["A"] == 2
+    assert ratings["A"] > ratings["B"]
+    assert ratings["B"] > ratings["C"]
+
+
+def test_internal_score_uses_only_active_scales():
+    row = {
+        "football_lab_edge": 2.0,
+        "elo_edge": 1.0,
+        "margin_power_edge": 1.5,
+        "efficiency_power_edge": None,
+        "line_elo_edge": -0.25,
+        "narrative_interaction_edge": None,
+    }
+    scales = {
+        "football_lab_edge": 1.0,
+        "elo_edge": 1.0,
+        "margin_power_edge": 1.0,
+        "line_elo_edge": 1.0,
+    }
+    score = ipl._score(row, scales)
+    assert score["available"] == 4
+    assert score["direction"] == 1
+    assert score["agreement"] == 0.75

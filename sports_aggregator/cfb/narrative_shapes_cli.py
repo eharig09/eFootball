@@ -13,6 +13,7 @@ from sports_aggregator.cfb import narrative_shapes_v2
 from sports_aggregator.cfb import narrative_composite
 from sports_aggregator.cfb import extreme_tail_composite
 from sports_aggregator.cfb import composite_input_repair
+from sports_aggregator.cfb import internal_power_lenses
 
 
 def main() -> None:
@@ -56,6 +57,9 @@ def main() -> None:
 
     family = sub.add_parser("family-composite")
     family.add_argument("--year", type=int, default=2025)
+
+    internal_power = sub.add_parser("internal-power")
+    internal_power.add_argument("--year", type=int, default=2025)
 
     load_dotenv()
     args = parser.parse_args()
@@ -107,6 +111,11 @@ def main() -> None:
         )
     elif args.command == "family-composite":
         payload = composite_input_repair.family_report(
+            repository,
+            test_season=args.year,
+        )
+    elif args.command == "internal-power":
+        payload = internal_power_lenses.report(
             repository,
             test_season=args.year,
         )
