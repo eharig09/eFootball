@@ -13,6 +13,10 @@ on:
           - analytics
           - core
           - models
+          - rosters
+          - stats
+          - content
+          - news
 
 jobs:
   refresh:
@@ -28,7 +32,7 @@ jobs:
             echo "Missing CFB_REFRESH_URL or CFB_REFRESH_TOKEN repository secret."
             exit 1
           fi
-          echo "Triggering CFB refresh segment: $CFB_REFRESH_SEGMENT"
+
           curl --fail-with-body --show-error --silent \
             -X POST \
             -H "Authorization: Bearer $CFB_REFRESH_TOKEN" \
