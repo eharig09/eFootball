@@ -127,30 +127,97 @@
 </section>
 
 <section class="section projection-workspace" data-mobile-tab-panel="projection">
-    <h2>Game projection</h2>
-    <div class="section-note">
-        An early, leak-safe, opponent-adjusted forecast built only from games before this
-        kickoff. It projects team opportunity and yardage, not points, win probability,
-        or a betting edge.
+    <div class="projection-heading">
+        <div>
+            <div class="eyebrow">Field Theory forecast</div>
+            <h2>Game projection</h2>
+        </div>
+        {% if projection.points_model %}
+        <span class="projection-model-chip">{{ projection.points_model.model_version }}</span>
+        {% endif %}
     </div>
+    <div class="section-note">
+        Leak-safe, opponent-adjusted pregame estimates built only from information available
+        before kickoff. Points, total yardage and opponent-quality context are the headline
+        outputs; pace and play mix are the supporting inputs.
+    </div>
+
     {% if not projection.insufficient_data %}
-    <div class="projection-flow" aria-label="Projection model sequence">
+    <div class="projection-scoreboard" aria-label="Projected score, yardage and quality">
+        {% for side, team, brand in [
+            ('away', game.away_team, away_brand),
+            ('home', game.home_team, home_brand)] %}
+        {% set p = projection[side] %}
+        <article class="projection-team-card"
+                 style="--projection-team:{{ brand.accent }};--projection-team-dark:{{ brand.accent_dark }}">
+            <div class="projection-team-head">
+                <span>{{ 'Away' if side == 'away' else 'Home' }}</span>
+                <strong>{{ team }}</strong>
+            </div>
+            <div class="projection-points">
+                <b>{{ p.expected_points | cell('f1') }}</b>
+                <span>Projected points</span>
+            </div>
+            <div class="projection-headline-stats">
+                <div class="projection-headline-stat">
+                    <b>{{ p.total_yards | cell('f0') }}</b>
+                    <span>Total yards</span>
+                </div>
+                <div class="projection-headline-stat projection-quality
+                    {% if p.opponent_quality_edge is not none and p.opponent_quality_edge > 0 %}is-positive
+                    {% elif p.opponent_quality_edge is not none and p.opponent_quality_edge < 0 %}is-negative
+                    {% else %}is-neutral{% endif %}">
+                    <b>{% if p.opponent_quality_edge is not none and p.opponent_quality_edge > 0 %}+{% endif %}{{ p.opponent_quality_edge | cell('f1') }}</b>
+                    <span>Quality edge</span>
+                    {% if p.opponent_quality_sources %}<i>{{ p.opponent_quality_sources }} source{{ '' if p.opponent_quality_sources == 1 else 's' }}</i>{% endif %}
+                </div>
+            </div>
+            <div class="projection-team-foot">
+                <span><b>{{ p.points_per_drive | cell('f2') }}</b> pts/drive</span>
+                <span><b>{{ p.pass_yards | cell('f0') }}</b> pass yds</span>
+                <span><b>{{ p.rush_yards | cell('f0') }}</b> rush yds</span>
+            </div>
+        </article>
+        {% if loop.first %}
+        <div class="projection-versus" aria-hidden="true">
+            <span>MODEL</span><b>VS</b>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+
+    {% if projection.away.expected_points is not none and projection.home.expected_points is not none %}
+    {% set projected_total = projection.away.expected_points + projection.home.expected_points %}
+    {% set projected_margin = projection.home.expected_points - projection.away.expected_points %}
+    <div class="projection-summary-strip">
+        <span><i>Projected total</i><b>{{ projected_total | cell('f1') }}</b></span>
+        <span><i>Projected margin</i><b>
+            {% if projected_margin > 0 %}{{ game.home_team }} +{{ projected_margin | cell('f1') }}
+            {% elif projected_margin < 0 %}{{ game.away_team }} +{{ (-projected_margin) | cell('f1') }}
+            {% else %}Even{% endif %}
+        </b></span>
+    </div>
+    {% endif %}
+
+    <div class="projection-drivers" aria-label="Supporting projection inputs">
         {% for key, label, fmt in [
-            ('drives', 'xDrives', 'f1'),
-            ('plays_per_drive', 'xPlays / drive', 'f2'),
-            ('plays', 'xPlays', 'f1'),
-            ('pass_rate', 'xPass rate', 'rate'),
-            ('total_yards', 'xTotal yards', 'f1')] %}
-        <div class="projection-stage">
+            ('drives', 'Drives', 'f1'),
+            ('plays', 'Plays', 'f1'),
+            ('pass_rate', 'Pass rate', 'rate'),
+            ('giveaways', 'Giveaways', 'f2')] %}
+        <div class="projection-driver">
             <span>{{ label }}</span>
             <div><b>{{ projection.away[key] | cell(fmt) }}</b><i>{{ game.away_team }}</i></div>
             <div><b>{{ projection.home[key] | cell(fmt) }}</b><i>{{ game.home_team }}</i></div>
         </div>
-        {% if not loop.last %}<span class="projection-arrow" aria-hidden="true">&rarr;</span>{% endif %}
         {% endfor %}
     </div>
     {% endif %}
-    {{ data_table(projection_table, 'projection-table') }}
+
+    <details class="projection-detail">
+        <summary>Full projection detail</summary>
+        {{ data_table(projection_table, 'projection-table') }}
+    </details>
     <div class="projection-reads">
         {% for line in projection_lines %}<p>{{ line }}</p>{% endfor %}
     </div>
