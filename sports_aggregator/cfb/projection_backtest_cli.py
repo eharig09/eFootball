@@ -8,14 +8,14 @@ import os
 from dotenv import load_dotenv
 
 from sports_aggregator.cfb.projection_backtest import (
-    BACKTEST_VERSION, build, report,
+    BACKTEST_VERSION, build, prepare_actuals, report, source_coverage,
 )
 from sports_aggregator.cfb.repository import CFBRepository
 
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Walk-forward backtest of the live CFB projection")
-    p.add_argument("command", choices=("run", "report"))
+    p.add_argument("command", choices=("prepare", "coverage", "run", "report"))
     p.add_argument("--from-year", type=int, default=None)
     p.add_argument("--to-year", type=int, default=None)
     p.add_argument("--year", type=int, default=None,
@@ -44,8 +44,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     repository = CFBRepository(
         args.database or os.getenv("CFB_DATABASE_PATH", "instance/cfb.sqlite3"))
-    first, last = _years(args, required=args.command == "run")
-    if args.command == "run":
+    first, last = _years(args, required=args.command in {"prepare", "coverage", "run"})
+    if args.command == "prepare":
+        payload = prepare_actuals(
+            repository, from_season=int(first), to_season=int(last))
+    elif args.command == "coverage":
+        payload = source_coverage(
+            repository, from_season=int(first), to_season=int(last))
+    elif args.command == "run":
         payload = build(
             repository, from_season=int(first), to_season=int(last),
             backtest_version=args.backtest_version,
