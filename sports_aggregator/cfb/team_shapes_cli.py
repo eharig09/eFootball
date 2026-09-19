@@ -27,6 +27,10 @@ def main() -> None:
     report.add_argument("--neighbors", type=int, default=25)
     report.add_argument("--min-prior-games", type=int, default=3)
 
+    robust = sub.add_parser("robustness")
+    robust.add_argument("--year", type=int, required=True)
+    robust.add_argument("--min-prior-games", type=int, default=3)
+
     load_dotenv()
     args = parser.parse_args()
     repository = CFBRepository(
@@ -37,6 +41,12 @@ def main() -> None:
             repository,
             from_season=args.from_year,
             to_season=args.to_year,
+            min_prior_games=args.min_prior_games,
+        )
+    elif args.command == "robustness":
+        result = team_shapes.robustness_report(
+            repository,
+            test_season=args.year,
             min_prior_games=args.min_prior_games,
         )
     else:
