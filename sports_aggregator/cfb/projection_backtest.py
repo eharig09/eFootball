@@ -1522,16 +1522,72 @@ def _leverage_bucket(value: float) -> str:
     return "5+"
 
 
+def _select_leverage_policy(fit_rows: list[dict[str, Any]],
+                            validation_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Tune threshold/shrinkage on a prior validation season only."""
+    model = _fit_market_leverage(fit_rows)
+    if not model:
+        return {"threshold": None, "shrink": 0.0, "validation_rows": 0, "validation_mae": None}
+
+    candidates = []
+    for threshold in (0.0, 1.0, 2.0, 3.0, 4.0, 5.0):
+        for shrink in (0.0, 0.25, 0.50, 0.75, 1.0):
+            pairs = []
+            adjusted = 0
+            for row in validation_rows:
+                market = row.get("market_implied_points")
+                actual = row.get("actual_score_points")
+                if market is None or actual is None:
+                    continue
+                leverage = _predict_market_leverage(model, row)
+                if leverage is None:
+                    continue
+                applied = shrink * leverage if abs(leverage) >= threshold else 0.0
+                if applied != 0.0:
+                    adjusted += 1
+                pairs.append((max(0.0, float(market) + applied), float(actual)))
+            metrics = _metrics(pairs)
+            if metrics["mae"] is None:
+                continue
+            candidates.append({
+                "threshold": threshold,
+                "shrink": shrink,
+                "mae": float(metrics["mae"]),
+                "rmse": float(metrics["rmse"]),
+                "n": int(metrics["n"]),
+                "adjusted_rows": adjusted,
+            })
+
+    if not candidates:
+        return {"threshold": None, "shrink": 0.0, "validation_rows": 0, "validation_mae": None}
+
+    # MAE is primary; RMSE breaks ties. Keeping shrink=0 in the grid means
+    # validation can explicitly choose "do not move off Vegas."
+    best = min(candidates, key=lambda item: (item["mae"], item["rmse"]))
+    return {
+        "threshold": best["threshold"],
+        "shrink": best["shrink"],
+        "validation_rows": best["n"],
+        "validation_mae": round(best["mae"], 4),
+        "validation_rmse": round(best["rmse"], 4),
+        "adjusted_rows": best["adjusted_rows"],
+        "candidate_count": len(candidates),
+    }
+
+
 def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
                                      test_rows: list[dict[str, Any]]) -> dict[str, Any]:
     market_pairs = []
     pure_pairs = []
     anchored_pairs = []
+    selective_pairs = []
     leverage_pairs = []
     by_season = {}
     bucket_rows: dict[str, list[tuple[float, float]]] = defaultdict(list)
     signed_bucket_rows: dict[str, list[tuple[float, float]]] = defaultdict(list)
     models = {}
+    policies = {}
+    selective_adjusted_rows = 0
 
     for season in sorted({int(row["season"]) for row in test_rows}):
         training = [
@@ -1540,10 +1596,36 @@ def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
             and row.get("market_implied_points") is not None
             and row.get("actual_score_points") is not None
         ]
+        prior_seasons = sorted({int(row["season"]) for row in training})
+        if len(prior_seasons) >= 2:
+            validation_season = prior_seasons[-1]
+            policy_fit_rows = [
+                row for row in training if int(row["season"]) < validation_season
+            ]
+            validation_rows = [
+                row for row in training if int(row["season"]) == validation_season
+            ]
+            policy = _select_leverage_policy(policy_fit_rows, validation_rows)
+            policy["validation_season"] = validation_season
+            policy["fit_seasons"] = [
+                min(int(row["season"]) for row in policy_fit_rows),
+                validation_season - 1,
+            ] if policy_fit_rows else None
+        else:
+            policy = {
+                "threshold": None,
+                "shrink": 0.0,
+                "validation_rows": 0,
+                "validation_mae": None,
+                "validation_season": None,
+                "fit_seasons": None,
+            }
+        policies[str(season)] = policy
         model = _fit_market_leverage(training)
         season_market = []
         season_pure = []
         season_anchored = []
+        season_selective = []
         season_leverage = []
 
         for row in test_rows:
@@ -1565,6 +1647,20 @@ def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
             anchored = max(0.0, float(market) + leverage)
             season_anchored.append((anchored, float(actual)))
             anchored_pairs.append((anchored, float(actual)))
+
+            threshold = policy.get("threshold")
+            shrink = float(policy.get("shrink") or 0.0)
+            applied = (
+                shrink * leverage
+                if threshold is not None and abs(leverage) >= float(threshold)
+                else 0.0
+            )
+            selective = max(0.0, float(market) + applied)
+            season_selective.append((selective, float(actual)))
+            selective_pairs.append((selective, float(actual)))
+            if applied != 0.0:
+                selective_adjusted_rows += 1
+
             actual_residual = float(actual) - float(market)
             season_leverage.append((leverage, actual_residual))
             leverage_pairs.append((leverage, actual_residual))
@@ -1577,6 +1673,8 @@ def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
             "market": _metrics(season_market),
             "pure_football_lab_vs_scoreboard": _metrics(season_pure),
             "market_plus_leverage": _metrics(season_anchored),
+            "market_plus_selective_leverage": _metrics(season_selective),
+            "selected_policy": policy,
             "leverage_residual": _metrics(season_leverage),
             "training_rows": model.get("training_rows", 0) if model else 0,
         }
@@ -1615,11 +1713,29 @@ def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
 
     market_metrics = _metrics(market_pairs)
     anchored_metrics = _metrics(anchored_pairs)
+    selective_metrics = _metrics(selective_pairs)
     pure_metrics = _metrics(pure_pairs)
     return {
         "market_baseline": market_metrics,
         "pure_football_lab_vs_scoreboard": pure_metrics,
         "market_plus_leverage": anchored_metrics,
+        "market_plus_selective_leverage": selective_metrics,
+        "selective_mae_delta_vs_market": (
+            round(selective_metrics["mae"] - market_metrics["mae"], 4)
+            if selective_metrics["mae"] is not None and market_metrics["mae"] is not None
+            else None
+        ),
+        "selective_rmse_delta_vs_market": (
+            round(selective_metrics["rmse"] - market_metrics["rmse"], 4)
+            if selective_metrics["rmse"] is not None and market_metrics["rmse"] is not None
+            else None
+        ),
+        "selective_adjusted_rows": selective_adjusted_rows,
+        "selective_adjusted_rate": (
+            round(selective_adjusted_rows / selective_metrics["n"], 4)
+            if selective_metrics["n"] else None
+        ),
+        "policies": policies,
         "mae_delta_vs_market": (
             round(anchored_metrics["mae"] - market_metrics["mae"], 4)
             if anchored_metrics["mae"] is not None and market_metrics["mae"] is not None
@@ -1646,6 +1762,7 @@ def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
             "Target is final scoreboard points minus market implied team points.",
             "Each test season is fit only on earlier seasons.",
             "Predicted leverage is clipped to +/-10 points before adding it to the market anchor.",
+            "Selective leverage chooses a minimum edge threshold and shrinkage factor using only the latest prior validation season; shrink=0 is allowed so validation can choose Vegas unchanged.",
             "Pure Football Lab remains separately scored so market anchoring does not replace the independent model benchmark.",
         ],
     }
