@@ -64,13 +64,17 @@ def trigger_if_due(
     zone_name = os.getenv("CFB_REFRESH_TIMEZONE", "America/New_York")
     current = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(zone_name))
     profile = (os.getenv("CFB_REFRESH_PROFILE") or "auto").strip().casefold()
+    segment = (os.getenv("CFB_REFRESH_SEGMENT") or "").strip().casefold()
     url = (os.getenv("CFB_REFRESH_URL") or "").strip()
     token = (os.getenv("CFB_REFRESH_TOKEN") or "").strip()
     if not url or not token:
         raise RuntimeError("CFB_REFRESH_URL and CFB_REFRESH_TOKEN are required")
 
     separator = "&" if "?" in url else "?"
-    trigger_url = f"{url}{separator}{urlencode({'profile': profile})}"
+    query = {"profile": profile}
+    if segment:
+        query["segment"] = segment
+    trigger_url = f"{url}{separator}{urlencode(query)}"
     request = Request(
         trigger_url,
         method="POST",
@@ -99,6 +103,7 @@ def trigger_if_due(
                     "status": "triggered" if status == 202 else "skipped",
                     "requested": profile,
                     "profile": _resolved_profile(body) or profile,
+                    "segment": segment or None,
                     "http_status": status,
                     "local_time": current.isoformat(),
                     "attempt": attempt,

@@ -66,10 +66,19 @@ ANALYTICS_STEPS = [
     "nfl-core-foundation", "nfl-core-stats", "nfl-core-depth", "nfl-core-pbp",
 ]
 
+#: Small, projection-specific refresh path. These are the only PBP-derived
+#: tables game_projection.py needs to absorb a newly completed game. Keeping
+#: this separate from the full analytics segment lets Render refresh matchup
+#: inputs throughout the day without also rerunning EPA/WP/NFL analytics.
+PROJECTION_STEPS = [
+    "pbp", "pbp-derive", "team-pace", "team-scoring",
+    "team-special-teams", "team-drive-outcomes",
+]
+
 #: The maintenance segments, which the hourly trigger reaches one at a time by
 #: the clock. Nameable directly so a segment can also be run on demand: a
 #: backfill should not have to wait for its hour to come round.
-SEGMENTS = ("core", "rosters", "stats", "models", "content", "analytics", "news")
+SEGMENTS = ("core", "rosters", "stats", "models", "content", "analytics", "projections", "news")
 
 #: Every segment `profile=heavy` walks on an on-demand request. "news" is
 #: excluded on purpose -- it already has its own profile and cadence, the same
@@ -191,6 +200,20 @@ def _segment_results(segment: str, season: int, *, root: Path, log, heartbeat) -
             season,
             root=root,
             only=ANALYTICS_STEPS,
+            timeout=1800,
+            log=log,
+            heartbeat=heartbeat,
+        )
+
+    if segment == "projections":
+        # Frequent live-model maintenance: ingest only newly completed PBP,
+        # derive it, then rebuild the current-season team-game actuals consumed
+        # directly by game_projection.py. No model fitting occurs here.
+        return _run_low_memory_phase(
+            "refresh",
+            season,
+            root=root,
+            only=PROJECTION_STEPS,
             timeout=1800,
             log=log,
             heartbeat=heartbeat,
