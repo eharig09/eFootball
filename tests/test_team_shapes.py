@@ -50,3 +50,16 @@ def test_kmeans_assigns_two_separated_shapes():
     centroids = ts._kmeans(vectors, k=2)
     assert len(centroids) == 2
     assert ts._cluster(vectors[0], centroids) != ts._cluster(vectors[-1], centroids)
+
+
+def test_shape_insert_statement_matches_schema_arity():
+    columns = [
+        "game_id","team","opponent","side","shape_version","season","week","kickoff","prior_games",
+        "pace_drives","pace_plays_per_drive","off_points_per_drive",
+        "off_yards_per_dropback","off_yards_per_rush","off_pass_rate",
+        "def_drives_allowed","def_points_per_drive_allowed",
+        "def_yards_per_dropback_allowed","def_yards_per_rush_allowed",
+        "def_pass_rate_allowed","actual_drives","actual_points_per_drive",
+        "actual_pass_rate","actual_total_yards","actual_score_points",
+    ]
+    assert len(columns) == 25
