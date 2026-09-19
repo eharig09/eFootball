@@ -526,6 +526,196 @@ def robustness_report(repository: CFBRepository, *, test_season: int,
     }
 
 
+def full_chain_ablation(repository: CFBRepository, *, test_season: int,
+                        shape_version: str = SHAPE_VERSION, clusters: int = 8,
+                        min_prior_games: int = 3, min_pair_rows: int = 25,
+                        backtest_version: str = "game-projection-backtest-v1") -> dict[str, Any]:
+    """Test shape interaction as an incremental layer on validated xDrives/xPlays.
+
+    Volume always comes from cfb_projection_backtest's production historical
+    projection. Shape is allowed to adjust PPD and pass rate only.
+    """
+    initialize(repository)
+    with repository._reader() as connection:
+        shape_rows = [dict(row) for row in connection.execute(
+            """SELECT * FROM cfb_team_shape_backtest
+               WHERE shape_version=? AND prior_games>=?
+               ORDER BY season,week,kickoff,game_id,side""",
+            (shape_version, int(min_prior_games)),
+        )]
+        projection_rows = {
+            (int(row["game_id"]), str(row["team"])): dict(row)
+            for row in connection.execute(
+                """SELECT game_id,team,season,projected_drives,projected_plays,
+                          projected_dropbacks,projected_rush_attempts,
+                          projected_points_per_drive,projected_offensive_points,
+                          actual_drives,actual_plays,actual_dropbacks,actual_rush_attempts,
+                          actual_points_per_drive,actual_offensive_points
+                   FROM cfb_projection_backtest
+                   WHERE backtest_version=?""",
+                (backtest_version,),
+            )
+        }
+
+    train = [row for row in shape_rows if int(row["season"]) < int(test_season)]
+    test = [row for row in shape_rows if int(row["season"]) == int(test_season)]
+    complete_train = [row for row in train if all(row.get(key) is not None for key in FEATURES)]
+    scaler = _fit_scaler(complete_train)
+    train_vectors = [_vector(row, scaler) for row in complete_train]
+    train_vectors = [vec for vec in train_vectors if vec is not None]
+    centroids = _kmeans(train_vectors, k=int(clusters))
+
+    train_lookup = {(int(row["game_id"]), str(row["team"])): row for row in train}
+    test_lookup = {(int(row["game_id"]), str(row["team"])): row for row in test}
+
+    ppd_own: dict[int, list[float]] = defaultdict(list)
+    ppd_pair: dict[tuple[int, int], list[float]] = defaultdict(list)
+    pass_own: dict[int, list[float]] = defaultdict(list)
+    pass_pair: dict[tuple[int, int], list[float]] = defaultdict(list)
+
+    for row in train:
+        vec = _vector(row, scaler)
+        opponent = train_lookup.get((int(row["game_id"]), str(row["opponent"])))
+        opp_vec = _vector(opponent, scaler) if opponent else None
+        if vec is None or opp_vec is None:
+            continue
+        own = _cluster(vec, centroids)
+        opp = _cluster(opp_vec, centroids)
+        if row.get("actual_points_per_drive") is not None:
+            value = float(row["actual_points_per_drive"])
+            ppd_own[own].append(value)
+            ppd_pair[(own, opp)].append(value)
+        if row.get("actual_pass_rate") is not None:
+            value = float(row["actual_pass_rate"])
+            pass_own[own].append(value)
+            pass_pair[(own, opp)].append(value)
+
+    baseline_ppd = []
+    adjusted_ppd = []
+    baseline_points = []
+    adjusted_points = []
+    baseline_pass_rate = []
+    adjusted_pass_rate = []
+    baseline_dropbacks = []
+    adjusted_dropbacks = []
+    baseline_rushes = []
+    adjusted_rushes = []
+    applied_ppd = 0
+    applied_pass = 0
+    evaluated = 0
+
+    for row in test:
+        projection = projection_rows.get((int(row["game_id"]), str(row["team"])))
+        opponent = test_lookup.get((int(row["game_id"]), str(row["opponent"])))
+        vec = _vector(row, scaler)
+        opp_vec = _vector(opponent, scaler) if opponent else None
+        if not projection or vec is None or opp_vec is None:
+            continue
+        own = _cluster(vec, centroids)
+        opp = _cluster(opp_vec, centroids)
+        evaluated += 1
+
+        projected_drives = projection.get("projected_drives")
+        projected_plays = projection.get("projected_plays")
+        projected_ppd = projection.get("projected_points_per_drive")
+        actual_ppd_value = projection.get("actual_points_per_drive")
+        actual_points_value = projection.get("actual_offensive_points")
+
+        ppd_effect = 0.0
+        pair_values = ppd_pair.get((own, opp), [])
+        own_values = ppd_own.get(own, [])
+        if len(pair_values) >= int(min_pair_rows) and own_values:
+            ppd_effect = (
+                sum(pair_values) / len(pair_values)
+                - sum(own_values) / len(own_values)
+            )
+            applied_ppd += 1
+
+        if projected_ppd is not None and actual_ppd_value is not None:
+            base = float(projected_ppd)
+            adj = max(0.0, base + ppd_effect)
+            baseline_ppd.append((base, float(actual_ppd_value)))
+            adjusted_ppd.append((adj, float(actual_ppd_value)))
+            if projected_drives is not None and actual_points_value is not None:
+                baseline_points.append(
+                    (float(projected_drives) * base, float(actual_points_value)))
+                adjusted_points.append(
+                    (float(projected_drives) * adj, float(actual_points_value)))
+
+        if projected_plays not in (None, 0) and projection.get("projected_dropbacks") is not None:
+            base_pass = float(projection["projected_dropbacks"]) / float(projected_plays)
+            pass_effect = 0.0
+            pair_values = pass_pair.get((own, opp), [])
+            own_values = pass_own.get(own, [])
+            if len(pair_values) >= int(min_pair_rows) and own_values:
+                pass_effect = (
+                    sum(pair_values) / len(pair_values)
+                    - sum(own_values) / len(own_values)
+                )
+                applied_pass += 1
+            adj_pass = min(0.85, max(0.15, base_pass + pass_effect))
+            if row.get("actual_pass_rate") is not None:
+                actual_rate = float(row["actual_pass_rate"])
+                baseline_pass_rate.append((base_pass, actual_rate))
+                adjusted_pass_rate.append((adj_pass, actual_rate))
+            actual_dropbacks = projection.get("actual_dropbacks")
+            actual_rushes = projection.get("actual_rush_attempts")
+            if actual_dropbacks is not None:
+                baseline_dropbacks.append(
+                    (float(projected_plays) * base_pass, float(actual_dropbacks)))
+                adjusted_dropbacks.append(
+                    (float(projected_plays) * adj_pass, float(actual_dropbacks)))
+            if actual_rushes is not None:
+                baseline_rushes.append(
+                    (float(projected_plays) * (1.0 - base_pass), float(actual_rushes)))
+                adjusted_rushes.append(
+                    (float(projected_plays) * (1.0 - adj_pass), float(actual_rushes)))
+
+    def comparison(base_pairs, adjusted_pairs):
+        base = _metrics(base_pairs)
+        adjusted = _metrics(adjusted_pairs)
+        return {
+            "production_baseline": base,
+            "shape_adjusted": adjusted,
+            "mae_delta_vs_production": (
+                round(adjusted["mae"] - base["mae"], 4)
+                if adjusted["mae"] is not None and base["mae"] is not None else None
+            ),
+            "rmse_delta_vs_production": (
+                round(adjusted["rmse"] - base["rmse"], 4)
+                if adjusted["rmse"] is not None and base["rmse"] is not None else None
+            ),
+        }
+
+    return {
+        "test_season": int(test_season),
+        "train_seasons": (
+            [min(int(row["season"]) for row in train), max(int(row["season"]) for row in train)]
+            if train else None
+        ),
+        "clusters": int(clusters),
+        "min_pair_rows": int(min_pair_rows),
+        "evaluated_rows": evaluated,
+        "ppd_interaction_applied_rows": applied_ppd,
+        "pass_rate_interaction_applied_rows": applied_pass,
+        "volume_source": (
+            "Validated production historical projections from cfb_projection_backtest: "
+            "projected_drives and projected_plays are never replaced by shape similarity."
+        ),
+        "points_per_drive": comparison(baseline_ppd, adjusted_ppd),
+        "offensive_points": comparison(baseline_points, adjusted_points),
+        "pass_rate": comparison(baseline_pass_rate, adjusted_pass_rate),
+        "dropbacks": comparison(baseline_dropbacks, adjusted_dropbacks),
+        "rush_attempts": comparison(baseline_rushes, adjusted_rushes),
+        "notes": [
+            "Shape interaction is an additive residual relative to the team's archetype mean.",
+            "PPD effects are trained only on seasons before the held-out test season.",
+            "Pass-rate effects change mix only; projected play volume remains fixed.",
+            "QB is intentionally excluded from this ablation.",
+        ],
+    }
+
+
 def report(repository: CFBRepository, *, test_season: int,
            shape_version: str = SHAPE_VERSION, clusters: int = 8,
            neighbors: int = 25, min_prior_games: int = 3) -> dict[str, Any]:
