@@ -164,7 +164,7 @@ def test_render_has_a_projection_refresh_trigger():
     render = Path("render.yaml").read_text(encoding="utf-8")
     assert "name: cfb-projection-refresh-trigger" in render
     assert "value: projections" in render
-    assert 'schedule: "15 */2 * * *"' in render
+    assert 'schedule: "15 9 * * *"' in render
 
 
 def test_the_hook_passes_a_requested_segment_through():
