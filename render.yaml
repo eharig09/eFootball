@@ -133,6 +133,27 @@ services:
         value: America/New_York
 
   - type: cron
+    name: cfb-projection-refresh-trigger
+    runtime: python
+    # Keep the live matchup model current without rerunning the full analytics
+    # suite. The web service owns the persistent SQLite disk, so this cron only
+    # triggers the lock-safe projections segment over the authenticated hook.
+    schedule: "15 */2 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m sports_aggregator.render_trigger
+    envVars:
+      - key: CFB_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_TOKEN
+        sync: false
+      - key: CFB_REFRESH_PROFILE
+        value: light
+      - key: CFB_REFRESH_SEGMENT
+        value: projections
+      - key: CFB_REFRESH_TIMEZONE
+        value: America/New_York
+
+  - type: cron
     name: nfl-content-refresh-trigger
     runtime: python
     # NFL had no recurring refresh at all: rosters/PBP refresh through the
