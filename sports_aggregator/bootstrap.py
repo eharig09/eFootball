@@ -281,6 +281,26 @@ def steps(season: int, *, history_from: int | None = None,
         Step("pbp-derive", "Per-play and per-drive metrics from stored plays",
              ["sports_aggregator.cfb.pbp_cli", "derive", "--year", year],
              ("initial", "refresh"), optional=True, timeout_seconds=1800),
+        # Live matchup projections read these current-season team-game actuals
+        # directly from game_projection.py. They are deliberately rebuild-only:
+        # fitted x-stat/xPoints models stay frozen and are not retrained during
+        # production refreshes.
+        Step("team-pace", "Team-game drive, pace, volume and yardage actuals",
+             ["sports_aggregator.cfb.pbp_cli", "build-team-pace",
+              "--from-year", year, "--to-year", year],
+             ("initial", "refresh"), optional=True, timeout_seconds=900),
+        Step("team-scoring", "Team-game turnover and red-zone actuals",
+             ["sports_aggregator.cfb.pbp_cli", "build-team-scoring",
+              "--from-year", year, "--to-year", year],
+             ("initial", "refresh"), optional=True, timeout_seconds=900),
+        Step("team-special-teams", "Team-game field-position and special-teams actuals",
+             ["sports_aggregator.cfb.pbp_cli", "build-team-special-teams",
+              "--from-year", year, "--to-year", year],
+             ("initial", "refresh"), optional=True, timeout_seconds=900),
+        Step("team-drive-outcomes", "Team-game drive outcomes for live xPoints inference",
+             ["sports_aggregator.cfb.pbp_cli", "build-team-drive-outcomes",
+              "--from-year", year, "--to-year", year],
+             ("initial", "refresh"), optional=True, timeout_seconds=900),
         # Scored against the stored ep-v2 model rather than refitted: a fit
         # wants several seasons and does not change week to week.
         Step("epa", "Score plays with the event-aligned ep-v2 model",
