@@ -12,6 +12,7 @@ from sports_aggregator.cfb import narrative_shapes
 from sports_aggregator.cfb import narrative_shapes_v2
 from sports_aggregator.cfb import narrative_composite
 from sports_aggregator.cfb import extreme_tail_composite
+from sports_aggregator.cfb import composite_input_repair
 
 
 def main() -> None:
@@ -44,6 +45,17 @@ def main() -> None:
 
     extreme_tail = sub.add_parser("extreme-tail")
     extreme_tail.add_argument("--year", type=int, default=2025)
+
+    input_audit = sub.add_parser("input-audit")
+    input_audit.add_argument("--from-year", type=int, default=2022)
+    input_audit.add_argument("--to-year", type=int, default=2025)
+
+    input_repair = sub.add_parser("input-repair")
+    input_repair.add_argument("--from-year", type=int, default=2022)
+    input_repair.add_argument("--to-year", type=int, default=2025)
+
+    family = sub.add_parser("family-composite")
+    family.add_argument("--year", type=int, default=2025)
 
     load_dotenv()
     args = parser.parse_args()
@@ -78,6 +90,23 @@ def main() -> None:
         )
     elif args.command == "extreme-tail":
         payload = extreme_tail_composite.report(
+            repository,
+            test_season=args.year,
+        )
+    elif args.command == "input-audit":
+        payload = composite_input_repair.source_audit(
+            repository,
+            from_season=args.from_year,
+            to_season=args.to_year,
+        )
+    elif args.command == "input-repair":
+        payload = composite_input_repair.rebuild_from_sources(
+            repository,
+            from_season=args.from_year,
+            to_season=args.to_year,
+        )
+    elif args.command == "family-composite":
+        payload = composite_input_repair.family_report(
             repository,
             test_season=args.year,
         )
