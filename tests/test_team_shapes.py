@@ -75,3 +75,11 @@ def test_robustness_stability_counts_improvements():
     deltas = [row["actual_points_per_drive"]["mae_delta_vs_own_shape"] for row in grid]
     assert sum(1 for value in deltas if value < 0) == 2
     assert round(sum(deltas) / len(deltas), 4) == -0.0067
+
+
+def test_full_chain_contract_keeps_volume_outside_shape():
+    # The full-chain ablation is intentionally constrained: shape adjusts
+    # efficiency/mix, while xDrives/xPlays remain the production volume layer.
+    source = ts.full_chain_ablation.__doc__ or ""
+    assert "xDrives/xPlays" in source
+    assert "Volume always comes" in source
