@@ -16,6 +16,7 @@ from sports_aggregator.cfb import composite_input_repair
 from sports_aggregator.cfb import internal_power_lenses
 from sports_aggregator.cfb import conditional_convergence
 from sports_aggregator.cfb import convergence_validation
+from sports_aggregator.cfb import convergence_robustness
 
 
 def main() -> None:
@@ -68,6 +69,14 @@ def main() -> None:
 
     convergence_validation_parser = sub.add_parser("convergence-validation")
     convergence_validation_parser.add_argument("--year", type=int, default=2025)
+
+    robustness = sub.add_parser("convergence-robustness")
+    robustness.add_argument("--year", type=int, default=2025)
+    robustness.add_argument(
+        "--output-dir",
+        default="research_outputs",
+        help="Directory for full JSON/CSV artifacts; console output stays compact",
+    )
 
     load_dotenv()
     args = parser.parse_args()
@@ -137,6 +146,16 @@ def main() -> None:
             repository,
             test_season=args.year,
         )
+    elif args.command == "convergence-robustness":
+        payload = convergence_robustness.report(
+            repository,
+            test_season=args.year,
+        )
+        paths = convergence_robustness.export_report(
+            payload,
+            args.output_dir,
+        )
+        payload = convergence_robustness.compact_console_summary(payload, paths)
     else:
         payload = narrative_shapes.report(
             repository,
