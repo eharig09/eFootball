@@ -437,13 +437,22 @@ def evaluate(repository, *, train_from: int, train_to: int, test_from: int, test
         "plus_vegas": base_features + ("vegas_margin",),
         "plus_equal_quality_blend": ADVANCED_FEATURES,
     }
-    required = set().union(*variants.values())
-    matched_train = [row for row in train if row["team_prior_games"] >= min_prior_games
-                     and all(row[key] is not None for key in required)]
-    matched_test = [row for row in test if row["team_prior_games"] >= min_prior_games
-                    and all(row[key] is not None for key in required)]
     ablation = {}
+    variant_coverage = {}
     for label, feature_keys in variants.items():
+        # Evaluate each quality lens on the rows where *that lens* is
+        # available. Requiring Elo, FPI, CORE and Vegas simultaneously made
+        # the intersection empty even though each source had useful coverage.
+        matched_train = [
+            row for row in train
+            if row["team_prior_games"] >= min_prior_games
+            and all(row[key] is not None for key in feature_keys)
+        ]
+        matched_test = [
+            row for row in test
+            if row["team_prior_games"] >= min_prior_games
+            and all(row[key] is not None for key in feature_keys)
+        ]
         variant_coefficients, variant_means, variant_scales = _fit_standardized(
             matched_train, feature_keys) if matched_train else (None, None, None)
         pairs = []
@@ -455,11 +464,14 @@ def evaluate(repository, *, train_from: int, train_to: int, test_from: int, test
                     for index, key in enumerate(feature_keys))
                 pairs.append((max(0.0, predicted), float(row["actual_points_per_drive"])))
         ablation[label] = _finish(pairs)
+        variant_coverage[label] = {
+            "training_rows": len(matched_train),
+            "test_rows": len(matched_test),
+        }
     return {"dataset_version": dataset_version, "train_seasons": [train_from, train_to],
             "test_seasons": [test_from, test_to], "training_rows": len(eligible_train),
             "test_rows": evaluated, "features": list(ADVANCED_FEATURES),
             "standardized_coefficients": coefficients,
             "points_per_drive": {label: _finish(values) for label, values in scores.items()},
-            "quality_ablation": {"matched_training_rows": len(matched_train),
-                                  "matched_test_rows": len(matched_test), **ablation},
+            "quality_ablation": {"coverage": variant_coverage, **ablation},
             "note": "All features are strictly pregame. Market uses actual drive count only as a diagnostic and is not deployable."}
