@@ -1439,6 +1439,218 @@ def _structural_chain_uncertainty(all_rows: list[dict[str, Any]],
     }
 
 
+LEVERAGE_FEATURE_NAMES = (
+    "pure_model_gap_vs_market",
+    "projected_drives",
+    "projected_plays",
+    "projected_points_per_drive",
+    "projected_total_yards",
+    "projected_giveaways",
+    "projected_red_zone_trips",
+    "projected_red_zone_touchdowns",
+    "quality_edge",
+    "quality_sources",
+    "prior_games",
+    "week",
+    "market_total",
+)
+
+
+def _leverage_features(row: dict[str, Any]) -> list[float] | None:
+    market = row.get("market_implied_points")
+    pure = row.get("projected_offensive_points")
+    required = (
+        market, pure, row.get("projected_drives"), row.get("projected_plays"),
+        row.get("projected_points_per_drive"), row.get("projected_total_yards"),
+        row.get("projected_giveaways"), row.get("projected_red_zone_trips"),
+        row.get("projected_red_zone_touchdowns"),
+    )
+    if any(value is None for value in required):
+        return None
+    return [
+        float(pure) - float(market),
+        float(row["projected_drives"]),
+        float(row["projected_plays"]),
+        float(row["projected_points_per_drive"]),
+        float(row["projected_total_yards"]),
+        float(row["projected_giveaways"]),
+        float(row["projected_red_zone_trips"]),
+        float(row["projected_red_zone_touchdowns"]),
+        float(row.get("quality_edge") or 0.0),
+        float(row.get("quality_sources") or 0.0),
+        float(row.get("prior_games") or 0.0),
+        float(row.get("week") or 0.0),
+        float(row.get("market_total") or 0.0),
+    ]
+
+
+def _fit_market_leverage(rows: list[dict[str, Any]], *, l2: float = 20.0) -> dict[str, Any] | None:
+    examples = []
+    for row in rows:
+        features = _leverage_features(row)
+        market = row.get("market_implied_points")
+        actual = row.get("actual_score_points")
+        if features is None or market is None or actual is None:
+            continue
+        target = float(actual) - float(market)
+        examples.append((features, target))
+    model = _ridge_fit_generic(examples, l2=l2)
+    if not model:
+        return None
+    return {**model, "training_rows": len(examples), "features": LEVERAGE_FEATURE_NAMES, "l2": l2}
+
+
+def _predict_market_leverage(model: dict[str, Any] | None, row: dict[str, Any],
+                             *, clip: float = 10.0) -> float | None:
+    features = _leverage_features(row)
+    prediction = _ridge_predict_generic(model, features) if features is not None else None
+    if prediction is None:
+        return None
+    return max(-clip, min(clip, float(prediction)))
+
+
+def _leverage_bucket(value: float) -> str:
+    magnitude = abs(float(value))
+    if magnitude < 1.0:
+        return "0-1"
+    if magnitude < 2.0:
+        return "1-2"
+    if magnitude < 3.0:
+        return "2-3"
+    if magnitude < 5.0:
+        return "3-5"
+    return "5+"
+
+
+def _market_anchor_leverage_backtest(all_rows: list[dict[str, Any]],
+                                     test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    market_pairs = []
+    pure_pairs = []
+    anchored_pairs = []
+    leverage_pairs = []
+    by_season = {}
+    bucket_rows: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    signed_bucket_rows: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    models = {}
+
+    for season in sorted({int(row["season"]) for row in test_rows}):
+        training = [
+            row for row in all_rows
+            if int(row["season"]) < season
+            and row.get("market_implied_points") is not None
+            and row.get("actual_score_points") is not None
+        ]
+        model = _fit_market_leverage(training)
+        season_market = []
+        season_pure = []
+        season_anchored = []
+        season_leverage = []
+
+        for row in test_rows:
+            if int(row["season"]) != season:
+                continue
+            market = row.get("market_implied_points")
+            actual = row.get("actual_score_points")
+            pure = row.get("projected_offensive_points")
+            if market is None or actual is None:
+                continue
+            leverage = _predict_market_leverage(model, row)
+            season_market.append((float(market), float(actual)))
+            market_pairs.append((float(market), float(actual)))
+            if pure is not None:
+                season_pure.append((float(pure), float(actual)))
+                pure_pairs.append((float(pure), float(actual)))
+            if leverage is None:
+                continue
+            anchored = max(0.0, float(market) + leverage)
+            season_anchored.append((anchored, float(actual)))
+            anchored_pairs.append((anchored, float(actual)))
+            actual_residual = float(actual) - float(market)
+            season_leverage.append((leverage, actual_residual))
+            leverage_pairs.append((leverage, actual_residual))
+            bucket_rows[_leverage_bucket(leverage)].append((leverage, actual_residual))
+            signed_bucket_rows["positive" if leverage > 0 else "negative" if leverage < 0 else "zero"].append(
+                (leverage, actual_residual)
+            )
+
+        by_season[str(season)] = {
+            "market": _metrics(season_market),
+            "pure_football_lab_vs_scoreboard": _metrics(season_pure),
+            "market_plus_leverage": _metrics(season_anchored),
+            "leverage_residual": _metrics(season_leverage),
+            "training_rows": model.get("training_rows", 0) if model else 0,
+        }
+        models[str(season)] = (
+            {
+                "training_rows": model["training_rows"],
+                "features": list(model["features"]),
+                "l2": model["l2"],
+                "standardized_coefficients": [
+                    round(float(value), 5) for value in model["coefficients"]
+                ],
+            }
+            if model else None
+        )
+
+    def summarize_bucket(values: list[tuple[float, float]]) -> dict[str, Any]:
+        if not values:
+            return {
+                "n": 0, "mean_predicted_leverage": None,
+                "mean_actual_market_residual": None, "direction_hit_rate": None,
+            }
+        directional = [
+            1 for predicted, actual in values
+            if (predicted > 0 and actual > 0) or (predicted < 0 and actual < 0)
+        ]
+        nonzero = [item for item in values if item[0] != 0 and item[1] != 0]
+        return {
+            "n": len(values),
+            "mean_predicted_leverage": round(
+                sum(predicted for predicted, _ in values) / len(values), 3),
+            "mean_actual_market_residual": round(
+                sum(actual for _, actual in values) / len(values), 3),
+            "direction_hit_rate": (
+                round(len(directional) / len(nonzero), 4) if nonzero else None),
+        }
+
+    market_metrics = _metrics(market_pairs)
+    anchored_metrics = _metrics(anchored_pairs)
+    pure_metrics = _metrics(pure_pairs)
+    return {
+        "market_baseline": market_metrics,
+        "pure_football_lab_vs_scoreboard": pure_metrics,
+        "market_plus_leverage": anchored_metrics,
+        "mae_delta_vs_market": (
+            round(anchored_metrics["mae"] - market_metrics["mae"], 4)
+            if anchored_metrics["mae"] is not None and market_metrics["mae"] is not None
+            else None
+        ),
+        "rmse_delta_vs_market": (
+            round(anchored_metrics["rmse"] - market_metrics["rmse"], 4)
+            if anchored_metrics["rmse"] is not None and market_metrics["rmse"] is not None
+            else None
+        ),
+        "leverage_prediction": _metrics(leverage_pairs),
+        "by_absolute_leverage": {
+            key: summarize_bucket(bucket_rows.get(key, []))
+            for key in ("0-1", "1-2", "2-3", "3-5", "5+")
+        },
+        "by_direction": {
+            key: summarize_bucket(signed_bucket_rows.get(key, []))
+            for key in ("positive", "negative", "zero")
+        },
+        "by_test_season": by_season,
+        "models": models,
+        "feature_names": list(LEVERAGE_FEATURE_NAMES),
+        "notes": [
+            "Target is final scoreboard points minus market implied team points.",
+            "Each test season is fit only on earlier seasons.",
+            "Predicted leverage is clipped to +/-10 points before adding it to the market anchor.",
+            "Pure Football Lab remains separately scored so market anchoring does not replace the independent model benchmark.",
+        ],
+    }
+
+
 def _quality_ablation(repository: CFBRepository, rows: list[dict[str, Any]], *,
                       backtest_version: str) -> dict[str, Any] | None:
     """Reuse xPoints' matched temporal ablation for the report's test range."""
@@ -1555,6 +1767,7 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
         "by_market_disagreement": by_market_disagreement,
         "points_quality_ablation": _quality_ablation(
             repository, rows, backtest_version=backtest_version),
+        "market_anchor_leverage": _market_anchor_leverage_backtest(all_rows, rows),
         "calibration": {
             "projected_points": _points_calibration(rows),
             "temporal_candidate": _temporal_point_calibration(all_rows, rows),
