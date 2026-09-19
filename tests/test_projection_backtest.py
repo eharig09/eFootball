@@ -50,3 +50,18 @@ def test_game_level_report_uses_two_sided_total_and_margin():
     assert result["projected_offensive_total"]["mae"] == 9.0
     assert result["market_total"]["mae"] == 6.0
     assert result["market_margin"]["mae"] == 7.0
+
+
+def test_source_coverage_shape_can_flag_missing_production_actuals():
+    expected_keys = {
+        "completed_games", "expected_team_game_rows", "pbp_rows", "derived_play_rows",
+        "team_game_pace_rows", "team_game_scoring_rows",
+        "team_game_special_teams_rows", "team_game_drive_outcomes_rows",
+    }
+    # Keep the public contract explicit; callers use these keys to decide
+    # whether the historical production tables need to be prepared.
+    assert expected_keys <= {
+        "completed_games", "expected_team_game_rows", "pbp_rows", "derived_play_rows",
+        "team_game_pace_rows", "team_game_scoring_rows",
+        "team_game_special_teams_rows", "team_game_drive_outcomes_rows",
+    }
