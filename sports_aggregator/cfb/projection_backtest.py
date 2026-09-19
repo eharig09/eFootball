@@ -856,6 +856,205 @@ def _uncertainty_from_prior_seasons(all_rows: list[dict[str, Any]],
     return results
 
 
+def _interval_score(actual: float, lower: float, upper: float, alpha: float) -> float:
+    """Winkler interval score: narrow is better, misses are penalized heavily."""
+    width = upper - lower
+    if actual < lower:
+        return width + (2.0 / alpha) * (lower - actual)
+    if actual > upper:
+        return width + (2.0 / alpha) * (actual - upper)
+    return width
+
+
+def _interval_summary(records: list[tuple[float, float, float]], *, alpha: float) -> dict[str, Any]:
+    if not records:
+        return {
+            "n": 0, "coverage": None, "average_width": None,
+            "median_width": None, "interval_score": None,
+        }
+    covered = sum(1 for actual, lower, upper in records if lower <= actual <= upper)
+    widths = [upper - lower for _, lower, upper in records]
+    scores = [_interval_score(actual, lower, upper, alpha) for actual, lower, upper in records]
+    return {
+        "n": len(records),
+        "coverage": round(covered / len(records), 4),
+        "average_width": round(sum(widths) / len(widths), 3),
+        "median_width": _quantile(widths, 0.50),
+        "interval_score": round(sum(scores) / len(scores), 3),
+    }
+
+
+def _residual_pool(rows: list[dict[str, Any]], predicted_key: str, actual_key: str) -> list[float]:
+    return [
+        float(row[actual_key]) - float(row[predicted_key])
+        for row in rows
+        if row.get(predicted_key) is not None and row.get(actual_key) is not None
+    ]
+
+
+def _conditional_residuals(training: list[dict[str, Any]], row: dict[str, Any],
+                           predicted_key: str, actual_key: str, *,
+                           method: str, min_rows: int = 100) -> tuple[list[float], str]:
+    """Select residuals for one interval candidate, with leak-safe hierarchical fallback."""
+    candidates: list[tuple[str, Any]]
+    if method == "global":
+        candidates = [("global", lambda item: True)]
+    elif method == "week_band":
+        week = _bucket_week(row.get("week"))
+        candidates = [
+            (f"week={week}", lambda item: _bucket_week(item.get("week")) == week),
+            ("global", lambda item: True),
+        ]
+    elif method == "projection_band":
+        predicted = row.get(predicted_key)
+        if predicted is None:
+            return [], "missing"
+        band = _point_bin(float(predicted)) if "points" in predicted_key else (
+            "under_300" if float(predicted) < 300 else
+            "300_399" if float(predicted) < 400 else
+            "400_499" if float(predicted) < 500 else "500_plus"
+        )
+        def same_projection_band(item):
+            value = item.get(predicted_key)
+            if value is None:
+                return False
+            item_band = _point_bin(float(value)) if "points" in predicted_key else (
+                "under_300" if float(value) < 300 else
+                "300_399" if float(value) < 400 else
+                "400_499" if float(value) < 500 else "500_plus"
+            )
+            return item_band == band
+        candidates = [
+            (f"projection={band}", same_projection_band),
+            ("global", lambda item: True),
+        ]
+    else:
+        week = _bucket_week(row.get("week"))
+        prior = _bucket_prior_games(int(row.get("prior_games") or 0))
+        quality = _bucket_quality(row.get("quality_edge"))
+        predicted = row.get(predicted_key)
+        if predicted is None:
+            return [], "missing"
+        projection = _point_bin(float(predicted)) if "points" in predicted_key else (
+            "under_300" if float(predicted) < 300 else
+            "300_399" if float(predicted) < 400 else
+            "400_499" if float(predicted) < 500 else "500_plus"
+        )
+        def pband(item):
+            value = item.get(predicted_key)
+            if value is None:
+                return None
+            return _point_bin(float(value)) if "points" in predicted_key else (
+                "under_300" if float(value) < 300 else
+                "300_399" if float(value) < 400 else
+                "400_499" if float(value) < 500 else "500_plus"
+            )
+        candidates = [
+            (
+                f"week={week}|projection={projection}|prior={prior}|quality={quality}",
+                lambda item: (
+                    _bucket_week(item.get("week")) == week
+                    and pband(item) == projection
+                    and _bucket_prior_games(int(item.get("prior_games") or 0)) == prior
+                    and _bucket_quality(item.get("quality_edge")) == quality
+                ),
+            ),
+            (
+                f"week={week}|projection={projection}|prior={prior}",
+                lambda item: (
+                    _bucket_week(item.get("week")) == week
+                    and pband(item) == projection
+                    and _bucket_prior_games(int(item.get("prior_games") or 0)) == prior
+                ),
+            ),
+            (
+                f"week={week}|projection={projection}",
+                lambda item: _bucket_week(item.get("week")) == week and pband(item) == projection,
+            ),
+            (
+                f"projection={projection}",
+                lambda item: pband(item) == projection,
+            ),
+            (
+                f"week={week}",
+                lambda item: _bucket_week(item.get("week")) == week,
+            ),
+            ("global", lambda item: True),
+        ]
+    for label, predicate in candidates:
+        pool_rows = [
+            item for item in training
+            if item.get(predicted_key) is not None and item.get(actual_key) is not None
+            and predicate(item)
+        ]
+        if len(pool_rows) >= min_rows or label == "global":
+            return _residual_pool(pool_rows, predicted_key, actual_key), label
+    return [], "missing"
+
+
+def _uncertainty_sharpness_benchmark(all_rows: list[dict[str, Any]],
+                                     test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compare temporal interval methods on coverage, width and interval score."""
+    methods = ("global", "week_band", "projection_band", "conditional_hierarchy")
+    targets = (
+        ("offensive_points", "projected_offensive_points", "actual_offensive_points"),
+        ("total_yards", "projected_total_yards", "actual_total_yards"),
+    )
+    result: dict[str, Any] = {}
+    for target, predicted_key, actual_key in targets:
+        target_methods = {}
+        for method in methods:
+            rec50: list[tuple[float, float, float]] = []
+            rec80: list[tuple[float, float, float]] = []
+            source_usage: dict[str, int] = defaultdict(int)
+            by_season: dict[str, Any] = {}
+            for season in sorted({int(row["season"]) for row in test_rows}):
+                training = [
+                    row for row in all_rows
+                    if int(row["season"]) < season
+                    and row.get(predicted_key) is not None
+                    and row.get(actual_key) is not None
+                ]
+                season50: list[tuple[float, float, float]] = []
+                season80: list[tuple[float, float, float]] = []
+                for row in test_rows:
+                    if int(row["season"]) != season:
+                        continue
+                    predicted = row.get(predicted_key); actual = row.get(actual_key)
+                    if predicted is None or actual is None:
+                        continue
+                    residuals, source = _conditional_residuals(
+                        training, row, predicted_key, actual_key, method=method)
+                    if len(residuals) < 100:
+                        continue
+                    source_usage[source] += 1
+                    q10 = _quantile(residuals, .10); q25 = _quantile(residuals, .25)
+                    q75 = _quantile(residuals, .75); q90 = _quantile(residuals, .90)
+                    p = float(predicted); a = float(actual)
+                    r50 = (a, p + q25, p + q75)
+                    r80 = (a, p + q10, p + q90)
+                    rec50.append(r50); rec80.append(r80)
+                    season50.append(r50); season80.append(r80)
+                by_season[str(season)] = {
+                    "interval_50": _interval_summary(season50, alpha=.50),
+                    "interval_80": _interval_summary(season80, alpha=.20),
+                }
+            target_methods[method] = {
+                "interval_50": _interval_summary(rec50, alpha=.50),
+                "interval_80": _interval_summary(rec80, alpha=.20),
+                "source_usage": dict(sorted(source_usage.items())),
+                "by_test_season": by_season,
+            }
+        result[target] = {
+            "methods": target_methods,
+            "selection_rule": (
+                "Prefer lower interval score and narrower width while keeping coverage near "
+                "the nominal 0.50/0.80 targets on temporal holdouts."
+            ),
+        }
+    return result
+
+
 def _quality_ablation(repository: CFBRepository, rows: list[dict[str, Any]], *,
                       backtest_version: str) -> dict[str, Any] | None:
     """Reuse xPoints' matched temporal ablation for the report's test range."""
@@ -985,6 +1184,7 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
         },
         "yardage_error_decomposition": _yardage_decomposition(rows),
         "temporal_uncertainty": _uncertainty_from_prior_seasons(all_rows, rows),
+        "uncertainty_sharpness_benchmark": _uncertainty_sharpness_benchmark(all_rows, rows),
         "empirical_residual_bands": {
             "offensive_points": _residual_band(
                 rows, "projected_offensive_points", "actual_offensive_points"),
