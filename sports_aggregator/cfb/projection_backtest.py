@@ -1327,6 +1327,118 @@ def _heteroskedastic_uncertainty(all_rows: list[dict[str, Any]],
     return output
 
 
+def _paired_chain_residuals(rows: list[dict[str, Any]]) -> list[tuple[float, float]]:
+    pairs = []
+    for row in rows:
+        pd = row.get("projected_drives"); ad = row.get("actual_drives")
+        ppd = row.get("projected_points_per_drive"); appd = row.get("actual_points_per_drive")
+        if None in (pd, ad, ppd, appd):
+            continue
+        pairs.append((float(ad) - float(pd), float(appd) - float(ppd)))
+    return pairs
+
+
+def _chain_simulated_points(row: dict[str, Any], residual_pairs: list[tuple[float, float]]) -> list[float]:
+    projected_drives = row.get("projected_drives")
+    projected_ppd = row.get("projected_points_per_drive")
+    if projected_drives is None or projected_ppd is None:
+        return []
+    drives = float(projected_drives)
+    ppd = float(projected_ppd)
+    return [
+        max(0.0, drives + drive_error) * max(0.0, ppd + ppd_error)
+        for drive_error, ppd_error in residual_pairs
+    ]
+
+
+def _structural_chain_uncertainty(all_rows: list[dict[str, Any]],
+                                  test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Propagate paired historical xDrives/xPPD errors through points = drives * PPD."""
+    methods = ("global", "week_band")
+    output: dict[str, Any] = {}
+    for method in methods:
+        rec50: list[tuple[float, float, float]] = []
+        rec80: list[tuple[float, float, float]] = []
+        widths: list[float] = []
+        by_season: dict[str, Any] = {}
+        source_usage: dict[str, int] = defaultdict(int)
+
+        for season in sorted({int(row["season"]) for row in test_rows}):
+            training = [
+                row for row in all_rows
+                if int(row["season"]) < season
+                and row.get("projected_drives") is not None
+                and row.get("actual_drives") is not None
+                and row.get("projected_points_per_drive") is not None
+                and row.get("actual_points_per_drive") is not None
+            ]
+            global_pairs = _paired_chain_residuals(training)
+            if len(global_pairs) < 100:
+                by_season[str(season)] = {"available": False}
+                continue
+            week_pairs = {
+                band: _paired_chain_residuals([
+                    item for item in training if _bucket_week(item.get("week")) == band
+                ])
+                for band in ("0-3", "4-6", "7-10", "11+")
+            }
+            season50: list[tuple[float, float, float]] = []
+            season80: list[tuple[float, float, float]] = []
+            for row in test_rows:
+                if int(row["season"]) != season:
+                    continue
+                actual = row.get("actual_offensive_points")
+                if actual is None:
+                    continue
+                if method == "week_band":
+                    band = _bucket_week(row.get("week"))
+                    residual_pairs = week_pairs.get(band, [])
+                    source = f"week={band}" if len(residual_pairs) >= 100 else "global"
+                    if len(residual_pairs) < 100:
+                        residual_pairs = global_pairs
+                else:
+                    residual_pairs = global_pairs
+                    source = "global"
+                simulations = _chain_simulated_points(row, residual_pairs)
+                if len(simulations) < 100:
+                    continue
+                q10 = _quantile(simulations, .10); q25 = _quantile(simulations, .25)
+                q75 = _quantile(simulations, .75); q90 = _quantile(simulations, .90)
+                a = float(actual)
+                r50 = (a, q25, q75)
+                r80 = (a, q10, q90)
+                rec50.append(r50); rec80.append(r80)
+                season50.append(r50); season80.append(r80)
+                widths.append(q90 - q10)
+                source_usage[source] += 1
+            by_season[str(season)] = {
+                "available": True,
+                "training_pairs": len(global_pairs),
+                "interval_50": _interval_summary(season50, alpha=.50),
+                "interval_80": _interval_summary(season80, alpha=.20),
+            }
+
+        output[method] = {
+            "interval_50": _interval_summary(rec50, alpha=.50),
+            "interval_80": _interval_summary(rec80, alpha=.20),
+            "width_distribution_80": {
+                "p10": _quantile(widths, .10),
+                "p50": _quantile(widths, .50),
+                "p90": _quantile(widths, .90),
+            },
+            "source_usage": dict(sorted(source_usage.items())),
+            "by_test_season": by_season,
+        }
+    return {
+        "methods": output,
+        "method": (
+            "Empirically resamples paired pregame projection errors for drives and points-per-drive, "
+            "preserving their covariance, then propagates them through points = drives * PPD. "
+            "All residual pairs come only from seasons before the test season."
+        ),
+    }
+
+
 def _quality_ablation(repository: CFBRepository, rows: list[dict[str, Any]], *,
                       backtest_version: str) -> dict[str, Any] | None:
     """Reuse xPoints' matched temporal ablation for the report's test range."""
@@ -1458,6 +1570,7 @@ def report(repository: CFBRepository, *, from_season: int | None = None,
         "temporal_uncertainty": _uncertainty_from_prior_seasons(all_rows, rows),
         "uncertainty_sharpness_benchmark": _uncertainty_sharpness_benchmark(all_rows, rows),
         "heteroskedastic_uncertainty": _heteroskedastic_uncertainty(all_rows, rows),
+        "structural_chain_uncertainty": _structural_chain_uncertainty(all_rows, rows),
         "empirical_residual_bands": {
             "offensive_points": _residual_band(
                 rows, "projected_offensive_points", "actual_offensive_points"),
