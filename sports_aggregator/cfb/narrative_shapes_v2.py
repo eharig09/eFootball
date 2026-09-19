@@ -342,7 +342,32 @@ def _feature_diagnostics(train: list[dict[str, Any]],
     return output
 
 
-def _canonical_interactions(rows: list[dict[str, Any]], *, test_season: int,
+def _v2_tags(row: dict[str, Any],
+             line_state: dict[tuple[int, str], dict[str, float | None]]) -> list[str]:
+    # Preserve result/schedule narratives from v1, but regenerate all Line-Elo
+    # narratives from the calibrated, centered v2 state.
+    market_tags = {"market_darling", "market_skepticism", "market_chase", "market_lag"}
+    tags = [
+        c for c in v1.CATEGORY_COLUMNS
+        if c not in market_tags and int(row.get(c) or 0)
+    ]
+    state = line_state.get((int(row["game_id"]), str(row["team"])), {})
+    gap = state.get("centered_line_gap")
+    change = state.get("perception_change_v2")
+    if gap is not None and float(gap) >= 75.0:
+        tags.append("market_darling")
+    if gap is not None and float(gap) <= -75.0:
+        tags.append("market_skepticism")
+    if change is not None and float(change) >= 35.0:
+        tags.append("market_chase")
+    if change is not None and float(change) <= -35.0:
+        tags.append("market_lag")
+    return tags
+
+
+def _canonical_interactions(rows: list[dict[str, Any]],
+                            line_state: dict[tuple[int, str], dict[str, float | None]],
+                            *, test_season: int,
                             min_train_rows: int, min_test_rows: int) -> list[dict[str, Any]]:
     lookup = {(int(r["game_id"]), str(r["team"])): r for r in rows}
     buckets: dict[tuple[str, str], dict[str, list[float]]] = defaultdict(
@@ -353,8 +378,8 @@ def _canonical_interactions(rows: list[dict[str, Any]], *, test_season: int,
         opponent = lookup.get((int(row["game_id"]), str(row["opponent"])))
         if not opponent:
             continue
-        own_tags = [c for c in v1.CATEGORY_COLUMNS if int(row.get(c) or 0)]
-        opp_tags = [c for c in v1.CATEGORY_COLUMNS if int(opponent.get(c) or 0)]
+        own_tags = _v2_tags(row, line_state)
+        opp_tags = _v2_tags(opponent, line_state)
         period = "test" if int(row["season"]) == int(test_season) else (
             "train" if int(row["season"]) < int(test_season) else None)
         if not period:
@@ -495,6 +520,7 @@ def report(repository: CFBRepository, *, test_season: int = 2025,
         },
         "canonical_narrative_interactions": _canonical_interactions(
             rows,
+            line_state,
             test_season=int(test_season),
             min_train_rows=int(min_train_rows),
             min_test_rows=int(min_test_rows),
