@@ -13,6 +13,8 @@ from sports_aggregator.nfl.pass_rate_projection import report as pass_rate_repor
 from sports_aggregator.nfl.efficiency_projection import report as efficiency_report
 from sports_aggregator.nfl.state_recency_ablation import report as state_recency_report
 from sports_aggregator.nfl.modeling_readiness import audit as readiness_audit
+from sports_aggregator.nfl.qb_quality_projection import report as qb_quality_report
+from sports_aggregator.nfl.pressure_ol_readiness import report as pressure_ol_readiness_report
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -20,6 +22,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="instance/nfl.sqlite3")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    pressure_ready = sub.add_parser("pressure-ol-readiness")
+    pressure_ready.add_argument("--from-year", type=int, default=2010)
+    pressure_ready.add_argument("--to-year", type=int, default=2026)
+
+    qb_quality = sub.add_parser("qb-quality-backtest")
+    qb_quality.add_argument("--from-year", type=int, default=2010)
+    qb_quality.add_argument("--to-year", type=int, default=2025)
 
     readiness = sub.add_parser("readiness")
     readiness.add_argument("--from-year", type=int, default=2010)
@@ -55,6 +65,24 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     repository = NFLRepository(Path(args.db))
+
+    if args.command == "pressure-ol-readiness":
+        payload = pressure_ol_readiness_report(
+            repository,
+            from_season=int(args.from_year),
+            to_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "qb-quality-backtest":
+        payload = qb_quality_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
 
     if args.command == "readiness":
         payload = readiness_audit(
