@@ -389,6 +389,13 @@ CREATE TABLE IF NOT EXISTS nfl_pff_player_metrics (
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_pff_metrics_player ON nfl_pff_player_metrics(season,gsis_id,week,family);
 CREATE INDEX IF NOT EXISTS idx_nfl_pff_metrics_team ON nfl_pff_player_metrics(season,team,week,family,metric);
+CREATE TABLE IF NOT EXISTS nfl_pff_upload_blobs (
+ filename TEXT PRIMARY KEY,
+ content BLOB NOT NULL,
+ size_bytes INTEGER NOT NULL,
+ sha256 TEXT NOT NULL,
+ uploaded_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS nfl_pff_imports (
  import_id INTEGER PRIMARY KEY AUTOINCREMENT, season INTEGER NOT NULL,
  started_at TEXT NOT NULL, finished_at TEXT NOT NULL,
