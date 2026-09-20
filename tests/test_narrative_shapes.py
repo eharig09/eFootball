@@ -45,6 +45,32 @@ def test_v2_difference_requires_both_sides():
     assert nsv2._difference(None, 2.0) is None
 
 
+def test_v2_choose_line_rate_falls_back_when_validation_season_has_no_rows():
+    rows = [
+        {
+            "game_id": 1,
+            "side": "home",
+            "season": 2021,
+            "team": "A",
+            "opponent": "B",
+            "market_expected_margin": 3.0,
+            "true_elo": 1500.0,
+        },
+        {
+            "game_id": 1,
+            "side": "away",
+            "season": 2021,
+            "team": "B",
+            "opponent": "A",
+            "market_expected_margin": -3.0,
+            "true_elo": 1500.0,
+        },
+    ]
+    rate, grid = nsv2._choose_line_rate(rows, validation_season=2024)
+    assert rate == ns.DEFAULT_LINE_LEARNING_RATE
+    assert all(item["n"] == 0 for item in grid)
+
+
 def test_v2_ridge_can_fit_simple_residual_signal():
     rows = []
     for value in (-2.0, -1.0, 0.0, 1.0, 2.0):
