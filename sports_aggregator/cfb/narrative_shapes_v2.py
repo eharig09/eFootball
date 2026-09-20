@@ -258,6 +258,12 @@ def _choose_line_rate(rows: list[dict[str, Any]], *, validation_season: int
             "line_rmse": round(_rmse(vals), 4) if vals else None,
         })
     eligible = [g for g in grid if g["line_rmse"] is not None]
+    if not eligible:
+        # Historical backfills can legitimately leave the requested validation
+        # season without Line-Elo observations.  Falling back to the existing
+        # production default keeps downstream lens research deterministic and
+        # leak-safe instead of selecting from a future season or crashing.
+        return float(v1.DEFAULT_LINE_LEARNING_RATE), grid
     selected = min(eligible, key=lambda g: (g["line_rmse"], g["line_mae"]))
     return float(selected["learning_rate"]), grid
 
