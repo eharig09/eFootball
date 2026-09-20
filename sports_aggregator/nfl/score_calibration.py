@@ -118,6 +118,7 @@ def _game_rows(repository: NFLRepository, *, start_season: int, end_season: int)
         games.append({
             "game_id": home["game_id"],
             "season": int(home["season"]),
+            "week": int(home["week"]),
             "raw_home_points": hp,
             "raw_away_points": ap,
             "raw_total": hp+ap,

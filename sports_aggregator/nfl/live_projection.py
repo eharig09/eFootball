@@ -240,6 +240,7 @@ def report(repository: NFLRepository, *, season: int, week: int):
         away_r = next(r for r in team_rows if r["side"] == "away")
         home_r = next(r for r in team_rows if r["side"] == "home")
         game_row = {
+            "week": int(game["week"]),
             "raw_total": home_r["raw_pred_points"] + away_r["raw_pred_points"],
             "raw_margin": home_r["raw_pred_points"] - away_r["raw_pred_points"],
             "sum_pred_drives": home_r["pred_drives"] + away_r["pred_drives"],

@@ -37,6 +37,7 @@ TOTAL_SCALE_FEATURES = (
     "sum_pred_drives",
     "sum_pred_total_plays",
     "abs_sum_pred_combined_epa",
+    "week",
 )
 MARGIN_SCALE_FEATURES = (
     "abs_cal_margin",
@@ -45,6 +46,7 @@ MARGIN_SCALE_FEATURES = (
     "abs_diff_pred_pass_epa",
     "abs_diff_pred_rush_epa",
     "abs_diff_pred_combined_epa",
+    "week",
 )
 
 
@@ -126,6 +128,21 @@ def _regime_summary(rows: list[dict[str, Any]], kind: str, method: str, level: f
     for label, fn in defs:
         buckets[label] = _interval_summary([r for r in rows if fn(r)], pred, actual, hk)
     return buckets
+
+
+def _week_regime_summary(rows: list[dict[str, Any]], kind: str, method: str, level: float):
+    hk = f"{kind}_{method}_hw_{str(level).replace('.', '_')}"
+    pred = "cal_total" if kind == "total" else "cal_margin"
+    actual = "actual_total" if kind == "total" else "actual_margin"
+    defs = (
+        ("week<=3", lambda r: int(r["week"]) <= 3),
+        ("week4-8", lambda r: 4 <= int(r["week"]) <= 8),
+        ("week9+", lambda r: int(r["week"]) >= 9),
+    )
+    return {
+        label: _interval_summary([r for r in rows if fn(r)], pred, actual, hk)
+        for label, fn in defs
+    }
 
 
 def _calibrated_oof(repository: NFLRepository, start_season: int, end_season: int):
@@ -213,6 +230,7 @@ def report(repository: NFLRepository, *, start_season=2010, end_season=2025):
 
     pooled_levels = {}
     regimes = {}
+    week_regimes = {}
     for level in LEVELS:
         suffix = str(level).replace(".", "_")
         pooled_levels[str(level)] = {
@@ -231,6 +249,12 @@ def report(repository: NFLRepository, *, start_season=2010, end_season=2025):
             "margin_global": _regime_summary(pooled, "margin", "global", level),
             "margin_conditional": _regime_summary(pooled, "margin", "conditional", level),
         }
+        week_regimes[str(level)] = {
+            "total_global": _week_regime_summary(pooled, "total", "global", level),
+            "total_conditional": _week_regime_summary(pooled, "total", "conditional", level),
+            "margin_global": _week_regime_summary(pooled, "margin", "global", level),
+            "margin_conditional": _week_regime_summary(pooled, "margin", "conditional", level),
+        }
 
     return {
         "version": MODEL_VERSION,
@@ -248,4 +272,5 @@ def report(repository: NFLRepository, *, start_season=2010, end_season=2025):
         "walk_forward": folds,
         "pooled": pooled_levels,
         "regimes": regimes,
+        "week_regimes": week_regimes,
     }
