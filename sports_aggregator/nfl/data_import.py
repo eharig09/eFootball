@@ -11,6 +11,8 @@ get PFF data in at all.
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timezone
+import hashlib
 import secrets
 
 from flask import Blueprint, current_app, render_template, request, session
@@ -139,6 +141,16 @@ def import_pff():
                 f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
                 "Nothing was uploaded or changed.")), 400
         (destination / name).write_bytes(raw)
+        digest = hashlib.sha256(raw).hexdigest()
+        _repository().initialize()
+        with _repository()._connect() as connection:
+            connection.execute(
+                """INSERT OR REPLACE INTO nfl_pff_upload_blobs
+                   (filename,content,size_bytes,sha256,uploaded_at)
+                   VALUES(?,?,?,?,?)""",
+                (name, raw, len(raw), digest, datetime.now(timezone.utc).isoformat()),
+            )
+            connection.commit()
         saved.append(name)
 
     if not saved:
