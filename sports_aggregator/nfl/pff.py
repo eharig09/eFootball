@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import closing
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -122,7 +123,36 @@ class NFLPFFService:
         # ingest PFF exports without one.
         self.upload_root = Path(upload_root).resolve() if upload_root else None
 
+    def _restore_upload_blobs(self) -> int:
+        if not self.upload_root:
+            return 0
+        self.repository.initialize()
+        self.upload_root.mkdir(parents=True, exist_ok=True)
+        restored = 0
+        with closing(self.repository._connect()) as connection:
+            rows = connection.execute(
+                "SELECT filename,content,size_bytes,sha256 FROM nfl_pff_upload_blobs ORDER BY filename"
+            )
+            for row in rows:
+                name = Path(str(row["filename"])).name
+                destination = self.upload_root / name
+                raw = bytes(row["content"])
+                digest = hashlib.sha256(raw).hexdigest()
+                if digest != str(row["sha256"]):
+                    continue
+                if destination.exists():
+                    try:
+                        existing = destination.read_bytes()
+                        if hashlib.sha256(existing).hexdigest() == digest:
+                            continue
+                    except OSError:
+                        pass
+                destination.write_bytes(raw)
+                restored += 1
+        return restored
+
     def _paths(self) -> list[Path]:
+        self._restore_upload_blobs()
         seen: set[Path] = set()
         output = []
         for relative in PFF_ROOTS:
