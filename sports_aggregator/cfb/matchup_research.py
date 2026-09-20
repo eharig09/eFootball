@@ -129,6 +129,15 @@ def _live_narrative_context(
                 (ns.NARRATIVE_VERSION,),
             )
         ]
+        schedule_rows = [
+            dict(r) for r in connection.execute(
+                """SELECT game_id,start_date,home_team,away_team
+                   FROM games
+                   WHERE season=? AND start_date>?
+                   ORDER BY start_date,game_id""",
+                (season, str(kickoff)),
+            )
+        ]
 
     if not history:
         return {"available": False, "reason": "Narrative history unavailable.", "teams": []}
@@ -209,6 +218,39 @@ def _live_narrative_context(
         )
         change = gap - prior_gap if gap is not None and prior_gap is not None else None
 
+        next_opponent = None
+        for scheduled in schedule_rows:
+            if int(scheduled["game_id"]) == int(game.get("game_id") or -1):
+                continue
+            if scheduled["home_team"] == team:
+                next_opponent = str(scheduled["away_team"])
+                break
+            if scheduled["away_team"] == team:
+                next_opponent = str(scheduled["home_team"])
+                break
+
+        next_elo = None
+        if next_opponent:
+            next_candidates = [
+                r for r in history
+                if str(r["team"]) == next_opponent
+                and (not kickoff or str(r.get("kickoff") or "") < str(kickoff))
+                and r.get("true_elo") is not None
+            ]
+            if next_candidates:
+                next_elo = float(next_candidates[-1]["true_elo"])
+
+        opponent_true = true_elo.get(opponent)
+        lookahead_score = (
+            float(next_elo) - float(opponent_true)
+            if next_elo is not None and opponent_true is not None else None
+        )
+        sandwich_score = (
+            min(float(prev_opp_elo), float(next_elo)) - float(opponent_true)
+            if prev_opp_elo is not None and next_elo is not None and opponent_true is not None
+            else None
+        )
+
         tags = {
             "statement_win": statement,
             "upset_win": upset_win,
@@ -226,6 +268,12 @@ def _live_narrative_context(
             "market_skepticism": int(gap is not None and gap <= -75.0),
             "market_chase": int(change is not None and change >= 35.0),
             "market_lag": int(change is not None and change <= -35.0),
+            "lookahead_candidate": int(
+                lookahead_score is not None and lookahead_score >= 100.0
+            ),
+            "sandwich_candidate": int(
+                sandwich_score is not None and sandwich_score >= 100.0
+            ),
         }
         active[team] = [key for key, value in tags.items() if value]
 
@@ -242,10 +290,6 @@ def _live_narrative_context(
             for opp_tag in active.get(opponent, []):
                 combo_rows = []
                 for r in historical:
-                    if str(r["team"]) != team and int(r.get(tag) or 0):
-                        # Team identity is irrelevant historically; orientation is
-                        # the tagged team's perspective, so include every tagged row.
-                        pass
                     if not int(r.get(tag) or 0):
                         continue
                     opp_row = by_game_team.get((int(r["game_id"]), str(r["opponent"])))
