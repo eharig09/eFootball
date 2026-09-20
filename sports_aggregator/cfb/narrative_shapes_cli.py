@@ -18,6 +18,7 @@ from sports_aggregator.cfb import conditional_convergence
 from sports_aggregator.cfb import convergence_validation
 from sports_aggregator.cfb import convergence_robustness
 from sports_aggregator.cfb import convergence_action_policy
+from sports_aggregator.cfb import market_ats_totals
 
 
 def main() -> None:
@@ -85,6 +86,14 @@ def main() -> None:
         "--output-dir",
         default="research_outputs",
         help="Directory for full JSON/CSV artifacts; console output stays compact",
+    )
+
+    market_totals = sub.add_parser("market-ats-totals")
+    market_totals.add_argument("--year", type=int, default=2025)
+    market_totals.add_argument(
+        "--output-dir",
+        default="research_outputs",
+        help="Directory for ATS/totals research artifacts",
     )
 
     load_dotenv()
@@ -175,6 +184,16 @@ def main() -> None:
             args.output_dir,
         )
         payload = convergence_action_policy.compact_console_summary(payload, paths)
+    elif args.command == "market-ats-totals":
+        payload = market_ats_totals.report(
+            repository,
+            test_season=args.year,
+        )
+        paths = market_ats_totals.export_report(
+            payload,
+            args.output_dir,
+        )
+        payload = market_ats_totals.compact_console_summary(payload, paths)
     else:
         payload = narrative_shapes.report(
             repository,
