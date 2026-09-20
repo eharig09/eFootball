@@ -24,6 +24,60 @@ SPORT_KEY = "americanfootball_ncaaf"
 BOOKMAKER = "draftkings"
 
 
+GRADE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cfb_draftkings_convergence_grade (
+  season INTEGER NOT NULL,
+  game_id INTEGER NOT NULL,
+  week INTEGER,
+  kickoff TEXT,
+  home_team TEXT NOT NULL,
+  away_team TEXT NOT NULL,
+  selected_side TEXT NOT NULL,
+  selected_team TEXT NOT NULL,
+  draftkings_spread REAL NOT NULL,
+  draftkings_price INTEGER NOT NULL,
+  snapshot_timestamp TEXT,
+  book_last_update TEXT,
+  result TEXT NOT NULL,
+  profit_units REAL NOT NULL,
+  applicability_points INTEGER,
+  applicability_band TEXT,
+  graded_at TEXT NOT NULL,
+  PRIMARY KEY(season, game_id)
+);
+"""
+
+
+def _persist_grades(repository: CFBRepository, season: int,
+                    rows: list[dict[str, Any]]) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with repository.transaction() as connection:
+        connection.executescript(GRADE_SCHEMA)
+        connection.execute(
+            "DELETE FROM cfb_draftkings_convergence_grade WHERE season=?",
+            (int(season),),
+        )
+        connection.executemany(
+            """INSERT INTO cfb_draftkings_convergence_grade(
+                 season,game_id,week,kickoff,home_team,away_team,
+                 selected_side,selected_team,draftkings_spread,draftkings_price,
+                 snapshot_timestamp,book_last_update,result,profit_units,
+                 applicability_points,applicability_band,graded_at
+               ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            [
+                (
+                    int(season), int(r["game_id"]), r.get("week"), r.get("kickoff"),
+                    r["home_team"], r["away_team"], r["selected_side"], r["selected_team"],
+                    float(r["draftkings_spread"]), int(r["draftkings_price"]),
+                    r.get("draftkings_snapshot_timestamp"), r.get("draftkings_last_update"),
+                    r["result"], float(r["profit_units"]),
+                    r.get("applicability_points_at_dk_close"),
+                    r.get("applicability_band_at_dk_close"), now,
+                )
+                for r in rows
+            ],
+        )
+
 def _american_profit(price: int | float, stake: float = 1.0) -> float:
     p = float(price)
     if p == 0:
@@ -357,6 +411,8 @@ def report(repository: CFBRepository, *, season: int = 2026,
         by_band[band] = _roi_summary([
             r for r in graded if r["applicability_band_at_dk_close"] == band
         ])
+
+    _persist_grades(repository, int(season), graded)
 
     return {
         "version": "draftkings-full-convergence-roi-v1",
