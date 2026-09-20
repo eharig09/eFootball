@@ -148,9 +148,9 @@
     <div class="lab-board" id="forecast-score">
         <div class="lab-row lab-score-row">
             <div class="lab-label">SCORE</div>
-            <div class="lab-score-team"><strong>{{ game.away_team }}</strong><b>{{ projection.away.expected_points | cell('f1') }}</b></div>
-            <div class="lab-score-team"><strong>{{ game.home_team }}</strong><b>{{ projection.home.expected_points | cell('f1') }}</b></div>
-            <div class="lab-score-meta"><span>Total</span><b>{{ projected_total | cell('f1') }}</b></div>
+            <div class="lab-score-team"><strong>{{ game.away_team }}</strong><b>{{ research_intelligence.display_score.away | cell('f1') }}</b></div>
+            <div class="lab-score-team"><strong>{{ game.home_team }}</strong><b>{{ research_intelligence.display_score.home | cell('f1') }}</b></div>
+            <div class="lab-score-meta"><span>Total</span><b>{{ research_intelligence.display_score.total | cell('f1') }}</b></div>
         </div>
 
         <div class="lab-row lab-market-row">
@@ -184,9 +184,9 @@
 
         <div class="lab-row lab-total-detail-row">
             <div class="lab-label">TOTAL CTX</div>
-            <div><span>80% scoring range</span><b>
-                {% if research_intelligence.totals.interval80_low is not none and research_intelligence.totals.interval80_high is not none %}
-                {{ research_intelligence.totals.interval80_low | cell('f1') }}–{{ research_intelligence.totals.interval80_high | cell('f1') }}
+            <div><span>50% scoring range</span><b>
+                {% if research_intelligence.totals.interval50_low is not none and research_intelligence.totals.interval50_high is not none %}
+                {{ research_intelligence.totals.interval50_low | cell('f1') }}–{{ research_intelligence.totals.interval50_high | cell('f1') }}
                 {% else %}—{% endif %}
             </b></div>
             <div><span>Open</span><b>{{ research_intelligence.totals.opening_total | cell('f1') }}</b></div>
@@ -200,9 +200,17 @@
 
         <div class="lab-row lab-state-row">
             <div class="lab-label">STATE</div>
-            <div><span>Signal</span>
-                {% if game.week <= 3 %}<b class="lab-context">Early context</b><i>Standard MP not eligible</i>
-                {% else %}<b>No live FC label</b><i>Requires MP + structural + Line Elo</i>{% endif %}
+            <div class="lab-fc-cell"><span>Full Convergence</span>
+                {% if research_intelligence.convergence.qualified %}
+                <b class="lab-good">YES</b><i>All 3 frozen criteria passed</i>
+                {% else %}
+                <b class="lab-context">PENDING</b><i>Not qualified until all 3 criteria pass</i>
+                {% endif %}
+                <div class="lab-fc-checks">
+                    {% for criterion in research_intelligence.convergence.criteria %}
+                    <small><em>{{ '✓' if criterion.state == 'pass' else '×' if criterion.state == 'fail' else '·' }}</em>{{ criterion.label }} {{ criterion.requirement }}</small>
+                    {% endfor %}
+                </div>
             </div>
             <div><span>Applicability</span>
                 {% if research_intelligence.spread.inside_lt14_applicability is sameas true %}<b class="lab-good">Supported</b><i>market &lt;14</i>
