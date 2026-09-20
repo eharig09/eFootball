@@ -39,6 +39,7 @@
         <div class="nfl-tab-buttons">
             <button type="button" role="tab" data-nfl-tab="overview" aria-selected="true"><span>Overview</span><small>Form · history</small></button>
             <button type="button" role="tab" data-nfl-tab="stats" aria-selected="false"><span>Stats + shape</span><small>Projection · ATS</small></button>
+            {% if not game.completed %}<button type="button" role="tab" data-nfl-tab="football-lab" aria-selected="false"><span>Football Lab</span><small>Model · market · drivers</small></button>{% endif %}
             <button type="button" role="tab" data-nfl-tab="matchups" aria-selected="false"><span>Matchups</span><small>Units · zones · trenches</small></button>
             <button type="button" role="tab" data-nfl-tab="players" aria-selected="false"><span>Players</span><small>Usage · leaders</small></button>
             <button type="button" role="tab" data-nfl-tab="coverage" aria-selected="false"><span>Coverage</span><small>News · social</small></button>
@@ -51,6 +52,62 @@
         <article><span>Total</span><b>{{ game.total_line|cell('f1') }}</b><small>Closing/source total</small></article>
         {% for code in [game.away_team, game.home_team] %}{% set profile = profiles.get(code) %}{% set identity = away_identity if code == game.away_team else home_identity %}
         <article style="--club:{{ identity.color or '#53738c' }}"><span>{{ code }} net EPA</span><b>{{ profile.net_epa|cell('signed2') if profile else '&mdash;'|safe }}</b><small>Offense minus EPA allowed</small></article>{% endfor %}
+    </section>
+
+    {% if not game.completed %}
+    <section class="section football-lab-panel" id="football-lab" data-nfl-panel="football-lab">
+        <div class="section-head"><div><p class="eyebrow">Independent projection + market context</p><h2>Football Lab</h2></div></div>
+        <p class="section-note">The market-implied score is the primary accuracy anchor. Football Lab remains an independent football-only diagnostic built from projected drives, plays per drive, pass rate, and pass/rush efficiency. A disagreement is context, not automatically an edge.</p>
+
+        {% if football_lab_status and football_lab_status.partial_prior_week %}
+        <div class="football-lab-warning"><b>Partial prior-week data</b><span>Week {{ football_lab_status.prior_week }} is still in progress: {{ football_lab_status.completed_prior_week_games }} of {{ football_lab_status.prior_week_games }} games are complete. This Week {{ football_lab_status.target_week }} projection uses only completed games currently stored.</span></div>
+        {% endif %}
+
+        {% if football_lab and football_lab.status != 'insufficient_history' %}
+        {% set fl = football_lab.football_lab %}
+        {% set ma = football_lab.market_anchor %}
+        {% set components = football_lab.components %}
+        <div class="football-lab-score-grid">
+            <article class="football-lab-score-card market">
+                <header><span>Market anchor</span><small>Primary accuracy view</small></header>
+                {% if ma %}
+                <div class="football-lab-scoreline"><span><b>{{ game.away_team }}</b><strong>{{ ma.away_points|cell('f1') }}</strong></span><i>at</i><span><b>{{ game.home_team }}</b><strong>{{ ma.home_points|cell('f1') }}</strong></span></div>
+                <footer><span>Total <b>{{ ma.total|cell('f1') }}</b></span><span>{{ game.home_team }} margin <b>{{ ma.margin|cell('signed') }}</b></span></footer>
+                {% else %}<p class="empty">No market spread/total is stored for this game.</p>{% endif %}
+            </article>
+            <article class="football-lab-score-card model">
+                <header><span>Independent Football Lab</span><small>Market-free diagnostic</small></header>
+                <div class="football-lab-scoreline"><span><b>{{ game.away_team }}</b><strong>{{ fl.away_points|cell('f1') }}</strong></span><i>at</i><span><b>{{ game.home_team }}</b><strong>{{ fl.home_points|cell('f1') }}</strong></span></div>
+                <footer><span>Total <b>{{ fl.total|cell('f1') }}</b></span><span>{{ game.home_team }} margin <b>{{ fl.margin|cell('signed') }}</b></span></footer>
+            </article>
+        </div>
+
+        <div class="football-lab-delta-strip">
+            <article><small>Margin disagreement</small><b>{{ football_lab.disagreement.margin|cell('signed') if football_lab.disagreement.margin is not none else '&mdash;'|safe }}</b><span>Football Lab minus market</span></article>
+            <article><small>Total disagreement</small><b>{{ football_lab.disagreement.total|cell('signed') if football_lab.disagreement.total is not none else '&mdash;'|safe }}</b><span>Football Lab minus market</span></article>
+            <article><small>Historical margin scale</small><b>{{ football_lab.historical_uncertainty_scale.margin_residual_scale|cell('f1') if football_lab.historical_uncertainty_scale else '&mdash;'|safe }}</b><span>Typical residual scale, points</span></article>
+            <article><small>Historical total scale</small><b>{{ football_lab.historical_uncertainty_scale.total_residual_scale|cell('f1') if football_lab.historical_uncertainty_scale else '&mdash;'|safe }}</b><span>Typical residual scale, points</span></article>
+        </div>
+
+        <h3 class="subsection-title">Projected matchup components</h3>
+        <p class="section-note">These are model inputs and intermediate expectations, not observed Week {{ game.week }} results. The differential column is {{ game.home_team }} minus {{ game.away_team }}.</p>
+        <div class="football-lab-component-table">
+            <header><span>Component</span><b>{{ game.away_team }}</b><b>{{ game.home_team }}</b><strong>Diff</strong></header>
+            {% for label, key, fmt in [
+                ('Drives', 'drives', 'f2'),
+                ('Plays / drive', 'plays_per_drive', 'f2'),
+                ('Pass rate', 'pass_rate', 'rate'),
+                ('Pass EPA / play', 'pass_epa_per_play', 'signed2'),
+                ('Rush EPA / play', 'rush_epa_per_play', 'signed2'),
+                ('Combined EPA / play', 'combined_epa_per_play', 'signed2')
+            ] %}
+            <div><span>{{ label }}</span><b>{{ components.away[key]|cell(fmt) }}</b><b>{{ components.home[key]|cell(fmt) }}</b><strong>{% if key == 'pass_epa_per_play' %}{{ components.differentials_home_minus_away.pass_epa|cell('signed2') }}{% elif key == 'rush_epa_per_play' %}{{ components.differentials_home_minus_away.rush_epa|cell('signed2') }}{% elif key == 'combined_epa_per_play' %}{{ (components.home.combined_epa_per_play - components.away.combined_epa_per_play)|cell('signed2') }}{% else %}{{ components.differentials_home_minus_away[key]|cell(fmt) }}{% endif %}</strong></div>
+            {% endfor %}
+        </div>
+        <div class="football-lab-policy"><b>How to read this</b><p>Use the market score as the accuracy baseline. Use Football Lab to understand whether pace, possession volume, passing efficiency, or rushing efficiency is creating a materially different football view. Historical testing did not support automatically treating larger disagreement as a stronger betting signal.</p></div>
+        {% else %}
+        <div class="empty football-lab-empty">Football Lab does not yet have enough pregame history to build this matchup projection.{% if football_lab_status and football_lab_status.error %} <small>{{ football_lab_status.error }}</small>{% endif %}</div>
+        {% endif %}
     </section>
 
     {% if availability %}
