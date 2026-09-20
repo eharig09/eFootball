@@ -908,3 +908,17 @@ table.data td.impact-emerging .sub { color:var(--blue); }
     .fc-total-regime { grid-column:2 / -1; border-top:1px solid var(--line); }
     .fc-history-grid { grid-template-columns:1fr; }
 }
+
+.fc-key-list { display:flex !important; gap:3px; flex-wrap:wrap; }
+.fc-key-list em {
+    display:inline-flex; min-width:20px; justify-content:center; padding:2px 4px;
+    border:1px solid var(--line-strong); border-radius:3px; color:var(--rust);
+    font:900 .55rem var(--display-font); font-style:normal;
+}
+.fc-key-list em.is-none { color:var(--muted); }
+@media (max-width:720px) {
+    .fc-market { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .fc-market-arrow { display:none; }
+    .fc-market-cell.is-edge { display:block; }
+    .fc-market-cell b { font-size:.72rem; }
+}
