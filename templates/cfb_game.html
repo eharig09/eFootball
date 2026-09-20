@@ -198,17 +198,44 @@
             </div>
         </div>
 
+        <div class="lab-row lab-total-status-row">
+            <div class="lab-label">TOTALS</div>
+            <div class="lab-total-decision">
+                <span>Status</span>
+                <b class="{{ 'lab-context' if research_intelligence.totals.decision_status.state == 'research_watch' else '' }}">
+                    {{ research_intelligence.totals.decision_status.label }}
+                </b>
+                <i>{{ research_intelligence.totals.decision_status.note }}</i>
+            </div>
+            {% for component in research_intelligence.totals.decision_status.components[:2] %}
+            <div class="lab-total-component {{ 'is-on' if component.state == 'on' else 'is-off' }}">
+                <span>{{ component.label }}</span>
+                <b>
+                    {% if component.value is number %}{{ component.value | cell('f1') }}
+                    {% elif component.value %}{{ component.value }}
+                    {% else %}—{% endif %}
+                </b>
+                <i>{{ 'matched' if component.state == 'on' else 'not met' }}</i>
+            </div>
+            {% endfor %}
+        </div>
+
         <div class="lab-row lab-state-row">
             <div class="lab-label">STATE</div>
-            <div class="lab-fc-cell"><span>Full Convergence</span>
+            <div class="lab-fc-cell {{ 'is-qualified' if research_intelligence.convergence.qualified else '' }}">
+                <span>Full Convergence</span>
                 {% if research_intelligence.convergence.qualified %}
-                <b class="lab-good">YES</b><i>All 3 frozen criteria passed</i>
+                <b class="lab-good lab-fc-status">QUALIFIED</b><i>All 3 frozen criteria passed</i>
                 {% else %}
-                <b class="lab-context">PENDING</b><i>Not qualified until all 3 criteria pass</i>
+                <b class="lab-context lab-fc-status">PENDING</b><i>All three must pass</i>
                 {% endif %}
-                <div class="lab-fc-checks">
+                <div class="lab-fc-lights">
                     {% for criterion in research_intelligence.convergence.criteria %}
-                    <small><em>{{ '✓' if criterion.state == 'pass' else '×' if criterion.state == 'fail' else '·' }}</em>{{ criterion.label }} {{ criterion.requirement }}</small>
+                    <div class="lab-fc-light is-{{ criterion.state }}">
+                        <em></em>
+                        <strong>{{ criterion.label }}</strong>
+                        <small>{{ criterion.requirement }}</small>
+                    </div>
                     {% endfor %}
                 </div>
             </div>
@@ -226,6 +253,19 @@
                     {% if (market_abs < 14 <= model_abs) or (model_abs < 14 <= market_abs) %}<em>14</em>{% endif %}
                 {% else %}—{% endif %}
             </b></div>
+        </div>
+
+        <div class="lab-row lab-performance-row">
+            <div class="lab-label">2026 FC</div>
+            {% if research_intelligence.actionable_2026.available %}
+            <div><span>Record</span><b>{{ research_intelligence.actionable_2026.record }}</b><i>DraftKings graded</i></div>
+            <div><span>Net units</span><b>{{ research_intelligence.actionable_2026.net_units | cell('signed') }}u</b><i>1u risked / pick</i></div>
+            <div><span>ROI</span><b>{{ (research_intelligence.actionable_2026.roi * 100) | cell('f1') }}%</b><i>real DK prices</i></div>
+            {% else %}
+            <div><span>Record</span><b>—</b><i>No stored DK grades yet</i></div>
+            <div><span>Net units</span><b>—</b><i>Run DK convergence audit</i></div>
+            <div><span>ROI</span><b>—</b><i>Never substitutes -110</i></div>
+            {% endif %}
         </div>
 
         <div class="lab-row lab-shape-row" id="forecast-drivers">
