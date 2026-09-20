@@ -38,6 +38,7 @@ from sports_aggregator.nfl.staff import staff_tendencies
 from sports_aggregator.nfl.teams import team_context
 from sports_aggregator.nfl.trenches import trench_matchups
 from sports_aggregator.nfl.usage import returning_player_usage
+from sports_aggregator.nfl.live_projection import report as live_projection_report
 from sports_aggregator.nfl.views import (
     current_games, depth_chart_table, efficiency_table, game_stat_tables, game_stats_table,
     leaders_table, matchup_cards, movement_tables, player_game_log, player_game_log_tables,
@@ -970,6 +971,44 @@ def _game_packet(game_id: str) -> dict:
     availability = ({code: availability_packet(repository, game["season"], code)
                      for code in (game["away_team"], game["home_team"])}
                     if not game["completed"] else {})
+
+    football_lab = None
+    football_lab_status = None
+    if not game["completed"]:
+        try:
+            live_packet = live_projection_report(
+                repository,
+                season=int(game["season"]),
+                week=int(game["week"]),
+            )
+            football_lab = next(
+                (row for row in live_packet.get("games", [])
+                 if str(row.get("game_id")) == str(game_id)),
+                None,
+            )
+            completed_before = [
+                row for row in repository.schedule(game["season"])
+                if row.get("completed")
+                and int(row.get("week") or 0) == int(game["week"]) - 1
+            ]
+            prior_week_games = [
+                row for row in repository.schedule(game["season"])
+                if int(row.get("week") or 0) == int(game["week"]) - 1
+            ]
+            football_lab_status = {
+                "target_week": int(game["week"]),
+                "prior_week": int(game["week"]) - 1,
+                "completed_prior_week_games": len(completed_before),
+                "prior_week_games": len(prior_week_games),
+                "prior_week_complete": bool(prior_week_games) and len(completed_before) == len(prior_week_games),
+                "partial_prior_week": bool(prior_week_games) and len(completed_before) < len(prior_week_games),
+            }
+        except Exception as exc:
+            football_lab_status = {
+                "target_week": int(game["week"]),
+                "error": str(exc),
+            }
+
     return {"game": game, "away_identity": identities.get(game["away_team"], {}),
             "home_identity": identities.get(game["home_team"], {}),
             "stats": game_stats_table(player_rows),
@@ -986,6 +1025,8 @@ def _game_packet(game_id: str) -> dict:
             "passer_ngs": passer_ngs,
             "trenches": trenches,
             "availability": availability,
+            "football_lab": football_lab,
+            "football_lab_status": football_lab_status,
             "postgame": postgame,
             "opponent_mode": opponent_mode,
             "content": content_items, "content_streams": _reporting_streams(content_items),
@@ -1031,6 +1072,8 @@ def game_api(game_id: str):
         "run_matchups": packet["run_matchups"],
         "trenches": packet["trenches"],
         "availability": packet["availability"],
+        "football_lab": packet["football_lab"],
+        "football_lab_status": packet["football_lab_status"],
         "postgame": packet["postgame"],
         "opponent_mode": packet["opponent_mode"],
         "content": packet["content"],
