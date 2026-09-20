@@ -115,8 +115,15 @@ def _team_row(game: dict[str, Any], side: str, history, league):
     opponent = str(game["away_team" if side == "home" else "home_team"])
     own = history[team].snapshot()
     opp = history[opponent].snapshot()
-    if int(own.get("games") or 0) < MIN_PRIOR_GAMES or int(opp.get("games") or 0) < MIN_PRIOR_GAMES:
-        return None
+    # Below MIN_PRIOR_GAMES, still build a row rather than blacking out the
+    # whole game: the fallback loop below already leans on league averages
+    # for any missing field, which is exactly what a thin sample needs. Just
+    # flag it so the caller can show an honest "still warming up" caveat
+    # instead of presenting it with full confidence.
+    thin_sample = (
+        int(own.get("games") or 0) < MIN_PRIOR_GAMES
+        or int(opp.get("games") or 0) < MIN_PRIOR_GAMES
+    )
 
     home = side == "home"
     rest = game.get("home_rest" if home else "away_rest")
@@ -168,6 +175,7 @@ def _team_row(game: dict[str, Any], side: str, history, league):
     for key, league_key in fallback.items():
         if row.get(key) is None:
             row[key] = float(league.get(league_key, 0.0))
+    row["thin_sample"] = thin_sample
     return row
 
 
@@ -293,6 +301,7 @@ def report(repository: NFLRepository, *, season: int, week: int):
             "game_date": game.get("game_date"),
             "away_team": game["away_team"], "home_team": game["home_team"],
             "completed": bool(game.get("completed")),
+            "thin_sample": bool(home_r.get("thin_sample") or away_r.get("thin_sample")),
             "market_anchor": market,
             "football_lab": {
                 "margin": cal_margin,

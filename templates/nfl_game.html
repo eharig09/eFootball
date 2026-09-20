@@ -63,6 +63,10 @@
         <div class="football-lab-warning"><b>Partial prior-week data</b><span>Week {{ football_lab_status.prior_week }} is still in progress: {{ football_lab_status.completed_prior_week_games }} of {{ football_lab_status.prior_week_games }} games are complete. This Week {{ football_lab_status.target_week }} projection uses only completed games currently stored.</span></div>
         {% endif %}
 
+        {% if football_lab and football_lab.thin_sample %}
+        <div class="football-lab-warning"><b>Early-season estimate</b><span>At least one team has fewer than 3 games of season history, so this forecast leans on league-average priors instead of this team's own numbers. Football Lab sharpens week to week and reaches full confidence by around week 3&ndash;4.</span></div>
+        {% endif %}
+
         {% if football_lab and football_lab.status != 'insufficient_history' %}
         {% set fl = football_lab.football_lab %}
         {% set ma = football_lab.market_anchor %}
