@@ -667,3 +667,31 @@ def test_totals_narrative_result_handles_push():
     assert tna._result(2.0) == "win"
     assert tna._result(-2.0) == "loss"
     assert tna._result(0.0) == "push"
+
+
+from sports_aggregator.cfb import matchup_research as mr
+
+
+def test_matchup_research_market_totals_average_provider_open_and_close():
+    lines = {
+        "providers": [
+            {"over_under_open": 50.0, "over_under": 52.0},
+            {"over_under_open": 51.0, "over_under": 53.0},
+            {"over_under_open": None, "over_under": 54.0},
+        ]
+    }
+    opening, closing = mr._market_totals(lines)
+    assert opening == 50.5
+    assert closing == 53.0
+
+
+def test_matchup_research_uses_fixed_total_edge_buckets():
+    assert mr._edge_bucket(0.7) == "<1"
+    assert mr._edge_bucket(-3.8) == "3-4.99"
+    assert mr._edge_bucket(9.0) == "8+"
+
+
+def test_matchup_research_keeps_roi_out_of_benchmark_packet():
+    assert "win_rate" in mr.SPREAD_RESEARCH["full_convergence"]
+    assert "roi" not in mr.SPREAD_RESEARCH["full_convergence"]
+    assert "roi" not in mr.TOTAL_RESEARCH["overall"]

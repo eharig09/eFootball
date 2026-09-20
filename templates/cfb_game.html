@@ -223,6 +223,136 @@
     </div>
 </section>
 
+<section class="section research-intelligence" data-mobile-tab-panel="projection">
+    <div class="research-intelligence-head">
+        <div>
+            <div class="eyebrow">Research intelligence</div>
+            <h2>Model vs market</h2>
+        </div>
+        <span class="research-status">Historical context · not a recommendation</span>
+    </div>
+    <div class="section-note">
+        Live matchup state is shown beside the historical regimes uncovered in the
+        walk-forward spread and totals research. Records describe how prior games in
+        those research samples settled against the stored consensus line.
+    </div>
+
+    {% if research_intelligence.available %}
+    <div class="research-live-grid">
+        <article class="research-market-card">
+            <div class="research-card-kicker">Spread</div>
+            <div class="research-card-headline">
+                {% if research_intelligence.spread.model_side %}
+                <strong>{{ research_intelligence.spread.model_side }}</strong>
+                <span>model lean</span>
+                {% else %}
+                <strong>Even</strong><span>model vs market</span>
+                {% endif %}
+            </div>
+            <div class="research-metrics">
+                <span><i>Model home margin</i><b>{{ research_intelligence.spread.projected_home_margin | cell('signed') }}</b></span>
+                <span><i>Market home margin</i><b>{{ research_intelligence.spread.market_home_margin | cell('signed') }}</b></span>
+                <span><i>Model-market gap</i><b>{{ research_intelligence.spread.model_market_edge_home | cell('signed') }}</b></span>
+            </div>
+            {% if research_intelligence.spread.inside_lt14_applicability is not none %}
+            <div class="research-chip {{ 'is-supported' if research_intelligence.spread.inside_lt14_applicability else 'is-caution' }}">
+                {% if research_intelligence.spread.inside_lt14_applicability %}
+                Inside the &lt;14 research applicability boundary
+                {% else %}
+                14+ spread · outside the preferred research domain
+                {% endif %}
+            </div>
+            {% endif %}
+        </article>
+
+        <article class="research-market-card">
+            <div class="research-card-kicker">Total</div>
+            <div class="research-card-headline">
+                <strong>{{ research_intelligence.totals.model_direction | upper if research_intelligence.totals.model_direction else '—' }}</strong>
+                <span>
+                    {% if research_intelligence.totals.closing_edge is not none %}
+                    {{ research_intelligence.totals.closing_edge | abs | cell('f1') }} pts vs close
+                    {% else %}market comparison unavailable{% endif %}
+                </span>
+            </div>
+            <div class="research-metrics">
+                <span><i>Calibrated model</i><b>{{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}</b></span>
+                <span><i>Open</i><b>{{ research_intelligence.totals.opening_total | cell('f1') }}</b></span>
+                <span><i>Close / snapshot</i><b>{{ research_intelligence.totals.closing_total | cell('f1') }}</b></span>
+            </div>
+            <div class="research-chip-row">
+                {% if research_intelligence.totals.opening_edge_bucket %}
+                <span class="research-chip">Opening edge {{ research_intelligence.totals.opening_edge_bucket }}</span>
+                {% endif %}
+                {% if research_intelligence.totals.movement_state %}
+                <span class="research-chip">{{ research_intelligence.totals.movement_state | replace('_', ' ') }}</span>
+                {% endif %}
+            </div>
+        </article>
+    </div>
+
+    {% if research_intelligence.totals.regime_benchmark %}
+    {% set regime = research_intelligence.totals.regime_benchmark %}
+    <div class="research-regime-callout">
+        <div>
+            <span class="research-card-kicker">Closest historical totals regime</span>
+            <strong>{{ regime.label }}</strong>
+        </div>
+        <div class="research-regime-number"><b>{{ regime.win_rate | cell('f2') }}%</b><span>{{ regime.n }} games</span></div>
+        <div class="research-regime-number"><b>{{ regime.mean_residual | cell('signed') }}</b><span>mean aligned residual</span></div>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty">{{ research_intelligence.reason }}</div>
+    {% endif %}
+
+    <div class="research-benchmark-grid">
+        <article class="research-benchmark-panel">
+            <div class="research-panel-title">
+                <div><span class="research-card-kicker">Spread research</span><h3>Frozen convergence study</h3></div>
+            </div>
+            {% for key in ['full_convergence', 'full_convergence_lt14'] %}
+            {% set item = research_intelligence.spread_research[key] %}
+            <div class="research-benchmark-row">
+                <div><strong>{{ item.label }}</strong><span>{{ item.note }}</span></div>
+                <div class="research-record"><b>{{ item.record }}</b><span>{{ item.win_rate | cell('f2') }}% · n={{ item.n }}</span></div>
+            </div>
+            {% endfor %}
+            <p class="research-read">
+                The 14+ group was unstable by season, so it is treated as an applicability
+                warning rather than a fade signal. Full Convergence requires the frozen
+                Margin Power + structural + Line Elo architecture; the live card above
+                does not claim that status from model margin alone.
+            </p>
+        </article>
+
+        <article class="research-benchmark-panel">
+            <div class="research-panel-title">
+                <div><span class="research-card-kicker">Totals research</span><h3>Football Lab vs market</h3></div>
+            </div>
+            {% for key in ['overall', 'narrative_adjusted'] %}
+            {% set item = research_intelligence.total_research[key] %}
+            <div class="research-benchmark-row">
+                <div><strong>{{ item.label }}</strong><span>{{ item.note }}</span></div>
+                <div class="research-record"><b>{{ item.record }}</b><span>{{ item.win_rate | cell('f2') }}% · n={{ item.n }}</span></div>
+            </div>
+            {% endfor %}
+            <p class="research-read">
+                The totals edge was stronger in 2023–24 and weakened in 2025. Market
+                movement did not behave like confirmation overall; the useful information
+                appears to be regime-specific, especially at larger opening disagreements.
+            </p>
+        </article>
+    </div>
+
+    <details class="research-methodology">
+        <summary>Research notes &amp; limitations</summary>
+        <ul>
+            {% for note in research_intelligence.research_notes %}<li>{{ note }}</li>{% endfor %}
+        </ul>
+    </details>
+</section>
+
 <section class="section" data-mobile-tab-panel="projection">
     <h2>How the projection is built</h2>
     <div class="section-note">

@@ -27,6 +27,7 @@ from sports_aggregator.cfb.history import (
     team_historical_stats, upcoming_player_opponent_history)
 from sports_aggregator.cfb.game_projection import narrative as projection_narrative
 from sports_aggregator.cfb.game_projection import project_matchup
+from sports_aggregator.cfb.matchup_research import matchup_research_packet
 from sports_aggregator.cfb.lines import game_lines, lines_by_game
 from sports_aggregator.cfb import meta as page_meta_for
 from sports_aggregator.cfb import syndication
@@ -738,6 +739,8 @@ def game_preview(game_id: int):
     away_arrivals = repository.roster_movements(game["away_team_id"], season)["arrivals"]
     home_arrivals = repository.roster_movements(game["home_team_id"], season)["arrivals"]
     projection = _game_projection(repository, game)
+    research_intelligence = matchup_research_packet(
+        repository, game, projection, market)
     return render_template(
         "cfb_game.html",
         meta=page_meta_for.game_meta(
@@ -753,6 +756,7 @@ def game_preview(game_id: int):
             game, fpi, market, elo, core_by_team),
         model_probability=model_probability_track(game, fpi, elo, market),
         projection=projection,
+        research_intelligence=research_intelligence,
         projection_lines=projection_narrative(projection),
         projection_table=views.game_projection_table(projection),
         game_shape=game_shape(
