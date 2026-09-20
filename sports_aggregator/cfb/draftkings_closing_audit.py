@@ -172,6 +172,33 @@ def _pipeline_counts(repository: CFBRepository, season: int) -> dict[str, int]:
         r for r in ipl.build_lens_rows(repository, test_season=int(season))
         if int(r["season"]) == int(season)
     ]
+    with repository._reader() as connection:
+        season_games = [
+            dict(r) for r in connection.execute(
+                """SELECT game_id,week,start_date,home_team,away_team
+                   FROM games
+                   WHERE season=? AND home_points IS NOT NULL AND away_points IS NOT NULL
+                   ORDER BY week,start_date,game_id""",
+                (int(season),),
+            )
+        ]
+    prior_counts: dict[str, int] = {}
+    margin_power_eligibility_by_week: dict[str, dict[str, int]] = {}
+    for game in season_games:
+        week = str(game.get("week"))
+        bucket = margin_power_eligibility_by_week.setdefault(
+            week, {"completed_games": 0, "both_teams_3_plus_prior": 0}
+        )
+        bucket["completed_games"] += 1
+        home = str(game["home_team"])
+        away = str(game["away_team"])
+        if (
+            prior_counts.get(home, 0) >= ipl.MIN_SRS_GAMES
+            and prior_counts.get(away, 0) >= ipl.MIN_SRS_GAMES
+        ):
+            bucket["both_teams_3_plus_prior"] += 1
+        prior_counts[home] = prior_counts.get(home, 0) + 1
+        prior_counts[away] = prior_counts.get(away, 0) + 1
     classified = [
         r for r in cap.cr._classified_with_context(repository, test_season=int(season))
         if int(r["season"]) == int(season)
@@ -210,6 +237,12 @@ def _pipeline_counts(repository: CFBRepository, season: int) -> dict[str, int]:
         "xpoints_rows": int(xpoints),
         "drive_outcome_rows": int(drive_outcomes),
         "lens_rows": len(lens_rows),
+        "margin_power_min_prior_games": int(ipl.MIN_SRS_GAMES),
+        "margin_power_eligibility_by_week": margin_power_eligibility_by_week,
+        "margin_power_eligible_completed_games": sum(
+            item["both_teams_3_plus_prior"]
+            for item in margin_power_eligibility_by_week.values()
+        ),
         "lens_non_null": lens_coverage,
         "rows_with_two_plus_structural_components": structural_two_plus,
         "rows_with_primary_market_and_structural_inputs": both_confirmation_inputs,
