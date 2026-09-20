@@ -138,6 +138,25 @@ def _live_narrative_context(
                 (season, str(kickoff)),
             )
         ]
+        fpi_rows = [
+            dict(r) for r in connection.execute(
+                """SELECT team_id,pred_point_diff
+                   FROM fpi_game_projections
+                   WHERE season=? AND game_id=?""",
+                (season, int(game.get("game_id") or -1)),
+            )
+        ] if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='fpi_game_projections'"
+        ).fetchone() else []
+        core_rows = [
+            dict(r) for r in connection.execute(
+                """SELECT team,overall,through_week
+                   FROM core_ratings
+                   WHERE season=? AND through_week<?
+                   ORDER BY through_week""",
+                (season, int(game.get("week") or 0)),
+            )
+        ]
 
     if not history:
         return {"available": False, "reason": "Narrative history unavailable.", "teams": []}
@@ -174,6 +193,23 @@ def _live_narrative_context(
         home: game.get("home_pregame_elo"),
         away: game.get("away_pregame_elo"),
     }
+    team_ids = {
+        home: game.get("home_team_id"),
+        away: game.get("away_team_id"),
+    }
+    fpi_margin = {
+        team: next(
+            (float(r["pred_point_diff"]) for r in fpi_rows
+             if team_ids.get(team) is not None
+             and int(r["team_id"]) == int(team_ids[team])
+             and r.get("pred_point_diff") is not None),
+            None,
+        )
+        for team in (home, away)
+    }
+    latest_core = {}
+    for row in core_rows:
+        latest_core[str(row["team"])] = float(row["overall"])
     line_elo = {home: current_line_home, away: current_line_away}
     market_expected = {
         home: market_home,
@@ -251,6 +287,30 @@ def _live_narrative_context(
             else None
         )
 
+        elo_expected = ns._expected_margin_from_elo(
+            true_elo.get(team), true_elo.get(opponent),
+            is_home=(team == home),
+            home_field_points=ns.DEFAULT_HOME_FIELD_POINTS,
+        )
+        team_core = latest_core.get(team)
+        opp_core = latest_core.get(opponent)
+        core_margin = (
+            float(team_core) - float(opp_core)
+            if team_core is not None and opp_core is not None else None
+        )
+        rating_lenses = [
+            value for value in (
+                elo_expected,
+                fpi_margin.get(team),
+                core_margin,
+                team_market,
+            ) if value is not None
+        ]
+        disputed = int(
+            len(rating_lenses) >= 3
+            and (max(float(v) for v in rating_lenses) - min(float(v) for v in rating_lenses)) >= 7.0
+        )
+
         tags = {
             "statement_win": statement,
             "upset_win": upset_win,
@@ -274,6 +334,7 @@ def _live_narrative_context(
             "sandwich_candidate": int(
                 sandwich_score is not None and sandwich_score >= 100.0
             ),
+            "disputed_team": disputed,
         }
         active[team] = [key for key, value in tags.items() if value]
 
