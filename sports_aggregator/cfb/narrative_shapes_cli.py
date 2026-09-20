@@ -27,6 +27,7 @@ from sports_aggregator.cfb import totals_convergence
 from sports_aggregator.cfb import totals_market_movement
 from sports_aggregator.cfb import totals_divergence_matrix
 from sports_aggregator.cfb import totals_narrative_adjustment
+from sports_aggregator.cfb import favorite_compression_audit
 
 
 def main() -> None:
@@ -146,6 +147,10 @@ def main() -> None:
         default="research_outputs",
         help="Directory for totals divergence artifacts",
     )
+
+    favorite_compression = sub.add_parser("favorite-compression-audit")
+    favorite_compression.add_argument("--from-year", type=int, default=2021)
+    favorite_compression.add_argument("--to-year", type=int, default=2026)
 
     totals_narrative = sub.add_parser("totals-narrative-adjustment")
     totals_narrative.add_argument("--year", type=int, default=2025)
@@ -312,6 +317,12 @@ def main() -> None:
             args.output_dir,
         )
         payload = totals_divergence_matrix.compact_console_summary(payload, paths)
+    elif args.command == "favorite-compression-audit":
+        payload = favorite_compression_audit.report(
+            repository,
+            from_season=args.from_year,
+            to_season=args.to_year,
+        )
     elif args.command == "totals-narrative-adjustment":
         payload = totals_narrative_adjustment.report(
             repository,
