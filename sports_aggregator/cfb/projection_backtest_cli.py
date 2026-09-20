@@ -13,13 +13,14 @@ from sports_aggregator.cfb.projection_backtest import (
 from sports_aggregator.cfb.historical_coverage import audit as historical_coverage_audit, export_report as export_historical_coverage
 from sports_aggregator.cfb.score_construction_calibration import report as score_calibration_report
 from sports_aggregator.cfb.margin_feature_ablation import report as margin_feature_ablation_report
+from sports_aggregator.cfb.margin_common_sample import report as margin_common_sample_report
 from sports_aggregator.cfb.backfill_readiness import readiness as historical_backfill_readiness
 from sports_aggregator.cfb.repository import CFBRepository
 
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Walk-forward backtest of the live CFB projection")
-    p.add_argument("command", choices=("prepare", "coverage", "coverage-audit", "backfill-readiness", "run", "report", "score-calibration", "margin-feature-ablation"))
+    p.add_argument("command", choices=("prepare", "coverage", "coverage-audit", "backfill-readiness", "run", "report", "score-calibration", "margin-feature-ablation", "margin-common-sample"))
     p.add_argument("--from-year", type=int, default=None)
     p.add_argument("--to-year", type=int, default=None)
     p.add_argument("--year", type=int, default=None,
@@ -50,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     repository = CFBRepository(
         args.database or os.getenv("CFB_DATABASE_PATH", "instance/cfb.sqlite3"))
-    first, last = _years(args, required=args.command in {"prepare", "coverage", "coverage-audit", "backfill-readiness", "run", "score-calibration", "margin-feature-ablation"})
+    first, last = _years(args, required=args.command in {"prepare", "coverage", "coverage-audit", "backfill-readiness", "run", "score-calibration", "margin-feature-ablation", "margin-common-sample"})
     if args.command == "prepare":
         payload = prepare_actuals(
             repository, from_season=int(first), to_season=int(last))
@@ -82,6 +83,14 @@ def main(argv: list[str] | None = None) -> int:
         )
     elif args.command == "margin-feature-ablation":
         payload = margin_feature_ablation_report(
+            repository,
+            from_season=int(first),
+            to_season=int(last),
+            training_from_season=args.points_train_from_year,
+            backtest_version=args.backtest_version,
+        )
+    elif args.command == "margin-common-sample":
+        payload = margin_common_sample_report(
             repository,
             from_season=int(first),
             to_season=int(last),
