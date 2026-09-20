@@ -1101,21 +1101,46 @@ _NGS_HEADLINE_DEFINITIONS = {
 _NGS_HEADLINE_DEFINITIONS["FB"] = _NGS_HEADLINE_DEFINITIONS["RB"]
 _NGS_HEADLINE_DEFINITIONS["TE"] = _NGS_HEADLINE_DEFINITIONS["WR"]
 
+#: Volume metric each headline stat's rank should be gated on -- same idea as
+#: PFF's minimum route/attempt/snap floor (see season_scaled_minimum), so a
+#: player with one or two early-season touches can't headline a #1 rank badge.
+_NGS_VOLUME_METRIC = {
+    "ngs_pass_cpoe": "attempts", "ngs_pass_time_to_throw": "attempts",
+    "ngs_pass_aggressiveness": "attempts", "ngs_pass_intended_air_yards": "attempts",
+    "ngs_rush_efficiency": "carries", "ngs_rush_yards_over_expected": "carries",
+    "ngs_rush_stacked_box_pct": "carries",
+    "ngs_rec_separation": "targets", "ngs_rec_cushion": "targets",
+    "ngs_rec_yac_above_expectation": "targets",
+}
+#: Full-season qualifying floor per volume metric, scaled down early in the
+#: season the same way PFF's grade minimums are.
+_NGS_VOLUME_MINIMUM = {"attempts": 100, "carries": 50, "targets": 30}
+
 
 def _ngs_headline_stats(repository: NFLRepository, season: int, position: str | None,
                         player_id: str) -> list[dict]:
     """Next Gen Stats headline cards, ranked the same way as the traditional
-    ones -- against every same-position peer with a qualifying value."""
+    ones -- against every same-position peer with a qualifying value AND a
+    qualifying sample size, so an early-season small sample can't top the rank."""
     definitions = _NGS_HEADLINE_DEFINITIONS.get((position or "").upper())
     if not definitions:
         return []
     peers = [with_rates(row) for row in repository.player_season_stats(
         season, SUM_METRICS, position=(position or "").upper())]
-    metrics = [key for _label, key, _fmt in definitions]
-    ranks = rank_lookup(peers, id_key="player_id", metrics=metrics)
     own = next((row for row in peers if row["player_id"] == player_id), None)
     if own is None:
         return []
+    weeks_played = repository.latest_stat_week(season) or 0
+    metrics = [key for _label, key, _fmt in definitions]
+    # Every stat for a given position shares the same volume metric (attempts,
+    # carries, or targets), so one qualifying-peer pool covers all of them.
+    volume_field = _NGS_VOLUME_METRIC.get(metrics[0])
+    if volume_field:
+        threshold = season_scaled_minimum(_NGS_VOLUME_MINIMUM[volume_field], weeks_played)
+        qualifying_peers = [row for row in peers if (row.get(volume_field) or 0) >= threshold]
+    else:
+        qualifying_peers = peers
+    ranks = rank_lookup(qualifying_peers, id_key="player_id", metrics=metrics)
     stats = []
     for label, key, value_format in definitions:
         value = own.get(key)

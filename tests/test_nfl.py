@@ -42,7 +42,7 @@ from sports_aggregator.nfl.search import search_entities as search_nfl_entities
 from sports_aggregator.nfl.views import (
     current_games, ingestion_runs_table, schedule_table, zone_matchup_table,
 )
-from sports_aggregator.nfl.web import _headline_stats_with_rank
+from sports_aggregator.nfl.web import _headline_stats_with_rank, _ngs_headline_stats
 from sports_aggregator.social.models import SourceProfile
 from sports_aggregator.social.registry import SourceRegistry
 
@@ -1605,6 +1605,66 @@ class HeadlinePlayerRankTests(unittest.TestCase):
         stats = _headline_stats_with_rank(repository, 2026, "QB", "qb1", totals)
         for stat in stats:
             self.assertNotIn("rank", stat)
+
+
+class _FakeNgsRepository:
+    """Duck-typed stand-in exposing only what _ngs_headline_stats calls."""
+
+    def __init__(self, rows_by_position: dict[str, list[dict]], weeks_played: int):
+        self._rows_by_position = rows_by_position
+        self._weeks_played = weeks_played
+
+    def player_season_stats(self, _season, _metrics, *, position=None, **_kwargs):
+        return self._rows_by_position.get(position, [])
+
+    def latest_stat_week(self, _season):
+        return self._weeks_played
+
+
+def _qb_row(player_id: str, attempts: float, cpoe: float) -> dict:
+    return {
+        "player_id": player_id, "attempts": attempts,
+        "ngs_pass_cpoe_wtd": cpoe * attempts,
+        "ngs_pass_time_to_throw_wtd": 2.7 * attempts,
+        "ngs_pass_aggressiveness_wtd": 0.18 * attempts,
+        "ngs_pass_intended_air_yards_wtd": 8.0 * attempts,
+    }
+
+
+class NgsHeadlineStatsTests(unittest.TestCase):
+    def test_full_season_qualifying_peer_gets_a_rank(self):
+        repository = _FakeNgsRepository({"QB": [
+            _qb_row("qb1", 550, 0.05),
+            _qb_row("qb2", 500, 0.02),
+        ]}, weeks_played=18)
+        stats = _ngs_headline_stats(repository, 2026, "QB", "qb1")
+        by_label = {stat["label"]: stat for stat in stats}
+        self.assertEqual(by_label["CPOE (NGS)"]["rank"], 1)
+        self.assertEqual(by_label["CPOE (NGS)"]["of"], 2)
+
+    def test_early_season_thin_sample_shows_value_but_no_rank(self):
+        # Week 2: only 5 attempts so far -- exactly the fluke-#1-CPOE scenario
+        # a volume floor exists to prevent.
+        repository = _FakeNgsRepository({"QB": [
+            _qb_row("qb1", 5, 0.30),
+            _qb_row("qb2", 40, 0.02),
+        ]}, weeks_played=2)
+        stats = _ngs_headline_stats(repository, 2026, "QB", "qb1")
+        by_label = {stat["label"]: stat for stat in stats}
+        self.assertIn("CPOE (NGS)", by_label)
+        self.assertNotIn("rank", by_label["CPOE (NGS)"])
+
+    def test_early_season_threshold_is_scaled_down_not_disabled(self):
+        # Week 2 scales the 100-attempt full-season floor down to 12
+        # (100 * max(0.12, 2/18)) -- enough volume should still qualify.
+        repository = _FakeNgsRepository({"QB": [
+            _qb_row("qb1", 15, 0.05),
+            _qb_row("qb2", 40, 0.02),
+        ]}, weeks_played=2)
+        stats = _ngs_headline_stats(repository, 2026, "QB", "qb1")
+        by_label = {stat["label"]: stat for stat in stats}
+        self.assertEqual(by_label["CPOE (NGS)"]["rank"], 1)
+        self.assertEqual(by_label["CPOE (NGS)"]["of"], 2)
 
 
 class NFLRefreshCliTests(unittest.TestCase):
