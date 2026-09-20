@@ -251,6 +251,10 @@ def _feature_row(
             float(game[f"{side}_plays"]) / float(game[f"{side}_drives"])
             if float(game[f"{side}_drives"]) else None
         ),
+        "actual_neutral_pass_rate": (
+            float(game[f"{side}_neutral_passes"]) / float(game[f"{side}_neutral_plays"])
+            if float(game[f"{side}_neutral_plays"]) else None
+        ),
         **{key: float(values[key]) for key in FEATURES},
     }
 
