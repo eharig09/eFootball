@@ -42,6 +42,13 @@ def _key_number_region(abs_spread: float | None) -> str:
     return "14_plus"
 
 
+def _half_point_spread(abs_spread: float | None) -> str:
+    if abs_spread is None:
+        return "unknown"
+    rounded = round(float(abs_spread) * 2.0) / 2.0
+    return f"{rounded:.1f}"
+
+
 def _result_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
         return {"n": 0}
@@ -92,6 +99,16 @@ def report(
         spread = row.get("market_home_margin")
         row["abs_market_spread"] = abs(float(spread)) if spread is not None else None
         row["key_number_region"] = _key_number_region(row["abs_market_spread"])
+        row["rounded_half_point_spread"] = _half_point_spread(row["abs_market_spread"])
+        actual_margin = row.get("actual_home_margin")
+        row["abs_actual_margin"] = (
+            abs(float(actual_margin)) if actual_margin is not None else None
+        )
+        row["actual_margin_landed_key"] = (
+            "3" if row["abs_actual_margin"] == 3.0
+            else "7" if row["abs_actual_margin"] == 7.0
+            else "other"
+        )
 
     season_quality = []
     for season in range(int(from_season), int(to_season) + 1):
@@ -168,10 +185,18 @@ def report(
                     else "5.75-6.5"
                 ),
             ),
+            "by_rounded_half_point_spread": _group_summary(
+                between, lambda r: r["rounded_half_point_spread"]
+            ),
+            "by_actual_margin_landed_key": _group_summary(
+                between, lambda r: r["actual_margin_landed_key"]
+            ),
         },
         "notes": [
             "Key-number regions use a +/-0.25 window around 3 and 7 because provider consensus spreads can average across books.",
             "The between-3-and-7 diagnostic is descriptive and does not create a new betting rule.",
+            "Consensus spreads are also rounded to the nearest half point for micro-bucket inspection; raw consensus values remain unchanged for classification.",
+            "Actual final margins landing exactly on 3 or 7 are reported to test whether key-number outcomes disproportionately drive the ATS result.",
             "Input-quality rates are computed on the same historical lens rows used by the convergence research.",
         ],
     }
