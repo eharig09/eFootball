@@ -1047,3 +1047,31 @@ table.data td.impact-emerging .sub { color:var(--blue); }
     .lab-board-head h2 { font-size:.92rem; }
     .lab-history-grid { grid-template-columns:1fr; }
 }
+
+
+/* Forecast v4 readability bump without increasing panel spacing. */
+.lab-board-head h2 { font-size:1.12rem; }
+.lab-board-head > span { font-size:.5rem; }
+.lab-label { font-size:.5rem; }
+.lab-row span { font-size:.47rem; }
+.lab-row b { font-size:.8rem; }
+.lab-row i { font-size:.49rem; }
+.lab-score-team strong { font-size:.74rem; }
+.lab-score-team b { font-size:1.48rem; }
+.lab-score-meta b { font-size:.96rem; }
+.lab-shape-team strong { font-size:.66rem; }
+.lab-shape-team span { font-size:.52rem; }
+.lab-narrative-team > strong { font-size:.64rem; }
+.lab-narrative-line em { font-size:.53rem; }
+.lab-narrative-line b { font-size:.58rem; }
+.lab-narrative-line i { font-size:.46rem; }
+.lab-fc-checks {
+    display:flex; flex-wrap:wrap; gap:3px 8px; margin-top:3px;
+}
+.lab-fc-checks small {
+    color:var(--muted); font-size:.46rem; white-space:nowrap;
+}
+.lab-fc-checks em {
+    display:inline-block; margin-right:3px; color:var(--gold);
+    font-style:normal; font-weight:900;
+}
