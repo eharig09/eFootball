@@ -808,3 +808,27 @@ def test_normalize_play_compact_history_omits_raw_json_payload():
     assert compact["raw_json"] == "{}"
     assert compact["play_id"] == normal["play_id"]
     assert compact["yards_gained"] == normal["yards_gained"]
+
+
+from sports_aggregator.cfb import convergence_quality_audit as cqa
+
+
+def test_key_number_regions_separate_three_to_seven_gap():
+    assert cqa._key_number_region(3.0) == "around_3"
+    assert cqa._key_number_region(4.5) == "between_3_and_7"
+    assert cqa._key_number_region(6.5) == "between_3_and_7"
+    assert cqa._key_number_region(7.0) == "around_7"
+    assert cqa._key_number_region(14.0) == "14_plus"
+
+
+def test_quality_result_summary_excludes_pushes():
+    rows = [
+        {"aligned_residual": 3.0},
+        {"aligned_residual": -1.0},
+        {"aligned_residual": 0.0},
+    ]
+    result = cqa._result_summary(rows)
+    assert result["wins"] == 1
+    assert result["losses"] == 1
+    assert result["pushes"] == 1
+    assert result["win_rate_ex_pushes"] == 0.5
