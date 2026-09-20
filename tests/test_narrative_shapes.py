@@ -932,3 +932,25 @@ def test_early_margin_power_forecast_summary():
     assert summary["n"] == 2
     assert summary["coverage_rate"] == 1.0
     assert summary["market_direction_hit_rate"] == 1.0
+
+
+from sports_aggregator.cfb import early_convergence as ec
+
+
+def test_early_convergence_std_requires_sample():
+    assert ec._std([1.0] * 19) is None
+    assert ec._std([float(i) for i in range(20)]) is not None
+
+
+def test_early_convergence_summary():
+    rows = [
+        {"aligned_residual": 3.0},
+        {"aligned_residual": -1.0},
+        {"aligned_residual": 0.0},
+    ]
+    summary = ec._summary(rows)
+    assert summary["n"] == 3
+    assert summary["wins"] == 1
+    assert summary["losses"] == 1
+    assert summary["pushes"] == 1
+    assert summary["win_rate_ex_pushes"] == 0.5
