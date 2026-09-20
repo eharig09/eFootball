@@ -19,6 +19,7 @@ from sports_aggregator.nfl.scoring_bridge import report as scoring_bridge_report
 from sports_aggregator.nfl.score_calibration import report as score_calibration_report
 from sports_aggregator.nfl.margin_strength_ablation import report as margin_strength_report
 from sports_aggregator.nfl.uncertainty_calibration import report as uncertainty_report
+from sports_aggregator.nfl.market_disagreement import report as market_disagreement_report
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -26,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="instance/nfl.sqlite3")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    market_disagreement = sub.add_parser("market-disagreement")
+    market_disagreement.add_argument("--from-year", type=int, default=2010)
+    market_disagreement.add_argument("--to-year", type=int, default=2025)
 
     uncertainty = sub.add_parser("uncertainty-backtest")
     uncertainty.add_argument("--from-year", type=int, default=2010)
@@ -85,6 +90,15 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     repository = NFLRepository(Path(args.db))
+
+    if args.command == "market-disagreement":
+        payload = market_disagreement_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
 
     if args.command == "uncertainty-backtest":
         payload = uncertainty_report(
