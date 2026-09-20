@@ -275,8 +275,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         segment = (request.args.get("segment") or "content").strip().casefold()
         # "rosters" already refreshes injury/staff context alongside the
         # roster itself (sync-nfl-rosters calls sync_espn_context too).
-        if segment not in {"content", "rosters", "weather"}:
-            abort(400, description="segment must be one of content, rosters, weather")
+        allowed_nfl_segments = {
+            "content", "rosters", "weather",
+            "core-foundation", "core-stats", "core-depth", "core-pbp",
+        }
+        if segment not in allowed_nfl_segments:
+            abort(400, description="segment must be one of " + ", ".join(sorted(allowed_nfl_segments)))
         season = app.config.get("CFB_DEFAULT_SEASON") or current_nfl_season()
         root = Path(__file__).resolve().parent
         nfl_database = Path(app.config["NFL_DATABASE_PATH"])
