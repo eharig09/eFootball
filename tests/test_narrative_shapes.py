@@ -859,3 +859,32 @@ def test_margin_power_edge_magnitude_buckets():
     assert cqa._edge_magnitude_bucket(-5.0) == "5-7.99"
     assert cqa._edge_magnitude_bucket(8.0) == "8-11.99"
     assert cqa._edge_magnitude_bucket(12.0) == "12+"
+
+
+def test_applicability_band_thresholds():
+    assert cqa._applicability_band(3) == "high"
+    assert cqa._applicability_band(1) == "medium"
+    assert cqa._applicability_band(0) == "low"
+
+
+def test_applicability_points_reward_supported_context():
+    row = {
+        "key_number_region": "around_3",
+        "margin_power_edge_bucket": "8-11.99",
+        "margin_power_key_crossing": "crosses_multiple_3_7",
+        "all_three_structural_available": True,
+    }
+    points, reasons = cqa._applicability_points(row)
+    assert points == 4
+    assert "complete_structural_inputs" in reasons
+
+
+def test_applicability_points_penalize_extreme_context():
+    row = {
+        "key_number_region": "14_plus",
+        "margin_power_edge_bucket": "12+",
+        "margin_power_key_crossing": "crosses_multiple_3_7_10_14",
+        "all_three_structural_available": False,
+    }
+    points, _ = cqa._applicability_points(row)
+    assert points == -6
