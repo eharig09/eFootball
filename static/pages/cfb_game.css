@@ -1075,3 +1075,63 @@ table.data td.impact-emerging .sub { color:var(--blue); }
     display:inline-block; margin-right:3px; color:var(--gold);
     font-style:normal; font-weight:900;
 }
+
+
+/* Signal illumination and season tracking. */
+.lab-fc-cell {
+    position:relative;
+    background:color-mix(in srgb,var(--gold) 5%,var(--paper));
+}
+.lab-fc-cell.is-qualified {
+    background:color-mix(in srgb,var(--green) 10%,var(--paper));
+    box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--green) 40%,var(--line));
+}
+.lab-fc-status { font-size:.88rem !important; letter-spacing:.02em; }
+.lab-fc-lights {
+    display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; margin-top:5px;
+}
+.lab-fc-light {
+    min-width:0; padding:4px 5px; border:1px solid var(--line);
+    background:var(--surface-soft);
+}
+.lab-fc-light em {
+    display:inline-block; width:7px; height:7px; margin-right:4px;
+    border-radius:50%; background:var(--line-strong);
+    box-shadow:0 0 0 2px color-mix(in srgb,var(--line-strong) 18%,transparent);
+}
+.lab-fc-light strong {
+    font:900 .48rem var(--display-font); text-transform:uppercase;
+}
+.lab-fc-light small {
+    display:block; margin-top:2px; color:var(--muted); font-size:.42rem;
+}
+.lab-fc-light.is-pass {
+    border-color:color-mix(in srgb,var(--green) 38%,var(--line));
+    background:color-mix(in srgb,var(--green) 8%,var(--paper));
+}
+.lab-fc-light.is-pass em {
+    background:var(--green);
+    box-shadow:0 0 7px color-mix(in srgb,var(--green) 70%,transparent);
+}
+.lab-fc-light.is-fail {
+    border-color:color-mix(in srgb,var(--rust) 38%,var(--line));
+    background:color-mix(in srgb,var(--rust) 7%,var(--paper));
+}
+.lab-fc-light.is-fail em {
+    background:var(--rust);
+    box-shadow:0 0 6px color-mix(in srgb,var(--rust) 55%,transparent);
+}
+.lab-total-status-row .lab-total-component {
+    background:var(--surface-soft);
+}
+.lab-total-component.is-on {
+    background:color-mix(in srgb,var(--gold) 8%,var(--paper));
+    box-shadow:inset 3px 0 color-mix(in srgb,var(--gold) 70%,var(--line));
+}
+.lab-total-component.is-on b { color:var(--gold); }
+.lab-performance-row b { font-size:.86rem; }
+.lab-performance-row > div:nth-child(2) b,
+.lab-performance-row > div:nth-child(3) b,
+.lab-performance-row > div:nth-child(4) b {
+    font-variant-numeric:tabular-nums;
+}
