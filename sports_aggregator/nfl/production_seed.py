@@ -234,6 +234,22 @@ def run(season: int) -> dict[str, Any]:
             state["stages"].append({"stage": "source_directory", "finished_at": _stamp(),
                                     "status": "failed",
                                     "error": f"{type(exc).__name__}: {exc}"})
+        # The public snapshot intentionally excludes private PFF data. Uploaded
+        # CSVs live on the persistent disk, so a DB restore must rehydrate them
+        # before returning or every recreated database appears to have "lost"
+        # PFF after a deploy even though the source files survived.
+        if _pff_available():
+            pff_started = _stamp()
+            completed = subprocess.run(
+                [sys.executable, "-m", "sports_aggregator.nfl.refresh_cli", "pff",
+                 "--season", str(season)],
+                cwd=str(root), env=environment, check=False,
+            )
+            state["stages"].append({
+                "stage": "pff", "started_at": pff_started, "finished_at": _stamp(),
+                "exit_code": completed.returncode,
+                "status": "success" if completed.returncode == 0 else "failed",
+            })
         state["status"] = "success" if not needs_seed(NFLRepository(database), season) else "degraded"
         state["counts"] = NFLRepository(database).counts(season)
         state["finished_at"] = _stamp()
