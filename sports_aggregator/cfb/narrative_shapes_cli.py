@@ -19,6 +19,7 @@ from sports_aggregator.cfb import convergence_validation
 from sports_aggregator.cfb import convergence_robustness
 from sports_aggregator.cfb import convergence_action_policy
 from sports_aggregator.cfb import convergence_quality_audit
+from sports_aggregator.cfb import draftkings_closing_audit
 from sports_aggregator.cfb import market_ats_totals
 from sports_aggregator.cfb import totals_convergence
 from sports_aggregator.cfb import totals_market_movement
@@ -96,6 +97,9 @@ def main() -> None:
     quality_audit = sub.add_parser("convergence-quality-audit")
     quality_audit.add_argument("--from-year", type=int, default=2021)
     quality_audit.add_argument("--to-year", type=int, default=2025)
+
+    dk_roi = sub.add_parser("draftkings-convergence-roi")
+    dk_roi.add_argument("--year", type=int, default=2026)
 
     market_totals = sub.add_parser("market-ats-totals")
     market_totals.add_argument("--year", type=int, default=2025)
@@ -230,6 +234,11 @@ def main() -> None:
             repository,
             from_season=args.from_year,
             to_season=args.to_year,
+        )
+    elif args.command == "draftkings-convergence-roi":
+        payload = draftkings_closing_audit.report(
+            repository,
+            season=args.year,
         )
     elif args.command == "market-ats-totals":
         payload = market_ats_totals.report(

@@ -888,3 +888,28 @@ def test_applicability_points_penalize_extreme_context():
     }
     points, _ = cqa._applicability_points(row)
     assert points == -6
+
+
+from sports_aggregator.cfb import draftkings_closing_audit as dka
+
+
+def test_draftkings_american_profit():
+    assert round(dka._american_profit(-110), 4) == 0.9091
+    assert dka._american_profit(120) == 1.2
+
+
+def test_draftkings_spread_grade():
+    assert dka._grade(-3.5, 7.0) == "win"
+    assert dka._grade(3.5, -7.0) == "loss"
+    assert dka._grade(-7.0, 7.0) == "push"
+
+
+def test_draftkings_roi_uses_actual_prices():
+    rows = [
+        {"result": "win", "profit_units": dka._american_profit(-120)},
+        {"result": "loss", "profit_units": -1.0},
+        {"result": "push", "profit_units": 0.0},
+    ]
+    result = dka._roi_summary(rows)
+    assert result["risked_units"] == 3.0
+    assert result["net_units"] == round((100 / 120) - 1.0, 4)
