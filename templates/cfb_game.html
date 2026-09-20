@@ -126,303 +126,185 @@
     {{ data_table(history_games_table) }}
 </section>
 
-<section class="section projection-workspace" data-mobile-tab-panel="projection">
-    <div class="projection-heading">
-        <div>
-            <div class="eyebrow">Football Lab</div>
-            <h2>Matchup forecast</h2>
-        </div>
-        {% if projection.points_model %}
-        <span class="projection-model-chip">{{ projection.points_model.model_version }}</span>
-        {% endif %}
-    </div>
-    <div class="section-note forecast-lede">
-        Start with the football forecast. Market disagreement and historical signal context
-        are shown separately so a model edge is not mistaken for a qualified signal.
-    </div>
-    <nav class="forecast-jump" aria-label="Forecast sections">
-        <a href="#forecast-score">Forecast</a>
-        <a href="#forecast-market">Disagreement</a>
-        <a href="#forecast-drivers">Game shape</a>
-        <a href="#forecast-method">Method</a>
-    </nav>
-
-    {% if not projection.insufficient_data %}
-    <div class="projection-scoreboard" id="forecast-score" aria-label="Projected score, yardage and quality">
-        {% for side, team, brand in [
-            ('away', game.away_team, away_brand),
-            ('home', game.home_team, home_brand)] %}
-        {% set p = projection[side] %}
-        <article class="projection-team-card"
-                 style="--projection-team:{{ brand.accent }};--projection-team-dark:{{ brand.accent_dark }}">
-            <div class="projection-team-head">
-                <span>{{ 'Away' if side == 'away' else 'Home' }}</span>
-                <strong>{{ team }}</strong>
-            </div>
-            <div class="projection-points">
-                <b>{{ p.expected_points | cell('f1') }}</b>
-                <span>Projected points</span>
-            </div>
-            <div class="projection-headline-stats">
-                <div class="projection-headline-stat">
-                    <b>{{ p.total_yards | cell('int') }}</b>
-                    <span>Total yards</span>
-                </div>
-                <div class="projection-headline-stat projection-quality
-                    {% if p.opponent_quality_edge is not none and p.opponent_quality_edge > 0 %}is-positive
-                    {% elif p.opponent_quality_edge is not none and p.opponent_quality_edge < 0 %}is-negative
-                    {% else %}is-neutral{% endif %}">
-                    <b>{% if p.opponent_quality_edge is not none and p.opponent_quality_edge > 0 %}+{% endif %}{{ p.opponent_quality_edge | cell('f1') }}</b>
-                    <span>Quality edge</span>
-                    {% if p.opponent_quality_sources %}<i>{{ p.opponent_quality_sources }} source{{ '' if p.opponent_quality_sources == 1 else 's' }}</i>{% endif %}
-                </div>
-            </div>
-            <div class="projection-team-foot">
-                <span><b>{{ p.points_per_drive | cell('f2') }}</b> pts/drive</span>
-                <span><b>{{ p.pass_yards | cell('int') }}</b> pass yds</span>
-                <span><b>{{ p.rush_yards | cell('int') }}</b> rush yds</span>
-            </div>
-        </article>
-        {% if loop.first %}
-        <div class="projection-versus" aria-hidden="true">
-            <span>MODEL</span><b>VS</b>
-        </div>
-        {% endif %}
-        {% endfor %}
-    </div>
-
-    {% if projection.away.expected_points is not none and projection.home.expected_points is not none %}
+<section class="section projection-workspace forecast-console" data-mobile-tab-panel="projection">
+    {% set have_points = not projection.insufficient_data and projection.away.expected_points is not none and projection.home.expected_points is not none %}
+    {% if have_points %}
     {% set projected_total = projection.away.expected_points + projection.home.expected_points %}
-    {% set projected_margin = projection.home.expected_points - projection.away.expected_points %}
-    <div class="projection-summary-strip">
-        <span><i>Projected total</i><b>{{ projected_total | cell('f1') }}</b></span>
-        <span><i>Projected margin</i><b>
-            {% if projected_margin > 0 %}{{ game.home_team }} +{{ projected_margin | cell('f1') }}
-            {% elif projected_margin < 0 %}{{ game.away_team }} +{{ (-projected_margin) | cell('f1') }}
-            {% else %}Even{% endif %}
-        </b></span>
-    </div>
+    {% set projected_home_margin = projection.home.expected_points - projection.away.expected_points %}
     {% endif %}
 
-    {% endif %}
-
-    <div class="projection-reads">
-        {% for line in projection_lines %}<p>{{ line }}</p>{% endfor %}
+    <div class="fc-head">
+        <div><span class="eyebrow">Football Lab</span><h2>Forecast</h2></div>
+        {% if projection.points_model %}<span class="fc-version">{{ projection.points_model.model_version }}</span>{% endif %}
     </div>
 
-    <div class="forecast-divider" id="forecast-market">
-        <div>
-            <span class="eyebrow">Market disagreement</span>
-            <h3>What the market is pricing differently</h3>
+    {% if have_points %}
+    <div class="fc-hero" id="forecast-score">
+        <div class="fc-score-side">
+            <span>{{ game.away_team }}</span>
+            <b>{{ projection.away.expected_points | cell('f1') }}</b>
         </div>
-        <span class="research-status">Historical context · not a recommendation</span>
-    </div>
-    <div class="section-note">
-        The model-market gap is descriptive first. A spread becomes a qualified
-        Full Convergence signal only when the frozen Margin Power, structural,
-        and Line Elo conditions are all available and aligned.
-    </div>
-
-    <div class="forecast-signal-panel" id="forecast-signal">
-        <div class="forecast-signal-copy">
-            <span class="research-card-kicker">Signal status</span>
-            {% if game.week <= 3 %}
-            <strong>Early-season context only</strong>
-            <p>Early Margin Power is useful as a cold-start comparison, but it is not a qualified spread signal. Full Convergence waits for mature Margin Power eligibility.</p>
-            {% else %}
-            <strong>No qualified signal asserted from score disagreement alone</strong>
-            <p>Football Lab vs market is shown independently. Full Convergence requires the frozen Margin Power + structural + Line Elo architecture.</p>
-            {% endif %}
+        <div class="fc-score-mid">
+            <span>MODEL SCORE</span>
+            <i>{{ projected_total | cell('f1') }} total</i>
         </div>
-        <div class="forecast-signal-tags">
-            <span class="forecast-state-tag is-context">{{ 'Early MP · context' if game.week <= 3 else 'Signal framework' }}</span>
-            {% if research_intelligence.available and research_intelligence.spread.inside_lt14_applicability is not none %}
-            <span class="forecast-state-tag {{ 'is-supported' if research_intelligence.spread.inside_lt14_applicability else 'is-caution' }}">
-                {% if research_intelligence.spread.inside_lt14_applicability %}&lt;14 mature applicability region
-                {% else %}14+ mature applicability caution{% endif %}
-            </span>
-            {% endif %}
+        <div class="fc-score-side is-home">
+            <span>{{ game.home_team }}</span>
+            <b>{{ projection.home.expected_points | cell('f1') }}</b>
         </div>
     </div>
-
-    {% if research_intelligence.available and research_intelligence.narrative and research_intelligence.narrative.available %}
-    <section class="forecast-narrative" aria-label="Narrative context">
-        <div class="forecast-subsection-head">
-            <span>Narrative context</span>
-            <p>Pregame narrative states with prior-season ATS results. Descriptive context only; not a convergence input.</p>
-        </div>
-        <div class="narrative-team-grid">
-            {% for team_context in research_intelligence.narrative.teams %}
-            {% if team_context.tags %}
-            <article class="narrative-team-card">
-                <div class="narrative-team-head">
-                    <strong>{{ team_context.team }}</strong>
-                    <span>{{ team_context.tags | length }} active tag{{ '' if team_context.tags | length == 1 else 's' }}</span>
-                </div>
-                {% for tag in team_context.tags %}
-                <div class="narrative-tag-block">
-                    <div class="narrative-tag-title">
-                        <span class="narrative-tag-chip">{{ tag.label }}</span>
-                        {% if tag.solo.n %}
-                        <span class="narrative-sample">n={{ tag.solo.n }}</span>
-                        {% endif %}
-                    </div>
-                    {% if tag.solo.n %}
-                    <div class="narrative-result-row">
-                        <span><i>Solo cover</i><b>{{ (tag.solo.cover_rate * 100) | cell('f1') }}%</b></span>
-                        <span><i>Mean ATS residual</i><b>{{ tag.solo.mean_residual | cell('signed') }}</b></span>
-                    </div>
-                    {% else %}
-                    <div class="narrative-empty">No prior-season sample for this tag.</div>
-                    {% endif %}
-
-                    {% if tag.interactions %}
-                    <div class="narrative-opponent-results">
-                        <div class="narrative-opponent-kicker">With opponent narrative</div>
-                        {% for interaction in tag.interactions %}
-                        <div class="narrative-combo-row">
-                            <span>{{ tag.label }} × {{ interaction.opponent_label }}</span>
-                            <b>{{ (interaction.cover_rate * 100) | cell('f1') }}%</b>
-                            <i>n={{ interaction.n }} · {{ interaction.mean_residual | cell('signed') }} ATS</i>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-                </div>
-                {% endfor %}
-            </article>
-            {% endif %}
-            {% endfor %}
-        </div>
-        <div class="table-note">{{ research_intelligence.narrative.note }} Historical sample through {{ research_intelligence.narrative.historical_through }}.</div>
-    </section>
+    {% else %}
+    <div class="empty">Football Lab score projection unavailable.</div>
     {% endif %}
 
     {% if research_intelligence.available %}
-    <div class="research-live-grid">
-        <article class="research-market-card">
-            <div class="research-card-kicker">Spread</div>
-            <div class="research-card-headline">
-                {% if research_intelligence.spread.model_side %}
-                <strong>{{ research_intelligence.spread.model_side }}</strong>
-                <span>model lean</span>
-                {% else %}
-                <strong>Even</strong><span>model vs market</span>
+    {% set mh = research_intelligence.spread.market_home_margin %}
+    {% set ph = research_intelligence.spread.projected_home_margin %}
+    {% set eh = research_intelligence.spread.model_market_edge_home %}
+    <div class="fc-market" id="forecast-market">
+        <div class="fc-market-cell">
+            <span>FOOTBALL LAB</span>
+            <b>
+                {% if ph is none %}—
+                {% elif ph > 0 %}{{ game.home_team }} -{{ ph | abs | cell('f1') }}
+                {% elif ph < 0 %}{{ game.away_team }} -{{ ph | abs | cell('f1') }}
+                {% else %}Pick'em{% endif %}
+            </b>
+        </div>
+        <div class="fc-market-arrow">→</div>
+        <div class="fc-market-cell">
+            <span>MARKET</span>
+            <b>
+                {% if mh is none %}—
+                {% elif mh > 0 %}{{ game.home_team }} -{{ mh | abs | cell('f1') }}
+                {% elif mh < 0 %}{{ game.away_team }} -{{ mh | abs | cell('f1') }}
+                {% else %}Pick'em{% endif %}
+            </b>
+        </div>
+        <div class="fc-market-arrow">=</div>
+        <div class="fc-market-cell is-edge">
+            <span>DIFFERENCE</span>
+            <b>
+                {% if eh is none %}—
+                {% elif eh > 0 %}{{ game.home_team }} +{{ eh | abs | cell('f1') }}
+                {% elif eh < 0 %}{{ game.away_team }} +{{ eh | abs | cell('f1') }}
+                {% else %}0.0{% endif %}
+            </b>
+        </div>
+    </div>
+
+    <div class="fc-status-row">
+        <div class="fc-status">
+            <span>SIGNAL</span>
+            {% if game.week <= 3 %}
+            <b class="is-context">EARLY CONTEXT</b>
+            <i>Standard Margin Power not yet eligible</i>
+            {% else %}
+            <b>NO LIVE FC LABEL</b>
+            <i>Requires frozen Margin Power + structural + Line Elo checks</i>
+            {% endif %}
+        </div>
+        <div class="fc-status">
+            <span>APPLICABILITY</span>
+            {% if research_intelligence.spread.inside_lt14_applicability is sameas true %}
+            <b class="is-good">SUPPORTED</b><i>Market spread &lt;14</i>
+            {% elif research_intelligence.spread.inside_lt14_applicability is sameas false %}
+            <b class="is-warn">CAUTION</b><i>Market spread 14+</i>
+            {% else %}<b>—</b><i>No market spread</i>{% endif %}
+        </div>
+        <div class="fc-status fc-key-status">
+            <span>KEY NUMBERS</span>
+            {% if mh is not none and ph is not none %}
+            {% set market_abs = mh | abs %}
+            {% set model_abs = ph | abs %}
+            {% set same_favorite = (mh > 0 and ph > 0) or (mh < 0 and ph < 0) %}
+            <b class="fc-key-list">
+                {% if not same_favorite and mh != 0 and ph != 0 %}<em>FLIP</em>{% endif %}
+                {% if (market_abs < 3 <= model_abs) or (model_abs < 3 <= market_abs) %}<em>3</em>{% endif %}
+                {% if (market_abs < 7 <= model_abs) or (model_abs < 7 <= market_abs) %}<em>7</em>{% endif %}
+                {% if (market_abs < 10 <= model_abs) or (model_abs < 10 <= market_abs) %}<em>10</em>{% endif %}
+                {% if (market_abs < 14 <= model_abs) or (model_abs < 14 <= market_abs) %}<em>14</em>{% endif %}
+                {% if same_favorite
+                      and not ((market_abs < 3 <= model_abs) or (model_abs < 3 <= market_abs))
+                      and not ((market_abs < 7 <= model_abs) or (model_abs < 7 <= market_abs))
+                      and not ((market_abs < 10 <= model_abs) or (model_abs < 10 <= market_abs))
+                      and not ((market_abs < 14 <= model_abs) or (model_abs < 14 <= market_abs)) %}
+                <em class="is-none">NONE</em>
                 {% endif %}
-            </div>
-            <div class="research-metrics">
-                <span><i>Model home margin</i><b>{{ research_intelligence.spread.projected_home_margin | cell('signed') }}</b></span>
-                <span><i>Market home margin</i><b>{{ research_intelligence.spread.market_home_margin | cell('signed') }}</b></span>
-                <span><i>Model-market gap</i><b>{{ research_intelligence.spread.model_market_edge_home | cell('signed') }}</b></span>
-            </div>
-            {% if research_intelligence.spread.inside_lt14_applicability is not none %}
-            <div class="research-chip {{ 'is-supported' if research_intelligence.spread.inside_lt14_applicability else 'is-caution' }}">
-                {% if research_intelligence.spread.inside_lt14_applicability %}
-                Inside the &lt;14 research applicability boundary
-                {% else %}
-                14+ spread · outside the preferred research domain
-                {% endif %}
+            </b>
+            <i>crossed between market and FL</i>
+            {% else %}<b>—</b><i>Market comparison unavailable</i>{% endif %}
+        </div>
+    </div>
+
+    {% if research_intelligence.narrative and research_intelligence.narrative.available %}
+    <div class="fc-narrative">
+        <div class="fc-strip-label">NARRATIVE</div>
+        <div class="fc-narrative-teams">
+            {% for team_context in research_intelligence.narrative.teams %}
+            {% if team_context.tags %}
+            <div class="fc-narrative-team">
+                <strong>{{ team_context.team }}</strong>
+                {% for tag in team_context.tags %}
+                <div class="fc-tag-line">
+                    <span>{{ tag.label }}</span>
+                    {% if tag.solo.n %}
+                    <b>{{ (tag.solo.cover_rate * 100) | cell('f1') }}%</b><i>solo · n={{ tag.solo.n }}</i>
+                    {% endif %}
+                    {% for interaction in tag.interactions %}
+                    <em>vs {{ interaction.opponent_label }}</em>
+                    <b>{{ (interaction.cover_rate * 100) | cell('f1') }}%</b><i>n={{ interaction.n }}</i>
+                    {% endfor %}
+                </div>
+                {% endfor %}
             </div>
             {% endif %}
-        </article>
-
-        <article class="research-market-card">
-            <div class="research-card-kicker">Total</div>
-            <div class="research-card-headline">
-                <strong>{{ research_intelligence.totals.model_direction | upper if research_intelligence.totals.model_direction else '—' }}</strong>
-                <span>
-                    {% if research_intelligence.totals.closing_edge is not none %}
-                    {{ research_intelligence.totals.closing_edge | abs | cell('f1') }} pts vs close
-                    {% else %}market comparison unavailable{% endif %}
-                </span>
-            </div>
-            <div class="research-metrics">
-                <span><i>Calibrated model</i><b>{{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}</b></span>
-                <span><i>Open</i><b>{{ research_intelligence.totals.opening_total | cell('f1') }}</b></span>
-                <span><i>Close / snapshot</i><b>{{ research_intelligence.totals.closing_total | cell('f1') }}</b></span>
-            </div>
-            <div class="research-chip-row">
-                {% if research_intelligence.totals.opening_edge_bucket %}
-                <span class="research-chip">Opening edge {{ research_intelligence.totals.opening_edge_bucket }}</span>
-                {% endif %}
-                {% if research_intelligence.totals.movement_state %}
-                <span class="research-chip">{{ research_intelligence.totals.movement_state | replace('_', ' ') }}</span>
-                {% endif %}
-            </div>
-        </article>
-    </div>
-
-    {% if research_intelligence.totals.regime_benchmark %}
-    {% set regime = research_intelligence.totals.regime_benchmark %}
-    <div class="research-regime-callout">
-        <div>
-            <span class="research-card-kicker">Closest historical totals regime</span>
-            <strong>{{ regime.label }}</strong>
+            {% endfor %}
         </div>
-        <div class="research-regime-number"><b>{{ regime.win_rate | cell('f2') }}%</b><span>{{ regime.n }} games</span></div>
-        <div class="research-regime-number"><b>{{ regime.mean_residual | cell('signed') }}</b><span>mean aligned residual</span></div>
     </div>
-    {% endif %}
-    {% else %}
-    <div class="empty">{{ research_intelligence.reason }}</div>
     {% endif %}
 
-    <div class="forecast-subsection-head" id="forecast-drivers">
-        <span>Game shape</span>
-        <p>Possession, play volume, pass tendency and turnover expectation behind the projected score.</p>
-    </div>
-    <div class="projection-drivers" aria-label="Supporting projection inputs">
-        {% for key, label, fmt in [
-            ('drives', 'Drives', 'f1'),
-            ('plays', 'Plays', 'f1'),
-            ('pass_rate', 'Pass rate', 'rate'),
-            ('giveaways', 'Giveaways', 'f2')] %}
-        <div class="projection-driver">
-            <span>{{ label }}</span>
-            <div><b>{{ projection.away[key] | cell(fmt) }}</b><i>{{ game.away_team }}</i></div>
-            <div><b>{{ projection.home[key] | cell(fmt) }}</b><i>{{ game.home_team }}</i></div>
+    <div class="fc-shape" id="forecast-drivers">
+        <div class="fc-strip-label">GAME SHAPE</div>
+        <div class="fc-shape-head"><span>Team</span><span>Drives</span><span>Plays</span><span>Pass%</span><span>PPD</span><span>Yards</span><span>TO</span></div>
+        {% for side, team in [('away', game.away_team), ('home', game.home_team)] %}
+        <div class="fc-shape-row">
+            <strong>{{ team }}</strong>
+            <b>{{ projection[side].drives | cell('f1') }}</b>
+            <b>{{ projection[side].plays | cell('f1') }}</b>
+            <b>{{ projection[side].pass_rate | cell('rate') }}</b>
+            <b>{{ projection[side].points_per_drive | cell('f2') }}</b>
+            <b>{{ projection[side].total_yards | cell('int') }}</b>
+            <b>{{ projection[side].giveaways | cell('f2') }}</b>
         </div>
         {% endfor %}
     </div>
 
-    <div class="research-benchmark-grid">
-        <article class="research-benchmark-panel">
-            <div class="research-panel-title">
-                <div><span class="research-card-kicker">Historical validation</span><h3>Frozen Full Convergence</h3></div>
-            </div>
+    <div class="fc-total">
+        <div class="fc-strip-label">TOTAL</div>
+        <div><span>FL calibrated</span><b>{{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}</b></div>
+        <div><span>Market</span><b>{{ research_intelligence.totals.closing_total | cell('f1') }}</b></div>
+        <div><span>Gap</span><b>{{ research_intelligence.totals.closing_edge | cell('signed') }}</b></div>
+        {% if research_intelligence.totals.regime_benchmark %}
+        {% set regime = research_intelligence.totals.regime_benchmark %}
+        <div class="fc-total-regime"><span>Historical regime</span><b>{{ regime.win_rate | cell('f1') }}%</b><i>n={{ regime.n }} · {{ regime.label }}</i></div>
+        {% else %}
+        <div class="fc-total-regime"><span>Historical regime</span><b>—</b><i>No matched cell</i></div>
+        {% endif %}
+    </div>
+
+    <details class="fc-history">
+        <summary>Historical validation</summary>
+        <div class="fc-history-grid">
             {% for key in ['full_convergence', 'full_convergence_lt14'] %}
             {% set item = research_intelligence.spread_research[key] %}
-            <div class="research-benchmark-row">
-                <div><strong>{{ item.label }}</strong><span>{{ item.note }}</span></div>
-                <div class="research-record"><b>{{ item.record }}</b><span>{{ item.win_rate | cell('f2') }}% · n={{ item.n }}</span></div>
-            </div>
+            <div><span>{{ item.label }}</span><b>{{ item.record }}</b><i>{{ item.win_rate | cell('f1') }}% · n={{ item.n }}</i></div>
             {% endfor %}
-            <p class="research-read">
-                The 14+ group was unstable by season, so it is treated as an applicability
-                warning rather than a fade signal. Full Convergence requires the frozen
-                Margin Power + structural + Line Elo architecture; the live card above
-                does not claim that status from model margin alone.
-            </p>
-        </article>
-
-        <article class="research-benchmark-panel">
-            <div class="research-panel-title">
-                <div><span class="research-card-kicker">Totals context</span><h3>Historical regime match</h3></div>
-            </div>
-            {% for key in ['overall', 'narrative_adjusted'] %}
-            {% set item = research_intelligence.total_research[key] %}
-            <div class="research-benchmark-row">
-                <div><strong>{{ item.label }}</strong><span>{{ item.note }}</span></div>
-                <div class="research-record"><b>{{ item.record }}</b><span>{{ item.win_rate | cell('f2') }}% · n={{ item.n }}</span></div>
-            </div>
-            {% endfor %}
-            <p class="research-read">
-                The totals edge was stronger in 2023–24 and weakened in 2025. Market
-                movement did not behave like confirmation overall; the useful information
-                appears to be regime-specific, especially at larger opening disagreements.
-            </p>
-        </article>
-    </div>
+            {% set total_item = research_intelligence.total_research['overall'] %}
+            <div><span>{{ total_item.label }}</span><b>{{ total_item.record }}</b><i>{{ total_item.win_rate | cell('f1') }}% · n={{ total_item.n }}</i></div>
+        </div>
+    </details>
+    {% endif %}
 
     <details class="forecast-method" id="forecast-method">
         <summary>
