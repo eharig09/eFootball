@@ -246,6 +246,11 @@ def _feature_row(
         "opponent": opponent,
         "side": side,
         "actual_drives": float(game[f"{side}_drives"]),
+        "actual_plays": float(game[f"{side}_plays"]),
+        "actual_plays_per_drive": (
+            float(game[f"{side}_plays"]) / float(game[f"{side}_drives"])
+            if float(game[f"{side}_drives"]) else None
+        ),
         **{key: float(values[key]) for key in FEATURES},
     }
 

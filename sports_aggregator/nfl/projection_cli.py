@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 
 from sports_aggregator.nfl.drive_projection import report
+from sports_aggregator.nfl.drive_feature_ablation import report as drive_ablation_report
+from sports_aggregator.nfl.plays_projection import report as plays_report
 from sports_aggregator.nfl.modeling_readiness import audit as readiness_audit
 from sports_aggregator.nfl.repository import NFLRepository
 
@@ -19,6 +21,14 @@ def main(argv: list[str] | None = None) -> int:
     readiness.add_argument("--from-year", type=int, default=2010)
     readiness.add_argument("--to-year", type=int, default=2026)
 
+    drive_ablation = sub.add_parser("drive-ablation")
+    drive_ablation.add_argument("--from-year", type=int, default=2010)
+    drive_ablation.add_argument("--to-year", type=int, default=2025)
+
+    plays = sub.add_parser("plays-backtest")
+    plays.add_argument("--from-year", type=int, default=2010)
+    plays.add_argument("--to-year", type=int, default=2025)
+
     drives = sub.add_parser("drive-backtest")
     drives.add_argument("--from-year", type=int, default=2016)
     drives.add_argument("--to-year", type=int, default=2025)
@@ -31,6 +41,24 @@ def main(argv: list[str] | None = None) -> int:
             repository,
             from_season=int(args.from_year),
             to_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "drive-ablation":
+        payload = drive_ablation_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "plays-backtest":
+        payload = plays_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
