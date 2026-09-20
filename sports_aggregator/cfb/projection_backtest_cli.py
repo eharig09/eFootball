@@ -10,12 +10,13 @@ from dotenv import load_dotenv
 from sports_aggregator.cfb.projection_backtest import (
     BACKTEST_VERSION, build, prepare_actuals, report, source_coverage,
 )
+from sports_aggregator.cfb.historical_coverage import audit as historical_coverage_audit, export_report as export_historical_coverage
 from sports_aggregator.cfb.repository import CFBRepository
 
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Walk-forward backtest of the live CFB projection")
-    p.add_argument("command", choices=("prepare", "coverage", "run", "report"))
+    p.add_argument("command", choices=("prepare", "coverage", "coverage-audit", "run", "report"))
     p.add_argument("--from-year", type=int, default=None)
     p.add_argument("--to-year", type=int, default=None)
     p.add_argument("--year", type=int, default=None,
@@ -25,6 +26,8 @@ def parser() -> argparse.ArgumentParser:
                    help="Earliest season allowed into each prior-season xPoints fold.")
     p.add_argument("--backtest-version", default=BACKTEST_VERSION)
     p.add_argument("--database", default=None)
+    p.add_argument("--output-dir", default="research_outputs",
+                   help="Directory for coverage-audit artifacts.")
     return p
 
 
@@ -44,13 +47,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     repository = CFBRepository(
         args.database or os.getenv("CFB_DATABASE_PATH", "instance/cfb.sqlite3"))
-    first, last = _years(args, required=args.command in {"prepare", "coverage", "run"})
+    first, last = _years(args, required=args.command in {"prepare", "coverage", "coverage-audit", "run"})
     if args.command == "prepare":
         payload = prepare_actuals(
             repository, from_season=int(first), to_season=int(last))
     elif args.command == "coverage":
         payload = source_coverage(
             repository, from_season=int(first), to_season=int(last))
+    elif args.command == "coverage-audit":
+        payload = historical_coverage_audit(
+            repository, from_season=int(first), to_season=int(last))
+        payload["files"] = export_historical_coverage(payload, args.output_dir)
     elif args.command == "run":
         payload = build(
             repository, from_season=int(first), to_season=int(last),
