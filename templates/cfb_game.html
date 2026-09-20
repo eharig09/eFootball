@@ -238,7 +238,8 @@
             <span class="forecast-state-tag is-context">{{ 'Early MP · context' if game.week <= 3 else 'Signal framework' }}</span>
             {% if research_intelligence.available and research_intelligence.spread.inside_lt14_applicability is not none %}
             <span class="forecast-state-tag {{ 'is-supported' if research_intelligence.spread.inside_lt14_applicability else 'is-caution' }}">
-                {{ '&lt;14 mature applicability region' | safe if research_intelligence.spread.inside_lt14_applicability else '14+ mature applicability caution' }}
+                {% if research_intelligence.spread.inside_lt14_applicability %}&lt;14 mature applicability region
+                {% else %}14+ mature applicability caution{% endif %}
             </span>
             {% endif %}
         </div>
