@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_data_status.css') }}">
 </head>
 <body class="nfl-data-status-page">
 {{ nfl_nav('data-status', season, 'Data status') }}
@@ -17,7 +18,8 @@
     <section class="nfl-hero compact-hero">
         <p class="eyebrow">Sync + ingestion &middot; {{ season }}</p>
         <h1>NFL data status</h1>
-        <p>Production seed state, core dataset counts, and the reporting/social ingestion ledger in one place.</p>
+        <p>Pipeline health, freshness, manual refresh controls, PFF persistence, and reporting/social ingestion in one place.</p>
+        <div class="audit-subnav"><a href="#segment-health">Segment health</a><a href="#manual-refresh">Manual refresh</a><a href="#pff-storage">PFF storage</a><a href="#refresh-history">Refresh history</a><a href="#ingestion-runs">Content ingestion</a><a href="{{ url_for('nfl.source_audit', season=season) }}">Source audit</a></div>
         <div class="metrics">
             <span><b>{{ counts.teams }}</b><small>Teams</small></span>
             <span><b>{{ counts.games }}</b><small>Games</small></span>
@@ -39,6 +41,50 @@
         <p class="section-note">Production seed status, team/game coverage, and configured-source error counts all look healthy.</p>
     </section>
     {% endif %}
+
+    <section class="section" id="segment-health">
+        <div class="section-head"><div><p class="eyebrow">Recurring NFL maintenance</p><h2>Segment health</h2></div></div>
+        <div class="seg-grid">
+        {% for tile in segment_health %}
+            <div class="seg-tile">
+                <div class="seg-tile-name"><span class="seg-dot seg-dot-{{ 'ok' if tile.status == 'success' else 'bad' if tile.status == 'failed' else 'muted' }}"></span>{{ tile.segment }}</div>
+                <div class="seg-tile-line">{{ tile.status|title }}{% if tile.relative %} · {{ tile.relative }}{% endif %}</div>
+                <div class="seg-tile-sub">{% if tile.error %}{{ tile.error }}{% elif tile.seconds is not none %}{{ tile.seconds }}s{% else %}No completed run recorded{% endif %}</div>
+            </div>
+        {% endfor %}
+        </div>
+    </section>
+
+    <section class="section" id="manual-refresh">
+        <div class="section-head"><div><p class="eyebrow">Run now</p><h2>Manual refresh</h2></div></div>
+        <p class="section-note">Start one bounded NFL refresh segment without waiting for its scheduled cron. These use the same refresh token/admin authorization as the CFB audit controls.</p>
+        <div class="attn-actions">
+            {% for segment,label in [
+                ('core-foundation','Games + rosters'),
+                ('core-stats','Weekly stats + NGS'),
+                ('core-depth','Depth charts'),
+                ('core-pbp','PBP analytics'),
+                ('content','News + social'),
+                ('weather','Weather'),
+                ('pff','Rehydrate PFF')
+            ] %}
+            <button class="attn-btn" type="button" data-nfl-rerun="{{ segment }}">{{ label }}</button>
+            {% endfor %}
+        </div>
+        <p class="section-note" id="nfl-refresh-result"></p>
+    </section>
+
+    <section class="section" id="pff-storage">
+        <div class="section-head"><div><p class="eyebrow">Private-data durability</p><h2>PFF storage</h2></div><a class="section-action" href="{{ url_for('nfl_data_import.data_import', season=season) }}">Import PFF &rarr;</a></div>
+        <div class="game-shape-grid">
+            <article><small>Loaded metrics</small><b>{{ pff_counts.metrics|cell('big') }}</b></article>
+            <article><small>CSV files on disk</small><b>{{ pff_storage.upload_files }}</b></article>
+            <article><small>SQLite file backups</small><b>{{ pff_storage.blob_backups }}</b></article>
+            <article><small>PFF season</small><b>{{ pff_season }}</b></article>
+        </div>
+        <p class="section-note"><b>Database:</b> {{ pff_storage.database_path }}<br><b>Upload root:</b> {{ pff_storage.upload_root }}<br><b>Source root:</b> {{ pff_storage.source_root }}</p>
+        {% if pff_storage.upload_files == 0 and pff_storage.blob_backups == 0 %}<div class="status-issue-list"><article><b>No durable PFF source files</b><span>Upload the PFF batch once after the SQLite-backup change deploys. Future missing sidecar files can then be reconstructed from the database.</span></article></div>{% endif %}
+    </section>
 
     <section class="section">
         <div class="section-head"><div><p class="eyebrow">{{ seed.status or 'unknown' }}{% if seed.season %} &middot; season {{ seed.season }}{% endif %}</p><h2>Production seed</h2></div></div>
@@ -68,7 +114,45 @@
     </section>
     {% endif %}
 
-    <section class="section"><div class="section-head"><div><p class="eyebrow">Every sync-nfl-content invocation</p><h2>Ingestion runs</h2></div></div>{{ data_table(runs_table) }}</section>
+    <section class="section" id="refresh-history">
+        <div class="section-head"><div><p class="eyebrow">Core + content + maintenance</p><h2>Recent NFL refreshes</h2></div></div>
+        {% if refresh_history %}
+        <table class="data-status-table"><thead><tr><th>Segment</th><th>Status</th><th>Finished</th><th>Duration</th><th>Result</th></tr></thead><tbody>
+        {% for run in refresh_history %}
+        <tr><td><strong>{{ run.segment }}</strong></td><td>{{ run.status|title }}</td><td>{{ run.relative or '—' }}</td><td>{{ run.seconds ~ 's' if run.seconds is defined else '—' }}</td><td>{{ run.error or run.error_type or 'Completed' }}</td></tr>
+        {% endfor %}
+        </tbody></table>
+        {% else %}<p class="empty">No NFL refresh history has been recorded yet.</p>{% endif %}
+    </section>
+
+    <section class="section" id="ingestion-runs"><div class="section-head"><div><p class="eyebrow">RSS + Bluesky</p><h2>Content ingestion runs</h2></div></div>{% if latest_ingestion %}<p class="section-note">Latest completed ingestion: {{ latest_ingestion.finished_at }} · {{ latest_ingestion.stored }} stored from {{ latest_ingestion.succeeded }}/{{ latest_ingestion.attempted }} successful sources.</p>{% endif %}{{ data_table(runs_table) }}</section>
 </main>
+<script>
+(function(){
+  function token(){
+    var t=sessionStorage.getItem('nflAuditToken')||sessionStorage.getItem('cfbAuditToken')||'';
+    if(!t){t=window.prompt('Enter the refresh token or admin PIN:')||'';if(t)sessionStorage.setItem('nflAuditToken',t);}
+    return t;
+  }
+  document.querySelectorAll('[data-nfl-rerun]').forEach(function(btn){
+    btn.addEventListener('click',async function(){
+      var seg=btn.dataset.nflRerun;
+      if(!window.confirm('Run NFL '+seg+' now?'))return;
+      var t=token();if(!t)return;
+      var old=btn.textContent;btn.disabled=true;btn.textContent='Starting…';
+      try{
+        var r=await fetch('{{ request.url_root }}internal/nfl-refresh?segment='+encodeURIComponent(seg),{
+          method:'POST',headers:{'Authorization':'Bearer '+t}
+        });
+        if(r.status===401){sessionStorage.removeItem('nflAuditToken');throw new Error('Token was rejected.');}
+        if(!r.ok&&r.status!==202)throw new Error('Refresh not accepted ('+r.status+')');
+        var data=await r.json();
+        document.getElementById('nfl-refresh-result').textContent='Started '+seg+' for season '+data.season+'. Refresh this page to inspect the result.';
+        btn.textContent='Started';
+      }catch(e){window.alert(e.message||String(e));btn.textContent=old;btn.disabled=false;}
+    });
+  });
+})();
+</script>
 </body>
 </html>
