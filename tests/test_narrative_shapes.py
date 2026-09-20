@@ -756,3 +756,29 @@ def test_backfill_readiness_pipeline_orders_pbp_before_team_actuals():
 def test_backfill_readiness_commands_target_requested_year():
     pbp = next(command for stage, _label, command in br.PIPELINE if stage == "pbp")
     assert pbp.format(year=2021).endswith("backfill --year 2021")
+
+
+from sports_aggregator.cfb import play_by_play as pbp
+
+
+def test_normalize_play_compact_history_omits_raw_json_payload():
+    raw = {
+        "id": "p1",
+        "gameId": 1,
+        "driveId": "d1",
+        "offense": "A",
+        "defense": "B",
+        "period": 1,
+        "down": 1,
+        "distance": 10,
+        "yardsGained": 5,
+        "playType": "Rush",
+        "playText": "Runner gains 5 yards",
+        "extra": {"large": "payload"},
+    }
+    normal = pbp.normalize_play(raw, season=2019, week=1)
+    compact = pbp.normalize_play(raw, season=2019, week=1, retain_raw=False)
+    assert normal["raw_json"] != "{}"
+    assert compact["raw_json"] == "{}"
+    assert compact["play_id"] == normal["play_id"]
+    assert compact["yards_gained"] == normal["yards_gained"]
