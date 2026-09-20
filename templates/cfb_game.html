@@ -245,6 +245,59 @@
         </div>
     </div>
 
+    {% if research_intelligence.available and research_intelligence.narrative and research_intelligence.narrative.available %}
+    <section class="forecast-narrative" aria-label="Narrative context">
+        <div class="forecast-subsection-head">
+            <span>Narrative context</span>
+            <p>Pregame narrative states with prior-season ATS results. Descriptive context only; not a convergence input.</p>
+        </div>
+        <div class="narrative-team-grid">
+            {% for team_context in research_intelligence.narrative.teams %}
+            {% if team_context.tags %}
+            <article class="narrative-team-card">
+                <div class="narrative-team-head">
+                    <strong>{{ team_context.team }}</strong>
+                    <span>{{ team_context.tags | length }} active tag{{ '' if team_context.tags | length == 1 else 's' }}</span>
+                </div>
+                {% for tag in team_context.tags %}
+                <div class="narrative-tag-block">
+                    <div class="narrative-tag-title">
+                        <span class="narrative-tag-chip">{{ tag.label }}</span>
+                        {% if tag.solo.n %}
+                        <span class="narrative-sample">n={{ tag.solo.n }}</span>
+                        {% endif %}
+                    </div>
+                    {% if tag.solo.n %}
+                    <div class="narrative-result-row">
+                        <span><i>Solo cover</i><b>{{ (tag.solo.cover_rate * 100) | cell('f1') }}%</b></span>
+                        <span><i>Mean ATS residual</i><b>{{ tag.solo.mean_residual | cell('signed') }}</b></span>
+                    </div>
+                    {% else %}
+                    <div class="narrative-empty">No prior-season sample for this tag.</div>
+                    {% endif %}
+
+                    {% if tag.interactions %}
+                    <div class="narrative-opponent-results">
+                        <div class="narrative-opponent-kicker">With opponent narrative</div>
+                        {% for interaction in tag.interactions %}
+                        <div class="narrative-combo-row">
+                            <span>{{ tag.label }} × {{ interaction.opponent_label }}</span>
+                            <b>{{ (interaction.cover_rate * 100) | cell('f1') }}%</b>
+                            <i>n={{ interaction.n }} · {{ interaction.mean_residual | cell('signed') }} ATS</i>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </article>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <div class="table-note">{{ research_intelligence.narrative.note }} Historical sample through {{ research_intelligence.narrative.historical_through }}.</div>
+    </section>
+    {% endif %}
+
     {% if research_intelligence.available %}
     <div class="research-live-grid">
         <article class="research-market-card">
