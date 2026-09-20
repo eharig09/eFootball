@@ -466,3 +466,36 @@ def test_policy_pass_does_not_count_as_result():
     assert result["acted_n"] == 1
     assert result["pass_n"] == 1
     assert result["hit_rate"] == 1.0
+
+
+from sports_aggregator.cfb import market_ats_totals as mat
+
+
+def test_bet_summary_excludes_pushes_from_win_rate_and_roi():
+    rows = [
+        {"result": "win", "aligned": 3.0},
+        {"result": "loss", "aligned": -2.0},
+        {"result": "push", "aligned": 0.0},
+    ]
+    summary = mat._bet_summary(rows, residual_key="aligned")
+    assert summary["n"] == 3
+    assert summary["decisions"] == 2
+    assert summary["wins"] == 1
+    assert summary["losses"] == 1
+    assert summary["pushes"] == 1
+    assert summary["win_rate_ex_pushes"] == 0.5
+
+
+def test_total_edge_buckets_are_fixed():
+    assert mat._bucket(0.5, mat.EDGE_BUCKETS) == "<1"
+    assert mat._bucket(1.5, mat.EDGE_BUCKETS) == "1-1.99"
+    assert mat._bucket(4.0, mat.EDGE_BUCKETS) == "3-4.99"
+    assert mat._bucket(8.0, mat.EDGE_BUCKETS) == "8+"
+
+
+def test_linear_fit_recovers_simple_total_calibration():
+    fit = mat._linear_fit([(float(x), float(2 * x + 3)) for x in range(1, 61)])
+    assert fit is not None
+    assert round(fit["slope"], 6) == 2.0
+    assert round(fit["intercept"], 6) == 3.0
+    assert fit["n"] == 60
