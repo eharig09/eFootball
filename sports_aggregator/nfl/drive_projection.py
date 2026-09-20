@@ -60,9 +60,17 @@ class TeamHistory:
     opponent_neutral_plays: float = 0.0
     opponent_neutral_passes: float = 0.0
     total_epa: float = 0.0
+    pass_plays: float = 0.0
+    pass_epa: float = 0.0
+    rush_plays: float = 0.0
+    rush_epa: float = 0.0
     successful_plays: float = 0.0
     explosive_plays: float = 0.0
     opponent_total_epa: float = 0.0
+    opponent_pass_plays: float = 0.0
+    opponent_pass_epa: float = 0.0
+    opponent_rush_plays: float = 0.0
+    opponent_rush_epa: float = 0.0
     opponent_successful_plays: float = 0.0
     opponent_explosive_plays: float = 0.0
 
@@ -92,10 +100,20 @@ class TeamHistory:
                 if self.opponent_neutral_plays else None
             ),
             "epa_per_play": self.total_epa / self.plays if self.plays else None,
+            "pass_epa_per_play": self.pass_epa / self.pass_plays if self.pass_plays else None,
+            "rush_epa_per_play": self.rush_epa / self.rush_plays if self.rush_plays else None,
             "success_rate": self.successful_plays / self.plays if self.plays else None,
             "explosive_rate": self.explosive_plays / self.plays if self.plays else None,
             "epa_allowed_per_play": (
                 self.opponent_total_epa / self.opponent_plays if self.opponent_plays else None
+            ),
+            "pass_epa_allowed_per_play": (
+                self.opponent_pass_epa / self.opponent_pass_plays
+                if self.opponent_pass_plays else None
+            ),
+            "rush_epa_allowed_per_play": (
+                self.opponent_rush_epa / self.opponent_rush_plays
+                if self.opponent_rush_plays else None
             ),
             "success_allowed_rate": (
                 self.opponent_successful_plays / self.opponent_plays
@@ -126,9 +144,17 @@ def _raw_games(repository: NFLRepository, start_season: int, end_season: int) ->
                       aw.seconds_sum AS away_seconds_sum,
                       aw.clocked_plays AS away_clocked_plays,
                       he.total_epa AS home_total_epa,
+                      he.pass_plays AS home_pass_plays,
+                      he.pass_epa AS home_pass_epa,
+                      he.rush_plays AS home_rush_plays,
+                      he.rush_epa AS home_rush_epa,
                       he.successful_plays AS home_successful_plays,
                       he.explosive_plays AS home_explosive_plays,
                       ae.total_epa AS away_total_epa,
+                      ae.pass_plays AS away_pass_plays,
+                      ae.pass_epa AS away_pass_epa,
+                      ae.rush_plays AS away_rush_plays,
+                      ae.rush_epa AS away_rush_epa,
                       ae.successful_plays AS away_successful_plays,
                       ae.explosive_plays AS away_explosive_plays
                FROM games g
@@ -158,7 +184,9 @@ def _league_snapshot(history: dict[str, TeamHistory]) -> dict[str, float]:
         "plays_per_drive_allowed", "neutral_seconds_per_play",
         "neutral_pass_rate", "opponent_neutral_seconds_per_play",
         "opponent_neutral_pass_rate", "epa_per_play", "success_rate",
-        "explosive_rate", "epa_allowed_per_play", "success_allowed_rate",
+        "explosive_rate", "epa_allowed_per_play", "pass_epa_per_play",
+        "rush_epa_per_play", "pass_epa_allowed_per_play",
+        "rush_epa_allowed_per_play", "success_allowed_rate",
         "explosive_allowed_rate",
     )
     out: dict[str, float] = {}
@@ -197,6 +225,10 @@ def _feature_row(
         "opponent_neutral_pass_rate": opp.get("opponent_neutral_pass_rate"),
         "team_epa_per_play": own.get("epa_per_play"),
         "opponent_epa_allowed_per_play": opp.get("epa_allowed_per_play"),
+        "team_pass_epa_per_play": own.get("pass_epa_per_play"),
+        "opponent_pass_epa_allowed_per_play": opp.get("pass_epa_allowed_per_play"),
+        "team_rush_epa_per_play": own.get("rush_epa_per_play"),
+        "opponent_rush_epa_allowed_per_play": opp.get("rush_epa_allowed_per_play"),
         "team_success_rate": own.get("success_rate"),
         "opponent_success_allowed_rate": opp.get("success_allowed_rate"),
         "team_explosive_rate": own.get("explosive_rate"),
@@ -231,6 +263,10 @@ def _feature_row(
                 "opponent_neutral_pass_rate": "opponent_neutral_pass_rate",
                 "team_epa_per_play": "epa_per_play",
                 "opponent_epa_allowed_per_play": "epa_allowed_per_play",
+                "team_pass_epa_per_play": "pass_epa_per_play",
+                "opponent_pass_epa_allowed_per_play": "pass_epa_allowed_per_play",
+                "team_rush_epa_per_play": "rush_epa_per_play",
+                "opponent_rush_epa_allowed_per_play": "rush_epa_allowed_per_play",
                 "team_success_rate": "success_rate",
                 "opponent_success_allowed_rate": "success_allowed_rate",
                 "team_explosive_rate": "explosive_rate",
@@ -254,6 +290,14 @@ def _feature_row(
         "actual_neutral_pass_rate": (
             float(game[f"{side}_neutral_passes"]) / float(game[f"{side}_neutral_plays"])
             if float(game[f"{side}_neutral_plays"]) else None
+        ),
+        "actual_pass_epa_per_play": (
+            float(game[f"{side}_pass_epa"]) / float(game[f"{side}_pass_plays"])
+            if float(game[f"{side}_pass_plays"]) else None
+        ),
+        "actual_rush_epa_per_play": (
+            float(game[f"{side}_rush_epa"]) / float(game[f"{side}_rush_plays"])
+            if float(game[f"{side}_rush_plays"]) else None
         ),
         **{key: float(values[key]) for key in FEATURES},
     }
@@ -297,9 +341,17 @@ def build_rows(repository: NFLRepository, *, start_season: int = 2016,
                 h.opponent_neutral_plays += float(game[f"{other}_neutral_plays"])
                 h.opponent_neutral_passes += float(game[f"{other}_neutral_passes"])
                 h.total_epa += float(game[f"{side}_total_epa"])
+                h.pass_plays += float(game[f"{side}_pass_plays"])
+                h.pass_epa += float(game[f"{side}_pass_epa"])
+                h.rush_plays += float(game[f"{side}_rush_plays"])
+                h.rush_epa += float(game[f"{side}_rush_epa"])
                 h.successful_plays += float(game[f"{side}_successful_plays"])
                 h.explosive_plays += float(game[f"{side}_explosive_plays"])
                 h.opponent_total_epa += float(game[f"{other}_total_epa"])
+                h.opponent_pass_plays += float(game[f"{other}_pass_plays"])
+                h.opponent_pass_epa += float(game[f"{other}_pass_epa"])
+                h.opponent_rush_plays += float(game[f"{other}_rush_plays"])
+                h.opponent_rush_epa += float(game[f"{other}_rush_epa"])
                 h.opponent_successful_plays += float(game[f"{other}_successful_plays"])
                 h.opponent_explosive_plays += float(game[f"{other}_explosive_plays"])
     return rows
