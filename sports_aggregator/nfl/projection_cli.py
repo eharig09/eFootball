@@ -1,0 +1,36 @@
+"""Command-line research entry point for NFL Football Lab."""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from sports_aggregator.nfl.drive_projection import report
+from sports_aggregator.nfl.repository import NFLRepository
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--db", default="instance/nfl.sqlite3")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    drives = sub.add_parser("drive-backtest")
+    drives.add_argument("--from-year", type=int, default=2016)
+    drives.add_argument("--to-year", type=int, default=2025)
+
+    args = parser.parse_args(argv)
+    repository = NFLRepository(Path(args.db))
+
+    if args.command == "drive-backtest":
+        payload = report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
