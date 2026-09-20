@@ -22,6 +22,7 @@ from sports_aggregator.nfl.uncertainty_calibration import report as uncertainty_
 from sports_aggregator.nfl.market_disagreement import report as market_disagreement_report
 from sports_aggregator.nfl.market_anchor_leverage import report as market_anchor_report
 from sports_aggregator.nfl.market_leverage_ablation import report as market_leverage_ablation_report
+from sports_aggregator.nfl.live_projection import report as live_projection_report
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -29,6 +30,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="instance/nfl.sqlite3")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    live_projection = sub.add_parser("live-forecast")
+    live_projection.add_argument("--season", type=int, required=True)
+    live_projection.add_argument("--week", type=int, required=True)
 
     market_leverage = sub.add_parser("market-leverage-ablation")
     market_leverage.add_argument("--from-year", type=int, default=2010)
@@ -100,6 +105,15 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     repository = NFLRepository(Path(args.db))
+
+    if args.command == "live-forecast":
+        payload = live_projection_report(
+            repository,
+            season=int(args.season),
+            week=int(args.week),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
 
     if args.command == "market-leverage-ablation":
         payload = market_leverage_ablation_report(
