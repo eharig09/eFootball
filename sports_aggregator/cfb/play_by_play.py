@@ -184,7 +184,8 @@ def _garbage(period: Any, offense_score: Any, defense_score: Any) -> int:
     return int((period_i >= 4 and margin >= 22) or (period_i == 3 and margin >= 29))
 
 
-def normalize_play(raw: dict[str, Any], *, season: int, week: int) -> dict[str, Any]:
+def normalize_play(raw: dict[str, Any], *, season: int, week: int,
+                   retain_raw: bool = True) -> dict[str, Any]:
     minutes, seconds = _clock(raw.get("clock"))
     return {
         "play_id": str(raw.get("id") or "").strip(),
@@ -203,14 +204,21 @@ def normalize_play(raw: dict[str, Any], *, season: int, week: int) -> dict[str, 
         "play_type": raw.get("playType"), "play_text": raw.get("playText"),
         "provider_ppa": _float(raw.get("ppa")), "wallclock": raw.get("wallclock"),
         "season": int(season), "week": int(week),
-        "raw_json": json.dumps(raw, separators=(",", ":"), ensure_ascii=False),
+        "raw_json": (
+            json.dumps(raw, separators=(",", ":"), ensure_ascii=False)
+            if retain_raw else "{}"
+        ),
     }
 
 
-def replace_week_plays(repository, raw_plays: Iterable[dict[str, Any]], *, season: int, week: int) -> int:
+def replace_week_plays(repository, raw_plays: Iterable[dict[str, Any]], *, season: int, week: int,
+                       retain_raw: bool = True) -> int:
     initialize(repository)
     imported = datetime.now(timezone.utc).isoformat()
-    rows = [normalize_play(row, season=season, week=week) for row in raw_plays]
+    rows = [
+        normalize_play(row, season=season, week=week, retain_raw=retain_raw)
+        for row in raw_plays
+    ]
     rows = [row for row in rows if row["play_id"] and row["game_id"] and row["offense"] and row["defense"]]
     with closing(repository._connect()) as connection:
         connection.execute("DELETE FROM cfb_plays WHERE season=? AND week=?", (season, week))
