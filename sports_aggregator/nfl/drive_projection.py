@@ -360,6 +360,21 @@ def report(repository: NFLRepository, *, start_season: int = 2016,
                 float(row["team_drives"]) + float(row["opponent_drives_allowed"])
             ) / 2.0
             row["pred_ridge"] = _ridge_predict(model, row)
+
+        # NFL possessions are coupled. Compare independent team projections
+        # with a shared game-environment estimate formed from both sides'
+        # pregame offense/defense drive blends.
+        by_game = defaultdict(list)
+        for row in test:
+            by_game[row["game_id"]].append(row)
+        for game_rows in by_game.values():
+            if len(game_rows) != 2:
+                continue
+            shared = sum(float(r["pred_blend"]) for r in game_rows) / 2.0
+            ridge_shared = sum(float(r["pred_ridge"]) for r in game_rows) / 2.0
+            for row in game_rows:
+                row["pred_shared_blend"] = shared
+                row["pred_shared_ridge"] = ridge_shared
         evaluated.extend(test)
         folds.append({
             "season": season,
@@ -369,6 +384,8 @@ def report(repository: NFLRepository, *, start_season: int = 2016,
             "team": _summary(test, "pred_team"),
             "blend": _summary(test, "pred_blend"),
             "ridge": _summary(test, "pred_ridge"),
+            "shared_blend": _summary(test, "pred_shared_blend"),
+            "shared_ridge": _summary(test, "pred_shared_ridge"),
         })
 
     return {
@@ -386,5 +403,7 @@ def report(repository: NFLRepository, *, start_season: int = 2016,
             "team": _summary(evaluated, "pred_team"),
             "blend": _summary(evaluated, "pred_blend"),
             "ridge": _summary(evaluated, "pred_ridge"),
+            "shared_blend": _summary(evaluated, "pred_shared_blend"),
+            "shared_ridge": _summary(evaluated, "pred_shared_ridge"),
         },
     }
