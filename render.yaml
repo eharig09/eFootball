@@ -154,22 +154,93 @@ services:
         value: America/New_York
 
   - type: cron
-    name: nfl-content-refresh-trigger
+    name: nfl-core-foundation-refresh-trigger
     runtime: python
-    # NFL had no recurring refresh at all: rosters/PBP refresh through the
-    # NFL_AUTO_SEED path and manual CLI runs, but content (RSS + Bluesky)
-    # had nothing keeping it current. Every 3 hours, offset from the CFB
-    # trigger's top-of-hour schedule.
-    schedule: "20 */3 * * *"
+    # Schedule/scores/teams/rosters/Elo. This is the lightest core group and
+    # the one that makes upcoming/completed games current.
+    schedule: "5 */3 * * *"
     buildCommand: pip install -r requirements.txt
-    startCommand: >-
-      curl -fsS -X POST -H "Authorization: Bearer $CFB_REFRESH_TOKEN"
-      "$NFL_REFRESH_URL"
+    startCommand: python -m sports_aggregator.nfl.render_trigger
     envVars:
       - key: NFL_REFRESH_URL
         sync: false
+      - key: CFB_REFRESH_URL
+        sync: false
       - key: CFB_REFRESH_TOKEN
         sync: false
+      - key: NFL_REFRESH_SEGMENT
+        value: core-foundation
+
+  - type: cron
+    name: nfl-core-stats-refresh-trigger
+    runtime: python
+    # Weekly player/team stats, NGS, snaps, and player identity crosswalks.
+    schedule: "35 */6 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m sports_aggregator.nfl.render_trigger
+    envVars:
+      - key: NFL_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_TOKEN
+        sync: false
+      - key: NFL_REFRESH_SEGMENT
+        value: core-stats
+
+  - type: cron
+    name: nfl-core-depth-refresh-trigger
+    runtime: python
+    # Depth charts are large; twice daily is enough outside manual refreshes.
+    schedule: "50 4,16 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m sports_aggregator.nfl.render_trigger
+    envVars:
+      - key: NFL_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_TOKEN
+        sync: false
+      - key: NFL_REFRESH_SEGMENT
+        value: core-depth
+
+  - type: cron
+    name: nfl-core-pbp-refresh-trigger
+    runtime: python
+    # Rebuild EPA/situational/profile tables after nflverse publishes new PBP.
+    schedule: "55 */6 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m sports_aggregator.nfl.render_trigger
+    envVars:
+      - key: NFL_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_TOKEN
+        sync: false
+      - key: NFL_REFRESH_SEGMENT
+        value: core-pbp
+
+  - type: cron
+    name: nfl-content-refresh-trigger
+    runtime: python
+    # Refresh NFL RSS + Bluesky every three hours. The Python trigger emits
+    # structured retry/configuration errors rather than failing as a silent
+    # curl. It accepts NFL_REFRESH_URL directly or can derive /internal/nfl-refresh
+    # from the already-known CFB_REFRESH_URL.
+    schedule: "20 */3 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m sports_aggregator.nfl.render_trigger
+    envVars:
+      - key: NFL_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_TOKEN
+        sync: false
+      - key: NFL_REFRESH_SEGMENT
+        value: content
 
   - type: cron
     name: nfl-weather-refresh-trigger

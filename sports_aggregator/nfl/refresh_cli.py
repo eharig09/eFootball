@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
+import traceback
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -189,6 +190,17 @@ def _sync_weather(season: int, *, force: bool = False) -> None:
 _CORE_SEGMENTS = ("core-foundation", "core-stats", "core-depth", "core-pbp")
 
 
+def _history_path() -> Path:
+    return Path(_nfl_repository().path).parent / "nfl_refresh_history.jsonl"
+
+
+def _append_history(record: dict) -> None:
+    path = _history_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -196,6 +208,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--season", type=int, required=True)
     args = parser.parse_args(argv)
+    started = datetime.now(timezone.utc)
+    record = {
+        "segment": args.segment,
+        "season": int(args.season),
+        "started_at": started.isoformat(),
+        "status": "running",
+        "pid": os.getpid(),
+        "database_path": str(_nfl_repository().path),
+    }
+    _append_history(record)
     try:
         if args.segment == "rosters":
             _sync_rosters(args.season)
@@ -216,15 +238,35 @@ def main(argv: list[str] | None = None) -> int:
         elif args.segment == "content":
             _sync_content(args.season)
         elif args.segment == "pff":
-            # Completed-season PFF is the stable baseline until a current export lands.
+            # Rehydrate both the completed-season baseline and any current-season
+            # snapshot that has been uploaded. A missing season is a no-op.
             _sync_pff(args.season - 1)
+            _sync_pff(args.season)
         elif args.segment == "history":
             _sync_history(2010, args.season - 1, include_pbp=False)
         elif args.segment == "weather":
             _sync_weather(args.season)
     except Exception as exc:
+        finished = datetime.now(timezone.utc)
+        failed = {
+            **record,
+            "status": "failed",
+            "finished_at": finished.isoformat(),
+            "seconds": round((finished-started).total_seconds(), 1),
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:500],
+            "traceback": traceback.format_exc(limit=8)[-4000:],
+        }
+        _append_history(failed)
         print(f"{exc.__class__.__name__}: {exc}", file=sys.stderr)
         return 1
+    finished = datetime.now(timezone.utc)
+    _append_history({
+        **record,
+        "status": "success",
+        "finished_at": finished.isoformat(),
+        "seconds": round((finished-started).total_seconds(), 1),
+    })
     return 0
 
 
