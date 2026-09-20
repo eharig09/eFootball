@@ -16,6 +16,7 @@ from sports_aggregator.cfb import totals_divergence_matrix as tdm
 from sports_aggregator.cfb import narrative_shapes as ns
 from sports_aggregator.cfb.projection_backtest import BACKTEST_VERSION
 from sports_aggregator.cfb.repository import CFBRepository
+from sports_aggregator.cfb.live_margin_calibration import predict_live as predict_live_margin
 
 
 SPREAD_RESEARCH = {
@@ -519,7 +520,17 @@ def matchup_research_packet(
         }
 
     raw_total = float(away_points) + float(home_points)
-    projected_home_margin = float(home_points) - float(away_points)
+    raw_projected_home_margin = float(home_points) - float(away_points)
+    margin_calibration = predict_live_margin(
+        repository,
+        target_season=int(game["season"]),
+        projection=projection,
+    )
+    projected_home_margin = (
+        float(margin_calibration["value"])
+        if margin_calibration.get("value") is not None
+        else raw_projected_home_margin
+    )
     spread = lines.get("consensus_spread")
     market_home_margin = -float(spread) if spread is not None else None
     spread_edge_home = (
@@ -535,8 +546,8 @@ def matchup_research_packet(
     calibration = _calibrated_live_total(
         repository, season=int(game["season"]), raw_total=raw_total)
     projected_total = float(calibration["value"])
-    # Presentation score reconciles to the calibrated total while preserving
-    # Football Lab's raw projected margin exactly.
+    # Final score now combines two independently calibrated targets:
+    # total from prior-season total calibration and margin from frozen margin-v2.
     display_home_points = (projected_total + projected_home_margin) / 2.0
     display_away_points = (projected_total - projected_home_margin) / 2.0
     open_total, close_total = _market_totals(lines)
@@ -611,7 +622,9 @@ def matchup_research_packet(
             "home": display_home_points,
             "total": projected_total,
             "margin": projected_home_margin,
-            "method": "Calibrated total split around the unchanged Football Lab margin.",
+            "method": "Independent total + margin-v2 calibration; score reconstructed from T and M.",
+            "raw_margin": raw_projected_home_margin,
+            "margin_calibration": margin_calibration,
         },
         "actionable_2026": actionable_2026,
         "convergence": {
@@ -627,6 +640,8 @@ def matchup_research_packet(
         },
         "spread": {
             "projected_home_margin": projected_home_margin,
+            "raw_projected_home_margin": raw_projected_home_margin,
+            "margin_calibration": margin_calibration,
             "market_home_margin": market_home_margin,
             "model_market_edge_home": spread_edge_home,
             "model_side": spread_side,
@@ -657,6 +672,7 @@ def matchup_research_packet(
         "total_research": TOTAL_RESEARCH,
         "research_notes": [
             "Spread Full Convergence is a historical research architecture; the live page does not label the current game Full Convergence unless all frozen component lenses are available.",
+            "The live Football Lab spread uses margin-v2, fit without Vegas; missing external ratings fall back through validated nested variants.",
             "The <14 spread condition is shown as an applicability boundary, not a standalone signal.",
             "Totals regime benchmarks are descriptive historical cells, not confidence scores.",
             "Direct totals narrative adjustment did not improve the pooled model and is not applied to the live projection.",
