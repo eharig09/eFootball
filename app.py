@@ -297,6 +297,18 @@ def create_app(test_config: dict | None = None) -> Flask:
             "log": str(nfl_log_path),
         }), 202
 
+    def _safe_pff_counts(service, season: int) -> dict:
+        output = {}
+        for candidate in (season, season - 1):
+            try:
+                output[str(candidate)] = service.counts(candidate)
+            except Exception as exc:
+                output[str(candidate)] = {
+                    "error_type": exc.__class__.__name__,
+                    "error": str(exc)[:300],
+                }
+        return output
+
     @app.get("/internal/nfl-refresh-status")
     def nfl_refresh_status():
         require_refresh_auth()
@@ -313,6 +325,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             except json.JSONDecodeError:
                 history.append({"status": "unreadable", "raw": line[:300]})
         repository = app.extensions["nfl_repository"]
+        from sports_aggregator.nfl.pff import NFLPFFService
+        from sports_aggregator.nfl.content import NFLContentRepository
         pff_service = NFLPFFService(
             repository, app.config["NFL_PFF_SOURCE_ROOT"],
             app.config.get("NFL_PFF_UPLOAD_ROOT"),
@@ -358,10 +372,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "pff_upload_csv_files": len(upload_files),
                 "storage_checks": storage_checks,
             },
-            "pff_counts": {
-                str(season): pff_service.counts(season),
-                str(season - 1): pff_service.counts(season - 1),
-            },
+            "pff_counts": _safe_pff_counts(pff_service, season),
             "warnings": warnings,
             "refresh_history": history,
             "refresh_log_lines": _tail_lines(log_path, 120),
