@@ -258,11 +258,13 @@ def _week_ready(repository: CFBRepository, year: int, week: int) -> tuple[bool, 
         return False, 0, 0
 
 
-def _replace_with_lock_retry(repository: CFBRepository, raw, *, year: int, week: int) -> int:
+def _replace_with_lock_retry(repository: CFBRepository, raw, *, year: int, week: int,
+                             retain_raw: bool = True) -> int:
     delays = (15, 30, 60)
     for attempt in range(len(delays) + 1):
         try:
-            return replace_week_plays(repository, raw, season=year, week=week)
+            return replace_week_plays(
+                repository, raw, season=year, week=week, retain_raw=retain_raw)
         except sqlite3.OperationalError as exc:
             if "locked" not in str(exc).casefold() or attempt >= len(delays):
                 raise
@@ -535,12 +537,9 @@ def main(argv: list[str] | None = None, *, client=None) -> int:
                 raw = client.get("/plays", {
                     "year": year, "week": week, "seasonType": "both", "classification": "fbs"
                 }, cache_ttl_seconds=ttl, force=args.force)
-                if args.compact_history:
-                    count = replace_week_plays(
-                        repository, raw, season=year, week=week, retain_raw=False)
-                else:
-                    count = _replace_with_lock_retry(
-                        repository, raw, year=year, week=week)
+                count = _replace_with_lock_retry(
+                    repository, raw, year=year, week=week,
+                    retain_raw=not args.compact_history)
                 if args.compact_history:
                     _delete_play_cache(client, year=year, week=week)
                 total += count
