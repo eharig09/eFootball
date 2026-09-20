@@ -178,8 +178,30 @@ def report(repository: CFBRepository, *, from_season: int = 2022,
         for season in range(int(from_season), int(to_season) + 1)
     }
 
+    line_elo_thresholds = {}
+    for threshold in (0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5):
+        chosen = [
+            r for r in pooled_selected
+            if abs(float(r["line_elo_z"])) >= threshold
+        ]
+        line_elo_thresholds[str(threshold)] = {
+            "pooled": _summary(chosen),
+            "by_week": {
+                str(week): _summary([
+                    r for r in chosen if int(r["week"]) == week
+                ])
+                for week in EARLY_SIGNAL_WEEKS
+            },
+            "by_season": {
+                str(season): _summary([
+                    r for r in chosen if int(r["season"]) == season
+                ])
+                for season in range(int(from_season), int(to_season) + 1)
+            },
+        }
+
     return {
-        "version": "early-convergence-v2-peer-audit",
+        "version": "early-convergence-v2-line-elo-audit",
         "window": [int(from_season), int(to_season)],
         "signal_weeks": list(EARLY_SIGNAL_WEEKS),
         "threshold_z": THRESHOLD_Z,
