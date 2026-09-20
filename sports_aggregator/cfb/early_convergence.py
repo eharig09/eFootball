@@ -58,9 +58,21 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _fbs_teams(repository: CFBRepository) -> set[str]:
+    with repository._reader() as connection:
+        return {
+            str(r["school"])
+            for r in connection.execute(
+                """SELECT school FROM teams
+                   WHERE LOWER(COALESCE(classification,''))='fbs'"""
+            )
+        }
+
+
 def report(repository: CFBRepository, *, from_season: int = 2022,
            to_season: int = 2025) -> dict[str, Any]:
     early = _early_edge_rows(repository, int(from_season), int(to_season))
+    fbs = _fbs_teams(repository)
     lens_rows = ipl.build_lens_rows(repository, test_season=int(to_season))
     lens_by_game = {int(r["game_id"]): r for r in lens_rows}
 
@@ -155,8 +167,19 @@ def report(repository: CFBRepository, *, from_season: int = 2022,
             "week_3_scale": week_scales[3],
         })
 
+    peer_selected = [
+        r for r in pooled_selected
+        if r["home_team"] in fbs and r["away_team"] in fbs
+    ]
+    peer_by_season = {
+        str(season): _summary([
+            r for r in peer_selected if int(r["season"]) == season
+        ])
+        for season in range(int(from_season), int(to_season) + 1)
+    }
+
     return {
-        "version": "early-convergence-v2",
+        "version": "early-convergence-v2-peer-audit",
         "window": [int(from_season), int(to_season)],
         "signal_weeks": list(EARLY_SIGNAL_WEEKS),
         "threshold_z": THRESHOLD_Z,
@@ -168,6 +191,19 @@ def report(repository: CFBRepository, *, from_season: int = 2022,
             str(week): _summary([r for r in pooled_selected if int(r["week"]) == week])
             for week in EARLY_SIGNAL_WEEKS
         },
+        "peer_fbs_only": {
+            "classification_value": "fbs",
+            "fbs_team_count": len(fbs),
+            "pooled": _summary(peer_selected),
+            "by_week": {
+                str(week): _summary([
+                    r for r in peer_selected if int(r["week"]) == week
+                ])
+                for week in EARLY_SIGNAL_WEEKS
+            },
+            "by_season": peer_by_season,
+            "selected_games": peer_selected,
+        },
         "selected_games": pooled_selected,
         "notes": [
             "Week 1 is context only and never qualifies.",
@@ -175,5 +211,6 @@ def report(repository: CFBRepository, *, from_season: int = 2022,
             "Early Margin Power is standardized against prior seasons at the same week.",
             "Structural and Line Elo confirmation logic remains unchanged.",
             "Frozen standard Margin Power and Full Convergence are not modified.",
+            "peer_fbs_only is a diagnostic subset requiring both teams to have teams.classification='fbs'.",
         ],
     }
