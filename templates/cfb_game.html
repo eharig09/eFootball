@@ -80,7 +80,7 @@
 <nav class="mobile-page-tabs" data-mobile-page-tabs="always" role="tablist" aria-label="Matchup page sections">
     <button type="button" role="tab" data-mobile-tab="overview" aria-selected="true">Overview</button>
     <button type="button" role="tab" data-mobile-tab="stats" aria-selected="false">Stats</button>
-    <button type="button" role="tab" data-mobile-tab="projection" aria-selected="false">Projection</button>
+    <button type="button" role="tab" data-mobile-tab="projection" aria-selected="false">Forecast</button>
     <button type="button" role="tab" data-mobile-tab="matchups" aria-selected="false">Matchups</button>
     <button type="button" role="tab" data-mobile-tab="players" aria-selected="false">Players</button>
     <button type="button" role="tab" data-mobile-tab="coverage" aria-selected="false">Coverage</button>
@@ -129,21 +129,26 @@
 <section class="section projection-workspace" data-mobile-tab-panel="projection">
     <div class="projection-heading">
         <div>
-            <div class="eyebrow">Field Theory forecast</div>
-            <h2>Game projection</h2>
+            <div class="eyebrow">Field Theory matchup intelligence</div>
+            <h2>Forecast &amp; market</h2>
         </div>
         {% if projection.points_model %}
         <span class="projection-model-chip">{{ projection.points_model.model_version }}</span>
         {% endif %}
     </div>
-    <div class="section-note">
-        Leak-safe, opponent-adjusted pregame estimates built only from information available
-        before kickoff. Points, total yardage and opponent-quality context are the headline
-        outputs; pace and play mix are the supporting inputs.
+    <div class="section-note forecast-lede">
+        One view of the matchup: projected score and game shape, the market's current number,
+        and the historical research context for where the model and market disagree.
     </div>
+    <nav class="forecast-jump" aria-label="Forecast sections">
+        <a href="#forecast-score">Score</a>
+        <a href="#forecast-market">Market</a>
+        <a href="#forecast-drivers">Drivers</a>
+        <a href="#forecast-method">Method</a>
+    </nav>
 
     {% if not projection.insufficient_data %}
-    <div class="projection-scoreboard" aria-label="Projected score, yardage and quality">
+    <div class="projection-scoreboard" id="forecast-score" aria-label="Projected score, yardage and quality">
         {% for side, team, brand in [
             ('away', game.away_team, away_brand),
             ('home', game.home_team, home_brand)] %}
@@ -199,6 +204,10 @@
     </div>
     {% endif %}
 
+    <div class="forecast-subsection-head" id="forecast-drivers">
+        <span>Game-shape drivers</span>
+        <p>Possession, play volume, pass tendency and turnover expectation behind the score.</p>
+    </div>
     <div class="projection-drivers" aria-label="Supporting projection inputs">
         {% for key, label, fmt in [
             ('drives', 'Drives', 'f1'),
@@ -214,27 +223,21 @@
     </div>
     {% endif %}
 
-    <details class="projection-detail">
-        <summary>Full projection detail</summary>
-        {{ data_table(projection_table, 'projection-table') }}
-    </details>
     <div class="projection-reads">
         {% for line in projection_lines %}<p>{{ line }}</p>{% endfor %}
     </div>
-</section>
 
-<section class="section research-intelligence" data-mobile-tab-panel="projection">
-    <div class="research-intelligence-head">
+    <div class="forecast-divider" id="forecast-market">
         <div>
-            <div class="eyebrow">Research intelligence</div>
-            <h2>Model vs market</h2>
+            <span class="eyebrow">Model vs market</span>
+            <h3>Where this matchup sits</h3>
         </div>
         <span class="research-status">Historical context · not a recommendation</span>
     </div>
     <div class="section-note">
-        Live matchup state is shown beside the historical regimes uncovered in the
-        walk-forward spread and totals research. Records describe how prior games in
-        those research samples settled against the stored consensus line.
+        Current spread and total disagreement are paired directly with the closest
+        historical research regimes. Historical records describe prior samples, not
+        a forecast confidence score for this game.
     </div>
 
     {% if research_intelligence.available %}
@@ -345,22 +348,17 @@
         </article>
     </div>
 
-    <details class="research-methodology">
-        <summary>Research notes &amp; limitations</summary>
-        <ul>
-            {% for note in research_intelligence.research_notes %}<li>{{ note }}</li>{% endfor %}
-        </ul>
-    </details>
-</section>
-
-<section class="section" data-mobile-tab-panel="projection">
-    <h2>How the projection is built</h2>
-    <div class="section-note">
-        Each layer blends the offense's recency-weighted trailing rate with what the
-        opponent has allowed. The same Baseline C chain was backtested independently
-        for drives, plays per drive, play mix, and yards per opportunity.
-    </div>
-    <div class="projection-method">
+    <details class="forecast-method" id="forecast-method">
+        <summary>
+            <span><b>How the forecast is built</b><i>Model mechanics, full detail &amp; research limitations</i></span>
+        </summary>
+        <div class="forecast-method-body">
+            <p class="section-note">
+                Each layer blends the offense's recency-weighted trailing rate with what the
+                opponent has allowed. The same Baseline C chain was backtested independently
+                for drives, plays per drive, play mix, and yards per opportunity.
+            </p>
+            <div class="projection-method">
         {% for side, team, opponent, snapshot in [
             ('away', game.away_team, game.home_team, projection.away_snapshot),
             ('home', game.home_team, game.away_team, projection.home_snapshot)] %}
@@ -381,12 +379,24 @@
             </div>
         </article>
         {% endfor %}
-    </div>
-    <div class="table-note">
-        This team-level opportunity layer is the input contract for future player
-        projections: player target, carry, and yardage shares can be allocated without
-        changing the game-volume model.
-    </div>
+            </div>
+            <div class="table-note">
+                This team-level opportunity layer is the input contract for future player
+                projections: player target, carry, and yardage shares can be allocated without
+                changing the game-volume model.
+            </div>
+            <details class="projection-detail">
+                <summary>Full projection table</summary>
+                {{ data_table(projection_table, 'projection-table') }}
+            </details>
+            <div class="research-methodology">
+                <h4>Research notes &amp; limitations</h4>
+                <ul>
+                    {% for note in research_intelligence.research_notes %}<li>{{ note }}</li>{% endfor %}
+                </ul>
+            </div>
+        </div>
+    </details>
 </section>
 
 <section class="section" data-mobile-tab-panel="overview">
