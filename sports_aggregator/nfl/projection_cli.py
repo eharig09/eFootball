@@ -17,6 +17,7 @@ from sports_aggregator.nfl.qb_quality_projection import report as qb_quality_rep
 from sports_aggregator.nfl.pressure_ol_readiness import report as pressure_ol_readiness_report
 from sports_aggregator.nfl.scoring_bridge import report as scoring_bridge_report
 from sports_aggregator.nfl.score_calibration import report as score_calibration_report
+from sports_aggregator.nfl.margin_strength_ablation import report as margin_strength_report
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -24,6 +25,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="instance/nfl.sqlite3")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    margin_strength = sub.add_parser("margin-strength")
+    margin_strength.add_argument("--from-year", type=int, default=2010)
+    margin_strength.add_argument("--to-year", type=int, default=2025)
 
     score_cal = sub.add_parser("score-calibration")
     score_cal.add_argument("--from-year", type=int, default=2010)
@@ -75,6 +80,15 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     repository = NFLRepository(Path(args.db))
+
+    if args.command == "margin-strength":
+        payload = margin_strength_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
 
     if args.command == "score-calibration":
         payload = score_calibration_report(
