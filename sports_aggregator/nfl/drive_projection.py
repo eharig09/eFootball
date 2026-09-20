@@ -299,6 +299,10 @@ def _feature_row(
             float(game[f"{side}_rush_epa"]) / float(game[f"{side}_rush_plays"])
             if float(game[f"{side}_rush_plays"]) else None
         ),
+        "team_pass_epa_per_play": values.get("team_pass_epa_per_play"),
+        "opponent_pass_epa_allowed_per_play": values.get("opponent_pass_epa_allowed_per_play"),
+        "team_rush_epa_per_play": values.get("team_rush_epa_per_play"),
+        "opponent_rush_epa_allowed_per_play": values.get("opponent_rush_epa_allowed_per_play"),
         **{key: float(values[key]) for key in FEATURES},
     }
 
