@@ -74,15 +74,16 @@ def _market_game_counts(
     with repository._reader() as connection:
         rows = [
             dict(r) for r in connection.execute(
-                """SELECT game_id,
-                          MAX(CASE WHEN spread IS NOT NULL THEN 1 ELSE 0 END) AS has_spread,
-                          MAX(CASE WHEN spread_open IS NOT NULL THEN 1 ELSE 0 END) AS has_spread_open,
-                          MAX(CASE WHEN over_under IS NOT NULL THEN 1 ELSE 0 END) AS has_total,
-                          MAX(CASE WHEN over_under_open IS NOT NULL THEN 1 ELSE 0 END) AS has_total_open
-                   FROM game_lines
-                   WHERE season=?
-                   GROUP BY game_id""",
-                (int(season),),
+                """SELECT gl.game_id,
+                          MAX(CASE WHEN gl.spread IS NOT NULL THEN 1 ELSE 0 END) AS has_spread,
+                          MAX(CASE WHEN gl.spread_open IS NOT NULL THEN 1 ELSE 0 END) AS has_spread_open,
+                          MAX(CASE WHEN gl.over_under IS NOT NULL THEN 1 ELSE 0 END) AS has_total,
+                          MAX(CASE WHEN gl.over_under_open IS NOT NULL THEN 1 ELSE 0 END) AS has_total_open
+                   FROM game_lines gl
+                   JOIN games g ON g.game_id=gl.game_id
+                   WHERE gl.season=? AND g.season=? AND g.completed=1
+                   GROUP BY gl.game_id""",
+                (int(season), int(season)),
             )
         ]
     return {
@@ -321,7 +322,7 @@ def audit(
         ),
     }
     return {
-        "version": "historical-backtest-coverage-v1",
+        "version": "historical-backtest-coverage-v2",
         "from_season": int(from_season),
         "to_season": int(to_season),
         "seasons": rows,
