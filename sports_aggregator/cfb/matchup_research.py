@@ -435,7 +435,7 @@ def _calibrated_live_total(
     fit = mat._linear_fit(pairs)
     if not fit:
         return {"value": raw_total, "calibrated": False, "training_games": len(pairs),
-                "interval80_low": None, "interval80_high": None}
+                "interval50_low": None, "interval50_high": None}
 
     calibrated_value = float(fit["intercept"]) + float(fit["slope"]) * float(raw_total)
     residuals = sorted(
@@ -452,15 +452,15 @@ def _calibrated_live_total(
         hi = min(lo + 1, len(values) - 1)
         frac = pos - lo
         return float(values[lo]) * (1.0 - frac) + float(values[hi]) * frac
-    q10, q90 = quantile(residuals, 0.10), quantile(residuals, 0.90)
+    q25, q75 = quantile(residuals, 0.25), quantile(residuals, 0.75)
     return {
         "value": calibrated_value,
         "calibrated": True,
         "training_games": int(fit["n"]),
         "intercept": float(fit["intercept"]),
         "slope": float(fit["slope"]),
-        "interval80_low": calibrated_value + q10 if q10 is not None else None,
-        "interval80_high": calibrated_value + q90 if q90 is not None else None,
+        "interval50_low": calibrated_value + q25 if q25 is not None else None,
+        "interval50_high": calibrated_value + q75 if q75 is not None else None,
     }
 
 
@@ -501,6 +501,10 @@ def matchup_research_packet(
     calibration = _calibrated_live_total(
         repository, season=int(game["season"]), raw_total=raw_total)
     projected_total = float(calibration["value"])
+    # Presentation score reconciles to the calibrated total while preserving
+    # Football Lab's raw projected margin exactly.
+    display_home_points = (projected_total + projected_home_margin) / 2.0
+    display_away_points = (projected_total - projected_home_margin) / 2.0
     open_total, close_total = _market_totals(lines)
 
     open_edge = (
@@ -539,6 +543,24 @@ def matchup_research_packet(
     return {
         "available": True,
         "narrative": narrative,
+        "display_score": {
+            "away": display_away_points,
+            "home": display_home_points,
+            "total": projected_total,
+            "margin": projected_home_margin,
+            "method": "Calibrated total split around the unchanged Football Lab margin.",
+        },
+        "convergence": {
+            "status": "pending",
+            "qualified": False,
+            "threshold": 1.0,
+            "criteria": [
+                {"label": "Margin Power", "requirement": "|z| >= 1.0", "state": "pending"},
+                {"label": "Structural", "requirement": "same direction", "state": "pending"},
+                {"label": "Line Elo", "requirement": "same direction", "state": "pending"},
+            ],
+            "note": "FULL CONVERGENCE is shown only when all three frozen criteria are available and pass.",
+        },
         "spread": {
             "projected_home_margin": projected_home_margin,
             "market_home_margin": market_home_margin,
@@ -554,8 +576,8 @@ def matchup_research_packet(
             "raw_projected_total": raw_total,
             "calibrated_projected_total": projected_total,
             "calibration": calibration,
-            "interval80_low": calibration.get("interval80_low"),
-            "interval80_high": calibration.get("interval80_high"),
+            "interval50_low": calibration.get("interval50_low"),
+            "interval50_high": calibration.get("interval50_high"),
             "opening_total": open_total,
             "closing_total": close_total,
             "opening_edge": open_edge,
