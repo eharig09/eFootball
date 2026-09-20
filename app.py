@@ -279,12 +279,89 @@ def create_app(test_config: dict | None = None) -> Flask:
             abort(400, description="segment must be one of content, rosters, weather")
         season = app.config.get("CFB_DEFAULT_SEASON") or current_nfl_season()
         root = Path(__file__).resolve().parent
-        subprocess.Popen(
-            [sys.executable, "-m", "sports_aggregator.nfl.refresh_cli", segment,
-             "--season", str(season)],
-            cwd=str(root), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+        nfl_database = Path(app.config["NFL_DATABASE_PATH"])
+        nfl_log_path = nfl_database.parent / "nfl_refresh.log"
+        nfl_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with nfl_log_path.open("a", encoding="utf-8") as nfl_log:
+            subprocess.Popen(
+                [sys.executable, "-m", "sports_aggregator.nfl.refresh_cli", segment,
+                 "--season", str(season)],
+                cwd=str(root), stdout=nfl_log, stderr=subprocess.STDOUT, close_fds=True,
+            )
+        return jsonify({
+            "status": "accepted", "season": season, "segment": segment,
+            "log": str(nfl_log_path),
+        }), 202
+
+    @app.get("/internal/nfl-refresh-status")
+    def nfl_refresh_status():
+        require_refresh_auth()
+        database = Path(app.config["NFL_DATABASE_PATH"])
+        upload_root = Path(app.config["NFL_PFF_UPLOAD_ROOT"])
+        source_root = Path(app.config["NFL_PFF_SOURCE_ROOT"])
+        history_path = database.parent / "nfl_refresh_history.jsonl"
+        log_path = database.parent / "nfl_refresh.log"
+        history_lines = _tail_lines(history_path, 20)
+        history = []
+        for line in history_lines:
+            try:
+                history.append(json.loads(line))
+            except json.JSONDecodeError:
+                history.append({"status": "unreadable", "raw": line[:300]})
+        repository = app.extensions["nfl_repository"]
+        pff_service = NFLPFFService(
+            repository, app.config["NFL_PFF_SOURCE_ROOT"],
+            app.config.get("NFL_PFF_UPLOAD_ROOT"),
         )
-        return jsonify({"status": "accepted", "season": season, "segment": segment}), 202
+        season = current_nfl_season()
+        upload_files = list(upload_root.rglob("*.csv")) if upload_root.exists() else []
+        source_files = []
+        if source_root.exists():
+            for relative in ("nfl/pff", "pff_coverage_data"):
+                root = source_root / relative
+                if root.exists():
+                    source_files.extend(root.rglob("*.csv"))
+        latest_ingestion = None
+        try:
+            latest_ingestion = NFLContentRepository(repository).latest_ingestion_run()
+        except Exception:
+            pass
+        persistent_root = Path("/var/data")
+        render = _env_flag("RENDER", False)
+        storage_checks = {
+            "database_under_var_data": str(database).startswith(str(persistent_root)),
+            "upload_root_under_var_data": str(upload_root).startswith(str(persistent_root)),
+            "source_root_under_var_data": str(source_root).startswith(str(persistent_root)),
+        }
+        warnings = []
+        if render and not storage_checks["database_under_var_data"]:
+            warnings.append("NFL_DATABASE_PATH is not under /var/data on Render; deploys can replace it.")
+        if render and not storage_checks["upload_root_under_var_data"]:
+            warnings.append("NFL_PFF_UPLOAD_ROOT is not under /var/data on Render; uploaded PFF files can disappear on deploy.")
+        return jsonify({
+            "season": season,
+            "latest_ingestion_run": latest_ingestion,
+            "runtime": {
+                "render": render,
+                "database_path": str(database),
+                "database_exists": database.exists(),
+                "database_size_bytes": database.stat().st_size if database.exists() else 0,
+                "pff_source_root": str(source_root),
+                "pff_source_exists": source_root.exists(),
+                "pff_source_csv_files": len(source_files),
+                "pff_upload_root": str(upload_root),
+                "pff_upload_exists": upload_root.exists(),
+                "pff_upload_csv_files": len(upload_files),
+                "storage_checks": storage_checks,
+            },
+            "pff_counts": {
+                str(season): pff_service.counts(season),
+                str(season - 1): pff_service.counts(season - 1),
+            },
+            "warnings": warnings,
+            "refresh_history": history,
+            "refresh_log_lines": _tail_lines(log_path, 120),
+        })
 
     @app.post("/internal/cfb-content-zap")
     def cfb_content_zap():
