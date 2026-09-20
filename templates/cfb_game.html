@@ -160,7 +160,11 @@
                 {% elif ph > 0 %}{{ game.home_team }} -{{ ph | abs | cell('f1') }}
                 {% elif ph < 0 %}{{ game.away_team }} -{{ ph | abs | cell('f1') }}
                 {% else %}PK{% endif %}
-            </b></div>
+            </b>
+            {% if research_intelligence.spread.margin_calibration %}
+            <i>{{ research_intelligence.spread.margin_calibration.model_version }} · {{ research_intelligence.spread.margin_calibration.variant }}</i>
+            {% endif %}
+            </div>
             <div><span>Market</span><b>
                 {% if mh is none %}—
                 {% elif mh > 0 %}{{ game.home_team }} -{{ mh | abs | cell('f1') }}
