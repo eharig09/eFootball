@@ -20,6 +20,7 @@ from sports_aggregator.cfb import convergence_robustness
 from sports_aggregator.cfb import convergence_action_policy
 from sports_aggregator.cfb import market_ats_totals
 from sports_aggregator.cfb import totals_convergence
+from sports_aggregator.cfb import totals_market_movement
 
 
 def main() -> None:
@@ -103,6 +104,14 @@ def main() -> None:
         "--output-dir",
         default="research_outputs",
         help="Directory for totals convergence artifacts",
+    )
+
+    totals_movement = sub.add_parser("totals-market-movement")
+    totals_movement.add_argument("--year", type=int, default=2025)
+    totals_movement.add_argument(
+        "--output-dir",
+        default="research_outputs",
+        help="Directory for totals market-movement artifacts",
     )
 
     load_dotenv()
@@ -213,6 +222,16 @@ def main() -> None:
             args.output_dir,
         )
         payload = totals_convergence.compact_console_summary(payload, paths)
+    elif args.command == "totals-market-movement":
+        payload = totals_market_movement.report(
+            repository,
+            test_season=args.year,
+        )
+        paths = totals_market_movement.export_report(
+            payload,
+            args.output_dir,
+        )
+        payload = totals_market_movement.compact_console_summary(payload, paths)
     else:
         payload = narrative_shapes.report(
             repository,
