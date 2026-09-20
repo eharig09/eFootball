@@ -238,8 +238,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.segment == "content":
             _sync_content(args.season)
         elif args.segment == "pff":
-            # Completed-season PFF is the stable baseline until a current export lands.
+            # Rehydrate both the completed-season baseline and any current-season
+            # snapshot that has been uploaded. A missing season is a no-op.
             _sync_pff(args.season - 1)
+            _sync_pff(args.season)
         elif args.segment == "history":
             _sync_history(2010, args.season - 1, include_pbp=False)
         elif args.segment == "weather":
