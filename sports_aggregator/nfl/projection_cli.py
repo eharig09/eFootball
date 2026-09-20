@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from sports_aggregator.nfl.drive_projection import report
+from sports_aggregator.nfl.modeling_readiness import audit as readiness_audit
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -14,12 +15,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db", default="instance/nfl.sqlite3")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    readiness = sub.add_parser("readiness")
+    readiness.add_argument("--from-year", type=int, default=2010)
+    readiness.add_argument("--to-year", type=int, default=2026)
+
     drives = sub.add_parser("drive-backtest")
     drives.add_argument("--from-year", type=int, default=2016)
     drives.add_argument("--to-year", type=int, default=2025)
 
     args = parser.parse_args(argv)
     repository = NFLRepository(Path(args.db))
+
+    if args.command == "readiness":
+        payload = readiness_audit(
+            repository,
+            from_season=int(args.from_year),
+            to_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
 
     if args.command == "drive-backtest":
         payload = report(
