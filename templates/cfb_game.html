@@ -218,15 +218,21 @@
             {% set market_abs = mh | abs %}
             {% set model_abs = ph | abs %}
             {% set same_favorite = (mh > 0 and ph > 0) or (mh < 0 and ph < 0) %}
-            <b>
-                {% if not same_favorite and mh != 0 and ph != 0 %}Favorite flips
-                {% elif (market_abs < 3 <= model_abs) or (model_abs < 3 <= market_abs) %}Crosses 3
-                {% elif (market_abs < 7 <= model_abs) or (model_abs < 7 <= market_abs) %}Crosses 7
-                {% elif (market_abs < 10 <= model_abs) or (model_abs < 10 <= market_abs) %}Crosses 10
-                {% elif (market_abs < 14 <= model_abs) or (model_abs < 14 <= market_abs) %}Crosses 14
-                {% else %}No major key crossed{% endif %}
+            <b class="fc-key-list">
+                {% if not same_favorite and mh != 0 and ph != 0 %}<em>FLIP</em>{% endif %}
+                {% if (market_abs < 3 <= model_abs) or (model_abs < 3 <= market_abs) %}<em>3</em>{% endif %}
+                {% if (market_abs < 7 <= model_abs) or (model_abs < 7 <= market_abs) %}<em>7</em>{% endif %}
+                {% if (market_abs < 10 <= model_abs) or (model_abs < 10 <= market_abs) %}<em>10</em>{% endif %}
+                {% if (market_abs < 14 <= model_abs) or (model_abs < 14 <= market_abs) %}<em>14</em>{% endif %}
+                {% if same_favorite
+                      and not ((market_abs < 3 <= model_abs) or (model_abs < 3 <= market_abs))
+                      and not ((market_abs < 7 <= model_abs) or (model_abs < 7 <= market_abs))
+                      and not ((market_abs < 10 <= model_abs) or (model_abs < 10 <= market_abs))
+                      and not ((market_abs < 14 <= model_abs) or (model_abs < 14 <= market_abs)) %}
+                <em class="is-none">NONE</em>
+                {% endif %}
             </b>
-            <i>3 · 7 · 10 · 14</i>
+            <i>crossed between market and FL</i>
             {% else %}<b>—</b><i>Market comparison unavailable</i>{% endif %}
         </div>
     </div>
