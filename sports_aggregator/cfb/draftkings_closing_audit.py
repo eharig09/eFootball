@@ -176,6 +176,33 @@ def _pipeline_counts(repository: CFBRepository, season: int) -> dict[str, int]:
         r for r in cap.cr._classified_with_context(repository, test_season=int(season))
         if int(r["season"]) == int(season)
     ]
+    lens_keys = (
+        "margin_power_edge",
+        "football_lab_edge",
+        "elo_edge",
+        "efficiency_power_edge",
+        "line_elo_edge",
+    )
+    lens_coverage = {
+        key: sum(r.get(key) is not None for r in lens_rows)
+        for key in lens_keys
+    }
+    structural_two_plus = sum(
+        sum(
+            r.get(key) is not None
+            for key in ("football_lab_edge", "elo_edge", "efficiency_power_edge")
+        ) >= 2
+        for r in lens_rows
+    )
+    both_confirmation_inputs = sum(
+        r.get("margin_power_edge") is not None
+        and r.get("line_elo_edge") is not None
+        and sum(
+            r.get(key) is not None
+            for key in ("football_lab_edge", "elo_edge", "efficiency_power_edge")
+        ) >= 2
+        for r in lens_rows
+    )
     return {
         "completed_games": int(completed),
         "narrative_rows": int(narrative),
@@ -183,6 +210,9 @@ def _pipeline_counts(repository: CFBRepository, season: int) -> dict[str, int]:
         "xpoints_rows": int(xpoints),
         "drive_outcome_rows": int(drive_outcomes),
         "lens_rows": len(lens_rows),
+        "lens_non_null": lens_coverage,
+        "rows_with_two_plus_structural_components": structural_two_plus,
+        "rows_with_primary_market_and_structural_inputs": both_confirmation_inputs,
         "classified_rows_with_two_available_confirmations": len(classified),
     }
 
