@@ -109,6 +109,7 @@
         <div class="empty football-lab-empty">Football Lab does not yet have enough pregame history to build this matchup projection.{% if football_lab_status and football_lab_status.error %} <small>{{ football_lab_status.error }}</small>{% endif %}</div>
         {% endif %}
     </section>
+    {% endif %}
 
     {% if availability %}
     <section class="section matchup-availability" id="availability" data-nfl-panel="overview">
