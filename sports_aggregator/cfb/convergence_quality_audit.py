@@ -105,6 +105,55 @@ def _edge_magnitude_bucket(value: float | None) -> str:
     return "12+"
 
 
+def _applicability_points(row: dict[str, Any]) -> tuple[int, list[str]]:
+    points = 0
+    reasons: list[str] = []
+    region = row.get("key_number_region")
+    edge_bucket = row.get("margin_power_edge_bucket")
+    crossing = row.get("margin_power_key_crossing")
+
+    if region == "14_plus":
+        points -= 2
+        reasons.append("market_14_plus")
+    elif region == "between_3_and_7":
+        points -= 1
+        reasons.append("market_between_3_and_7")
+    elif region in {"below_3", "around_3", "around_7", "7_to_13.5"}:
+        points += 1
+        reasons.append("market_region_supported")
+
+    if edge_bucket == "8-11.99":
+        points += 1
+        reasons.append("edge_plausible_large")
+    elif edge_bucket == "12+":
+        points -= 1
+        reasons.append("edge_extreme")
+
+    if crossing == "crosses_multiple_3_7":
+        points += 1
+        reasons.append("crosses_3_and_7")
+    elif crossing in {"crosses_multiple_3_7_10_14", "crosses_multiple_7_10_14"}:
+        points -= 1
+        reasons.append("crosses_many_keys")
+
+    if row.get("all_three_structural_available") is True:
+        points += 1
+        reasons.append("complete_structural_inputs")
+    elif row.get("all_three_structural_available") is False:
+        points -= 2
+        reasons.append("incomplete_structural_inputs")
+
+    return points, reasons
+
+
+def _applicability_band(points: int) -> str:
+    if points >= 3:
+        return "high"
+    if points >= 1:
+        return "medium"
+    return "low"
+
+
 def _result_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
         return {"n": 0}
@@ -209,6 +258,15 @@ def report(
             _crossing_label(market_keys) if opening_margin is not None
             else "opening_unavailable"
         )
+        row["all_three_structural_available"] = all(
+            lens.get(key) is not None
+            for key in ("football_lab_edge", "elo_edge", "efficiency_power_edge")
+        )
+        points, reasons = _applicability_points(row)
+        row["applicability_points"] = points
+        row["applicability_band"] = _applicability_band(points)
+        row["applicability_reasons"] = reasons
+
         row["market_move_toward_margin_power"] = (
             abs(market_margin - float(row["margin_power_implied_margin"]))
             < abs(opening_margin - float(row["margin_power_implied_margin"]))
@@ -322,6 +380,30 @@ def report(
                 ),
             ),
         },
+        "walk_forward_applicability": {
+            "score_definition": {
+                "market_region_supported": 1,
+                "market_between_3_and_7": -1,
+                "market_14_plus": -2,
+                "edge_8_to_11_99": 1,
+                "edge_12_plus": -1,
+                "crosses_3_and_7_only": 1,
+                "crosses_many_keys": -1,
+                "complete_structural_inputs": 1,
+                "incomplete_structural_inputs": -2,
+                "bands": {"high": "3+", "medium": "1-2", "low": "0_or_less"},
+            },
+            "overall_by_band": _group_summary(
+                full, lambda r: r["applicability_band"]
+            ),
+            "by_season_and_band": _group_summary(
+                full, lambda r: f'{r["season"]}|{r["applicability_band"]}'
+            ),
+            "post_2021_by_band": _group_summary(
+                [r for r in full if int(r["season"]) >= 2022],
+                lambda r: r["applicability_band"],
+            ),
+        },
         "between_3_and_7": {
             "overall": _result_summary(between),
             "by_season": _group_summary(between, lambda r: r["season"]),
@@ -356,5 +438,7 @@ def report(
             "Football Lab key crossing is retained as a secondary diagnostic, not a replacement primary signal.",
             "Opening-to-closing spread key crossings are reported only when game_lines exposes spread_open.",
             "Raw Margin Power edge magnitude is bucketed independently of key crossings to separate scoring-regime effects from larger-disagreement effects.",
+            "Applicability points are fixed from predeclared football-structural observations and are not tuned on target-season outcomes.",
+            "Applicability is descriptive context layered on top of Full Convergence; it does not redefine Full Convergence.",
         ],
     }
