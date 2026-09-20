@@ -92,6 +92,19 @@ def _market_open_margins(repository: CFBRepository) -> dict[int, float]:
         }
 
 
+def _edge_magnitude_bucket(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    mag = abs(float(value))
+    if mag < 5.0:
+        return "<5"
+    if mag < 8.0:
+        return "5-7.99"
+    if mag < 12.0:
+        return "8-11.99"
+    return "12+"
+
+
 def _result_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
         return {"n": 0}
@@ -163,6 +176,12 @@ def report(
         )
         margin_power_edge = lens.get("margin_power_edge")
         football_lab_edge = lens.get("football_lab_edge")
+        row["margin_power_edge_raw"] = (
+            float(margin_power_edge) if margin_power_edge is not None else None
+        )
+        row["margin_power_edge_bucket"] = _edge_magnitude_bucket(
+            row["margin_power_edge_raw"]
+        )
         row["margin_power_implied_margin"] = (
             market_margin + float(margin_power_edge)
             if market_margin is not None and margin_power_edge is not None else None
@@ -280,6 +299,28 @@ def report(
                 full,
                 lambda r: f'{r["season"]}|{r["margin_power_key_crossing"]}',
             ),
+            "market_region_x_margin_power_crossing": _group_summary(
+                full,
+                lambda r: (
+                    f'{r["key_number_region"]}|'
+                    f'{r["margin_power_key_crossing"]}'
+                ),
+            ),
+            "market_region_x_edge_magnitude": _group_summary(
+                full,
+                lambda r: (
+                    f'{r["key_number_region"]}|'
+                    f'{r["margin_power_edge_bucket"]}'
+                ),
+            ),
+            "market_region_x_crossing_x_edge_magnitude": _group_summary(
+                full,
+                lambda r: (
+                    f'{r["key_number_region"]}|'
+                    f'{r["margin_power_key_crossing"]}|'
+                    f'{r["margin_power_edge_bucket"]}'
+                ),
+            ),
         },
         "between_3_and_7": {
             "overall": _result_summary(between),
@@ -314,5 +355,6 @@ def report(
             "Primary key crossing uses Margin Power implied margin because Margin Power is the frozen primary convergence signal.",
             "Football Lab key crossing is retained as a secondary diagnostic, not a replacement primary signal.",
             "Opening-to-closing spread key crossings are reported only when game_lines exposes spread_open.",
+            "Raw Margin Power edge magnitude is bucketed independently of key crossings to separate scoring-regime effects from larger-disagreement effects.",
         ],
     }
