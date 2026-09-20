@@ -306,3 +306,170 @@ table.data td.impact-emerging .sub { color:var(--blue); }
     .projection-method { grid-template-columns:minmax(0, 1fr); }
     .projection-heading { align-items:flex-start; }
 }
+
+
+/* ---------- Research intelligence ----------
+   A compact sports-analysis layer: live matchup state first, historical
+   research context second, methodology tucked away. */
+.research-intelligence {
+    position:relative;
+    overflow:hidden;
+    border-top:3px solid var(--rust);
+}
+.research-intelligence::before {
+    content:"";
+    position:absolute; inset:0 0 auto 0; height:110px; pointer-events:none;
+    background:linear-gradient(180deg,
+        color-mix(in srgb,var(--rust) 7%,transparent), transparent);
+}
+.research-intelligence > * { position:relative; }
+.research-intelligence-head {
+    display:flex; align-items:flex-end; justify-content:space-between;
+    gap:12px; margin-bottom:4px;
+}
+.research-intelligence-head h2 { margin-bottom:0; }
+.research-status {
+    display:inline-flex; align-items:center; padding:4px 8px;
+    border:1px solid var(--line-strong); border-radius:999px;
+    background:var(--paper); color:var(--muted);
+    font:800 .55rem var(--display-font); text-transform:uppercase;
+    letter-spacing:.055em; white-space:nowrap;
+}
+.research-live-grid {
+    display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:12px; margin:16px 0 12px;
+}
+.research-market-card {
+    min-width:0; padding:14px;
+    border:1px solid var(--line);
+    background:
+        linear-gradient(145deg,color-mix(in srgb,var(--surface-strong) 4%,var(--paper)),var(--paper));
+    box-shadow:var(--shadow-soft);
+}
+.research-card-kicker {
+    color:var(--rust); font:900 .55rem var(--display-font);
+    letter-spacing:.075em; text-transform:uppercase;
+}
+.research-card-headline {
+    display:flex; align-items:baseline; gap:8px; margin:6px 0 12px;
+}
+.research-card-headline strong {
+    font:900 clamp(1.55rem,4vw,2.25rem)/1 var(--display-font);
+    letter-spacing:-.025em;
+}
+.research-card-headline span { color:var(--muted); font-size:.68rem; }
+.research-metrics {
+    display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:1px; overflow:hidden; border:1px solid var(--line);
+    background:var(--line);
+}
+.research-metrics span {
+    min-width:0; padding:8px 9px; background:var(--surface-soft);
+}
+.research-metrics i {
+    display:block; color:var(--muted); font:800 .48rem var(--display-font);
+    font-style:normal; text-transform:uppercase; letter-spacing:.045em;
+}
+.research-metrics b {
+    display:block; margin-top:3px; font:900 .92rem var(--display-font);
+    font-variant-numeric:tabular-nums;
+}
+.research-chip-row { display:flex; flex-wrap:wrap; gap:5px; margin-top:10px; }
+.research-chip {
+    display:inline-flex; align-items:center; width:max-content;
+    margin-top:10px; padding:4px 7px; border-radius:999px;
+    background:var(--tint); color:var(--muted); border:1px solid var(--line);
+    font:800 .55rem var(--display-font); letter-spacing:.025em;
+    text-transform:uppercase;
+}
+.research-chip-row .research-chip { margin-top:0; }
+.research-chip.is-supported {
+    color:var(--green);
+    border-color:color-mix(in srgb,var(--green) 35%,var(--line));
+    background:color-mix(in srgb,var(--green) 8%,var(--paper));
+}
+.research-chip.is-caution {
+    color:var(--rust);
+    border-color:color-mix(in srgb,var(--rust) 35%,var(--line));
+    background:color-mix(in srgb,var(--rust) 8%,var(--paper));
+}
+.research-regime-callout {
+    display:grid; grid-template-columns:minmax(0,1fr) auto auto;
+    align-items:center; gap:14px 22px;
+    margin:12px 0 16px; padding:12px 14px;
+    border-left:4px solid var(--gold);
+    background:color-mix(in srgb,var(--gold) 7%,var(--surface-soft));
+}
+.research-regime-callout > div:first-child strong {
+    display:block; margin-top:3px; font:800 .92rem var(--display-font);
+    text-transform:capitalize;
+}
+.research-regime-number { text-align:right; }
+.research-regime-number b {
+    display:block; font:900 1.18rem var(--display-font);
+    font-variant-numeric:tabular-nums;
+}
+.research-regime-number span {
+    display:block; color:var(--muted); font-size:.52rem;
+    text-transform:uppercase; letter-spacing:.04em;
+}
+.research-benchmark-grid {
+    display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:14px; margin-top:12px;
+}
+.research-benchmark-panel {
+    min-width:0; padding:13px 14px;
+    border:1px solid var(--line); background:var(--paper);
+}
+.research-panel-title {
+    display:flex; justify-content:space-between; align-items:flex-start;
+    gap:8px; padding-bottom:8px; border-bottom:2px solid var(--surface-strong);
+}
+.research-panel-title h3 {
+    margin:2px 0 0; font:800 1rem var(--display-font);
+}
+.research-benchmark-row {
+    display:grid; grid-template-columns:minmax(0,1fr) auto;
+    gap:12px; align-items:center; padding:10px 0;
+    border-bottom:1px solid var(--line);
+}
+.research-benchmark-row strong {
+    display:block; font:800 .77rem var(--display-font);
+}
+.research-benchmark-row > div:first-child span {
+    display:block; margin-top:3px; color:var(--muted);
+    font-size:.61rem; line-height:1.35;
+}
+.research-record { text-align:right; white-space:nowrap; }
+.research-record b {
+    display:block; font:900 1rem var(--display-font);
+    font-variant-numeric:tabular-nums;
+}
+.research-record span { color:var(--muted); font-size:.56rem; }
+.research-read {
+    margin:10px 0 0; color:var(--muted); font-size:.66rem; line-height:1.45;
+}
+.research-methodology {
+    margin-top:14px; border-top:1px solid var(--line);
+}
+.research-methodology summary {
+    cursor:pointer; padding:10px 0 2px;
+    color:var(--muted); font:800 .64rem var(--display-font);
+}
+.research-methodology ul {
+    margin:8px 0 0; padding-left:18px;
+    color:var(--muted); font-size:.64rem; line-height:1.5;
+}
+@media (max-width:760px) {
+    .research-intelligence-head { align-items:flex-start; flex-direction:column; }
+    .research-status { white-space:normal; }
+    .research-live-grid,
+    .research-benchmark-grid { grid-template-columns:minmax(0,1fr); }
+    .research-regime-callout { grid-template-columns:minmax(0,1fr) auto; }
+    .research-regime-number:last-child { grid-column:1 / -1; text-align:left; }
+}
+@media (max-width:520px) {
+    .research-metrics { grid-template-columns:minmax(0,1fr); }
+    .research-benchmark-row { grid-template-columns:minmax(0,1fr); }
+    .research-record { text-align:left; }
+}
