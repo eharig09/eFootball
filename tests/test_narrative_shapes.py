@@ -741,3 +741,18 @@ def test_historical_coverage_grade_partial_when_markets_thin():
     grade, reasons = hc._grade(row)
     assert grade == "PARTIAL"
     assert any("opening market coverage" in reason for reason in reasons)
+
+
+from sports_aggregator.cfb import backfill_readiness as br
+
+
+def test_backfill_readiness_pipeline_orders_pbp_before_team_actuals():
+    stages = [stage for stage, _label, _command in br.PIPELINE]
+    assert stages.index("pbp") < stages.index("pace")
+    assert stages.index("derived") < stages.index("drive_outcomes")
+    assert stages.index("xpoints_dataset") < stages.index("backtest_actuals")
+
+
+def test_backfill_readiness_commands_target_requested_year():
+    pbp = next(command for stage, _label, command in br.PIPELINE if stage == "pbp")
+    assert pbp.format(year=2021).endswith("backfill --year 2021")
