@@ -17,6 +17,7 @@ from sports_aggregator.cfb import internal_power_lenses
 from sports_aggregator.cfb import conditional_convergence
 from sports_aggregator.cfb import convergence_validation
 from sports_aggregator.cfb import convergence_robustness
+from sports_aggregator.cfb import convergence_action_policy
 
 
 def main() -> None:
@@ -73,6 +74,14 @@ def main() -> None:
     robustness = sub.add_parser("convergence-robustness")
     robustness.add_argument("--year", type=int, default=2025)
     robustness.add_argument(
+        "--output-dir",
+        default="research_outputs",
+        help="Directory for full JSON/CSV artifacts; console output stays compact",
+    )
+
+    action_policy = sub.add_parser("convergence-action-policy")
+    action_policy.add_argument("--year", type=int, default=2025)
+    action_policy.add_argument(
         "--output-dir",
         default="research_outputs",
         help="Directory for full JSON/CSV artifacts; console output stays compact",
@@ -156,6 +165,16 @@ def main() -> None:
             args.output_dir,
         )
         payload = convergence_robustness.compact_console_summary(payload, paths)
+    elif args.command == "convergence-action-policy":
+        payload = convergence_action_policy.report(
+            repository,
+            test_season=args.year,
+        )
+        paths = convergence_action_policy.export_report(
+            payload,
+            args.output_dir,
+        )
+        payload = convergence_action_policy.compact_console_summary(payload, paths)
     else:
         payload = narrative_shapes.report(
             repository,
