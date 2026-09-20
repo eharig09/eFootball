@@ -423,3 +423,46 @@ def test_compact_console_summary_excludes_game_rows():
     compact = cr.compact_console_summary(payload, {"json": "/tmp/x.json"})
     assert "game_rows" not in compact
     assert compact["files"]["json"] == "/tmp/x.json"
+
+
+from sports_aggregator.cfb import convergence_action_policy as cap
+
+
+def test_confirmation_strength_buckets_are_fixed():
+    assert cap._strength_bucket(0.10) == "weak_<0.25"
+    assert cap._strength_bucket(0.25) == "moderate_0.25_0.50"
+    assert cap._strength_bucket(0.50) == "strong_>=0.50"
+
+
+def test_joint_confirmation_uses_weakest_family():
+    row = {
+        "structural_z_aligned": 0.80,
+        "line_elo_z_aligned": 0.10,
+    }
+    assert cap._joint_strength(row) == "weak_any_<0.25"
+
+
+def test_fade_inverts_aligned_residual():
+    rows = [{"aligned_residual": -4.0, "hit": False}]
+    summary = cap._action_summary(rows, action="fade", seed=1)
+    assert summary["n"] == 1
+    assert summary["wins"] == 1
+    assert summary["hit_rate"] == 1.0
+    assert summary["mean_aligned_residual"] == 4.0
+
+
+def test_policy_pass_does_not_count_as_result():
+    rows = [
+        {"aligned_residual": 3.0, "narrative_state": "agrees"},
+        {"aligned_residual": -2.0, "narrative_state": "missing"},
+    ]
+    result = cap._policy_summary(
+        rows,
+        name="x",
+        chooser=lambda r: "pass" if r["narrative_state"] == "missing" else "keep",
+        seed=2,
+    )
+    assert result["source_games"] == 2
+    assert result["acted_n"] == 1
+    assert result["pass_n"] == 1
+    assert result["hit_rate"] == 1.0
