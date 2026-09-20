@@ -384,6 +384,40 @@ def _live_narrative_context(
 
 
 
+
+def _stored_2026_actionable(repository: CFBRepository, season: int) -> dict[str, Any]:
+    with repository._reader() as connection:
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cfb_draftkings_convergence_grade'"
+        ).fetchone()
+        if not exists:
+            return {"available": False, "season": int(season), "record": "—", "roi": None,
+                    "net_units": None, "n": 0, "note": "Run the DraftKings convergence audit to store real-price grades."}
+        rows = [
+            dict(r) for r in connection.execute(
+                """SELECT result,profit_units FROM cfb_draftkings_convergence_grade
+                   WHERE season=? ORDER BY game_id""",
+                (int(season),),
+            )
+        ]
+    wins = sum(r["result"] == "win" for r in rows)
+    losses = sum(r["result"] == "loss" for r in rows)
+    pushes = sum(r["result"] == "push" for r in rows)
+    n = len(rows)
+    net = sum(float(r.get("profit_units") or 0.0) for r in rows)
+    return {
+        "available": bool(rows),
+        "season": int(season),
+        "record": f"{wins}-{losses}" + (f"-{pushes}" if pushes else ""),
+        "wins": wins,
+        "losses": losses,
+        "pushes": pushes,
+        "n": n,
+        "net_units": round(net, 3),
+        "roi": round(net / n, 4) if n else None,
+        "note": "Realized at stored DraftKings closing spreads/prices; 1 unit risked per qualified pick.",
+    }
+
 def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
@@ -539,6 +573,35 @@ def matchup_research_packet(
         }
 
     narrative = _live_narrative_context(repository, game, lines)
+    actionable_2026 = _stored_2026_actionable(repository, int(game["season"]))
+
+    total_status = {
+        "state": "research_watch" if regime_packet else "no_qualified_rule",
+        "label": "RESEARCH WATCH" if regime_packet else "NO QUALIFIED TOTAL RULE",
+        "qualified": False,
+        "note": (
+            "Historical totals regime match only; no frozen actionable totals rule exists."
+            if regime_packet else
+            "Model-market disagreement is shown, but no validated totals action rule is frozen."
+        ),
+        "components": [
+            {
+                "label": "Model edge",
+                "state": "on" if close_edge is not None and abs(float(close_edge)) >= 3.0 else "off",
+                "value": round(abs(float(close_edge)), 1) if close_edge is not None else None,
+            },
+            {
+                "label": "Regime match",
+                "state": "on" if regime_packet else "off",
+                "value": regime_packet["label"] if regime_packet else None,
+            },
+            {
+                "label": "Historical sample",
+                "state": "on" if regime_packet and int(regime_packet["n"]) >= 30 else "off",
+                "value": int(regime_packet["n"]) if regime_packet else None,
+            },
+        ],
+    }
 
     return {
         "available": True,
@@ -550,6 +613,7 @@ def matchup_research_packet(
             "margin": projected_home_margin,
             "method": "Calibrated total split around the unchanged Football Lab margin.",
         },
+        "actionable_2026": actionable_2026,
         "convergence": {
             "status": "pending",
             "qualified": False,
@@ -573,6 +637,7 @@ def matchup_research_packet(
             ),
         },
         "totals": {
+            "decision_status": total_status,
             "raw_projected_total": raw_total,
             "calibrated_projected_total": projected_total,
             "calibration": calibration,
