@@ -156,6 +156,18 @@ def _pipeline_counts(repository: CFBRepository, season: int) -> dict[str, int]:
                WHERE season=?""",
             (int(season),),
         ).fetchone()["n"]
+        xpoints = connection.execute(
+            """SELECT COUNT(*) AS n FROM cfb_xpoints_dataset
+               WHERE season=?""",
+            (int(season),),
+        ).fetchone()["n"]
+        drive_outcomes = connection.execute(
+            """SELECT COUNT(*) AS n
+               FROM cfb_team_game_drive_outcomes o
+               JOIN games g USING(game_id)
+               WHERE g.season=?""",
+            (int(season),),
+        ).fetchone()["n"]
     lens_rows = [
         r for r in ipl.build_lens_rows(repository, test_season=int(season))
         if int(r["season"]) == int(season)
@@ -168,6 +180,8 @@ def _pipeline_counts(repository: CFBRepository, season: int) -> dict[str, int]:
         "completed_games": int(completed),
         "narrative_rows": int(narrative),
         "projection_backtest_rows": int(projections),
+        "xpoints_rows": int(xpoints),
+        "drive_outcome_rows": int(drive_outcomes),
         "lens_rows": len(lens_rows),
         "classified_rows_with_two_available_confirmations": len(classified),
     }
