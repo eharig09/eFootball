@@ -129,21 +129,21 @@
 <section class="section projection-workspace" data-mobile-tab-panel="projection">
     <div class="projection-heading">
         <div>
-            <div class="eyebrow">Field Theory matchup intelligence</div>
-            <h2>Forecast &amp; market</h2>
+            <div class="eyebrow">Football Lab</div>
+            <h2>Matchup forecast</h2>
         </div>
         {% if projection.points_model %}
         <span class="projection-model-chip">{{ projection.points_model.model_version }}</span>
         {% endif %}
     </div>
     <div class="section-note forecast-lede">
-        One view of the matchup: projected score and game shape, the market's current number,
-        and the historical research context for where the model and market disagree.
+        Start with the football forecast. Market disagreement and historical signal context
+        are shown separately so a model edge is not mistaken for a qualified signal.
     </div>
     <nav class="forecast-jump" aria-label="Forecast sections">
-        <a href="#forecast-score">Score</a>
-        <a href="#forecast-market">Market</a>
-        <a href="#forecast-drivers">Drivers</a>
+        <a href="#forecast-score">Forecast</a>
+        <a href="#forecast-market">Disagreement</a>
+        <a href="#forecast-drivers">Game shape</a>
         <a href="#forecast-method">Method</a>
     </nav>
 
@@ -204,23 +204,6 @@
     </div>
     {% endif %}
 
-    <div class="forecast-subsection-head" id="forecast-drivers">
-        <span>Game-shape drivers</span>
-        <p>Possession, play volume, pass tendency and turnover expectation behind the score.</p>
-    </div>
-    <div class="projection-drivers" aria-label="Supporting projection inputs">
-        {% for key, label, fmt in [
-            ('drives', 'Drives', 'f1'),
-            ('plays', 'Plays', 'f1'),
-            ('pass_rate', 'Pass rate', 'rate'),
-            ('giveaways', 'Giveaways', 'f2')] %}
-        <div class="projection-driver">
-            <span>{{ label }}</span>
-            <div><b>{{ projection.away[key] | cell(fmt) }}</b><i>{{ game.away_team }}</i></div>
-            <div><b>{{ projection.home[key] | cell(fmt) }}</b><i>{{ game.home_team }}</i></div>
-        </div>
-        {% endfor %}
-    </div>
     {% endif %}
 
     <div class="projection-reads">
@@ -229,15 +212,36 @@
 
     <div class="forecast-divider" id="forecast-market">
         <div>
-            <span class="eyebrow">Model vs market</span>
-            <h3>Where this matchup sits</h3>
+            <span class="eyebrow">Market disagreement</span>
+            <h3>What the market is pricing differently</h3>
         </div>
         <span class="research-status">Historical context · not a recommendation</span>
     </div>
     <div class="section-note">
-        Current spread and total disagreement are paired directly with the closest
-        historical research regimes. Historical records describe prior samples, not
-        a forecast confidence score for this game.
+        The model-market gap is descriptive first. A spread becomes a qualified
+        Full Convergence signal only when the frozen Margin Power, structural,
+        and Line Elo conditions are all available and aligned.
+    </div>
+
+    <div class="forecast-signal-panel" id="forecast-signal">
+        <div class="forecast-signal-copy">
+            <span class="research-card-kicker">Signal status</span>
+            {% if game.week <= 3 %}
+            <strong>Early-season context only</strong>
+            <p>Early Margin Power is useful as a cold-start comparison, but it is not a qualified spread signal. Full Convergence waits for mature Margin Power eligibility.</p>
+            {% else %}
+            <strong>No qualified signal asserted from score disagreement alone</strong>
+            <p>Football Lab vs market is shown independently. Full Convergence requires the frozen Margin Power + structural + Line Elo architecture.</p>
+            {% endif %}
+        </div>
+        <div class="forecast-signal-tags">
+            <span class="forecast-state-tag is-context">{{ 'Early MP · context' if game.week <= 3 else 'Signal framework' }}</span>
+            {% if research_intelligence.available and research_intelligence.spread.inside_lt14_applicability is not none %}
+            <span class="forecast-state-tag {{ 'is-supported' if research_intelligence.spread.inside_lt14_applicability else 'is-caution' }}">
+                {{ '&lt;14 mature applicability region' | safe if research_intelligence.spread.inside_lt14_applicability else '14+ mature applicability caution' }}
+            </span>
+            {% endif %}
+        </div>
     </div>
 
     {% if research_intelligence.available %}
@@ -309,10 +313,28 @@
     <div class="empty">{{ research_intelligence.reason }}</div>
     {% endif %}
 
+    <div class="forecast-subsection-head" id="forecast-drivers">
+        <span>Game shape</span>
+        <p>Possession, play volume, pass tendency and turnover expectation behind the projected score.</p>
+    </div>
+    <div class="projection-drivers" aria-label="Supporting projection inputs">
+        {% for key, label, fmt in [
+            ('drives', 'Drives', 'f1'),
+            ('plays', 'Plays', 'f1'),
+            ('pass_rate', 'Pass rate', 'rate'),
+            ('giveaways', 'Giveaways', 'f2')] %}
+        <div class="projection-driver">
+            <span>{{ label }}</span>
+            <div><b>{{ projection.away[key] | cell(fmt) }}</b><i>{{ game.away_team }}</i></div>
+            <div><b>{{ projection.home[key] | cell(fmt) }}</b><i>{{ game.home_team }}</i></div>
+        </div>
+        {% endfor %}
+    </div>
+
     <div class="research-benchmark-grid">
         <article class="research-benchmark-panel">
             <div class="research-panel-title">
-                <div><span class="research-card-kicker">Spread research</span><h3>Frozen convergence study</h3></div>
+                <div><span class="research-card-kicker">Historical validation</span><h3>Frozen Full Convergence</h3></div>
             </div>
             {% for key in ['full_convergence', 'full_convergence_lt14'] %}
             {% set item = research_intelligence.spread_research[key] %}
@@ -331,7 +353,7 @@
 
         <article class="research-benchmark-panel">
             <div class="research-panel-title">
-                <div><span class="research-card-kicker">Totals research</span><h3>Football Lab vs market</h3></div>
+                <div><span class="research-card-kicker">Totals context</span><h3>Historical regime match</h3></div>
             </div>
             {% for key in ['overall', 'narrative_adjusted'] %}
             {% set item = research_intelligence.total_research[key] %}
