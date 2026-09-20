@@ -75,7 +75,8 @@ def parser() -> argparse.ArgumentParser:
         "build-xredzone-dataset", "evaluate-xredzone-baselines",
         "build-team-special-teams", "build-xfieldposition-dataset",
         "evaluate-xfieldposition-baselines", "build-team-drive-outcomes",
-        "build-xpoints-dataset", "evaluate-xpoints", "fit-xpoints"))
+        "build-xpoints-dataset", "evaluate-xpoints", "fit-xpoints",
+        "compact-history"))
     p.add_argument("--year", type=int, default=datetime.now().year)
     p.add_argument("--from-year", type=int, default=None)
     p.add_argument("--to-year", type=int, default=None)
@@ -103,6 +104,10 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--test-to-year", type=int, default=None,
                    help="evaluate-xdrives-advanced: last held-out test season.")
     p.add_argument("--force", action="store_true")
+    p.add_argument(
+        "--compact-history", action="store_true",
+        help="For PBP backfills, keep normalized fields but omit per-play raw JSON and delete the raw /plays cache after each successful week.",
+    )
     p.add_argument("--database", default=None)
     return p
 
@@ -113,6 +118,50 @@ def _years(args) -> tuple[int, int]:
     if first > last:
         raise ValueError("--from-year must not be after --to-year")
     return first, last
+
+
+def _compact_stored_history(repository: CFBRepository, *, first: int, last: int) -> dict[str, int]:
+    """Drop redundant raw provider payloads while preserving normalized play columns."""
+    with closing(repository._connect()) as connection:
+        before = int(connection.execute(
+            """SELECT COALESCE(SUM(LENGTH(raw_json)),0) FROM cfb_plays
+               WHERE season BETWEEN ? AND ?""", (int(first), int(last))
+        ).fetchone()[0] or 0)
+        rows = int(connection.execute(
+            """SELECT COUNT(*) FROM cfb_plays
+               WHERE season BETWEEN ? AND ? AND raw_json <> '{}'""",
+            (int(first), int(last)),
+        ).fetchone()[0] or 0)
+        connection.execute(
+            """UPDATE cfb_plays SET raw_json='{}'
+               WHERE season BETWEEN ? AND ? AND raw_json <> '{}'""",
+            (int(first), int(last)),
+        )
+        connection.commit()
+        freelist = int(connection.execute("PRAGMA freelist_count").fetchone()[0] or 0)
+        page_size = int(connection.execute("PRAGMA page_size").fetchone()[0] or 0)
+    return {
+        "seasons_from": int(first),
+        "seasons_to": int(last),
+        "rows_compacted": rows,
+        "raw_json_bytes_before": before,
+        "sqlite_reusable_bytes_estimate": freelist * page_size,
+    }
+
+
+def _delete_play_cache(client: CFBDClient, *, year: int, week: int) -> bool:
+    params = {
+        "year": int(year), "week": int(week),
+        "seasonType": "both", "classification": "fbs",
+    }
+    try:
+        path = client.cache._path("/plays", params)
+        if path.exists():
+            path.unlink()
+            return True
+    except OSError:
+        return False
+    return False
 
 
 #: `expected_points_v2.py` implements ep-v1 and `expected_points_event.py`
@@ -209,11 +258,13 @@ def _week_ready(repository: CFBRepository, year: int, week: int) -> tuple[bool, 
         return False, 0, 0
 
 
-def _replace_with_lock_retry(repository: CFBRepository, raw, *, year: int, week: int) -> int:
+def _replace_with_lock_retry(repository: CFBRepository, raw, *, year: int, week: int,
+                             retain_raw: bool = True) -> int:
     delays = (15, 30, 60)
     for attempt in range(len(delays) + 1):
         try:
-            return replace_week_plays(repository, raw, season=year, week=week)
+            return replace_week_plays(
+                repository, raw, season=year, week=week, retain_raw=retain_raw)
         except sqlite3.OperationalError as exc:
             if "locked" not in str(exc).casefold() or attempt >= len(delays):
                 raise
@@ -228,6 +279,11 @@ def main(argv: list[str] | None = None, *, client=None) -> int:
     args = parser().parse_args(argv)
     repository = CFBRepository(args.database or os.getenv("CFB_DATABASE_PATH", "instance/cfb.sqlite3"))
     first, last = _years(args)
+
+    if args.command == "compact-history":
+        print(json.dumps(
+            _compact_stored_history(repository, first=first, last=last), indent=2))
+        return 0
 
     if args.command == "pace":
         if not args.game_id:
@@ -481,9 +537,14 @@ def main(argv: list[str] | None = None, *, client=None) -> int:
                 raw = client.get("/plays", {
                     "year": year, "week": week, "seasonType": "both", "classification": "fbs"
                 }, cache_ttl_seconds=ttl, force=args.force)
-                count = _replace_with_lock_retry(repository, raw, year=year, week=week)
+                count = _replace_with_lock_retry(
+                    repository, raw, year=year, week=week,
+                    retain_raw=not args.compact_history)
+                if args.compact_history:
+                    _delete_play_cache(client, year=year, week=week)
                 total += count
-                print(f"{year} week {week}: {count} plays")
+                suffix = " (compact)" if args.compact_history else ""
+                print(f"{year} week {week}: {count} plays{suffix}")
             except Exception as exc:
                 failures.append(f"{year} week {week}")
                 print(f"{year} week {week}: failed ({exc})")
