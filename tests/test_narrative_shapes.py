@@ -832,3 +832,10 @@ def test_quality_result_summary_excludes_pushes():
     assert result["losses"] == 1
     assert result["pushes"] == 1
     assert result["win_rate_ex_pushes"] == 0.5
+
+
+def test_key_number_half_point_rounding():
+    assert cqa._half_point_spread(3.16) == "3.0"
+    assert cqa._half_point_spread(4.24) == "4.0"
+    assert cqa._half_point_spread(4.26) == "4.5"
+    assert cqa._half_point_spread(6.49) == "6.5"
