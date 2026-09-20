@@ -12,6 +12,8 @@ from sports_aggregator.cfb import convergence_action_policy as cap
 from sports_aggregator.cfb import internal_power_lenses as ipl
 from sports_aggregator.cfb.repository import CFBRepository
 
+KEY_NUMBERS = (3.0, 7.0, 10.0, 14.0)
+
 CORE_LENSES = (
     "margin_power_edge",
     "football_lab_edge",
@@ -47,6 +49,47 @@ def _half_point_spread(abs_spread: float | None) -> str:
         return "unknown"
     rounded = round(float(abs_spread) * 2.0) / 2.0
     return f"{rounded:.1f}"
+
+
+def _crossed_keys(start_margin: float | None, end_margin: float | None) -> list[str]:
+    if start_margin is None or end_margin is None:
+        return []
+    start, end = float(start_margin), float(end_margin)
+    low, high = sorted((start, end))
+    crossed = []
+    for key in KEY_NUMBERS:
+        if low < key <= high or low <= -key < high:
+            crossed.append(str(int(key)))
+    return crossed
+
+
+def _crossing_label(keys: list[str]) -> str:
+    if not keys:
+        return "no_key_crossed"
+    if len(keys) == 1:
+        return f"crosses_{keys[0]}"
+    return "crosses_multiple_" + "_".join(keys)
+
+
+def _market_open_margins(repository: CFBRepository) -> dict[int, float]:
+    with repository._reader() as connection:
+        columns = {
+            str(r["name"]).casefold(): str(r["name"])
+            for r in connection.execute("PRAGMA table_info(game_lines)")
+        }
+        open_column = columns.get("spread_open")
+        if not open_column:
+            return {}
+        rows = connection.execute(
+            f"""SELECT game_id, AVG({open_column}) AS spread_open
+                FROM game_lines
+                WHERE {open_column} IS NOT NULL
+                GROUP BY game_id"""
+        )
+        return {
+            int(r["game_id"]): -float(r["spread_open"])
+            for r in rows if r["spread_open"] is not None
+        }
 
 
 def _result_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -90,6 +133,9 @@ def report(
         if int(from_season) <= int(r["season"]) <= int(to_season)
     ]
 
+    raw_by_game = {int(r["game_id"]): r for r in raw}
+    opening_margins = _market_open_margins(repository)
+
     full = cap._full_rows(repository, test_season=int(to_season))
     full = [
         r for r in full
@@ -108,6 +154,49 @@ def report(
             "3" if row["abs_actual_margin"] == 3.0
             else "7" if row["abs_actual_margin"] == 7.0
             else "other"
+        )
+
+        lens = raw_by_game.get(int(row["game_id"]), {})
+        market_margin = (
+            float(row["market_home_margin"])
+            if row.get("market_home_margin") is not None else None
+        )
+        margin_power_edge = lens.get("margin_power_edge")
+        football_lab_edge = lens.get("football_lab_edge")
+        row["margin_power_implied_margin"] = (
+            market_margin + float(margin_power_edge)
+            if market_margin is not None and margin_power_edge is not None else None
+        )
+        row["football_lab_implied_margin"] = (
+            market_margin + float(football_lab_edge)
+            if market_margin is not None and football_lab_edge is not None else None
+        )
+        mp_keys = _crossed_keys(
+            market_margin, row["margin_power_implied_margin"]
+        )
+        fl_keys = _crossed_keys(
+            market_margin, row["football_lab_implied_margin"]
+        )
+        row["margin_power_crossed_keys"] = mp_keys
+        row["margin_power_key_crossing"] = _crossing_label(mp_keys)
+        row["football_lab_crossed_keys"] = fl_keys
+        row["football_lab_key_crossing"] = _crossing_label(fl_keys)
+
+        opening_margin = opening_margins.get(int(row["game_id"]))
+        row["opening_market_home_margin"] = opening_margin
+        market_keys = _crossed_keys(opening_margin, market_margin)
+        row["market_open_to_close_crossed_keys"] = market_keys
+        row["market_open_to_close_key_crossing"] = (
+            _crossing_label(market_keys) if opening_margin is not None
+            else "opening_unavailable"
+        )
+        row["market_move_toward_margin_power"] = (
+            abs(market_margin - float(row["margin_power_implied_margin"]))
+            < abs(opening_margin - float(row["margin_power_implied_margin"]))
+            if opening_margin is not None
+            and market_margin is not None
+            and row["margin_power_implied_margin"] is not None
+            else None
         )
 
     season_quality = []
@@ -168,6 +257,30 @@ def report(
         "full_convergence_by_key_number_region": _group_summary(
             full, lambda r: r["key_number_region"]
         ),
+        "key_crossing_analysis": {
+            "margin_power_market_to_model": _group_summary(
+                full, lambda r: r["margin_power_key_crossing"]
+            ),
+            "football_lab_market_to_model": _group_summary(
+                full, lambda r: r["football_lab_key_crossing"]
+            ),
+            "market_open_to_close": _group_summary(
+                full, lambda r: r["market_open_to_close_key_crossing"]
+            ),
+            "margin_power_crossing_by_market_confirmation": _group_summary(
+                full,
+                lambda r: (
+                    f'{r["margin_power_key_crossing"]}|'
+                    f'market_{"toward" if r["market_move_toward_margin_power"] else "away"}'
+                    if r["market_move_toward_margin_power"] is not None
+                    else f'{r["margin_power_key_crossing"]}|market_unknown'
+                ),
+            ),
+            "margin_power_crossing_by_season": _group_summary(
+                full,
+                lambda r: f'{r["season"]}|{r["margin_power_key_crossing"]}',
+            ),
+        },
         "between_3_and_7": {
             "overall": _result_summary(between),
             "by_season": _group_summary(between, lambda r: r["season"]),
@@ -198,5 +311,8 @@ def report(
             "Consensus spreads are also rounded to the nearest half point for micro-bucket inspection; raw consensus values remain unchanged for classification.",
             "Actual final margins landing exactly on 3 or 7 are reported to test whether key-number outcomes disproportionately drive the ATS result.",
             "Input-quality rates are computed on the same historical lens rows used by the convergence research.",
+            "Primary key crossing uses Margin Power implied margin because Margin Power is the frozen primary convergence signal.",
+            "Football Lab key crossing is retained as a secondary diagnostic, not a replacement primary signal.",
+            "Opening-to-closing spread key crossings are reported only when game_lines exposes spread_open.",
         ],
     }

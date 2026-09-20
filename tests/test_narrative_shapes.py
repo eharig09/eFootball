@@ -839,3 +839,16 @@ def test_key_number_half_point_rounding():
     assert cqa._half_point_spread(4.24) == "4.0"
     assert cqa._half_point_spread(4.26) == "4.5"
     assert cqa._half_point_spread(6.49) == "6.5"
+
+
+def test_key_crossing_detects_signed_football_keys():
+    assert cqa._crossed_keys(2.5, 8.0) == ["3", "7"]
+    assert cqa._crossed_keys(-2.5, -8.0) == ["3", "7"]
+    assert cqa._crossed_keys(4.0, 6.5) == []
+    assert cqa._crossed_keys(6.5, 7.5) == ["7"]
+
+
+def test_key_crossing_label_is_stable():
+    assert cqa._crossing_label([]) == "no_key_crossed"
+    assert cqa._crossing_label(["7"]) == "crosses_7"
+    assert cqa._crossing_label(["3", "7"]) == "crosses_multiple_3_7"
