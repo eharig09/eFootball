@@ -695,3 +695,49 @@ def test_matchup_research_keeps_roi_out_of_benchmark_packet():
     assert "win_rate" in mr.SPREAD_RESEARCH["full_convergence"]
     assert "roi" not in mr.SPREAD_RESEARCH["full_convergence"]
     assert "roi" not in mr.TOTAL_RESEARCH["overall"]
+
+
+from sports_aggregator.cfb import historical_coverage as hc
+
+
+def test_historical_coverage_pct_handles_zero_denominator():
+    assert hc._pct(5, 10) == 50.0
+    assert hc._pct(0, 0) is None
+
+
+def test_historical_coverage_grade_strong_window():
+    row = {
+        "completed_games": 100,
+        "expected_team_rows": 200,
+        "pbp_rows": 1000,
+        "derived_play_rows": 900,
+        "pace_coverage_pct": 98.0,
+        "scoring_coverage_pct": 99.0,
+        "drive_outcomes_coverage_pct": 97.0,
+        "spread_coverage_pct": 95.0,
+        "total_coverage_pct": 94.0,
+        "spread_open_coverage_pct": 85.0,
+        "total_open_coverage_pct": 84.0,
+    }
+    grade, reasons = hc._grade(row)
+    assert grade == "STRONG"
+    assert reasons == []
+
+
+def test_historical_coverage_grade_partial_when_markets_thin():
+    row = {
+        "completed_games": 100,
+        "expected_team_rows": 200,
+        "pbp_rows": 1000,
+        "derived_play_rows": 900,
+        "pace_coverage_pct": 90.0,
+        "scoring_coverage_pct": 90.0,
+        "drive_outcomes_coverage_pct": 90.0,
+        "spread_coverage_pct": 70.0,
+        "total_coverage_pct": 70.0,
+        "spread_open_coverage_pct": 40.0,
+        "total_open_coverage_pct": 40.0,
+    }
+    grade, reasons = hc._grade(row)
+    assert grade == "PARTIAL"
+    assert any("opening market coverage" in reason for reason in reasons)
