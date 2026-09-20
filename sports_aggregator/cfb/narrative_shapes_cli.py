@@ -14,6 +14,7 @@ from sports_aggregator.cfb import narrative_composite
 from sports_aggregator.cfb import extreme_tail_composite
 from sports_aggregator.cfb import composite_input_repair
 from sports_aggregator.cfb import internal_power_lenses
+from sports_aggregator.cfb import early_margin_power
 from sports_aggregator.cfb import conditional_convergence
 from sports_aggregator.cfb import convergence_validation
 from sports_aggregator.cfb import convergence_robustness
@@ -68,6 +69,10 @@ def main() -> None:
 
     family = sub.add_parser("family-composite")
     family.add_argument("--year", type=int, default=2025)
+
+    early_margin = sub.add_parser("early-margin-power")
+    early_margin.add_argument("--from-year", type=int, default=2022)
+    early_margin.add_argument("--to-year", type=int, default=2025)
 
     internal_power = sub.add_parser("internal-power")
     internal_power.add_argument("--year", type=int, default=2025)
@@ -193,6 +198,12 @@ def main() -> None:
         payload = composite_input_repair.family_report(
             repository,
             test_season=args.year,
+        )
+    elif args.command == "early-margin-power":
+        payload = early_margin_power.report(
+            repository,
+            from_season=args.from_year,
+            to_season=args.to_year,
         )
     elif args.command == "internal-power":
         payload = internal_power_lenses.report(
