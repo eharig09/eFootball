@@ -20,19 +20,19 @@ from sports_aggregator.cfb.repository import CFBRepository
 SPREAD_RESEARCH = {
     "full_convergence": {
         "label": "Full Convergence",
-        "record": "54-40-3",
-        "win_rate": 57.45,
-        "n": 97,
-        "mean_residual": 4.631,
-        "note": "Frozen spread convergence: Margin Power >=1σ plus structural and Line Elo confirmation.",
+        "record": "77-64-2",
+        "win_rate": 54.61,
+        "n": 143,
+        "mean_residual": 4.300,
+        "note": "Frozen 2021-2025 Full Convergence: Margin Power >=1σ plus structural and Line Elo confirmation.",
     },
     "full_convergence_lt14": {
         "label": "Full Convergence · market spread <14",
-        "record": "47-29-3",
-        "win_rate": 61.84,
-        "n": 79,
-        "mean_residual": 5.576,
-        "note": "Research applicability subset; 14+ behaved more like an out-of-domain boundary than a reliable reverse signal.",
+        "record": "64-45-2",
+        "win_rate": 58.72,
+        "n": 111,
+        "mean_residual": None,
+        "note": "2021-2025 applicability subset. The 14+ region underperformed, so it remains a caution boundary rather than a fade rule.",
     },
 }
 
