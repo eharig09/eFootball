@@ -139,6 +139,40 @@ def _decorate_context(repository: CFBRepository, rows: list[dict[str, Any]],
     return out
 
 
+def _pipeline_counts(repository: CFBRepository, season: int) -> dict[str, int]:
+    with repository._reader() as connection:
+        completed = connection.execute(
+            """SELECT COUNT(*) AS n FROM games
+               WHERE season=? AND home_points IS NOT NULL AND away_points IS NOT NULL""",
+            (int(season),),
+        ).fetchone()["n"]
+        narrative = connection.execute(
+            """SELECT COUNT(*) AS n FROM cfb_narrative_state
+               WHERE season=?""",
+            (int(season),),
+        ).fetchone()["n"]
+        projections = connection.execute(
+            """SELECT COUNT(*) AS n FROM cfb_projection_backtest
+               WHERE season=?""",
+            (int(season),),
+        ).fetchone()["n"]
+    lens_rows = [
+        r for r in ipl.build_lens_rows(repository, test_season=int(season))
+        if int(r["season"]) == int(season)
+    ]
+    classified = [
+        r for r in cap.cr._classified_with_context(repository, test_season=int(season))
+        if int(r["season"]) == int(season)
+    ]
+    return {
+        "completed_games": int(completed),
+        "narrative_rows": int(narrative),
+        "projection_backtest_rows": int(projections),
+        "lens_rows": len(lens_rows),
+        "classified_rows_with_two_available_confirmations": len(classified),
+    }
+
+
 def report(repository: CFBRepository, *, season: int = 2026,
            api_key: str | None = None) -> dict[str, Any]:
     key = api_key or os.getenv("THE_ODDS_API_KEY")
@@ -151,6 +185,7 @@ def report(repository: CFBRepository, *, season: int = 2026,
             "note": "Historical DraftKings spread prices are not stored in game_lines.",
         }
 
+    pipeline = _pipeline_counts(repository, int(season))
     games = _games(repository, int(season))
     full = [
         r for r in cap._full_rows(repository, test_season=int(season))
@@ -251,6 +286,7 @@ def report(repository: CFBRepository, *, season: int = 2026,
         "season": int(season),
         "bookmaker": "DraftKings",
         "grading": "closest archived DraftKings spread snapshot at or before kickoff",
+        "selection_pipeline": pipeline,
         "qualified_full_convergence_games": len(full),
         "graded_games": len(graded),
         "missing_draftkings_games": missing,
