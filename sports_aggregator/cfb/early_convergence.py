@@ -18,6 +18,7 @@ from sports_aggregator.cfb.repository import CFBRepository
 EARLY_SIGNAL_WEEKS = (2, 3)
 THRESHOLD_Z = 1.0
 EXPERIMENTAL_LINE_ELO_MIN_Z = 0.50
+PREFERRED_MARKET_MAX_ABS = 14.0
 
 
 def _std(values) -> float | None:
@@ -139,6 +140,8 @@ def report(repository: CFBRepository, *, from_season: int = 2022,
                 "week": week,
                 "home_team": row["home_team"],
                 "away_team": row["away_team"],
+                "direction": direction,
+                "market_home_margin": round(float(row["market_home_margin"]), 3),
                 "early_margin_power_edge": round(edge, 3),
                 "early_margin_power_z": round(z, 3),
                 "structural_z": round(structural_z, 3),
@@ -185,8 +188,46 @@ def report(repository: CFBRepository, *, from_season: int = 2022,
             r for r in pooled_selected
             if abs(float(r["line_elo_z"])) >= threshold
         ]
+        preferred = [
+            r for r in chosen
+            if abs(float(r["market_home_margin"])) < PREFERRED_MARKET_MAX_ABS
+        ]
+        out_of_domain = [
+            r for r in chosen
+            if abs(float(r["market_home_margin"])) >= PREFERRED_MARKET_MAX_ABS
+        ]
         line_elo_thresholds[str(threshold)] = {
             "pooled": _summary(chosen),
+            "preferred_market_domain_lt_14": {
+                "pooled": _summary(preferred),
+                "by_week": {
+                    str(week): _summary([
+                        r for r in preferred if int(r["week"]) == week
+                    ])
+                    for week in EARLY_SIGNAL_WEEKS
+                },
+                "by_season": {
+                    str(season): _summary([
+                        r for r in preferred if int(r["season"]) == season
+                    ])
+                    for season in range(int(from_season), int(to_season) + 1)
+                },
+            },
+            "out_of_domain_14_plus": {
+                "pooled": _summary(out_of_domain),
+                "by_week": {
+                    str(week): _summary([
+                        r for r in out_of_domain if int(r["week"]) == week
+                    ])
+                    for week in EARLY_SIGNAL_WEEKS
+                },
+                "by_season": {
+                    str(season): _summary([
+                        r for r in out_of_domain if int(r["season"]) == season
+                    ])
+                    for season in range(int(from_season), int(to_season) + 1)
+                },
+            },
             "by_week": {
                 str(week): _summary([
                     r for r in chosen if int(r["week"]) == week
@@ -344,14 +385,24 @@ def experimental_current_report(
             "result": "win" if aligned > 0 else "loss" if aligned < 0 else "push",
         })
 
+    preferred_selected = [
+        r for r in selected
+        if abs(float(r["market_home_margin"])) < PREFERRED_MARKET_MAX_ABS
+    ]
+    out_of_domain_selected = [
+        r for r in selected
+        if abs(float(r["market_home_margin"])) >= PREFERRED_MARKET_MAX_ABS
+    ]
+
     return {
-        "version": "experimental-early-convergence-v1",
+        "version": "experimental-early-convergence-v1-market-domain-audit",
         "season": season,
         "training_from_season": training_from_season,
         "signal_weeks": list(EARLY_SIGNAL_WEEKS),
         "rules": {
             "early_margin_power_min_abs_z": THRESHOLD_Z,
             "line_elo_min_abs_z": EXPERIMENTAL_LINE_ELO_MIN_Z,
+            "preferred_market_domain": "absolute market spread < 14",
             "structural_confirmation": "same frozen cluster/direction rule",
             "week_1": "context only / never qualifies",
             "status": "experimental; separate from frozen Full Convergence",
@@ -361,12 +412,21 @@ def experimental_current_report(
             for k, v in week_scales.items()
         },
         "completed_early_games_considered": len(test_early),
-        "selected_summary": _summary(selected),
-        "selected_games": selected,
+        "selected_summary_unrestricted": _summary(selected),
+        "preferred_market_domain_lt_14": {
+            "summary": _summary(preferred_selected),
+            "selected_games": preferred_selected,
+        },
+        "out_of_domain_14_plus": {
+            "summary": _summary(out_of_domain_selected),
+            "selected_games": out_of_domain_selected,
+        },
+        "selected_games_unrestricted": selected,
         "rejection_counts": rejected,
         "notes": [
             "This does not alter standard Margin Power or frozen Full Convergence.",
             "The 0.50 Line Elo threshold was chosen as a provisional coverage/strength tradeoff from retrospective research and requires prospective validation.",
             "Only completed games with available market/lens inputs are graded here.",
+            "The <14 market-domain comparison reuses the established applicability boundary; it is reported separately before being promoted to a hard Early Convergence rule.",
         ],
     }
