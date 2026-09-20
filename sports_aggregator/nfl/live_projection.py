@@ -110,6 +110,22 @@ def _target_games(repository: NFLRepository, season: int, week: int):
         return [dict(r) for r in rows]
 
 
+def _market_anchor(game: dict[str, Any]) -> dict[str, float] | None:
+    """The stored spread/total converted to implied team scores. Needs no
+    fitted model at all, so it's available even when Football Lab's
+    football-only core doesn't yet have enough training rows to fit."""
+    spread = game.get("spread_line")
+    total = game.get("total_line")
+    if spread is None or total is None:
+        return None
+    return {
+        "margin": float(spread),
+        "total": float(total),
+        "home_points": (float(total) + float(spread)) / 2.0,
+        "away_points": (float(total) - float(spread)) / 2.0,
+    }
+
+
 def _team_row(game: dict[str, Any], side: str, history, league):
     team = str(game[f"{side}_team"])
     opponent = str(game["away_team" if side == "home" else "home_team"])
@@ -215,10 +231,27 @@ def report(repository: NFLRepository, *, season: int, week: int):
         away = _team_row(game, "away", history, league)
         home = _team_row(game, "home", history, league)
         if not away or not home or not all((drive_model, plays_model, pass_model, score_model, total_model, margin_model)):
+            # The football-only core doesn't have enough training rows yet
+            # (e.g. early in a season with no prior-season history loaded).
+            # The market anchor needs no model at all, so still show it --
+            # only the independent Football Lab side is actually unavailable.
             output.append({
                 "game_id": game["game_id"],
+                "season": int(game["season"]), "week": int(game["week"]),
+                "game_date": game.get("game_date"),
                 "away_team": game["away_team"], "home_team": game["home_team"],
+                "completed": bool(game.get("completed")),
                 "status": "insufficient_history",
+                "market_anchor": _market_anchor(game),
+                "football_lab": None,
+                "disagreement": None,
+                "historical_uncertainty_scale": None,
+                "interpretation": (
+                    "Football Lab's independent model needs more completed games "
+                    "this season to train on before it can project this matchup "
+                    "-- typically ready by week 3-4. The market anchor is shown "
+                    "on its own until then."
+                ),
             })
             continue
 
@@ -268,14 +301,7 @@ def report(repository: NFLRepository, *, season: int, week: int):
 
         spread = game.get("spread_line")
         total = game.get("total_line")
-        market = None
-        if spread is not None and total is not None:
-            market = {
-                "margin": float(spread),
-                "total": float(total),
-                "home_points": (float(total) + float(spread)) / 2.0,
-                "away_points": (float(total) - float(spread)) / 2.0,
-            }
+        market = _market_anchor(game)
 
         scale = None
         if total_scale_model and margin_scale_model:

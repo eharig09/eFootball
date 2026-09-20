@@ -67,7 +67,7 @@
         <div class="football-lab-warning"><b>Early-season estimate</b><span>At least one team has fewer than 3 games of season history, so this forecast leans on league-average priors instead of this team's own numbers. Football Lab sharpens week to week and reaches full confidence by around week 3&ndash;4.</span></div>
         {% endif %}
 
-        {% if football_lab and football_lab.status != 'insufficient_history' %}
+        {% if football_lab %}
         {% set fl = football_lab.football_lab %}
         {% set ma = football_lab.market_anchor %}
         {% set components = football_lab.components %}
@@ -81,11 +81,14 @@
             </article>
             <article class="football-lab-score-card model">
                 <header><span>Independent Football Lab</span><small>Market-free diagnostic</small></header>
+                {% if fl %}
                 <div class="football-lab-scoreline"><span><b>{{ game.away_team }}</b><strong>{{ fl.away_points|cell('f1') }}</strong></span><i>at</i><span><b>{{ game.home_team }}</b><strong>{{ fl.home_points|cell('f1') }}</strong></span></div>
                 <footer><span>Total <b>{{ fl.total|cell('f1') }}</b></span><span>{{ game.home_team }} margin <b>{{ fl.margin|cell('signed') }}</b></span></footer>
+                {% else %}<p class="empty">Not enough completed games this season yet to train the independent model. Typically ready by week 3&ndash;4 as results accumulate.</p>{% endif %}
             </article>
         </div>
 
+        {% if fl %}
         <div class="football-lab-delta-strip">
             <article><small>Margin disagreement</small><b>{{ football_lab.disagreement.margin|cell('signed') if football_lab.disagreement.margin is not none else '&mdash;'|safe }}</b><span>Football Lab minus market</span></article>
             <article><small>Total disagreement</small><b>{{ football_lab.disagreement.total|cell('signed') if football_lab.disagreement.total is not none else '&mdash;'|safe }}</b><span>Football Lab minus market</span></article>
@@ -109,6 +112,9 @@
             {% endfor %}
         </div>
         <div class="football-lab-policy"><b>How to read this</b><p>Use the market score as the accuracy baseline. Use Football Lab to understand whether pace, possession volume, passing efficiency, or rushing efficiency is creating a materially different football view. Historical testing did not support automatically treating larger disagreement as a stronger betting signal.</p><p><small>Checked, not assumed: a walk-forward backtest across 2010&ndash;2025 (~3,300 games) tested every Football Lab component, individually and combined, as a predictor of actual-vs-market residual. None beat the market line on accuracy, and the predicted-edge win rate held at 49&ndash;50% &mdash; essentially a coin flip. That's why disagreement stays a labeled diagnostic here rather than an automatic adjustment.</small></p></div>
+        {% else %}
+        <div class="football-lab-policy"><b>How to read this</b><p>{{ football_lab.interpretation or "Football Lab's independent model isn't trained yet -- use the market anchor above as the accuracy view for now." }}</p></div>
+        {% endif %}
         {% else %}
         <div class="empty football-lab-empty">Football Lab does not yet have enough pregame history to build this matchup projection.{% if football_lab_status and football_lab_status.error %} <small>{{ football_lab_status.error }}</small>{% endif %}</div>
         {% endif %}

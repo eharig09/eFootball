@@ -2,8 +2,15 @@
 of blacking out entirely when a team has less than MIN_PRIOR_GAMES history."""
 from __future__ import annotations
 
+import os
+import tempfile
+import unittest
+from contextlib import closing
+from pathlib import Path
+
 from sports_aggregator.nfl.drive_projection import MIN_PRIOR_GAMES, TeamHistory
-from sports_aggregator.nfl.live_projection import _team_row
+from sports_aggregator.nfl.live_projection import _market_anchor, _team_row, report
+from sports_aggregator.nfl.repository import NFLRepository
 
 # Deliberately far from any realistic ratio the seasoned fixture below
 # produces, so a test asserting "== league fallback" can't pass by accident.
@@ -120,3 +127,95 @@ def test_below_threshold_but_nonzero_games_keeps_real_noisy_values():
     # Already has real (if noisy) drives-per-game -- shouldn't be overwritten
     # by the league average just because it's below the confidence threshold.
     assert row["team_drives"] != LEAGUE["drives_for"]
+
+
+def test_market_anchor_needs_no_model():
+    game = {"spread_line": -3.5, "total_line": 44.0}
+    market = _market_anchor(game)
+    assert market == {
+        "margin": -3.5, "total": 44.0, "home_points": 20.25, "away_points": 23.75,
+    }
+    assert _market_anchor({"spread_line": None, "total_line": 44.0}) is None
+
+
+class _ThinLeagueRepositoryTests(unittest.TestCase):
+    """Reproduces the real production symptom: a games table seeded with only
+    the current season (no 2010-2025 archive), so the football-only core
+    models can't reach their 100-row training minimum this early in a season.
+    Market lines should still surface even though Football Lab can't yet."""
+
+    TEAMS = ("AAA", "BBB", "CCC", "DDD")
+
+    def setUp(self):
+        handle, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(handle)
+
+        def _cleanup():
+            try:
+                os.remove(path)
+            except OSError:
+                # sqlite3 on Windows can hold the file open across the
+                # connections report() opens internally; not a functional
+                # concern for what this test is checking.
+                pass
+
+        self.addCleanup(_cleanup)
+        self.repository = NFLRepository(Path(path))
+        self.repository.initialize()
+
+    def _insert_week(self, connection, season: int, week: int, completed: bool,
+                     spread: float | None = -1.5, total: float | None = 45.0):
+        pairs = [(self.TEAMS[0], self.TEAMS[1]), (self.TEAMS[2], self.TEAMS[3])]
+        for index, (away, home) in enumerate(pairs):
+            game_id = f"{season}_{week:02d}_{away}_{home}"
+            connection.execute(
+                """INSERT INTO games(game_id,season,season_type,week,game_date,
+                    away_team,home_team,away_score,home_score,completed,overtime,
+                    division_game,spread_line,total_line,away_rest,home_rest,
+                    updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,0,0,?,?,7,7,?)""",
+                (game_id, season, "REG", week, f"{season}-09-{7+week:02d}",
+                 away, home, 20 if completed else None, 23 if completed else None,
+                 1 if completed else 0, spread, total, "2026-01-01T00:00:00Z"),
+            )
+            if not completed:
+                continue
+            for team, opponent in ((away, home), (home, away)):
+                connection.execute(
+                    """INSERT INTO game_team_efficiency(season,week,game_id,team,
+                        opponent_team,plays,total_epa,successful_plays,pass_plays,
+                        pass_epa,rush_plays,rush_epa,early_down_plays,
+                        early_down_epa,explosive_plays)
+                       VALUES(?,?,?,?,?,64,1.5,28,38,3.0,26,-1.0,30,0.5,6)""",
+                    (season, week, game_id, team, opponent),
+                )
+                connection.execute(
+                    """INSERT INTO game_team_situational(season,week,game_id,team,
+                        opponent_team,plays,drives,third_down_plays,
+                        third_down_conversions,red_zone_plays,red_zone_successes,
+                        neutral_plays,neutral_passes,seconds_sum,clocked_plays)
+                       VALUES(?,?,?,?,?,64,11,14,6,4,2,50,29,1400,55)""",
+                    (season, week, game_id, team, opponent),
+                )
+
+    def test_thin_league_history_still_surfaces_the_market_line(self):
+        with closing(self.repository._connect()) as connection:
+            # Only 2 completed weeks exist anywhere in the database (mirrors
+            # production's season-2026-only seed) -- 8 team-rows total, well
+            # under the 100-row minimum every football-only model needs to fit.
+            self._insert_week(connection, 2026, 1, completed=True)
+            self._insert_week(connection, 2026, 2, completed=True)
+            self._insert_week(connection, 2026, 3, completed=False, spread=-2.5, total=46.5)
+            connection.commit()
+
+        result = report(self.repository, season=2026, week=3)
+        self.assertEqual(len(result["games"]), 2)
+        for game in result["games"]:
+            self.assertEqual(game["status"], "insufficient_history")
+            self.assertIsNone(game["football_lab"])
+            # This is the actual bug being fixed: the market line needs no
+            # model at all and shouldn't be withheld just because Football
+            # Lab's independent side can't train yet.
+            self.assertIsNotNone(game["market_anchor"])
+            self.assertEqual(game["market_anchor"]["margin"], -2.5)
+            self.assertEqual(game["market_anchor"]["total"], 46.5)
