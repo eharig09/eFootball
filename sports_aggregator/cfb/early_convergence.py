@@ -17,6 +17,7 @@ from sports_aggregator.cfb.repository import CFBRepository
 
 EARLY_SIGNAL_WEEKS = (2, 3)
 THRESHOLD_Z = 1.0
+EXPERIMENTAL_LINE_ELO_MIN_Z = 0.50
 
 
 def _std(values) -> float | None:
@@ -236,5 +237,136 @@ def report(repository: CFBRepository, *, from_season: int = 2022,
             "Frozen standard Margin Power and Full Convergence are not modified.",
             "Line Elo threshold sweep is descriptive/post-hoc research only and does not change qualification.",
             "peer_fbs_only is a diagnostic subset requiring both teams to have teams.classification='fbs'.",
+        ],
+    }
+
+
+def experimental_current_report(
+    repository: CFBRepository,
+    *,
+    season: int = 2026,
+    training_from_season: int = 2022,
+) -> dict[str, Any]:
+    """Apply the frozen experimental Early Convergence rule to one current season.
+
+    This is intentionally separate from standard Full Convergence. Week 1 is
+    excluded; Weeks 2-3 require Early MP |z|>=1, structural confirmation in the
+    same direction, and Line Elo in the same direction with |z|>=0.50.
+    """
+    season = int(season)
+    training_from_season = int(training_from_season)
+    early = _early_edge_rows(repository, training_from_season, season)
+    train_early = [r for r in early if int(r["season"]) < season]
+    test_early = [r for r in early if int(r["season"]) == season]
+    week_scales = {
+        week: _std(
+            r["early_margin_power_edge"]
+            for r in train_early if int(r["week"]) == week
+        )
+        for week in EARLY_SIGNAL_WEEKS
+    }
+
+    lens_rows = ipl.build_lens_rows(repository, test_season=season)
+    lens_by_game = {int(r["game_id"]): r for r in lens_rows}
+    train_lens = [r for r in lens_rows if int(r["season"]) < season]
+    structural_scales = cc._lens_scales(train_lens)
+
+    selected = []
+    rejected = {
+        "below_early_mp_threshold": 0,
+        "insufficient_structural_inputs": 0,
+        "structural_direction_mismatch": 0,
+        "missing_line_elo": 0,
+        "line_elo_direction_mismatch": 0,
+        "line_elo_too_weak": 0,
+        "missing_lens_row": 0,
+    }
+
+    for row in test_early:
+        week = int(row["week"])
+        early_scale = week_scales.get(week)
+        if early_scale is None:
+            continue
+        edge = float(row["early_margin_power_edge"])
+        z = edge / float(early_scale)
+        if abs(z) < THRESHOLD_Z:
+            rejected["below_early_mp_threshold"] += 1
+            continue
+        direction = 1 if z > 0 else -1
+
+        base = lens_by_game.get(int(row["game_id"]))
+        if not base:
+            rejected["missing_lens_row"] += 1
+            continue
+
+        structural = []
+        for key in cc.STRUCTURAL_KEYS:
+            if key in structural_scales and base.get(key) is not None:
+                structural.append(float(base[key]) / float(structural_scales[key]))
+        if len(structural) < cc.MIN_STRUCTURAL_COMPONENTS:
+            rejected["insufficient_structural_inputs"] += 1
+            continue
+        structural_z = sum(structural) / len(structural)
+        if structural_z * direction <= 0:
+            rejected["structural_direction_mismatch"] += 1
+            continue
+
+        if (
+            "line_elo_edge" not in structural_scales
+            or base.get("line_elo_edge") is None
+        ):
+            rejected["missing_line_elo"] += 1
+            continue
+        line_z = float(base["line_elo_edge"]) / float(structural_scales["line_elo_edge"])
+        if line_z * direction <= 0:
+            rejected["line_elo_direction_mismatch"] += 1
+            continue
+        if abs(line_z) < EXPERIMENTAL_LINE_ELO_MIN_Z:
+            rejected["line_elo_too_weak"] += 1
+            continue
+
+        aligned = (
+            float(row["actual_home_margin"]) - float(row["market_home_margin"])
+        ) * direction
+        selected.append({
+            "game_id": int(row["game_id"]),
+            "season": season,
+            "week": week,
+            "home_team": row["home_team"],
+            "away_team": row["away_team"],
+            "side": row["home_team"] if direction > 0 else row["away_team"],
+            "market_home_margin": round(float(row["market_home_margin"]), 3),
+            "early_margin_power_edge": round(edge, 3),
+            "early_margin_power_z": round(z, 3),
+            "structural_z": round(structural_z, 3),
+            "line_elo_z": round(line_z, 3),
+            "aligned_residual": round(aligned, 3),
+            "result": "win" if aligned > 0 else "loss" if aligned < 0 else "push",
+        })
+
+    return {
+        "version": "experimental-early-convergence-v1",
+        "season": season,
+        "training_from_season": training_from_season,
+        "signal_weeks": list(EARLY_SIGNAL_WEEKS),
+        "rules": {
+            "early_margin_power_min_abs_z": THRESHOLD_Z,
+            "line_elo_min_abs_z": EXPERIMENTAL_LINE_ELO_MIN_Z,
+            "structural_confirmation": "same frozen cluster/direction rule",
+            "week_1": "context only / never qualifies",
+            "status": "experimental; separate from frozen Full Convergence",
+        },
+        "week_scales": {
+            str(k): round(v, 4) if v is not None else None
+            for k, v in week_scales.items()
+        },
+        "completed_early_games_considered": len(test_early),
+        "selected_summary": _summary(selected),
+        "selected_games": selected,
+        "rejection_counts": rejected,
+        "notes": [
+            "This does not alter standard Margin Power or frozen Full Convergence.",
+            "The 0.50 Line Elo threshold was chosen as a provisional coverage/strength tradeoff from retrospective research and requires prospective validation.",
+            "Only completed games with available market/lens inputs are graded here.",
         ],
     }
