@@ -913,3 +913,22 @@ def test_draftkings_roi_uses_actual_prices():
     result = dka._roi_summary(rows)
     assert result["risked_units"] == 3.0
     assert result["net_units"] == round((100 / 120) - 1.0, 4)
+
+
+from sports_aggregator.cfb import early_margin_power as emp
+
+
+def test_early_margin_power_elo_margin():
+    game = {"home_pregame_elo": 1600, "away_pregame_elo": 1500}
+    assert emp._elo_margin(game) == 6.5
+
+
+def test_early_margin_power_forecast_summary():
+    rows = [
+        {"actual_home_margin": 7.0, "market_home_margin": 3.0, "x": 6.0},
+        {"actual_home_margin": -3.0, "market_home_margin": 1.0, "x": -2.0},
+    ]
+    summary = emp._forecast_summary(rows, "x")
+    assert summary["n"] == 2
+    assert summary["coverage_rate"] == 1.0
+    assert summary["market_direction_hit_rate"] == 1.0
