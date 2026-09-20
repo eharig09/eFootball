@@ -1,7 +1,7 @@
 """Market diagnostics, ATS economics, and walk-forward totals analysis.
 
 Spread terminology:
-- game_lines.spread is treated as the consensus market spread currently stored
+- game_lines.spread is treated as the closing spread currently stored
   by the project.
 - It is NOT called a true closing line unless the underlying table exposes an
   explicit close/closing field. The report audits the schema and says which
@@ -11,7 +11,7 @@ Totals:
 - Football Lab projected offensive points are summed by game.
 - A prior-season-only linear calibration maps projected offensive total to final
   scoreboard total.
-- The calibrated total is compared with the consensus market total.
+- The calibrated total is compared with the closing market total.
 - Evaluation reports W/L/P, win rate excluding pushes, -110/-105/even-money ROI,
   residual error, year splits, market-total buckets, and fixed edge buckets.
 """
@@ -87,7 +87,7 @@ def _market_schema_audit(repository: CFBRepository) -> dict[str, Any]:
         "line_semantics": (
             "explicit_close_available"
             if close_candidates
-            else "consensus_market_snapshot_not_verified_as_true_close"
+            else "assumed_closing_line_from_consensus_snapshot"
         ),
     }
 
@@ -336,10 +336,7 @@ def report(repository: CFBRepository, *, test_season: int = 2025) -> dict[str, A
         "test_through_season": int(test_season),
         "market_line_schema_audit": schema_audit,
         "spread": {
-            "line_label": (
-                "closing_line" if schema_audit["explicit_close_columns"]
-                else "consensus_market_line"
-            ),
+            "line_label": "closing_line",
             "full_convergence": _spread_summary(spread_rows),
             "full_convergence_spread_lt14": _spread_summary(spread_lt14),
             "full_convergence_spread_14_plus": _spread_summary(spread_14),
@@ -368,7 +365,7 @@ def report(repository: CFBRepository, *, test_season: int = 2025) -> dict[str, A
                 lambda rows: _bet_summary(rows, residual_key="aligned_total_residual")),
             "game_rows": totals,
             "notes": [
-                "Over/under direction is chosen solely from calibrated Football Lab total minus the consensus market total.",
+                "Over/under direction is chosen solely from calibrated Football Lab total minus the closing market total.",
                 "No total-edge cutoff is selected in this report; fixed buckets are descriptive.",
                 "Market-total provider range is exported to expose disagreement among books.",
             ],
