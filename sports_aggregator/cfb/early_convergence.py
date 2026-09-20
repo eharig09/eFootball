@@ -60,6 +60,39 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+
+def _market_shape(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    def bucket(r: dict[str, Any]) -> str:
+        a = abs(float(r["market_home_margin"]))
+        if a < 7:
+            return "<7"
+        if a < 14:
+            return "7-13.5"
+        if a < 21:
+            return "14-20.5"
+        if a < 30:
+            return "21-29.5"
+        return "30+"
+
+    by_role = {"favorite": [], "underdog": []}
+    by_spread = {k: [] for k in ("<7", "7-13.5", "14-20.5", "21-29.5", "30+")}
+    by_location = {"home": [], "away": []}
+    for r in rows:
+        selected_home = int(r["direction"]) > 0
+        market = float(r["market_home_margin"])
+        selected_favorite = (
+            (selected_home and market > 0)
+            or ((not selected_home) and market < 0)
+        )
+        by_role["favorite" if selected_favorite else "underdog"].append(r)
+        by_spread[bucket(r)].append(r)
+        by_location["home" if selected_home else "away"].append(r)
+    return {
+        "by_market_role": {k: _summary(v) for k, v in by_role.items()},
+        "by_abs_market_margin": {k: _summary(v) for k, v in by_spread.items()},
+        "by_selected_location": {k: _summary(v) for k, v in by_location.items()},
+    }
+
 def _fbs_teams(repository: CFBRepository) -> set[str]:
     with repository._reader() as connection:
         return {
@@ -228,6 +261,7 @@ def report(repository: CFBRepository, *, from_season: int = 2022,
                     for season in range(int(from_season), int(to_season) + 1)
                 },
             },
+            "market_shape": _market_shape(chosen),
             "by_week": {
                 str(week): _summary([
                     r for r in chosen if int(r["week"]) == week
