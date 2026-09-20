@@ -592,3 +592,41 @@ def test_market_movement_outcome_summary_tracks_pushes():
     assert summary["losses"] == 1
     assert summary["pushes"] == 1
     assert summary["win_rate_ex_pushes"] == 0.5
+
+
+from sports_aggregator.cfb import totals_divergence_matrix as tdm
+
+
+def test_totals_divergence_movement_state_boundaries():
+    assert tdm._movement_state(1.0) == "toward_1_plus"
+    assert tdm._movement_state(0.5) == "toward_lt1"
+    assert tdm._movement_state(0.25) == "unchanged"
+    assert tdm._movement_state(-0.25) == "unchanged"
+    assert tdm._movement_state(-0.5) == "away_lt1"
+    assert tdm._movement_state(-1.0) == "away_1_plus"
+
+
+def test_totals_divergence_summary_tracks_closing_results():
+    rows = [
+        {
+            "closing_result": "win",
+            "edge_retained_ratio": 1.2,
+            "aligned_model_edge_at_close": 6.0,
+            "close_result_aligned": 4.0,
+            "aligned_market_move": -1.0,
+            "close_provider_range": 0.5,
+        },
+        {
+            "closing_result": "loss",
+            "edge_retained_ratio": 0.8,
+            "aligned_model_edge_at_close": 4.0,
+            "close_result_aligned": -2.0,
+            "aligned_market_move": 1.0,
+            "close_provider_range": 1.0,
+        },
+    ]
+    summary = tdm._summary(rows)
+    assert summary["wins"] == 1
+    assert summary["losses"] == 1
+    assert summary["win_rate_ex_pushes"] == 0.5
+    assert summary["mean_edge_retained_ratio"] == 1.0
