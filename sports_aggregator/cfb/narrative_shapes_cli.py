@@ -79,6 +79,10 @@ def main() -> None:
     early_conv.add_argument("--from-year", type=int, default=2022)
     early_conv.add_argument("--to-year", type=int, default=2025)
 
+    early_current = sub.add_parser("experimental-early-convergence")
+    early_current.add_argument("--year", type=int, default=2026)
+    early_current.add_argument("--training-from-year", type=int, default=2022)
+
     internal_power = sub.add_parser("internal-power")
     internal_power.add_argument("--year", type=int, default=2025)
 
@@ -215,6 +219,12 @@ def main() -> None:
             repository,
             from_season=args.from_year,
             to_season=args.to_year,
+        )
+    elif args.command == "experimental-early-convergence":
+        payload = early_convergence.experimental_current_report(
+            repository,
+            season=args.year,
+            training_from_season=args.training_from_year,
         )
     elif args.command == "internal-power":
         payload = internal_power_lenses.report(
