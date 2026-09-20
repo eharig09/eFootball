@@ -556,3 +556,39 @@ def test_totals_convergence_bucket_report_keeps_fixed_threshold():
     )
     assert full["wins"] == 1
     assert full["win_rate_ex_pushes"] == 1.0
+
+
+from sports_aggregator.cfb import totals_market_movement as tmm
+
+
+def test_market_movement_summary_excludes_unchanged_from_direction_rate():
+    rows = [
+        {"close_moved_toward_model": True, "close_moved_away_from_model": False, "close_unchanged": False,
+         "aligned_market_move": 1.0, "distance_improvement_toward_model": 1.0,
+         "model_vs_open": 3.0, "close_provider_range": 0.5},
+        {"close_moved_toward_model": False, "close_moved_away_from_model": True, "close_unchanged": False,
+         "aligned_market_move": -2.0, "distance_improvement_toward_model": -2.0,
+         "model_vs_open": -4.0, "close_provider_range": 1.0},
+        {"close_moved_toward_model": False, "close_moved_away_from_model": False, "close_unchanged": True,
+         "aligned_market_move": 0.0, "distance_improvement_toward_model": 0.0,
+         "model_vs_open": 2.0, "close_provider_range": 0.0},
+    ]
+    summary = tmm._movement_summary(rows)
+    assert summary["n"] == 3
+    assert summary["toward_model"] == 1
+    assert summary["away_from_model"] == 1
+    assert summary["unchanged"] == 1
+    assert summary["directional_move_rate_ex_unchanged"] == 0.5
+
+
+def test_market_movement_outcome_summary_tracks_pushes():
+    rows = [
+        {"aligned": 3.0},
+        {"aligned": -1.0},
+        {"aligned": 0.0},
+    ]
+    summary = tmm._outcome_summary(rows, "aligned")
+    assert summary["wins"] == 1
+    assert summary["losses"] == 1
+    assert summary["pushes"] == 1
+    assert summary["win_rate_ex_pushes"] == 0.5
