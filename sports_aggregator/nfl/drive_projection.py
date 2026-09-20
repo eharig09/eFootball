@@ -17,9 +17,10 @@ import numpy as np
 
 from sports_aggregator.nfl.repository import NFLRepository
 
-MODEL_VERSION = "nfl-drive-v1"
+MODEL_VERSION = "nfl-drive-v2"
 MIN_PRIOR_GAMES = 3
 RIDGE_ALPHA = 8.0
+STATE_SEASON_DECAY = 0.25
 
 FEATURES = (
     "team_drives",
@@ -47,6 +48,7 @@ FEATURES = (
 @dataclass
 class TeamHistory:
     games: int = 0
+    weighted_games: float = 0.0
     drives_for: float = 0.0
     drives_against: float = 0.0
     plays: float = 0.0
@@ -74,13 +76,29 @@ class TeamHistory:
     opponent_successful_plays: float = 0.0
     opponent_explosive_plays: float = 0.0
 
+    def decay_offseason(self, factor: float) -> None:
+        self.weighted_games *= factor
+        for key in (
+            "drives_for", "drives_against", "plays", "opponent_plays",
+            "seconds_sum", "clocked_plays", "neutral_plays", "neutral_passes",
+            "opponent_seconds_sum", "opponent_clocked_plays",
+            "opponent_neutral_plays", "opponent_neutral_passes",
+            "total_epa", "pass_plays", "pass_epa", "rush_plays", "rush_epa",
+            "successful_plays", "explosive_plays", "opponent_total_epa",
+            "opponent_pass_plays", "opponent_pass_epa", "opponent_rush_plays",
+            "opponent_rush_epa", "opponent_successful_plays",
+            "opponent_explosive_plays",
+        ):
+            setattr(self, key, float(getattr(self, key)) * factor)
+
     def snapshot(self) -> dict[str, float | None]:
         if not self.games:
             return {}
         return {
             "games": self.games,
-            "drives_for": self.drives_for / self.games,
-            "drives_allowed": self.drives_against / self.games,
+            "weighted_games": self.weighted_games,
+            "drives_for": self.drives_for / self.weighted_games if self.weighted_games else None,
+            "drives_allowed": self.drives_against / self.weighted_games if self.weighted_games else None,
             "plays_per_drive": self.plays / self.drives_for if self.drives_for else None,
             "plays_per_drive_allowed": (
                 self.opponent_plays / self.drives_against if self.drives_against else None
@@ -308,7 +326,8 @@ def _feature_row(
 
 
 def build_rows(repository: NFLRepository, *, start_season: int = 2016,
-               end_season: int = 2025) -> list[dict[str, Any]]:
+               end_season: int = 2025,
+               season_decay: float = STATE_SEASON_DECAY) -> list[dict[str, Any]]:
     games = _raw_games(repository, start_season, end_season)
     history: dict[str, TeamHistory] = defaultdict(TeamHistory)
     rows: list[dict[str, Any]] = []
@@ -316,7 +335,13 @@ def build_rows(repository: NFLRepository, *, start_season: int = 2016,
     for game in games:
         by_week[(int(game["season"]), int(game["week"]))].append(game)
 
+    previous_season: int | None = None
     for season_week in sorted(by_week):
+        season, _week = season_week
+        if previous_season is not None and season != previous_season:
+            for team_history in history.values():
+                team_history.decay_offseason(float(season_decay))
+        previous_season = season
         current = by_week[season_week]
         league = _league_snapshot(history)
         for game in current:
@@ -332,6 +357,7 @@ def build_rows(repository: NFLRepository, *, start_season: int = 2016,
                 other = "away" if side == "home" else "home"
                 h = history[team]
                 h.games += 1
+                h.weighted_games += 1.0
                 h.drives_for += float(game[f"{side}_drives"])
                 h.drives_against += float(game[f"{other}_drives"])
                 h.plays += float(game[f"{side}_plays"])
@@ -459,6 +485,7 @@ def report(repository: NFLRepository, *, start_season: int = 2016,
         "leakage_policy": "pregame snapshots; whole-week batch update; test season excluded from fit",
         "minimum_prior_games": MIN_PRIOR_GAMES,
         "ridge_alpha": RIDGE_ALPHA,
+        "state_season_decay": STATE_SEASON_DECAY,
         "features": list(FEATURES),
         "dataset_rows": len(rows),
         "seasons_available": seasons,
