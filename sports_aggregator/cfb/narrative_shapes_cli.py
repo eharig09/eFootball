@@ -22,6 +22,7 @@ from sports_aggregator.cfb import market_ats_totals
 from sports_aggregator.cfb import totals_convergence
 from sports_aggregator.cfb import totals_market_movement
 from sports_aggregator.cfb import totals_divergence_matrix
+from sports_aggregator.cfb import totals_narrative_adjustment
 
 
 def main() -> None:
@@ -121,6 +122,14 @@ def main() -> None:
         "--output-dir",
         default="research_outputs",
         help="Directory for totals divergence artifacts",
+    )
+
+    totals_narrative = sub.add_parser("totals-narrative-adjustment")
+    totals_narrative.add_argument("--year", type=int, default=2025)
+    totals_narrative.add_argument(
+        "--output-dir",
+        default="research_outputs",
+        help="Directory for totals narrative-adjustment artifacts",
     )
 
     load_dotenv()
@@ -251,6 +260,16 @@ def main() -> None:
             args.output_dir,
         )
         payload = totals_divergence_matrix.compact_console_summary(payload, paths)
+    elif args.command == "totals-narrative-adjustment":
+        payload = totals_narrative_adjustment.report(
+            repository,
+            test_season=args.year,
+        )
+        paths = totals_narrative_adjustment.export_report(
+            payload,
+            args.output_dir,
+        )
+        payload = totals_narrative_adjustment.compact_console_summary(payload, paths)
     else:
         payload = narrative_shapes.report(
             repository,
