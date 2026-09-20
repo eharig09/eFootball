@@ -630,3 +630,40 @@ def test_totals_divergence_summary_tracks_closing_results():
     assert summary["losses"] == 1
     assert summary["win_rate_ex_pushes"] == 0.5
     assert summary["mean_edge_retained_ratio"] == 1.0
+
+
+from sports_aggregator.cfb import totals_narrative_adjustment as tna
+
+
+def test_totals_narrative_tag_priors_shrink_and_require_minimum():
+    train = []
+    for i in range(30):
+        train.append({
+            "market_total_residual": 4.0,
+            "active_narrative_tags": ["bounceback_candidate"],
+        })
+    priors = tna._tag_priors(train)
+    p = priors["bounceback_candidate"]
+    assert p["n"] == 30
+    assert round(p["raw_mean_total_residual"], 3) == 4.0
+    assert round(p["shrinkage_weight"], 3) == 0.375
+    assert round(p["adjustment"], 3) == 1.5
+    assert priors["lookahead_candidate"]["adjustment"] is None
+
+
+def test_totals_narrative_game_adjustment_averages_active_eligible_tags():
+    priors = {
+        "a": {"adjustment": 2.0},
+        "b": {"adjustment": -1.0},
+        "c": {"adjustment": None},
+    }
+    row = {"active_narrative_tags": ["a", "b", "c"]}
+    adjustment, used = tna._game_adjustment(row, priors)
+    assert adjustment == 0.5
+    assert used == ["a", "b"]
+
+
+def test_totals_narrative_result_handles_push():
+    assert tna._result(2.0) == "win"
+    assert tna._result(-2.0) == "loss"
+    assert tna._result(0.0) == "push"
