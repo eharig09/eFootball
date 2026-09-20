@@ -434,13 +434,33 @@ def _calibrated_live_total(
         ))
     fit = mat._linear_fit(pairs)
     if not fit:
-        return {"value": raw_total, "calibrated": False, "training_games": len(pairs)}
+        return {"value": raw_total, "calibrated": False, "training_games": len(pairs),
+                "interval80_low": None, "interval80_high": None}
+
+    calibrated_value = float(fit["intercept"]) + float(fit["slope"]) * float(raw_total)
+    residuals = sorted(
+        actual - (float(fit["intercept"]) + float(fit["slope"]) * predicted)
+        for predicted, actual in pairs
+    )
+    def quantile(values, q):
+        if not values:
+            return None
+        if len(values) == 1:
+            return float(values[0])
+        pos = (len(values) - 1) * float(q)
+        lo = int(pos)
+        hi = min(lo + 1, len(values) - 1)
+        frac = pos - lo
+        return float(values[lo]) * (1.0 - frac) + float(values[hi]) * frac
+    q10, q90 = quantile(residuals, 0.10), quantile(residuals, 0.90)
     return {
-        "value": float(fit["intercept"]) + float(fit["slope"]) * float(raw_total),
+        "value": calibrated_value,
         "calibrated": True,
         "training_games": int(fit["n"]),
         "intercept": float(fit["intercept"]),
         "slope": float(fit["slope"]),
+        "interval80_low": calibrated_value + q10 if q10 is not None else None,
+        "interval80_high": calibrated_value + q90 if q90 is not None else None,
     }
 
 
@@ -534,6 +554,8 @@ def matchup_research_packet(
             "raw_projected_total": raw_total,
             "calibrated_projected_total": projected_total,
             "calibration": calibration,
+            "interval80_low": calibration.get("interval80_low"),
+            "interval80_high": calibration.get("interval80_high"),
             "opening_total": open_total,
             "closing_total": close_total,
             "opening_edge": open_edge,
