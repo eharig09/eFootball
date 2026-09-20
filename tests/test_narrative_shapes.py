@@ -499,3 +499,60 @@ def test_linear_fit_recovers_simple_total_calibration():
     assert round(fit["slope"], 6) == 2.0
     assert round(fit["intercept"], 6) == 3.0
     assert fit["n"] == 60
+
+
+from sports_aggregator.cfb import totals_convergence as tc
+
+
+def test_totals_convergence_std_handles_constant_values():
+    assert tc._std([2.0, 2.0, 2.0]) == 1.0
+
+
+def test_totals_convergence_state_requires_primary_direction():
+    row = {
+        "football_lab_total_edge": 3.0,
+        "pace_total_edge": 2.0,
+        "efficiency_total_edge": 1.0,
+        "tendency_total_edge": -1.0,
+    }
+    scales = {
+        "football_lab_total_edge": 2.0,
+        "pace_total_edge": 2.0,
+        "efficiency_total_edge": 1.0,
+        "tendency_total_edge": 1.0,
+    }
+    state = tc._state(row, scales)
+    assert state is not None
+    assert state["primary_direction"] == 1
+    assert state["structural_z"] > 0
+    assert state["confirmation_count"] == 1
+    assert state["confirmation_combination"] == "structural_only"
+
+
+def test_totals_convergence_bucket_report_keeps_fixed_threshold():
+    rows = [
+        {
+            "abs_primary_z": 1.2,
+            "available_confirmations": 2,
+            "confirmation_count": 2,
+            "confirmation_combination": "structural+tendency",
+            "result": "win",
+            "aligned_total_residual": 4.0,
+        },
+        {
+            "abs_primary_z": 0.8,
+            "available_confirmations": 2,
+            "confirmation_count": 2,
+            "confirmation_combination": "structural+tendency",
+            "result": "loss",
+            "aligned_total_residual": -2.0,
+        },
+    ]
+    result = tc._bucket_report(rows, 1.0)
+    assert result["eligible_n"] == 1
+    full = next(
+        r for r in result["by_confirmation_count"]
+        if r["confirmation_count"] == 2
+    )
+    assert full["wins"] == 1
+    assert full["win_rate_ex_pushes"] == 1.0
