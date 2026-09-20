@@ -852,3 +852,10 @@ def test_key_crossing_label_is_stable():
     assert cqa._crossing_label([]) == "no_key_crossed"
     assert cqa._crossing_label(["7"]) == "crosses_7"
     assert cqa._crossing_label(["3", "7"]) == "crosses_multiple_3_7"
+
+
+def test_margin_power_edge_magnitude_buckets():
+    assert cqa._edge_magnitude_bucket(4.9) == "<5"
+    assert cqa._edge_magnitude_bucket(-5.0) == "5-7.99"
+    assert cqa._edge_magnitude_bucket(8.0) == "8-11.99"
+    assert cqa._edge_magnitude_bucket(12.0) == "12+"
