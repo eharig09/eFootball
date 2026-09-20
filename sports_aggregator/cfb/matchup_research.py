@@ -13,6 +13,7 @@ from typing import Any
 
 from sports_aggregator.cfb import market_ats_totals as mat
 from sports_aggregator.cfb import totals_divergence_matrix as tdm
+from sports_aggregator.cfb import narrative_shapes as ns
 from sports_aggregator.cfb.projection_backtest import BACKTEST_VERSION
 from sports_aggregator.cfb.repository import CFBRepository
 
@@ -20,19 +21,19 @@ from sports_aggregator.cfb.repository import CFBRepository
 SPREAD_RESEARCH = {
     "full_convergence": {
         "label": "Full Convergence",
-        "record": "54-40-3",
-        "win_rate": 57.45,
-        "n": 97,
-        "mean_residual": 4.631,
-        "note": "Frozen spread convergence: Margin Power >=1σ plus structural and Line Elo confirmation.",
+        "record": "77-64-2",
+        "win_rate": 54.61,
+        "n": 143,
+        "mean_residual": 4.300,
+        "note": "Frozen 2021-2025 Full Convergence: Margin Power >=1σ plus structural and Line Elo confirmation.",
     },
     "full_convergence_lt14": {
         "label": "Full Convergence · market spread <14",
-        "record": "47-29-3",
-        "win_rate": 61.84,
-        "n": 79,
-        "mean_residual": 5.576,
-        "note": "Research applicability subset; 14+ behaved more like an out-of-domain boundary than a reliable reverse signal.",
+        "record": "64-45-2",
+        "win_rate": 58.72,
+        "n": 111,
+        "mean_residual": None,
+        "note": "2021-2025 applicability subset. The 14+ region underperformed, so it remains a caution boundary rather than a fade rule.",
     },
 }
 
@@ -72,6 +73,315 @@ TOTAL_REGIME_BENCHMARKS = {
     ("8+", "toward_1_plus"): (50.54, 93, 0.149),
     ("8+", "toward_lt1"): (40.38, 52, 0.076),
 }
+
+
+NARRATIVE_LABELS = {
+    "statement_win": "Statement win",
+    "upset_win": "Upset win",
+    "bad_loss": "Bad loss",
+    "upset_loss": "Upset loss",
+    "letdown_candidate": "Letdown candidate",
+    "bounceback_candidate": "Bounceback candidate",
+    "won_big_then_underdog": "Big win → underdog",
+    "market_darling": "Market darling",
+    "market_skepticism": "Market skepticism",
+    "market_chase": "Market chase",
+    "market_lag": "Market lag",
+    "lookahead_candidate": "Lookahead candidate",
+    "sandwich_candidate": "Sandwich candidate",
+    "disputed_team": "Disputed team",
+}
+
+
+def _summary_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    residuals = [
+        float(r["market_margin_residual"])
+        for r in rows if r.get("market_margin_residual") is not None
+    ]
+    if not residuals:
+        return {"n": 0, "cover_rate": None, "mean_residual": None}
+    return {
+        "n": len(residuals),
+        "cover_rate": sum(v > 0 for v in residuals) / len(residuals),
+        "mean_residual": sum(residuals) / len(residuals),
+    }
+
+
+def _live_narrative_context(
+    repository: CFBRepository,
+    game: dict[str, Any],
+    lines: dict[str, Any],
+) -> dict[str, Any]:
+    """Derive current pregame narrative tags and prior-season tag results."""
+    season = int(game["season"])
+    kickoff = game.get("start_date") or ""
+    home = str(game["home_team"])
+    away = str(game["away_team"])
+    spread = lines.get("consensus_spread")
+    market_home = -float(spread) if spread is not None else None
+
+    with repository._reader() as connection:
+        history = [
+            dict(r) for r in connection.execute(
+                """SELECT * FROM cfb_narrative_state
+                   WHERE narrative_version=?
+                   ORDER BY season,week,kickoff,game_id,side""",
+                (ns.NARRATIVE_VERSION,),
+            )
+        ]
+        schedule_rows = [
+            dict(r) for r in connection.execute(
+                """SELECT game_id,start_date,home_team,away_team
+                   FROM games
+                   WHERE season=? AND start_date>?
+                   ORDER BY start_date,game_id""",
+                (season, str(kickoff)),
+            )
+        ]
+        fpi_rows = [
+            dict(r) for r in connection.execute(
+                """SELECT team_id,pred_point_diff
+                   FROM fpi_game_projections
+                   WHERE season=? AND game_id=?""",
+                (season, int(game.get("game_id") or -1)),
+            )
+        ] if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='fpi_game_projections'"
+        ).fetchone() else []
+        core_rows = [
+            dict(r) for r in connection.execute(
+                """SELECT team,overall,through_week
+                   FROM core_ratings
+                   WHERE season=? AND through_week<?
+                   ORDER BY through_week""",
+                (season, int(game.get("week") or 0)),
+            )
+        ]
+
+    if not history:
+        return {"available": False, "reason": "Narrative history unavailable.", "teams": []}
+
+    prior_rows = {}
+    for team in (home, away):
+        candidates = [
+            r for r in history
+            if str(r["team"]) == team
+            and (not kickoff or str(r.get("kickoff") or "") < str(kickoff))
+        ]
+        prior_rows[team] = candidates[-1] if candidates else None
+
+    prior_line_home = (
+        float(prior_rows[home]["line_elo"])
+        if prior_rows.get(home) and prior_rows[home].get("line_elo") is not None
+        else 1500.0
+    )
+    prior_line_away = (
+        float(prior_rows[away]["line_elo"])
+        if prior_rows.get(away) and prior_rows[away].get("line_elo") is not None
+        else 1500.0
+    )
+    if market_home is not None:
+        current_line_home, current_line_away = ns._market_line_elo_observation(
+            prior_line_home, prior_line_away, market_home,
+            home_field_points=ns.DEFAULT_HOME_FIELD_POINTS,
+            learning_rate=ns.DEFAULT_LINE_LEARNING_RATE,
+        )
+    else:
+        current_line_home, current_line_away = prior_line_home, prior_line_away
+
+    true_elo = {
+        home: game.get("home_pregame_elo"),
+        away: game.get("away_pregame_elo"),
+    }
+    team_ids = {
+        home: game.get("home_team_id"),
+        away: game.get("away_team_id"),
+    }
+    fpi_margin = {
+        team: next(
+            (float(r["pred_point_diff"]) for r in fpi_rows
+             if team_ids.get(team) is not None
+             and int(r["team_id"]) == int(team_ids[team])
+             and r.get("pred_point_diff") is not None),
+            None,
+        )
+        for team in (home, away)
+    }
+    latest_core = {}
+    for row in core_rows:
+        latest_core[str(row["team"])] = float(row["overall"])
+    line_elo = {home: current_line_home, away: current_line_away}
+    market_expected = {
+        home: market_home,
+        away: (-market_home if market_home is not None else None),
+    }
+
+    active: dict[str, list[str]] = {}
+    for team, opponent in ((home, away), (away, home)):
+        previous = prior_rows.get(team)
+        prev_won = bool(previous and int(previous.get("won") or 0))
+        prev_lost = bool(previous and not int(previous.get("won") or 0))
+        prev_opp_elo = previous.get("opponent_true_elo") if previous else None
+        prev_market = previous.get("market_expected_margin") if previous else None
+        prev_market_surprise = previous.get("market_margin_residual") if previous else None
+        prev_elo_surprise = previous.get("elo_margin_residual") if previous else None
+
+        statement = int(
+            bool(previous) and prev_won
+            and prev_opp_elo is not None and float(prev_opp_elo) >= 1600.0
+            and prev_elo_surprise is not None and float(prev_elo_surprise) >= 10.0
+        )
+        upset_win = int(
+            bool(previous) and prev_won
+            and prev_market is not None and float(prev_market) < 0.0
+        )
+        bad_loss = int(
+            bool(previous) and prev_lost
+            and prev_market_surprise is not None and float(prev_market_surprise) <= -10.0
+        )
+        upset_loss = int(
+            bool(previous) and prev_lost
+            and prev_market is not None and float(prev_market) >= 3.0
+        )
+
+        team_market = market_expected[team]
+        gap = None
+        if true_elo[team] is not None:
+            gap = float(line_elo[team]) - float(true_elo[team])
+        prior_gap = (
+            float(previous["line_minus_true_elo"])
+            if previous and previous.get("line_minus_true_elo") is not None else None
+        )
+        change = gap - prior_gap if gap is not None and prior_gap is not None else None
+
+        next_opponent = None
+        for scheduled in schedule_rows:
+            if int(scheduled["game_id"]) == int(game.get("game_id") or -1):
+                continue
+            if scheduled["home_team"] == team:
+                next_opponent = str(scheduled["away_team"])
+                break
+            if scheduled["away_team"] == team:
+                next_opponent = str(scheduled["home_team"])
+                break
+
+        next_elo = None
+        if next_opponent:
+            next_candidates = [
+                r for r in history
+                if str(r["team"]) == next_opponent
+                and (not kickoff or str(r.get("kickoff") or "") < str(kickoff))
+                and r.get("true_elo") is not None
+            ]
+            if next_candidates:
+                next_elo = float(next_candidates[-1]["true_elo"])
+
+        opponent_true = true_elo.get(opponent)
+        lookahead_score = (
+            float(next_elo) - float(opponent_true)
+            if next_elo is not None and opponent_true is not None else None
+        )
+        sandwich_score = (
+            min(float(prev_opp_elo), float(next_elo)) - float(opponent_true)
+            if prev_opp_elo is not None and next_elo is not None and opponent_true is not None
+            else None
+        )
+
+        elo_expected = ns._expected_margin_from_elo(
+            true_elo.get(team), true_elo.get(opponent),
+            is_home=(team == home),
+            home_field_points=ns.DEFAULT_HOME_FIELD_POINTS,
+        )
+        team_core = latest_core.get(team)
+        opp_core = latest_core.get(opponent)
+        core_margin = (
+            float(team_core) - float(opp_core)
+            if team_core is not None and opp_core is not None else None
+        )
+        rating_lenses = [
+            value for value in (
+                elo_expected,
+                fpi_margin.get(team),
+                core_margin,
+                team_market,
+            ) if value is not None
+        ]
+        disputed = int(
+            len(rating_lenses) >= 3
+            and (max(float(v) for v in rating_lenses) - min(float(v) for v in rating_lenses)) >= 7.0
+        )
+
+        tags = {
+            "statement_win": statement,
+            "upset_win": upset_win,
+            "bad_loss": bad_loss,
+            "upset_loss": upset_loss,
+            "letdown_candidate": int(
+                bool(statement or upset_win)
+                and team_market is not None and float(team_market) >= 7.0
+            ),
+            "bounceback_candidate": int(bool(bad_loss or upset_loss)),
+            "won_big_then_underdog": int(
+                bool(statement) and team_market is not None and float(team_market) < 0.0
+            ),
+            "market_darling": int(gap is not None and gap >= 75.0),
+            "market_skepticism": int(gap is not None and gap <= -75.0),
+            "market_chase": int(change is not None and change >= 35.0),
+            "market_lag": int(change is not None and change <= -35.0),
+            "lookahead_candidate": int(
+                lookahead_score is not None and lookahead_score >= 100.0
+            ),
+            "sandwich_candidate": int(
+                sandwich_score is not None and sandwich_score >= 100.0
+            ),
+            "disputed_team": disputed,
+        }
+        active[team] = [key for key, value in tags.items() if value]
+
+    historical = [r for r in history if int(r["season"]) < season]
+    by_game_team = {(int(r["game_id"]), str(r["team"])): r for r in historical}
+
+    teams = []
+    for team, opponent in ((away, home), (home, away)):
+        tag_cards = []
+        for tag in active.get(team, []):
+            solo_rows = [r for r in historical if int(r.get(tag) or 0)]
+            solo = _summary_rows(solo_rows)
+            interactions = []
+            for opp_tag in active.get(opponent, []):
+                combo_rows = []
+                for r in historical:
+                    if not int(r.get(tag) or 0):
+                        continue
+                    opp_row = by_game_team.get((int(r["game_id"]), str(r["opponent"])))
+                    if opp_row and int(opp_row.get(opp_tag) or 0):
+                        combo_rows.append(r)
+                combo = _summary_rows(combo_rows)
+                if combo["n"]:
+                    interactions.append({
+                        "opponent_tag": opp_tag,
+                        "opponent_label": NARRATIVE_LABELS.get(opp_tag, opp_tag.replace("_", " ").title()),
+                        **combo,
+                    })
+            tag_cards.append({
+                "tag": tag,
+                "label": NARRATIVE_LABELS.get(tag, tag.replace("_", " ").title()),
+                "solo": solo,
+                "interactions": interactions,
+            })
+        teams.append({
+            "team": team,
+            "opponent": opponent,
+            "tags": tag_cards,
+        })
+
+    return {
+        "available": any(x["tags"] for x in teams),
+        "teams": teams,
+        "historical_through": season - 1,
+        "note": "Historical results use seasons before the current season and are descriptive context only.",
+    }
+
 
 
 def _mean(values: list[float]) -> float | None:
@@ -204,8 +514,11 @@ def matchup_research_packet(
             "label": f"{opening_bucket} edge · {movement_state.replace('_', ' ')}",
         }
 
+    narrative = _live_narrative_context(repository, game, lines)
+
     return {
         "available": True,
+        "narrative": narrative,
         "spread": {
             "projected_home_margin": projected_home_margin,
             "market_home_margin": market_home_margin,
