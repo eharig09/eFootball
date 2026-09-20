@@ -3,7 +3,8 @@
 Frozen design for this first totals-convergence pass:
 - Primary signal: calibrated Football Lab scoreboard-total edge vs closing total.
 - Structural confirmation: a cluster of two decomposed production components:
-  (a) pace-only total and (b) scoring-efficiency-only total.
+  (a) combined projected drives and (b) mean projected matchup PPD, each
+  calibrated to scoreboard-total units using prior seasons only.
 - Independent confirmation: leak-safe trailing team game-total tendency.
 - All normalizations use prior seasons only.
 - No threshold is selected from outcomes; fixed primary z thresholds are
@@ -113,54 +114,31 @@ def _historical_tendency(rows: list[dict[str, Any]]) -> dict[int, float]:
 
 
 def _component_raw(rows: list[dict[str, Any]], target_season: int) -> dict[int, dict[str, float]]:
-    """Construct raw pace-only and efficiency-only total estimators.
+    """Construct raw pace-only and efficiency-only estimators.
 
-    Pace-only:
-      projected combined drives * prior-season mean points per team-drive.
+    The raw lenses intentionally remain in their natural units:
+    - pace = combined projected drives,
+    - efficiency = mean projected matchup points per drive.
 
-    Efficiency-only:
-      mean projected matchup PPD * prior-season mean combined drives per game.
-
-    Both use only seasons before target_season for their environment constant.
+    A separate prior-season-only calibration maps each raw quantity onto final
+    scoreboard-total units. Keeping the raw components unit-pure avoids using
+    target-season outcomes to construct the feature itself.
     """
-    train = [r for r in rows if int(r["season"]) < int(target_season)]
-    if not train:
-        return {}
-
-    total_drives = sum(
-        float(r["home_projected_drives"]) + float(r["away_projected_drives"])
-        for r in train
-    )
-    total_actual_points = sum(float(r["actual_score_total"]) for r in train)
-    points_per_projected_drive = (
-        total_actual_points / total_drives if total_drives else None
-    )
-
-    mean_combined_drives = sum(
-        float(r["home_projected_drives"]) + float(r["away_projected_drives"])
-        for r in train
-    ) / len(train)
-
     out = {}
     for row in rows:
         if int(row["season"]) != int(target_season):
             continue
-        combined_drives = (
-            float(row["home_projected_drives"])
-            + float(row["away_projected_drives"])
-        )
-        mean_ppd = (
-            float(row["home_projected_ppd"])
-            + float(row["away_projected_ppd"])
-        ) / 2.0
-        if points_per_projected_drive is None:
-            continue
         out[int(row["game_id"])] = {
-            "pace_raw_total": combined_drives * points_per_projected_drive,
-            "efficiency_raw_total": mean_ppd * mean_combined_drives,
+            "pace_raw_total": (
+                float(row["home_projected_drives"])
+                + float(row["away_projected_drives"])
+            ),
+            "efficiency_raw_total": (
+                float(row["home_projected_ppd"])
+                + float(row["away_projected_ppd"])
+            ) / 2.0,
         }
     return out
-
 
 def _calibrated_lookup(
     rows: list[dict[str, Any]],
