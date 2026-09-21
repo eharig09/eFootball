@@ -251,6 +251,42 @@ def _temporal_points_model(repository: CFBRepository, *, train_from: int,
     }
 
 
+def _temporal_drives_model(repository: CFBRepository, *, train_from: int,
+                           train_to: int, min_prior_games: int = 1) -> dict[str, Any] | None:
+    """Fit an in-memory xdrives model without mutating the production model table.
+
+    Same reasoning as `_temporal_points_model`: the persisted
+    xdrives-advanced-novegas-v1 model game_projection.py loads by default is
+    trained on every season on record, so a 2025 backtested game must never
+    use it directly -- that would let 2026 (and beyond) inform a 2025
+    "prediction." A frozen per-season fold, trained only on seasons strictly
+    before the one being scored, keeps the backtest genuinely walk-forward.
+    """
+    if train_to < train_from:
+        return None
+    from sports_aggregator.cfb import xdrives
+    xdrives.initialize(repository)
+    rows = xdrives._read_dataset_rows(
+        repository, from_season=train_from, to_season=train_to,
+        dataset_version=xdrives.DATASET_VERSION)
+    eligible = xdrives._eligible_rows(
+        rows, xdrives.ADVANCED_FEATURES_LIVE, min_prior_games=min_prior_games)
+    if not eligible:
+        return None
+    coefficients = xdrives._fit_ols(
+        eligible, xdrives.ADVANCED_FEATURES_LIVE, "actual_meaningful_drives",
+        l2=xdrives.ADVANCED_MODEL_L2, value_fn=xdrives._feature_value)
+    if coefficients is None:
+        return None
+    return {
+        "model_version": f"backtest-xdrives-{train_from}-{train_to}",
+        "features": xdrives.ADVANCED_FEATURES_LIVE,
+        "coefficients": coefficients,
+        "training_rows": len(eligible),
+        "fitted_at": None,
+    }
+
+
 def _actuals(repository: CFBRepository, game_ids: Iterable[int]) -> dict[tuple[int, str], dict[str, Any]]:
     ids = sorted({int(game_id) for game_id in game_ids})
     if not ids:
@@ -312,7 +348,8 @@ def _actuals(repository: CFBRepository, game_ids: Iterable[int]) -> dict[tuple[i
 def build(repository: CFBRepository, *, from_season: int, to_season: int,
           backtest_version: str = BACKTEST_VERSION,
           min_prior_games: int = 1,
-          points_train_from_season: int = 2022) -> dict[str, Any]:
+          points_train_from_season: int = 2022,
+          drives_train_from_season: int = 2022) -> dict[str, Any]:
     """Rebuild walk-forward predictions for completed games in a season range."""
     if from_season > to_season:
         raise ValueError("from_season must not be after to_season")
@@ -353,6 +390,14 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
         )
         for season in sorted({int(game["season"]) for game in games})
     }
+    temporal_drives_models = {
+        season: _temporal_drives_model(
+            repository,
+            train_from=int(drives_train_from_season),
+            train_to=int(season) - 1,
+        )
+        for season in sorted({int(game["season"]) for game in games})
+    }
     now = datetime.now(timezone.utc).isoformat()
     rows: list[tuple[Any, ...]] = []
     games_projected = 0
@@ -366,6 +411,7 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
             as_of_date=str(game["start_date"]),
             game_id=int(game["game_id"]),
             points_model_override=temporal_models.get(int(game["season"])),
+            drives_model_override=temporal_drives_models.get(int(game["season"])),
         )
         market = markets.get(int(game["game_id"]), {})
         spread = market.get("spread")
@@ -453,6 +499,17 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
                 if model else None
             )
             for season, model in temporal_models.items()
+        },
+        "drives_train_from_season": int(drives_train_from_season),
+        "temporal_drives_models": {
+            str(season): (
+                {
+                    "model_version": model["model_version"],
+                    "training_rows": model["training_rows"],
+                }
+                if model else None
+            )
+            for season, model in temporal_drives_models.items()
         },
     }
 

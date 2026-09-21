@@ -73,6 +73,35 @@ class XDrivesFixture(unittest.TestCase):
                 fetched_at) VALUES(?,2026,'TestBook',?,?,?)""", (game_id, spread, total, NOW))
             c.commit()
 
+    def _seed_round_robin(self, *, season=2026, start_week=1, start_date="2026-08-30"):
+        """Michigan alternates home/away against three opponents for six weeks.
+
+        Every game carries full pace, Elo and market data so every feature
+        `xdrives.ADVANCED_FEATURES` needs is populated once a team has at
+        least one prior game -- enough rows for the ridge fit to be
+        well-posed without hand-deriving an exact expected coefficient.
+        """
+        from datetime import date, timedelta
+        opponents = ["Ohio State", "Rutgers", "Iowa", "Purdue", "Ohio State", "Rutgers"]
+        team_drives = [10, 12, 9, 14, 11, 13]
+        opp_drives = [11, 8, 12, 9, 10, 12]
+        base = date.fromisoformat(start_date)
+        for i, opponent in enumerate(opponents):
+            game_id = season * 10000 + 100 * (start_week + i)
+            week = start_week + i
+            game_date = (base + timedelta(days=7 * i)).isoformat()
+            home = "Michigan" if i % 2 == 0 else opponent
+            away = opponent if i % 2 == 0 else "Michigan"
+            self.game(game_id, home=home, away=away, season=season, week=week, start_date=game_date,
+                      home_elo=1600 + i * 5, away_elo=1550 - i * 3)
+            self.pace(game_id=game_id, team="Michigan", opponent=opponent, drives=team_drives[i],
+                      seconds_per_play=24.0 + i, pass_rate=0.45 + i * 0.01, success_rate=0.44,
+                      explosive_rate=0.09, first_down_rate=0.31, three_and_out_rate=0.18)
+            self.pace(game_id=game_id, team=opponent, opponent="Michigan", drives=opp_drives[i],
+                      seconds_per_play=26.0 - i, pass_rate=0.5, success_rate=0.42,
+                      explosive_rate=0.1, first_down_rate=0.29, three_and_out_rate=0.2)
+            self.lines(game_id, spread=-3.5, total=52.0 + i)
+
 
 class LeakSafetyTests(XDrivesFixture):
     def test_first_game_has_no_trailing_history(self):
@@ -496,35 +525,6 @@ class BaselineTests(XDrivesFixture):
 
 
 class AdvancedModelTests(XDrivesFixture):
-    def _seed_round_robin(self, *, season=2026, start_week=1, start_date="2026-08-30"):
-        """Michigan alternates home/away against three opponents for six weeks.
-
-        Every game carries full pace, Elo and market data so every feature
-        `xdrives.ADVANCED_FEATURES` needs is populated once a team has at
-        least one prior game -- enough rows for the ridge fit to be
-        well-posed without hand-deriving an exact expected coefficient.
-        """
-        from datetime import date, timedelta
-        opponents = ["Ohio State", "Rutgers", "Iowa", "Purdue", "Ohio State", "Rutgers"]
-        team_drives = [10, 12, 9, 14, 11, 13]
-        opp_drives = [11, 8, 12, 9, 10, 12]
-        base = date.fromisoformat(start_date)
-        for i, opponent in enumerate(opponents):
-            game_id = season * 10000 + 100 * (start_week + i)
-            week = start_week + i
-            game_date = (base + timedelta(days=7 * i)).isoformat()
-            home = "Michigan" if i % 2 == 0 else opponent
-            away = opponent if i % 2 == 0 else "Michigan"
-            self.game(game_id, home=home, away=away, season=season, week=week, start_date=game_date,
-                      home_elo=1600 + i * 5, away_elo=1550 - i * 3)
-            self.pace(game_id=game_id, team="Michigan", opponent=opponent, drives=team_drives[i],
-                      seconds_per_play=24.0 + i, pass_rate=0.45 + i * 0.01, success_rate=0.44,
-                      explosive_rate=0.09, first_down_rate=0.31, three_and_out_rate=0.18)
-            self.pace(game_id=game_id, team=opponent, opponent="Michigan", drives=opp_drives[i],
-                      seconds_per_play=26.0 - i, pass_rate=0.5, success_rate=0.42,
-                      explosive_rate=0.1, first_down_rate=0.29, three_and_out_rate=0.2)
-            self.lines(game_id, spread=-3.5, total=52.0 + i)
-
     def test_fit_advanced_model_persists_coefficients_and_feature_order(self):
         self._seed_round_robin()
         xdrives.build_dataset(self.repository)
@@ -588,6 +588,91 @@ class AdvancedModelTests(XDrivesFixture):
     def test_evaluate_advanced_model_requires_explicit_season_bounds(self):
         with self.assertRaises(TypeError):
             xdrives.evaluate_advanced_model(self.repository)
+
+
+class LiveModelTests(XDrivesFixture):
+    """load_model/predict_drives/league_prior_drives_live: the pieces
+    game_projection.py's live drive-count path calls directly, as opposed to
+    the batch fit/evaluate functions above."""
+
+    def test_load_model_round_trips_the_live_novegas_feature_set(self):
+        self._seed_round_robin()
+        xdrives.build_dataset(self.repository)
+        xdrives.fit_advanced_model(
+            self.repository, feature_keys=xdrives.ADVANCED_FEATURES_LIVE,
+            model_version=xdrives.ADVANCED_MODEL_VERSION_LIVE)
+
+        model = xdrives.load_model(self.repository)
+        self.assertIsNotNone(model)
+        self.assertEqual(model["model_version"], xdrives.ADVANCED_MODEL_VERSION_LIVE)
+        self.assertEqual(model["features"], xdrives.ADVANCED_FEATURES_LIVE)
+        self.assertNotIn("market_total", model["features"])
+        self.assertEqual(len(model["coefficients"]), len(xdrives.ADVANCED_FEATURES_LIVE) + 1)
+        self.assertGreater(model["training_rows"], 0)
+
+    def test_load_model_returns_none_when_never_fit(self):
+        self.assertIsNone(xdrives.load_model(self.repository))
+        self.assertIsNone(xdrives.load_model(
+            self.repository, model_version="some-version-nobody-fit"))
+
+    def test_predict_drives_matches_hand_computed_linear_combination(self):
+        coefficients = [5.0, 0.5, -0.25]
+        feature_keys = ("team_prior_drives", "opponent_prior_drives_allowed")
+        row = {"team_prior_drives": 12.0, "opponent_prior_drives_allowed": 10.0}
+        expected = 5.0 + 0.5 * 12.0 + (-0.25) * 10.0
+        self.assertAlmostEqual(
+            xdrives.predict_drives(coefficients, feature_keys, row), expected)
+
+    def test_predict_drives_derives_elo_diff_and_is_home_like_fitting_does(self):
+        coefficients = [0.0, 1.0, 3.0]
+        feature_keys = ("elo_diff", "is_home")
+        row = {"team_elo": 1550, "opponent_elo": 1500, "home_away": "home"}
+        self.assertAlmostEqual(
+            xdrives.predict_drives(coefficients, feature_keys, row), 50.0 + 3.0)
+        away_row = {**row, "home_away": "away"}
+        self.assertAlmostEqual(
+            xdrives.predict_drives(coefficients, feature_keys, away_row), 50.0)
+
+    def test_predict_drives_returns_none_when_a_feature_is_missing(self):
+        coefficients = [5.0, 0.5]
+        feature_keys = ("team_prior_drives",)
+        self.assertIsNone(xdrives.predict_drives(coefficients, feature_keys, {}))
+
+    def test_league_prior_drives_live_matches_the_documented_decay_formula(self):
+        self._seed_round_robin(season=2026, start_week=1, start_date="2026-08-30")
+        # league_prior_drives_live walks cfb_team_game_pace directly (not the
+        # built dataset), so it doesn't need build_dataset() to have run.
+        # Uses its own slower-decaying LEAGUE_LAMBDA, not RECENCY_LAMBDA (the
+        # module-level _decayed_mean helper's hardcoded lambda), so the
+        # expected value is computed by hand here rather than via that helper.
+        # Same query, ORDER BY and LIMIT as league_prior_drives_live itself
+        # (then reversed to oldest-first) -- some games share a start_date, and
+        # DESC-then-reverse can break those ties differently than a plain ASC
+        # query would, which would otherwise assign the tied rows' weights
+        # the wrong way round and fail this on a false negative.
+        with closing(sqlite3.connect(self.path)) as c:
+            c.row_factory = sqlite3.Row
+            rows = [row["meaningful_drives"] for row in c.execute("""
+                SELECT a.meaningful_drives FROM cfb_team_game_pace a
+                JOIN games g ON g.game_id=a.game_id
+                WHERE g.start_date<? ORDER BY g.start_date DESC LIMIT ?""",
+                ("2026-12-31", xdrives.LEAGUE_WINDOW_GAMES))]
+        rows.reverse()
+        n = len(rows)
+        weights = [math.exp(-xdrives.LEAGUE_LAMBDA * (n - 1 - i)) for i in range(n)]
+        expected = sum(w * v for w, v in zip(weights, rows)) / sum(weights)
+
+        result = xdrives.league_prior_drives_live(self.repository, before_date="2026-12-31")
+        self.assertAlmostEqual(result, expected)
+
+    def test_league_prior_drives_live_excludes_games_on_or_after_before_date(self):
+        self._seed_round_robin(season=2026, start_week=1, start_date="2026-08-30")
+        early = xdrives.league_prior_drives_live(self.repository, before_date="2026-08-30")
+        self.assertIsNone(early)  # nothing strictly before the first game's own date
+
+    def test_league_prior_drives_live_returns_none_with_no_history(self):
+        self.assertIsNone(
+            xdrives.league_prior_drives_live(self.repository, before_date="2026-08-30"))
 
 
 if __name__ == "__main__":

@@ -28,6 +28,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--min-prior-games", type=int, default=1)
     p.add_argument("--points-train-from-year", type=int, default=2022,
                    help="Earliest season allowed into each prior-season xPoints fold.")
+    p.add_argument("--drives-train-from-year", type=int, default=2022,
+                   help="Earliest season allowed into each prior-season xdrives fold.")
     p.add_argument("--backtest-version", default=BACKTEST_VERSION)
     p.add_argument("--database", default=None)
     p.add_argument("--output-dir", default="research_outputs",
@@ -72,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
             backtest_version=args.backtest_version,
             min_prior_games=args.min_prior_games,
             points_train_from_season=args.points_train_from_year,
+            drives_train_from_season=args.drives_train_from_year,
         )
     elif args.command == "score-calibration":
         payload = score_calibration_report(

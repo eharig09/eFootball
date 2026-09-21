@@ -111,6 +111,23 @@ ADVANCED_FEATURES = (
 #: that collinearity instead of needing to drop features by hand.
 ADVANCED_MODEL_L2 = 1.0
 
+#: market_total (this game's own closing total) dropped: a genuine 3-season
+#: walk-forward holdout (evaluate_advanced_model) found it made no measurable
+#: difference to the fitted model's accuracy -- MAE moved by 0.001-0.003 in
+#: either direction across 2024/2025/2026, noise-level -- so it wasn't doing
+#: real work. Removing it keeps the live drive-count projection built the
+#: same Vegas-free way live_margin_calibration.py's margin-v2 already is
+#: ("Vegas is intentionally excluded from model fitting and prediction"),
+#: rather than quietly letting the market into the one number nearly
+#: everything else downstream (points, yards, plays, turnovers, red-zone
+#: opportunity) gets multiplied by.
+ADVANCED_FEATURES_LIVE = tuple(key for key in ADVANCED_FEATURES if key != "market_total")
+#: Separate model_version from ADVANCED_MODEL_VERSION ("xdrives-advanced-v1",
+#: the full 11-feature research model) rather than overwriting it -- the two
+#: have different feature lists, and cfb_xdrives_model is keyed by
+#: model_version, so both stay independently inspectable.
+ADVANCED_MODEL_VERSION_LIVE = "xdrives-advanced-novegas-v1"
+
 
 @schema_once("xdrives")
 def initialize(repository) -> None:
@@ -706,11 +723,59 @@ def evaluate_baselines(repository, *, from_season: int | None = None, to_season:
     }
 
 
-def _predict(coefficients: list[float], feature_keys: tuple[str, ...], row: dict[str, Any]) -> float | None:
+def predict_drives(coefficients: list[float], feature_keys: tuple[str, ...], row: dict[str, Any]) -> float | None:
+    """Apply a fitted (raw-scale, no standardization -- see _fit_ols) set of
+    coefficients to one row's features. `row` only needs to expose whatever
+    `feature_keys` asks for; `_feature_value` derives elo_diff/is_home from
+    team_elo/opponent_elo/home_away if those are what's present instead."""
     values = [_feature_value(row, key) for key in feature_keys]
     if any(v is None for v in values):
         return None
     return coefficients[0] + sum(c * v for c, v in zip(coefficients[1:], values))
+
+
+def load_model(repository, *, model_version: str = ADVANCED_MODEL_VERSION_LIVE) -> dict[str, Any] | None:
+    """The persisted coefficients fit_advanced_model() last wrote for this
+    model_version, or None if it has never been fit. Callers should treat
+    None the same as any other missing-input case (fall back to a simpler
+    baseline), not raise -- a fresh environment where the models segment
+    hasn't run yet is an expected, not exceptional, state."""
+    initialize(repository)
+    with repository._reader() as connection:
+        row = connection.execute(
+            "SELECT * FROM cfb_xdrives_model WHERE model_version=?", (model_version,)
+        ).fetchone()
+    if row is None or row["coefficients_json"] is None:
+        return None
+    row = dict(row)
+    return {
+        "model_version": row["model_version"],
+        "features": tuple(json.loads(row["feature_json"])),
+        "coefficients": json.loads(row["coefficients_json"]),
+        "l2": row["l2"],
+        "training_rows": row["training_rows"],
+        "fitted_at": row["fitted_at"],
+    }
+
+
+def league_prior_drives_live(repository, *, before_date: str) -> float | None:
+    """The same leaguewide current-era pace level build_dataset() computes
+    per historical row, evaluated once for "right now" (or any as-of date)
+    instead of walked across the whole stored history. Strictly the last
+    LEAGUE_WINDOW_GAMES team-game observations before `before_date`, so a
+    game on that date can never inform its own prediction."""
+    with repository._reader() as connection:
+        rows = [row["meaningful_drives"] for row in connection.execute(
+            """SELECT a.meaningful_drives
+               FROM cfb_team_game_pace a JOIN games g ON g.game_id=a.game_id
+               WHERE g.start_date<?
+               ORDER BY g.start_date DESC LIMIT ?""",
+            (before_date, LEAGUE_WINDOW_GAMES),
+        )]
+    if not rows:
+        return None
+    rows.reverse()  # oldest first, matching _decay_weights' convention
+    return _weighted_mean(_decay_weights(len(rows), LEAGUE_LAMBDA), rows)
 
 
 def fit_advanced_model(repository, *, from_season: int | None = None, to_season: int | None = None,
@@ -801,7 +866,7 @@ def evaluate_advanced_model(repository, *, train_from: int, train_to: int, test_
             if predicted_env is not None:
                 _add(accumulators["E"], predicted_env, actual)
             if coefficients is not None:
-                predicted_f = _predict(coefficients, feature_keys, row)
+                predicted_f = predict_drives(coefficients, feature_keys, row)
                 if predicted_f is not None:
                     _add(accumulators["F"], predicted_f, actual)
             predicted_g = _shrunk_blend_prediction(row)

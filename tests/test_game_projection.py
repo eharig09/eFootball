@@ -29,12 +29,13 @@ class ProjectionFixture(unittest.TestCase):
             if os.path.exists(path):
                 os.unlink(path)
 
-    def game(self, game_id, *, home, away, season, week, start_date):
+    def game(self, game_id, *, home, away, season, week, start_date, home_elo=None, away_elo=None):
         with closing(sqlite3.connect(self.path)) as c:
             c.execute("""INSERT INTO games(game_id,season,week,season_type,start_date,
                 start_time_tbd,completed,neutral_site,conference_game,home_team_id,home_team,
-                away_team_id,away_team,updated_at) VALUES(?,?,?,'regular',?,0,1,0,0,1,?,2,?,?)""",
-                (game_id, season, week, start_date, home, away, NOW))
+                home_pregame_elo,away_team_id,away_team,away_pregame_elo,updated_at)
+                VALUES(?,?,?,'regular',?,0,1,0,0,1,?,?,2,?,?,?)""",
+                (game_id, season, week, start_date, home, home_elo, away, away_elo, NOW))
             c.commit()
 
     def pace(self, *, game_id, team, opponent, drives=10, plays_per_drive=6.0, pass_rate=0.5,
@@ -172,6 +173,82 @@ class ProjectMatchupTests(ProjectionFixture):
         self.assertIsNone(projection["away"]["drives"])
         # Michigan's own side is still fully computable even though Iowa's isn't.
         self.assertIsNotNone(projection["home_snapshot"]["drives"])
+
+
+class DrivesModelTests(ProjectionFixture):
+    """xdrives.load_model()/predict_drives() wired into _project_side()'s
+    drives computation, with a graceful fallback to the Baseline C blend."""
+
+    def _seed_one_matchup(self, *, home_elo=1600, away_elo=1500):
+        self.game(1, home="Michigan", away="Ohio State", season=2026, week=1, start_date="2026-08-30",
+                  home_elo=1550, away_elo=1500)
+        self.game(2, home="Rutgers", away="Purdue", season=2026, week=1, start_date="2026-08-30",
+                  home_elo=1500, away_elo=1500)
+        self.game(3, home="Michigan", away="Rutgers", season=2026, week=2, start_date="2026-09-06",
+                  home_elo=home_elo, away_elo=away_elo)
+        self.pace(game_id=1, team="Michigan", opponent="Ohio State", drives=10)
+        self.pace(game_id=1, team="Ohio State", opponent="Michigan", drives=11)
+        self.pace(game_id=2, team="Rutgers", opponent="Purdue", drives=12)
+        self.pace(game_id=2, team="Purdue", opponent="Rutgers", drives=9)
+
+    def test_model_override_is_used_over_the_matchup_blend_when_available(self):
+        self._seed_one_matchup()
+        # A tiny hand-built model over a feature subset predict_drives() can
+        # score exactly, so the expected output is a hand-computable dot
+        # product rather than something only the fitted regression knows.
+        drives_model = {
+            "model_version": "test-model", "training_rows": 1, "fitted_at": NOW,
+            "coefficients": [1.0, 0.5, 0.25, 2.0],
+            "features": ("team_prior_drives", "opponent_prior_drives_allowed", "is_home"),
+        }
+        projection = gp.project_matchup(
+            self.repository, "Michigan", "Rutgers", as_of_date="2026-09-06",
+            game_id=3, drives_model_override=drives_model)
+        home_snap, away_snap = projection["home_snapshot"], projection["away_snapshot"]
+        expected_home = (1.0 + 0.5 * home_snap["drives"]
+                         + 0.25 * away_snap["drives_allowed"] + 2.0 * 1.0)
+        expected_away = (1.0 + 0.5 * away_snap["drives"]
+                         + 0.25 * home_snap["drives_allowed"] + 2.0 * 0.0)
+        self.assertTrue(projection["home"]["drives_model_used"])
+        self.assertTrue(projection["away"]["drives_model_used"])
+        self.assertAlmostEqual(projection["home"]["drives"], round(expected_home, 1))
+        self.assertAlmostEqual(projection["away"]["drives"], round(expected_away, 1))
+        # The plain Baseline C blend is still reported alongside it, matching
+        # the matchup_* diagnostic pattern turnovers/red-zone already use.
+        expected_matchup_home = (home_snap["drives"] + away_snap["drives_allowed"]) / 2
+        self.assertAlmostEqual(projection["home"]["matchup_drives"], round(expected_matchup_home, 1))
+        self.assertNotEqual(projection["home"]["drives"], projection["home"]["matchup_drives"])
+        self.assertEqual(projection["drives_model"]["model_version"], "test-model")
+
+    def test_explicit_drives_model_override_avoids_persisted_model_load(self):
+        from unittest.mock import patch
+
+        self._seed_one_matchup()
+        with patch("sports_aggregator.cfb.xdrives.load_model",
+                   side_effect=AssertionError("persisted model must not be loaded")):
+            projection = gp.project_matchup(
+                self.repository, "Michigan", "Rutgers",
+                as_of_date="2026-09-06", game_id=3, drives_model_override=None)
+        self.assertIsNone(projection["drives_model"])
+        # Falls back to the ordinary matchup blend, not a crash or a None drives.
+        self.assertFalse(projection["home"]["drives_model_used"])
+        self.assertEqual(projection["home"]["drives"], projection["home"]["matchup_drives"])
+
+    def test_falls_back_to_the_matchup_blend_when_elo_is_unavailable(self):
+        # No game_id means _pregame_elo() can't look anything up, so
+        # team_elo/opponent_elo stay None and elo_diff can't be derived --
+        # the model must not be used for a feature it cannot compute.
+        self._seed_one_matchup()
+        drives_model = {
+            "model_version": "test-model", "training_rows": 1, "fitted_at": NOW,
+            "coefficients": [1.0, 0.5],
+            "features": ("elo_diff",),
+        }
+        projection = gp.project_matchup(
+            self.repository, "Michigan", "Rutgers", as_of_date="2026-09-06",
+            game_id=None, drives_model_override=drives_model)
+        self.assertFalse(projection["home"]["drives_model_used"])
+        self.assertEqual(projection["home"]["drives"], projection["home"]["matchup_drives"])
 
 
 class NarrativeTests(ProjectionFixture):

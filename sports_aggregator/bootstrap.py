@@ -172,6 +172,18 @@ def steps(season: int, *, history_from: int | None = None,
         Step("qb-elo", "Starting-QB Elo ratings, keyed by person",
              ["sports_aggregator.cfb.qb_elo_cli", "build"],
              ("initial", "refresh"), timeout_seconds=120),
+        # Same gap as coach-elo/qb-elo above, for the same reason: xdrives.py's
+        # advanced regression (the live drive-count baseline game_projection.py
+        # now calls via xdrives.load_model()) is fit-and-persist, not
+        # fit-per-request, so without a scheduled path to rebuild
+        # cfb_xdrives_dataset/cfb_xdrives_model the live projection would
+        # quietly keep using whatever coefficients were last fit locally,
+        # never learning from games played after that. No CFBD call -- replays
+        # games/pace rows already in the store. ~5s locally over 12,500 rows;
+        # generous timeout is headroom, not an expected duration.
+        Step("xdrives-model", "Drive-count regression: dataset + fitted coefficients",
+             ["sports_aggregator.cfb.xdrives_cli", "refresh"],
+             ("initial", "refresh"), timeout_seconds=120),
         # Box scores were only ever synced by the history phase, for seasons
         # that were already over. Nothing refreshed the current one, so a game
         # played this season had an empty box score page and never joined the

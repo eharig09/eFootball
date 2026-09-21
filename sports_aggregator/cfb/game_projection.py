@@ -28,11 +28,18 @@ from __future__ import annotations
 from contextlib import closing
 from typing import Any, Iterable, Sequence
 
-from sports_aggregator.cfb.xdrives import RECENCY_LAMBDA, TRAILING_WINDOW_GAMES
+from sports_aggregator.cfb.xdrives import (
+    RECENCY_LAMBDA,
+    TRAILING_WINDOW_GAMES,
+    league_prior_drives_live,
+    load_model as load_drives_model,
+    predict_drives,
+)
 
 _OWN_FIELDS = ("meaningful_drives", "plays_per_meaningful_drive", "pass_rate",
-              "yards_per_dropback", "yards_per_rush")
-_SNAPSHOT_KEYS = ("drives", "plays_per_drive", "pass_rate", "yards_per_dropback", "yards_per_rush")
+              "yards_per_dropback", "yards_per_rush", "seconds_per_play", "success_rate")
+_SNAPSHOT_KEYS = ("drives", "plays_per_drive", "pass_rate", "yards_per_dropback", "yards_per_rush",
+                  "seconds_per_play", "success_rate")
 
 
 def _decay_weights(count: int, lam: float) -> list[float]:
@@ -82,7 +89,8 @@ def team_snapshot(repository, team: str, *, before_date: str, window: int = TRAI
     with closing(repository._connect()) as connection:
         rows = [dict(row) for row in connection.execute(f"""
           SELECT a.game_id, a.opponent, a.meaningful_drives, a.plays_per_meaningful_drive,
-                 a.pass_rate, a.yards_per_dropback, a.yards_per_rush
+                 a.pass_rate, a.yards_per_dropback, a.yards_per_rush,
+                 a.seconds_per_play, a.success_rate
           FROM cfb_team_game_pace a JOIN games g ON g.game_id=a.game_id
           WHERE a.metric_version=? AND a.team=? AND g.start_date<?
           ORDER BY g.start_date DESC LIMIT ?
@@ -97,7 +105,7 @@ def team_snapshot(repository, team: str, *, before_date: str, window: int = TRAI
             (row["game_id"], row["team"]): dict(row)
             for row in connection.execute(
                 f"""SELECT game_id, team, meaningful_drives, plays_per_meaningful_drive, pass_rate,
-                           yards_per_dropback, yards_per_rush
+                           yards_per_dropback, yards_per_rush, seconds_per_play, success_rate
                     FROM cfb_team_game_pace WHERE metric_version=? AND game_id IN ({placeholders})""",
                 (PACE_VERSION, *game_ids))
         }
@@ -421,8 +429,38 @@ def _project_side(offense: dict[str, Any], defense: dict[str, Any],
                   points_defense: dict[str, Any] | None = None,
                   points_league: dict[str, float | None] | None = None,
                   quality: dict[str, Any] | None = None,
-                  points_model: dict[str, Any] | None = None) -> dict[str, Any]:
-    drives = _blend(offense["drives"], defense["drives_allowed"])
+                  points_model: dict[str, Any] | None = None,
+                  drives_model: dict[str, Any] | None = None,
+                  drives_league_prior: float | None = None,
+                  team_elo: float | None = None,
+                  opponent_elo: float | None = None,
+                  home_away: str | None = None) -> dict[str, Any]:
+    matchup_drives = _blend(offense["drives"], defense["drives_allowed"])
+    model_drives = None
+    if drives_model:
+        drives_features = {
+            "team_prior_drives": offense["drives"],
+            "opponent_prior_drives_allowed": defense["drives_allowed"],
+            "league_prior_drives": drives_league_prior,
+            "team_prior_seconds_per_play": offense["seconds_per_play"],
+            "opponent_prior_seconds_per_play": defense["seconds_per_play"],
+            "team_prior_pass_rate": offense["pass_rate"],
+            "team_prior_success_rate": offense["success_rate"],
+            "opponent_prior_success_rate": defense["success_rate"],
+            "team_elo": team_elo,
+            "opponent_elo": opponent_elo,
+            "home_away": home_away,
+        }
+        model_drives = predict_drives(
+            drives_model["coefficients"], drives_model["features"], drives_features)
+    # The 2024-2026 walk-forward holdout (xdrives.evaluate_advanced_model)
+    # found the persisted advanced regression beats the plain matchup blend
+    # in every genuine out-of-sample season. Fall back to the blend whenever
+    # the model hasn't been fit yet or a required input (e.g. a team with no
+    # trailing history, or a game with no pregame Elo on record) is missing --
+    # the same "simpler estimate when the richer one can't be computed"
+    # pattern points_per_drive already uses just below.
+    drives = model_drives if model_drives is not None else matchup_drives
     plays_per_drive = _blend(offense["plays_per_drive"], defense["plays_per_drive_allowed"])
     pass_rate = _blend(offense["pass_rate"], defense["pass_rate_allowed"])
     yards_per_dropback = _blend(offense["yards_per_dropback"], defense["yards_per_dropback_allowed"])
@@ -508,6 +546,8 @@ def _project_side(offense: dict[str, Any], defense: dict[str, Any],
 
     return {
         "drives": _round(drives),
+        "matchup_drives": _round(matchup_drives),
+        "drives_model_used": model_drives is not None,
         "plays_per_drive": _round(plays_per_drive, 2),
         "plays": _round(plays),
         "pass_rate": _round(pass_rate, 3),
@@ -557,13 +597,34 @@ def _project_side(offense: dict[str, Any], defense: dict[str, Any],
 
 
 _LOAD_POINTS_MODEL = object()
+_LOAD_DRIVES_MODEL = object()
+
+
+def _pregame_elo(repository, game_id: int | None) -> tuple[float | None, float | None]:
+    """Raw (unscaled) home/away pregame Elo for the xdrives model's `elo_diff`
+    feature -- deliberately not the /25 margin-scaled version
+    matchup_quality_snapshot() returns for margin-v2, which was fit against
+    a different scale."""
+    if game_id is None:
+        return None, None
+    with repository._reader() as connection:
+        row = connection.execute(
+            "SELECT home_pregame_elo, away_pregame_elo FROM games WHERE game_id=?",
+            (int(game_id),)).fetchone()
+    if row is None:
+        return None, None
+    home_elo = row["home_pregame_elo"]
+    away_elo = row["away_pregame_elo"]
+    return (float(home_elo) if home_elo is not None else None,
+            float(away_elo) if away_elo is not None else None)
 
 
 def project_matchup(repository, home_team: str, away_team: str, *, as_of_date: str,
                     window: int = TRAILING_WINDOW_GAMES,
                     half_life_games: float | None = None,
                     game_id: int | None = None,
-                    points_model_override: dict[str, Any] | None | object = _LOAD_POINTS_MODEL) -> dict[str, Any]:
+                    points_model_override: dict[str, Any] | None | object = _LOAD_POINTS_MODEL,
+                    drives_model_override: dict[str, Any] | None | object = _LOAD_DRIVES_MODEL) -> dict[str, Any]:
     """Expected drives/plays/dropbacks/rush attempts/yardage for both sides of one game.
 
     Each side's numbers use its own opponent-adjusted Baseline C at every
@@ -603,12 +664,20 @@ def project_matchup(repository, home_team: str, away_team: str, *, as_of_date: s
         # available before this historical kickoff, or None to evaluate the
         # deployable matchup fallback without leaking today's persisted model.
         points_model = points_model_override
+    if drives_model_override is _LOAD_DRIVES_MODEL:
+        drives_model = load_drives_model(repository)
+    else:
+        drives_model = drives_model_override
+    drives_league_prior = league_prior_drives_live(repository, before_date=as_of_date)
+    home_elo, away_elo = _pregame_elo(repository, game_id)
     home = _project_side(home_snapshot, away_snapshot, home_scoring, away_scoring, league,
                          home_special, away_special, field_environment,
-                         home_points, away_points, points_league, quality.get("home"), points_model)
+                         home_points, away_points, points_league, quality.get("home"), points_model,
+                         drives_model, drives_league_prior, home_elo, away_elo, "home")
     away = _project_side(away_snapshot, home_snapshot, away_scoring, home_scoring, league,
                          away_special, home_special, field_environment,
-                         away_points, home_points, points_league, quality.get("away"), points_model)
+                         away_points, home_points, points_league, quality.get("away"), points_model,
+                         drives_model, drives_league_prior, away_elo, home_elo, "away")
     required = ("drives", "plays", "pass_rate", "dropbacks", "rush_attempts",
                 "pass_yards", "rush_yards", "total_yards")
     return {
@@ -634,6 +703,10 @@ def project_matchup(repository, home_team: str, away_team: str, *, as_of_date: s
                           "from_season": points_model["from_season"],
                           "to_season": points_model["to_season"]}
                          if points_model else None),
+        "drives_model": ({"model_version": drives_model["model_version"],
+                          "training_rows": drives_model["training_rows"],
+                          "fitted_at": drives_model["fitted_at"]}
+                         if drives_model else None),
         "insufficient_data": any(
             side[key] is None for side in (home, away) for key in required),
     }
