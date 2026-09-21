@@ -28,6 +28,10 @@ FEATURE_SETS = {
         "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
         "fpi_margin", "recent_margin_diff", "yards_diff",
     ),
+    "plus_returning_production": (
+        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
+        "fpi_margin", "recent_margin_diff", "yards_diff", "returning_ppa_diff",
+    ),
 }
 
 
@@ -109,12 +113,15 @@ def _load(repository, start: int, end: int, version: str):
                       g.week,g.home_team,g.away_team,
                       x.elo_difference,x.core_margin,x.fpi_margin,
                       x.team_recent_margin,x.opponent_recent_margin,
+                      rp.percent_ppa AS returning_percent_ppa,
                       (SELECT AVG(gl.spread) FROM game_lines gl
                        WHERE gl.game_id=p.game_id AND gl.spread IS NOT NULL) market_spread
                FROM cfb_projection_backtest p
                JOIN games g USING(game_id)
                LEFT JOIN cfb_xpoints_dataset x
                  ON x.game_id=p.game_id AND x.team=p.team AND x.dataset_version=?
+               LEFT JOIN returning_production rp
+                 ON rp.season=p.season AND rp.team=p.team
                WHERE p.backtest_version=? AND p.season BETWEEN ? AND ?
                  AND p.projected_offensive_points IS NOT NULL
                  AND p.actual_score_points IS NOT NULL
@@ -153,6 +160,10 @@ def _load(repository, start: int, end: int, version: str):
             "recent_margin_diff": (
                 float(h["team_recent_margin"]) - float(h["opponent_recent_margin"])
                 if h["team_recent_margin"] is not None and h["opponent_recent_margin"] is not None else None
+            ),
+            "returning_ppa_diff": (
+                float(h["returning_percent_ppa"]) - float(a["returning_percent_ppa"])
+                if h["returning_percent_ppa"] is not None and a["returning_percent_ppa"] is not None else None
             ),
             "market_spread": float(h["market_spread"]) if h["market_spread"] is not None else None,
         })
