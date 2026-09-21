@@ -203,3 +203,9 @@
         .watch-team-name { font-size: .86rem; }
         .watch-vs { width: 38px; height: 38px; font-size: .65rem; }
     }
+
+.watch-engine-signal { display:flex; justify-content:space-between; gap:8px; align-items:center; margin:9px -1px 0; padding:6px 8px; border:1px solid var(--line); background:var(--surface); font-size:.65rem; }
+.watch-engine-signal strong { letter-spacing:.04em; }
+.watch-engine-agreement { border-color:#2f7d32; }
+.watch-engine-conflict { border-color:#b33; }
+.watch-engine-engine_a_only, .watch-engine-engine_b_only { border-color:var(--rust); }

@@ -54,6 +54,7 @@ from sports_aggregator.cfb.passing_plays import (
 from sports_aggregator.cfb.rushing_plays import matchup_rushing, matchup_rushing_situational
 from sports_aggregator.cfb.pff import pff_summary
 from sports_aggregator.cfb.repository import CFBRepository
+from sports_aggregator.cfb.two_engine_live import display_packet as two_engine_display_packet, manifest_for_games
 from sports_aggregator.cfb import views
 
 
@@ -301,8 +302,12 @@ def today():
     slate = _with_matchup_edges(repository, _label_games(watch_games))
     weekly_slate = _label_games(games_to_watch(week_games, limit=20))
     market = lines_by_game(repository, season)
+    frozen_signals = manifest_for_games(
+        repository, [int(game["game_id"]) for game in slate]
+    )
     for game in slate:
         game['market'] = market.get(game['game_id']) or {}
+        game['two_engine'] = frozen_signals.get(int(game["game_id"]))
     national_stories = _story_repository().list_stories(limit=16)
     slate_day, slate_games = _current_slate(repository, season)
     return render_template(
@@ -741,6 +746,9 @@ def game_preview(game_id: int):
     projection = _game_projection(repository, game)
     research_intelligence = matchup_research_packet(
         repository, game, projection, market)
+    two_engine_signal = two_engine_display_packet(
+        repository, game, projection=projection, lines=market,
+        research=research_intelligence)
     return render_template(
         "cfb_game.html",
         meta=page_meta_for.game_meta(
@@ -757,6 +765,7 @@ def game_preview(game_id: int):
         model_probability=model_probability_track(game, fpi, elo, market),
         projection=projection,
         research_intelligence=research_intelligence,
+        two_engine_signal=two_engine_signal,
         projection_lines=projection_narrative(projection),
         projection_table=views.game_projection_table(projection),
         game_shape=game_shape(

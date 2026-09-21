@@ -462,6 +462,80 @@
     {% endif %}
 </section>
 
+<section class="section two-engine-panel" data-mobile-tab-panel="stats">
+    <div class="two-engine-head">
+        <div>
+            <div class="eyebrow">Two-engine read</div>
+            <h2>Market implication</h2>
+        </div>
+        <span class="engine-state engine-state-{{ two_engine_signal.state or 'none' }}">{{ two_engine_signal.state_label }}</span>
+    </div>
+    <p class="two-engine-implication">{{ two_engine_signal.implication }}</p>
+
+    {% if two_engine_signal.source == 'frozen_manifest' %}
+    <div class="engine-freeze-note">Frozen pregame snapshot · {{ two_engine_signal.frozen_at }}</div>
+    {% elif two_engine_signal.source == 'live_preview' %}
+    <div class="engine-freeze-note is-live">Live preview · not yet frozen into the holdout manifest</div>
+    {% endif %}
+
+    {% if two_engine_signal.engine_a or two_engine_signal.engine_b %}
+    <div class="engine-grid">
+        {% set a = two_engine_signal.engine_a or {} %}
+        <article class="engine-card{{ ' is-qualified' if a.qualified else '' }}">
+            <div class="engine-card-head"><strong>Engine A</strong><span>Quantitative convergence</span></div>
+            {% if a.qualified %}
+            <h3>{{ a.selected_team }}</h3>
+            <p>{{ a.route | replace('_', ' ') }}</p>
+            <div class="engine-metrics">
+                <span><b>{{ a.agreement_label }}</b> signal agreement</span>
+                {% if a.historical %}<span><b>{{ (a.historical.hit_rate * 100) | cell('f1') }}%</b> historical hit rate</span>
+                <span><b>{{ a.historical.n }}</b> historical games</span>{% endif %}
+            </div>
+            {% else %}
+            <h3>No frozen A route</h3>
+            <p>{% if not a.ready %}Inputs are still incomplete.{% else %}The quantitative state does not match one of the five frozen routes.{% endif %}</p>
+            {% endif %}
+            {% if a.components %}
+            <div class="engine-components">
+                <span>Margin Power <b>{{ a.components.margin_power_z | cell('signed') }}</b></span>
+                <span>Structural <b>{{ a.components.structural_z | cell('signed') }}</b></span>
+                <span>Line Elo <b>{{ a.components.line_elo_z | cell('signed') }}</b></span>
+                <span>HC/QB <b>{{ a.components.hc_qb_aligned | cell('signed') }}</b></span>
+            </div>
+            {% endif %}
+        </article>
+
+        {% set b = two_engine_signal.engine_b or {} %}
+        <article class="engine-card{{ ' is-qualified' if b.qualified else '' }}">
+            <div class="engine-card-head"><strong>Engine B</strong><span>Narrative / QB overreaction</span></div>
+            {% if b.qualified %}
+            <h3>{{ b.selected_team }}</h3>
+            <p>QB Elo points the other way while the recent-result narrative matches a frozen rebound setup.</p>
+            {% for history in b.historical or [] %}
+            <div class="engine-rule-line">
+                <span>{{ history.rule | replace('_', ' ') }}</span>
+                <b>{{ (history.hit_rate * 100) | cell('f1') }}% · n={{ history.n }}</b>
+            </div>
+            {% endfor %}
+            {% else %}
+            <h3>No frozen B rule</h3>
+            <p>{% if not b.ready %}Narrative or QB inputs are still incomplete.{% else %}No frozen rebound/QB overreaction family is active.{% endif %}</p>
+            {% endif %}
+        </article>
+    </div>
+    {% endif %}
+
+    {% if two_engine_signal.portfolio_reference %}
+    <div class="engine-context">
+        <strong>Research context:</strong>
+        the non-conflicting two-engine portfolio was
+        {{ (two_engine_signal.portfolio_reference.hit_rate * 100) | cell('f1') }}%
+        across {{ two_engine_signal.portfolio_reference.n }} games from 2020–25.
+        This is historical context, not a probability forecast for this game.
+    </div>
+    {% endif %}
+</section>
+
 <section class="section" data-mobile-tab-panel="stats">
     <h2>Models &amp; market</h2>
     <div class="section-note">

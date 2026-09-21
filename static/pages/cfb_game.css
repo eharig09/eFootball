@@ -1135,3 +1135,28 @@ table.data td.impact-emerging .sub { color:var(--blue); }
 .lab-performance-row > div:nth-child(4) b {
     font-variant-numeric:tabular-nums;
 }
+
+/* Two-engine pregame decision layer. */
+.two-engine-panel { border-top: 3px solid var(--rust); }
+.two-engine-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
+.two-engine-head h2 { margin:.1rem 0 0; }
+.engine-state { font:800 .68rem/1 Arial,sans-serif; letter-spacing:.05em; padding:8px 10px; border:1px solid var(--line); background:var(--paper); }
+.engine-state-agreement { background:color-mix(in srgb, #2f7d32 15%, var(--paper)); border-color:#2f7d32; }
+.engine-state-engine_a_only, .engine-state-engine_b_only { background:color-mix(in srgb, var(--rust) 12%, var(--paper)); border-color:var(--rust); }
+.engine-state-conflict { background:color-mix(in srgb, #b33 12%, var(--paper)); border-color:#b33; }
+.two-engine-implication { max-width:850px; font-size:1.02rem; font-weight:650; margin:10px 0; }
+.engine-freeze-note { color:var(--muted); font-size:.72rem; margin-bottom:12px; }
+.engine-freeze-note.is-live { color:var(--rust); }
+.engine-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:12px; }
+.engine-card { border:1px solid var(--line); padding:14px; background:var(--paper); }
+.engine-card.is-qualified { border-top:4px solid var(--rust); }
+.engine-card-head { display:flex; justify-content:space-between; gap:10px; color:var(--muted); font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; }
+.engine-card-head strong { color:var(--ink); font-size:.76rem; }
+.engine-card h3 { margin:10px 0 4px; font:800 1.2rem var(--display-font); }
+.engine-card p { margin:0 0 10px; color:var(--muted); }
+.engine-metrics, .engine-components { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.engine-metrics span, .engine-components span { padding:6px 8px; background:var(--surface); border:1px solid var(--line); font-size:.69rem; }
+.engine-rule-line { display:flex; justify-content:space-between; gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:.72rem; }
+.engine-rule-line span { text-transform:capitalize; }
+.engine-context { margin-top:12px; padding:10px 12px; border-left:3px solid var(--line); color:var(--muted); font-size:.76rem; }
+@media (max-width:720px) { .engine-grid { grid-template-columns:1fr; } .two-engine-head { flex-direction:column; } }
