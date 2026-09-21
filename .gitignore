@@ -26,6 +26,9 @@ static/heatmap_*.png
 static/pitch_mix.png
 static/velo_spin.png
 
+# Generated research outputs
+research_outputs/*.json
+
 # Editors and operating systems
 .vscode/
 .idea/

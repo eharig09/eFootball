@@ -7,9 +7,21 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
+from pathlib import Path
 
 from sports_aggregator.cfb.convergence_four_signal import report
 from sports_aggregator.cfb.repository import CFBRepository
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_RESEARCH_OUTPUT_DIR = REPO_ROOT / "research_outputs"
+
+
+def _default_output_path(test_season: int) -> Path:
+    return DEFAULT_RESEARCH_OUTPUT_DIR / (
+        f"cfb_convergence_four_signal_through_{int(test_season)}.json"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,9 +32,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--elo-start-season", type=int, default=2015)
     parser.add_argument("--database", default=None)
     parser.add_argument(
+        "--output",
+        default=None,
+        help=(
+            "Path for the complete JSON output. Defaults to "
+            "research_outputs/cfb_convergence_four_signal_through_<season>.json "
+            "at the repository root."
+        ),
+    )
+    parser.add_argument(
         "--include-game-rows",
         action="store_true",
-        help="Include the full game-level payload. Default output is compact.",
+        help="Also include the full game-level payload in terminal output.",
     )
     args = parser.parse_args(argv)
 
@@ -35,10 +56,20 @@ def main(argv: list[str] | None = None) -> int:
         elo_start_season=args.elo_start_season,
     )
 
-    if not args.include_game_rows:
-        payload = {k: v for k, v in payload.items() if k != "game_rows"}
+    output_path = Path(args.output).expanduser() if args.output else _default_output_path(
+        args.test_season
+    )
+    if not output_path.is_absolute():
+        output_path = REPO_ROOT / output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    print(json.dumps(payload, indent=2))
+    terminal_payload = payload
+    if not args.include_game_rows:
+        terminal_payload = {k: v for k, v in payload.items() if k != "game_rows"}
+
+    print(json.dumps(terminal_payload, indent=2))
+    print(f"Full output written to: {output_path}", file=sys.stderr)
     return 0
 
 
