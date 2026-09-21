@@ -177,35 +177,100 @@ def _side_red_zone_rate(row: dict[str, Any]) -> float | None:
 
 def _historical_rows(repository, *, target_season: int) -> list[dict[str, Any]]:
     with repository._reader() as connection:
+        # Called from the live request path (matchup_research.py on every
+        # game page), not just research CLIs -- on an environment where
+        # xpoints.build_dataset()/xredzone.build_dataset()/coach_elo.build()/
+        # qb_elo.build() haven't populated their tables yet, they don't exist
+        # at all rather than existing-but-empty (the same production gap
+        # class rating_predictive_power._load_dataset() hit before: see its
+        # own comment). A missing table used to raise sqlite3.OperationalError
+        # and 500 every game page; each optional join now degrades to NULL
+        # columns instead, which predict_with_models()'s feature-presence
+        # check already treats as "fall back a tier" (or, for elo_diff, "not
+        # assessed" -- see FEATURE_SETS' docstring above).
+        existing = {
+            str(row[0]) for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        has_xpoints = "cfb_xpoints_dataset" in existing
+        has_xredzone = "cfb_xredzone_dataset" in existing
+        has_coach_elo = "cfb_coach_elo_games" in existing
+        has_qb_elo = "cfb_qb_elo_games" in existing
+
+        xpoints_columns = (
+            "x.elo_difference,x.core_margin,x.fpi_margin,"
+            "x.team_recent_margin,x.opponent_recent_margin"
+            if has_xpoints else
+            "NULL AS elo_difference,NULL AS core_margin,NULL AS fpi_margin,"
+            "NULL AS team_recent_margin,NULL AS opponent_recent_margin"
+        )
+        xpoints_join = (
+            "LEFT JOIN cfb_xpoints_dataset x "
+            "ON x.game_id=p.game_id AND x.team=p.team AND x.dataset_version=?"
+            if has_xpoints else ""
+        )
+        redzone_columns = (
+            "rz.team_prior_games AS rz_team_games,"
+            "rz.team_prior_trips_per_drive,rz.team_prior_red_zone_td_rate,"
+            "rz.opponent_prior_games AS rz_opp_games,"
+            "rz.opponent_prior_trips_allowed_per_drive,"
+            "rz.opponent_prior_red_zone_td_rate_allowed,"
+            "rz.league_prior_trips_per_drive,rz.league_prior_red_zone_td_rate"
+            if has_xredzone else
+            "NULL AS rz_team_games,NULL AS team_prior_trips_per_drive,"
+            "NULL AS team_prior_red_zone_td_rate,NULL AS rz_opp_games,"
+            "NULL AS opponent_prior_trips_allowed_per_drive,"
+            "NULL AS opponent_prior_red_zone_td_rate_allowed,"
+            "NULL AS league_prior_trips_per_drive,NULL AS league_prior_red_zone_td_rate"
+        )
+        redzone_join = (
+            "LEFT JOIN cfb_xredzone_dataset rz "
+            "ON rz.game_id=p.game_id AND rz.team=p.team AND rz.dataset_version=?"
+            if has_xredzone else ""
+        )
+        coach_columns = (
+            "hc.home_pre_elo AS hc_home_pre_elo,hc.away_pre_elo AS hc_away_pre_elo"
+            if has_coach_elo else
+            "NULL AS hc_home_pre_elo,NULL AS hc_away_pre_elo"
+        )
+        coach_join = (
+            "LEFT JOIN cfb_coach_elo_games hc ON hc.game_id=p.game_id"
+            if has_coach_elo else ""
+        )
+        qb_columns = (
+            "(SELECT q.pre_rating FROM cfb_qb_elo_games q "
+            " WHERE q.game_id=p.game_id AND q.side='home') qb_home_pre_rating,"
+            "(SELECT q.pre_rating FROM cfb_qb_elo_games q "
+            " WHERE q.game_id=p.game_id AND q.side='away') qb_away_pre_rating"
+            if has_qb_elo else
+            "NULL AS qb_home_pre_rating,NULL AS qb_away_pre_rating"
+        )
+
+        params: list[Any] = []
+        if has_xpoints:
+            params.append(XPOINTS_VERSION)
+        if has_xredzone:
+            params.append(XREDZONE_VERSION)
+        params += [BACKTEST_VERSION, int(target_season)]
+
         rows = [dict(r) for r in connection.execute(
-            """SELECT p.game_id,p.season,p.side,p.team,
+            f"""SELECT p.game_id,p.season,p.side,p.team,
                       p.projected_offensive_points,p.projected_points_per_drive,
                       p.projected_drives,p.actual_score_points,
-                      x.elo_difference,x.core_margin,x.fpi_margin,
-                      x.team_recent_margin,x.opponent_recent_margin,
-                      rz.team_prior_games AS rz_team_games,
-                      rz.team_prior_trips_per_drive, rz.team_prior_red_zone_td_rate,
-                      rz.opponent_prior_games AS rz_opp_games,
-                      rz.opponent_prior_trips_allowed_per_drive,
-                      rz.opponent_prior_red_zone_td_rate_allowed,
-                      rz.league_prior_trips_per_drive, rz.league_prior_red_zone_td_rate,
-                      hc.home_pre_elo AS hc_home_pre_elo, hc.away_pre_elo AS hc_away_pre_elo,
-                      (SELECT q.pre_rating FROM cfb_qb_elo_games q
-                       WHERE q.game_id=p.game_id AND q.side='home') qb_home_pre_rating,
-                      (SELECT q.pre_rating FROM cfb_qb_elo_games q
-                       WHERE q.game_id=p.game_id AND q.side='away') qb_away_pre_rating
+                      {xpoints_columns},
+                      {redzone_columns},
+                      {coach_columns},
+                      {qb_columns}
                FROM cfb_projection_backtest p
-               LEFT JOIN cfb_xpoints_dataset x
-                 ON x.game_id=p.game_id AND x.team=p.team AND x.dataset_version=?
-               LEFT JOIN cfb_xredzone_dataset rz
-                 ON rz.game_id=p.game_id AND rz.team=p.team AND rz.dataset_version=?
-               LEFT JOIN cfb_coach_elo_games hc
-                 ON hc.game_id=p.game_id
+               {xpoints_join}
+               {redzone_join}
+               {coach_join}
                WHERE p.backtest_version=? AND p.season<?
                  AND p.projected_offensive_points IS NOT NULL
                  AND p.actual_score_points IS NOT NULL
                ORDER BY p.season,p.game_id,p.side""",
-            (XPOINTS_VERSION, XREDZONE_VERSION, BACKTEST_VERSION, int(target_season)),
+            params,
         )]
 
     grouped: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)

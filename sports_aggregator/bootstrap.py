@@ -184,6 +184,22 @@ def steps(season: int, *, history_from: int | None = None,
         Step("xdrives-model", "Drive-count regression: dataset + fitted coefficients",
              ["sports_aggregator.cfb.xdrives_cli", "refresh"],
              ("initial", "refresh"), timeout_seconds=120),
+        # Same gap again, discovered the hard way: live_margin_calibration.py's
+        # _historical_rows() joins cfb_xpoints_dataset/cfb_xredzone_dataset
+        # directly on every CFB game page (via matchup_research_packet ->
+        # predict_live), and neither table had ever had a scheduled build
+        # step either -- xpoints_model only existed from a one-off manual
+        # fit, and xredzone_dataset had never been built in production at
+        # all, 500ing every game page with "no such table:
+        # cfb_xredzone_dataset" (_historical_rows() now degrades gracefully
+        # if that happens again, but the fix here is the same one: give both
+        # a real, scheduled path to the deployed database).
+        Step("xpoints-model", "Points-per-drive model: dataset + fitted coefficients",
+             ["sports_aggregator.cfb.xpoints_cli", "refresh"],
+             ("initial", "refresh"), timeout_seconds=120),
+        Step("xredzone-dataset", "Red-zone shrinkage lookup table",
+             ["sports_aggregator.cfb.xredzone_cli", "refresh"],
+             ("initial", "refresh"), timeout_seconds=120),
         # Box scores were only ever synced by the history phase, for seasons
         # that were already over. Nothing refreshed the current one, so a game
         # played this season had an empty box score page and never joined the
