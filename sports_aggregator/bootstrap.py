@@ -214,6 +214,20 @@ def steps(season: int, *, history_from: int | None = None,
         Step("xredzone-dataset", "Red-zone shrinkage lookup table",
              ["sports_aggregator.cfb.xredzone_cli", "refresh"],
              ("initial", "refresh"), timeout_seconds=120),
+        # Same gap again, this time with real user-visible impact: Engine B's
+        # "families" (bad_loss/bounceback_candidate/statement_win/etc, the
+        # tags two_engine_live.py's narrative signal and the game page's
+        # plain-language explanation both read) come from cfb_narrative_state,
+        # which also had no production build step. A 3-0 team was shown
+        # "Negative Result Rebound" because the table's last row for them was
+        # a prior-season loss -- narrative_shapes.build() had never run since,
+        # so nothing had told it about any game this team played in 2026.
+        # Full rebuild every run (build() has no incremental/scoped mode, like
+        # xdrives/xpoints above); ~12s locally over 7,800+ rows.
+        Step("narrative-shapes", "Narrative-state tags (bad_loss/bounceback/momentum/etc) + Line Elo",
+             ["sports_aggregator.cfb.narrative_shapes_cli", "build",
+              "--from-year", "2022", "--to-year", year],
+             ("initial", "refresh"), timeout_seconds=180),
         # Box scores were only ever synced by the history phase, for seasons
         # that were already over. Nothing refreshed the current one, so a game
         # played this season had an empty box score page and never joined the
