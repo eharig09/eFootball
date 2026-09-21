@@ -26,6 +26,7 @@ from sports_aggregator.cfb import narrative_family_rating_interactions as famili
 from sports_aggregator.cfb import narrative_shapes as ns
 from sports_aggregator.cfb import narrative_shapes_v2 as nsv2
 from sports_aggregator.cfb.game_projection import project_matchup
+from sports_aggregator.cfb.depth_chart_observed import observed_depth_roles
 from sports_aggregator.cfb.lines import game_lines
 from sports_aggregator.cfb.live_margin_calibration import predict_live as predict_live_margin
 from sports_aggregator.cfb.matchup_research import (
@@ -190,36 +191,134 @@ def _line_elo_edge(
     return predicted - float(market_home_margin)
 
 
-def _raw_hc_qb(repository: CFBRepository, game_id: int) -> dict[str, float | None]:
+def _current_coach_rating(
+    repository: CFBRepository, *, season: int, team_id: int
+) -> tuple[float | None, str | None]:
+    """Current coach Elo carried forward from completed games."""
+    with repository._reader() as connection:
+        row = connection.execute(
+            """SELECT cs.coach_id,cs.first_name,cs.last_name,r.rating,cs.games
+               FROM coach_seasons cs
+               LEFT JOIN cfb_coach_elo_ratings r ON r.coach_id=cs.coach_id
+               WHERE cs.season=? AND cs.team_id=?
+               ORDER BY CASE WHEN r.rating IS NULL THEN 1 ELSE 0 END,
+                        cs.games DESC,cs.coach_id
+               LIMIT 1""",
+            (int(season), int(team_id)),
+        ).fetchone()
+    if row is None or row["rating"] is None:
+        return None, None
+    name = f'{row["first_name"] or ""} {row["last_name"] or ""}'.strip()
+    return float(row["rating"]), name or None
+
+
+def _current_qb_rating(
+    repository: CFBRepository, *, season: int, team: str
+) -> tuple[float | None, dict[str, Any]]:
+    """Best current QB rating using observed in-season role evidence.
+
+    The QB Elo game table contains completed starts only. For an upcoming game,
+    carry the player's current rating forward and identify the likely current QB
+    from recent observed usage among players still on the current roster.
+    """
+    roles = observed_depth_roles(repository, str(team), int(season))
+    with repository._reader() as connection:
+        rows = [
+            dict(row) for row in connection.execute(
+                """SELECT p.player_id,p.first_name,p.last_name,r.rating,r.starts
+                   FROM players p
+                   LEFT JOIN cfb_qb_elo_ratings r
+                     ON CAST(r.player_id AS TEXT)=CAST(p.player_id AS TEXT)
+                   WHERE p.season=? AND p.team=? AND UPPER(COALESCE(p.position,''))='QB'""",
+                (int(season), str(team)),
+            )
+        ]
+    candidates = []
+    for row in rows:
+        if row.get("rating") is None:
+            continue
+        role = roles.get(str(row["player_id"])) or {}
+        candidates.append((
+            float(role.get("observed_score") or 0.0),
+            int(role.get("observed_games") or 0),
+            int(row.get("starts") or 0),
+            row,
+            role,
+        ))
+    if not candidates:
+        return None, {"player": None, "source": "current_roster_qb_unrated"}
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    _, _, _, row, role = candidates[0]
+    name = f'{row.get("first_name") or ""} {row.get("last_name") or ""}'.strip()
+    return float(row["rating"]), {
+        "player_id": str(row["player_id"]),
+        "player": name or None,
+        "observed_games": int(role.get("observed_games") or 0),
+        "observed_confidence": role.get("confidence"),
+        "source": "observed_current_qb_rating",
+    }
+
+
+def _raw_hc_qb(
+    repository: CFBRepository, game: dict[str, Any]
+) -> dict[str, Any]:
+    """Pregame HC/QB differences for completed-history or upcoming games."""
+    game_id = int(game["game_id"])
     with repository._reader() as connection:
         hc = connection.execute(
             """SELECT home_pre_elo,away_pre_elo
                FROM cfb_coach_elo_games WHERE game_id=?""",
-            (int(game_id),),
+            (game_id,),
         ).fetchone()
         qb_rows = connection.execute(
-            """SELECT side,pre_rating FROM cfb_qb_elo_games WHERE game_id=?""",
-            (int(game_id),),
+            """SELECT side,pre_rating,player_id
+               FROM cfb_qb_elo_games WHERE game_id=?""",
+            (game_id,),
         ).fetchall()
+
     qb = {str(row["side"]): float(row["pre_rating"]) for row in qb_rows}
+    if hc is not None and "home" in qb and "away" in qb:
+        return {
+            "hc_diff": float(hc["home_pre_elo"]) - float(hc["away_pre_elo"]),
+            "qb_diff": qb["home"] - qb["away"],
+            "source": "game_pregame_rows",
+        }
+
+    home_coach, home_coach_name = _current_coach_rating(
+        repository, season=int(game["season"]), team_id=int(game["home_team_id"])
+    )
+    away_coach, away_coach_name = _current_coach_rating(
+        repository, season=int(game["season"]), team_id=int(game["away_team_id"])
+    )
+    home_qb, home_qb_meta = _current_qb_rating(
+        repository, season=int(game["season"]), team=str(game["home_team"])
+    )
+    away_qb, away_qb_meta = _current_qb_rating(
+        repository, season=int(game["season"]), team=str(game["away_team"])
+    )
     return {
         "hc_diff": (
-            float(hc["home_pre_elo"]) - float(hc["away_pre_elo"])
-            if hc is not None else None
+            home_coach - away_coach
+            if home_coach is not None and away_coach is not None else None
         ),
         "qb_diff": (
-            qb["home"] - qb["away"]
-            if "home" in qb and "away" in qb else None
+            home_qb - away_qb
+            if home_qb is not None and away_qb is not None else None
         ),
+        "source": "carried_current_ratings",
+        "home_coach": home_coach_name,
+        "away_coach": away_coach_name,
+        "home_qb": home_qb_meta,
+        "away_qb": away_qb_meta,
     }
 
 
 def _hc_qb_score(
     repository: CFBRepository,
-    game_id: int,
+    game: dict[str, Any],
     historical: dict[str, Any],
 ) -> tuple[float | None, dict[str, Any]]:
-    raw = _raw_hc_qb(repository, game_id)
+    raw = _raw_hc_qb(repository, game)
     hc_stats, qb_stats = historical["hc_stats"], historical["qb_stats"]
     if (
         raw["hc_diff"] is None or raw["qb_diff"] is None
@@ -283,12 +382,18 @@ def _engine_a(
     }
     state = cc._state(lens_row, historical["lens_scales"])
     hc_qb_z, rating_meta = _hc_qb_score(
-        repository, int(game["game_id"]), historical
+        repository, game, historical
     )
     if state is None:
         return {
             "ready": False, "qualified": False, "reason": "Margin Power unavailable.",
             "margin_power": margin_meta, "ratings": rating_meta,
+            "lights": [
+                {"key": "margin_power", "label": "Margin Power", "requirement": "|z| ≥ 1.0", "state": "pending"},
+                {"key": "structural", "label": "Structural", "requirement": "same direction", "state": "pending"},
+                {"key": "line_elo", "label": "Line Elo", "requirement": "same direction", "state": "pending"},
+                {"key": "hc_qb", "label": "HC/QB", "requirement": "route-specific vote", "state": "pending"},
+            ],
         }
 
     direction = int(state["primary_direction"])
@@ -302,12 +407,13 @@ def _engine_a(
     )
     structural_confirms = state.get("structural_confirms")
     market_confirms = state.get("market_confirms")
-    ready = (
-        abs(float(state["margin_z"])) >= 1.0
-        and structural_confirms is not None
+    inputs_complete = (
+        structural_confirms is not None
         and market_confirms is not None
         and hc_qb_aligned is not None
     )
+    margin_threshold_met = abs(float(state["margin_z"])) >= 1.0
+    ready = inputs_complete
     old_count = (
         1 + int(bool(structural_confirms)) + int(bool(market_confirms))
         if structural_confirms is not None and market_confirms is not None else None
@@ -325,7 +431,7 @@ def _engine_a(
         "spread_bucket": _spread_bucket(market_home_margin),
     }
     matched = []
-    if ready:
+    if ready and margin_threshold_met:
         for route in routing.ROUTES:
             if route["predicate"](route_row):
                 matched.append(route)
@@ -352,6 +458,45 @@ def _engine_a(
         "agreement_label": f"{agreement_count}/4" if agreement_count is not None else None,
         "spread_bucket": route_row["spread_bucket"],
         "historical": ENGINE_A_HISTORY.get(str(route["name"])) if route else None,
+        "margin_threshold_met": margin_threshold_met,
+        "lights": [
+            {
+                "key": "margin_power",
+                "label": "Margin Power",
+                "requirement": "|z| ≥ 1.0",
+                "state": "on" if margin_threshold_met else "off",
+            },
+            {
+                "key": "structural",
+                "label": "Structural",
+                "requirement": "same direction",
+                "state": (
+                    "on" if structural_confirms is True
+                    else "off" if structural_confirms is False
+                    else "pending"
+                ),
+            },
+            {
+                "key": "line_elo",
+                "label": "Line Elo",
+                "requirement": "same direction",
+                "state": (
+                    "on" if market_confirms is True
+                    else "off" if market_confirms is False
+                    else "pending"
+                ),
+            },
+            {
+                "key": "hc_qb",
+                "label": "HC/QB",
+                "requirement": "route-specific vote",
+                "state": (
+                    "on" if hc_qb_aligned is not None and float(hc_qb_aligned) > 0
+                    else "off" if hc_qb_aligned is not None
+                    else "pending"
+                ),
+            },
+        ],
         "components": {
             "margin_power_z": round(float(state["margin_z"]), 3),
             "structural_z": (
@@ -394,7 +539,7 @@ def _engine_b(
         return {"ready": False, "qualified": False, "reason": "Narrative state unavailable."}
     by_team = {str(row["team"]): row for row in narrative.get("teams") or []}
     home, away = str(game["home_team"]), str(game["away_team"])
-    raw = _raw_hc_qb(repository, int(game["game_id"]))
+    raw = _raw_hc_qb(repository, game)
     qb_diff = raw.get("qb_diff")
     if qb_diff is None:
         return {
@@ -417,9 +562,14 @@ def _engine_b(
         if "post_success_risk" in opponent_families:
             rules.append("rebound_vs_post_success_qb_opposes")
 
+    family_map = {
+        home: sorted(_active_family_set(by_team.get(home, {}))),
+        away: sorted(_active_family_set(by_team.get(away, {}))),
+    }
     if not rules:
         return {
             "ready": True, "qualified": False, "qb_diff": round(float(qb_diff), 3),
+            "families": family_map,
         }
 
     # Both frozen rules share the rebound side. If both appear, preserve both
@@ -444,10 +594,7 @@ def _engine_b(
         "historical": [
             {"rule": rule, **ENGINE_B_HISTORY[rule]} for rule in rules
         ],
-        "families": {
-            home: sorted(_active_family_set(by_team.get(home, {}))),
-            away: sorted(_active_family_set(by_team.get(away, {}))),
-        },
+        "families": family_map,
     }
 
 
@@ -600,7 +747,7 @@ def display_packet(
     research: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     frozen = frozen_manifest_for_game(repository, int(game["game_id"]))
-    if frozen is not None:
+    if frozen is not None and frozen.get("state") != "pending":
         return frozen
     if game.get("completed") or (
         game.get("home_points") is not None and game.get("away_points") is not None
@@ -616,11 +763,21 @@ def display_packet(
     packet = classify_game(
         repository, game, projection=projection, lines=lines, research=research
     )
-    packet["source"] = "live_preview"
+    if frozen is not None:
+        packet["source"] = "pending_manifest_live_preview"
+        packet["pending_manifest_at"] = frozen.get("frozen_at")
+    else:
+        packet["source"] = "live_preview"
     return packet
 
 
 def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[str, Any]:
+    """Freeze or finalize one week's pregame portfolio classifications.
+
+    A pending row is not a prediction. It may be replaced before kickoff once
+    both engines have enough inputs to resolve to a real portfolio state.
+    Resolved rows remain immutable.
+    """
     _initialize_manifest(repository)
     now = datetime.now(timezone.utc)
     with repository._reader() as connection:
@@ -634,6 +791,8 @@ def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[st
         ]
 
     frozen = []
+    finalized_pending = []
+    pending_remaining = []
     skipped_started = []
     already_frozen = []
     for game in games:
@@ -641,11 +800,39 @@ def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[st
         if kickoff <= now or game.get("home_points") is not None or game.get("away_points") is not None:
             skipped_started.append(int(game["game_id"]))
             continue
-        if frozen_manifest_for_game(repository, int(game["game_id"])) is not None:
+
+        existing = frozen_manifest_for_game(repository, int(game["game_id"]))
+        if existing is not None and existing.get("state") != "pending":
             already_frozen.append(int(game["game_id"]))
             continue
+
         packet = classify_game(repository, game)
         frozen_at = datetime.now(timezone.utc).isoformat()
+        if existing is not None and existing.get("state") == "pending":
+            if packet["state"] == "pending":
+                pending_remaining.append(int(game["game_id"]))
+                continue
+            packet["initial_pending_at"] = existing.get("frozen_at")
+            packet["finalized_from_pending"] = True
+            payload = json.dumps(packet, sort_keys=True)
+            with repository.transaction() as connection:
+                connection.execute(
+                    """UPDATE cfb_two_engine_manifest
+                       SET frozen_at=?,state=?,selected_side=?,selected_team=?,packet_json=?
+                       WHERE manifest_version=? AND game_id=? AND state='pending'""",
+                    (
+                        frozen_at, packet["state"], packet.get("selected_side"),
+                        packet.get("selected_team"), payload,
+                        MANIFEST_VERSION, int(game["game_id"]),
+                    ),
+                )
+            finalized_pending.append({
+                "game_id": int(game["game_id"]),
+                "state": packet["state"],
+                "selected_team": packet.get("selected_team"),
+            })
+            continue
+
         payload = json.dumps(packet, sort_keys=True)
         with repository.transaction() as connection:
             connection.execute(
@@ -665,13 +852,20 @@ def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[st
             "state": packet["state"],
             "selected_team": packet.get("selected_team"),
         })
+        if packet["state"] == "pending":
+            pending_remaining.append(int(game["game_id"]))
 
     return {
         "manifest_version": MANIFEST_VERSION,
         "season": int(season),
         "week": int(week),
         "frozen": frozen,
+        "finalized_pending": finalized_pending,
+        "pending_remaining_game_ids": pending_remaining,
         "already_frozen_game_ids": already_frozen,
         "skipped_started_or_completed_game_ids": skipped_started,
-        "immutable": True,
+        "immutability": (
+            "resolved classifications are immutable; pending placeholders may "
+            "finalize once before kickoff"
+        ),
     }

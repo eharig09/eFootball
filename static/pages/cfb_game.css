@@ -1160,3 +1160,34 @@ table.data td.impact-emerging .sub { color:var(--blue); }
 .engine-rule-line span { text-transform:capitalize; }
 .engine-context { margin-top:12px; padding:10px 12px; border-left:3px solid var(--line); color:var(--muted); font-size:.76rem; }
 @media (max-width:720px) { .engine-grid { grid-template-columns:1fr; } .two-engine-head { flex-direction:column; } }
+
+/* Engine-tab integration: decision state lives in the main Football Lab board. */
+.lab-engine-summary-row .lab-engine-decision { min-width:0; }
+.lab-engine-decision small { display:block; margin-top:4px; color:var(--muted); font-size:.58rem; }
+.engine-inline-state { display:inline-block; margin-top:3px; letter-spacing:.035em; }
+.engine-inline-state.is-agreement { color:#65c66a; }
+.engine-inline-state.is-conflict { color:#e26b6b; }
+.engine-inline-state.is-engine_a_only,
+.engine-inline-state.is-engine_b_only { color:var(--rust); }
+.lab-engine-a-row .lab-engine-wide,
+.lab-engine-b-row .lab-engine-wide { grid-column:2 / -1; }
+.lab-engine-wide { padding:9px 10px; min-width:0; }
+.lab-engine-title { display:grid; grid-template-columns:minmax(130px,.8fr) minmax(120px,.55fr) minmax(0,1.65fr); gap:10px; align-items:center; }
+.lab-engine-title > span,
+.lab-engine-b-content > div > span { color:var(--muted); font-size:.58rem; text-transform:uppercase; letter-spacing:.04em; }
+.lab-engine-title > i,
+.lab-engine-b-content i { color:var(--muted); font-size:.62rem; font-style:normal; }
+.lab-fc-lights-four { grid-template-columns:repeat(4,minmax(0,1fr)); margin-top:8px; }
+.lab-fc-light { position:relative; }
+.lab-fc-light > i { margin-left:auto; color:var(--muted); font-size:.62rem; font-style:normal; }
+.lab-fc-light.is-on em { background:#55b86a; box-shadow:0 0 0 3px color-mix(in srgb,#55b86a 16%,transparent); }
+.lab-fc-light.is-off em { background:#a24b50; box-shadow:0 0 0 3px color-mix(in srgb,#a24b50 13%,transparent); }
+.lab-fc-light.is-pending em { background:#607080; }
+.lab-engine-b-content { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1.15fr) minmax(120px,.7fr); gap:14px; align-items:start; }
+.lab-engine-b-content > div { min-width:0; }
+.lab-engine-b-content b { display:block; margin-top:4px; }
+.lab-engine-family small { display:block; margin-top:4px; color:var(--muted); font-size:.61rem; text-transform:capitalize; }
+@media (max-width:760px) {
+  .lab-engine-title, .lab-engine-b-content { grid-template-columns:1fr; gap:5px; }
+  .lab-fc-lights-four { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
