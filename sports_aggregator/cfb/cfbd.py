@@ -275,6 +275,26 @@ class CFBDClient:
             force=force,
         )
 
+    def ppa_players_games(self, year: int, week: int, season_type: str = "regular",
+                          force: bool = False) -> list[dict]:
+        """Per-game predicted points added, one call per (year, week, seasonType).
+
+        Confirmed live: rows carry season/week/seasonType/team/opponent and an
+        `id` player id (same scheme as /ppa/players/season), but no game id --
+        the caller resolves game_id itself from (season, week, seasonType, team)
+        against the games table. `seasonType="both"` does not merge regular and
+        postseason results into one call (confirmed live: a week-16 "both" call
+        returned only seasonType="regular" rows) -- postseason needs its own
+        call with its own (typically low) week numbers.
+        """
+        return self.get(
+            "/ppa/players/games",
+            {"year": year, "week": week, "seasonType": season_type,
+             "excludeGarbageTime": "true"},
+            cache_ttl_seconds=FINISHED_WEEK_TTL,
+            force=force,
+        )
+
     def ppa_players_season(self, year: int, force: bool = False) -> list[dict]:
         """Player-season predicted points added, split by play type.
 

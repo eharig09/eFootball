@@ -147,6 +147,25 @@ CREATE TABLE IF NOT EXISTS game_player_box_stats (
 CREATE INDEX IF NOT EXISTS idx_game_player_box_player
     ON game_player_box_stats(player_id, game_id);
 
+CREATE TABLE IF NOT EXISTS game_player_ppa (
+    game_id INTEGER NOT NULL,
+    season INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    season_type TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    player TEXT NOT NULL,
+    position TEXT,
+    team TEXT NOT NULL,
+    opponent TEXT NOT NULL,
+    ppa_all REAL,
+    ppa_pass REAL,
+    ppa_rush REAL,
+    imported_at TEXT NOT NULL,
+    PRIMARY KEY (game_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_game_player_ppa_player
+    ON game_player_ppa(player_id, season, week);
+
 CREATE TABLE IF NOT EXISTS team_records (
     season INTEGER NOT NULL,
     team_id INTEGER NOT NULL,
@@ -1064,6 +1083,19 @@ class CFBRepository:
                 """SELECT DISTINCT week FROM games WHERE season=? AND completed=1
                    ORDER BY week""", (season,))]
 
+    def completed_week_season_types(self, season: int) -> list[tuple[str, int]]:
+        """(season_type, week) pairs with at least one completed game --
+        `completed_weeks` collapses season_type, which loses postseason
+        weeks that reuse regular-season week numbers (both commonly use
+        week 1)."""
+        self.initialize()
+        with self._reader() as connection:
+            return [(row[0], row[1]) for row in connection.execute(
+                """SELECT DISTINCT season_type,week FROM games
+                   WHERE season=? AND completed=1
+                   ORDER BY CASE season_type WHEN 'regular' THEN 0 ELSE 1 END, week""",
+                (season,))]
+
     def box_score_counts(self, season: int) -> dict[str, int]:
         self.initialize()
         with self._reader() as connection:
@@ -1121,6 +1153,51 @@ class CFBRepository:
         with self.transaction() as connection:
             connection.executemany(
                 "INSERT OR REPLACE INTO game_player_box_stats VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                rows)
+        return len(rows)
+
+    def replace_game_player_ppa(self, payload: Iterable[dict[str, Any]]) -> int:
+        """Store `/ppa/players/games` rows. The endpoint gives season/week/
+        seasonType/team but no game id, so game_id is resolved here from the
+        games table -- (season, week, season_type, team) identifies exactly
+        one game a team plays. Rows that don't resolve (a team/week CFBD
+        reports PPA for but this repository has no matching game row for,
+        e.g. an FCS opponent never synced) are dropped rather than guessed at."""
+        items = tuple(payload)
+        if not items:
+            return 0
+        seasons = {int(item.get("season") or 0) for item in items}
+        with self._reader() as connection:
+            placeholders = ",".join("?" for _ in seasons)
+            lookup: dict[tuple[int, int, str, str], int] = {}
+            for row in connection.execute(
+                f"SELECT game_id,season,week,season_type,home_team,away_team FROM games "
+                f"WHERE season IN ({placeholders})", tuple(seasons),
+            ):
+                lookup[(row["season"], row["week"], row["season_type"], row["home_team"])] = row["game_id"]
+                lookup[(row["season"], row["week"], row["season_type"], row["away_team"])] = row["game_id"]
+        now = _now_iso()
+        rows = []
+        for item in items:
+            player_id = str(item.get("id") or "")
+            team = str(item.get("team") or "")
+            if not player_id or not team:
+                continue
+            key = (int(item.get("season") or 0), int(item.get("week") or 0),
+                   str(item.get("seasonType") or ""), team)
+            game_id = lookup.get(key)
+            if game_id is None:
+                continue
+            average = item.get("averagePPA") or {}
+            rows.append((
+                game_id, key[0], key[1], key[2], player_id, str(item.get("name") or ""),
+                item.get("position"), team, str(item.get("opponent") or ""),
+                _numeric(average.get("all")), _numeric(average.get("pass")),
+                _numeric(average.get("rush")), now,
+            ))
+        with self.transaction() as connection:
+            connection.executemany(
+                "INSERT OR REPLACE INTO game_player_ppa VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 rows)
         return len(rows)
 

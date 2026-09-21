@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("command", choices=("sync", "status", "sync-player-stats",
                                            "sync-roster-context", "backfill",
                                            "sync-history",
-                                           "sync-box-scores",
+                                           "sync-box-scores", "sync-game-ppa",
                                            "sync-promoted", "coverage", "sync-lines",
                                            "sync-venues", "sync-recruits",
                                            "link-transfer-grades"))
@@ -203,6 +203,34 @@ def main(argv: list[str] | None = None, *, client: Any = None) -> int:
                     # not tell a later full run that the season is complete.
                     repository.mark_history_dataset(year, name, counts[name])
         print(f"sync-box-scores {first}-{last} complete; {len(failures)} failures")
+        return 1 if failures else 0
+    if args.command == "sync-game-ppa":
+        # /ppa/players/games has no game-id field and no combined "both"
+        # seasonType (confirmed live), so each (season, week, season_type)
+        # actually present in the games table gets its own call -- cheap in
+        # volume (one call covers a whole week of FBS) but real in count, so
+        # this walks only weeks that exist rather than a fixed 1-20 range.
+        first = args.from_year or args.year
+        last = args.to_year or args.year
+        if first > last:
+            parser.error("--from-year must not be after --to-year")
+        failures = []
+        total_rows = 0
+        for year in range(first, last + 1):
+            with_ttl = FINISHED_WEEK_TTL if year < datetime.now().year else LIVE_WEEK_TTL
+            slates = repository.completed_week_season_types(year)
+            if args.recent_weeks:
+                slates = slates[-args.recent_weeks:]
+            for season_type, week in slates:
+                try:
+                    n = repository.replace_game_player_ppa(
+                        client.ppa_players_games(year, week, season_type, args.force))
+                    total_rows += n
+                    print(f"{year} {season_type} week {week} game-ppa: success ({n})")
+                except Exception as exc:
+                    failures.append(f"{year} {season_type} week {week}")
+                    print(f"{year} {season_type} week {week} game-ppa: failed ({exc})")
+        print(f"sync-game-ppa {first}-{last} complete; {total_rows} rows; {len(failures)} failures")
         return 1 if failures else 0
     if args.command == "sync-promoted":
         # A team promoted from FCS has no history in any FBS-filtered dataset.
