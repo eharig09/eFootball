@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 import math
 from typing import Any
 
-from sports_aggregator.cfb.depth_chart_observed import _compound_attempts
+from sports_aggregator.cfb.depth_chart_observed import _compound_attempts, observed_depth_roles
 from sports_aggregator.cfb.repository import CFBRepository, schema_once
 
 BASE = 1500.0
@@ -316,6 +316,55 @@ def build(repository: CFBRepository, *, start_season: int = 2015) -> int:
         )
         connection.commit()
     return len(history)
+
+
+def current_rating(
+    repository: CFBRepository, *, season: int, team: str
+) -> tuple[float | None, dict[str, Any]]:
+    """Best current QB rating using observed in-season role evidence.
+
+    The QB Elo game table contains completed starts only. For an upcoming
+    game, carry the player's current rating forward and identify the likely
+    current QB from recent observed usage among players still on the
+    current roster. Shared by Engine A's live HC/QB signal and margin-v2's
+    qb_diff feature, so both read the same QB for the same game.
+    """
+    roles = observed_depth_roles(repository, str(team), int(season))
+    with repository._reader() as connection:
+        rows = [
+            dict(row) for row in connection.execute(
+                """SELECT p.player_id,p.first_name,p.last_name,r.rating,r.starts
+                   FROM players p
+                   LEFT JOIN cfb_qb_elo_ratings r
+                     ON CAST(r.player_id AS TEXT)=CAST(p.player_id AS TEXT)
+                   WHERE p.season=? AND p.team=? AND UPPER(COALESCE(p.position,''))='QB'""",
+                (int(season), str(team)),
+            )
+        ]
+    candidates = []
+    for row in rows:
+        if row.get("rating") is None:
+            continue
+        role = roles.get(str(row["player_id"])) or {}
+        candidates.append((
+            float(role.get("observed_score") or 0.0),
+            int(role.get("observed_games") or 0),
+            int(row.get("starts") or 0),
+            row,
+            role,
+        ))
+    if not candidates:
+        return None, {"player": None, "source": "current_roster_qb_unrated"}
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    _, _, _, row, role = candidates[0]
+    name = f'{row.get("first_name") or ""} {row.get("last_name") or ""}'.strip()
+    return float(row["rating"]), {
+        "player_id": str(row["player_id"]),
+        "player": name or None,
+        "observed_games": int(role.get("observed_games") or 0),
+        "observed_confidence": role.get("confidence"),
+        "source": "observed_current_qb_rating",
+    }
 
 
 def _zscore(values: dict[str, float]) -> dict[str, float]:

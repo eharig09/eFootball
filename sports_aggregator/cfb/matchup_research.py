@@ -76,6 +76,46 @@ TOTAL_REGIME_BENCHMARKS = {
 }
 
 
+def _pooled_regime_record(benchmarks: dict) -> dict:
+    """Sample-weighted pool across every (edge_bucket, movement_state) cell --
+    the record following the model's total lean would have had whenever a
+    regime match existed, even though no frozen totals action rule exists
+    yet to actually act on it. Measured, not assumed: asked for directly
+    after "no frozen rule" read as "nothing has been checked" on the live
+    Totals row, when in fact this table already had the numbers."""
+    total_n = sum(n for _, n, _ in benchmarks.values())
+    if not total_n:
+        return {"n": 0, "hit_rate": None, "mean_residual": None}
+    hits = sum(n * (wr / 100.0) for wr, n, _ in benchmarks.values())
+    residual = sum(n * mr for _, n, mr in benchmarks.values())
+    return {
+        "n": total_n,
+        "hit_rate": round(hits / total_n, 4),
+        "mean_residual": round(residual / total_n, 3),
+    }
+
+
+#: Follow the model's total lean whenever a regime match exists (any cell
+#: in TOTAL_REGIME_BENCHMARKS), pooled across all of them: 54.5% hit rate,
+#: n=1,533, +1.84 pts mean residual. Real signal, not nothing -- but weaker
+#: than any of Engine A's five frozen routes (63-73%) and not vetted the
+#: same walk-forward way those were, which is exactly why this stays a
+#: measured research number rather than a sixth frozen action rule.
+TOTALS_RESEARCH_OVERALL = _pooled_regime_record(TOTAL_REGIME_BENCHMARKS)
+
+#: About half of TOTAL_REGIME_BENCHMARKS' cells clear this; the rest are
+#: close enough to a coin flip that counting them as a "pick" -- for the
+#: live page's regime-match light, or for the season's graded Totals record
+#: -- would overstate what the cell actually showed. Below this line a
+#: regime match is still shown, just not tracked as one.
+TOTALS_TRACKED_MIN_WIN_RATE = 55.0
+
+TOTALS_TRACKED_OVERALL = _pooled_regime_record({
+    key: value for key, value in TOTAL_REGIME_BENCHMARKS.items()
+    if value[0] >= TOTALS_TRACKED_MIN_WIN_RATE
+})
+
+
 NARRATIVE_LABELS = {
     "statement_win": "Statement win",
     "upset_win": "Upset win",
@@ -525,6 +565,7 @@ def matchup_research_packet(
         repository,
         target_season=int(game["season"]),
         projection=projection,
+        game=game,
     )
     projected_home_margin = (
         float(margin_calibration["value"])
@@ -581,18 +622,20 @@ def matchup_research_packet(
             "n": regime[1],
             "mean_residual": regime[2],
             "label": f"{opening_bucket} edge · {movement_state.replace('_', ' ')}",
+            "tracked": regime[0] >= TOTALS_TRACKED_MIN_WIN_RATE,
         }
+    tracked_pick = bool(regime_packet and regime_packet["tracked"])
 
     narrative = _live_narrative_context(repository, game, lines)
     actionable_2026 = _stored_2026_actionable(repository, int(game["season"]))
 
     total_status = {
-        "state": "research_watch" if regime_packet else "no_qualified_rule",
-        "label": "RESEARCH WATCH" if regime_packet else "NO QUALIFIED TOTAL RULE",
+        "state": "research_watch" if tracked_pick else "no_qualified_rule",
+        "label": "RESEARCH WATCH" if tracked_pick else "NO QUALIFIED TOTAL RULE",
         "qualified": False,
         "note": (
             "Historical totals regime match only; no frozen actionable totals rule exists."
-            if regime_packet else
+            if tracked_pick else
             "Model-market disagreement is shown, but no validated totals action rule is frozen."
         ),
         "components": [
@@ -603,7 +646,7 @@ def matchup_research_packet(
             },
             {
                 "label": "Regime match",
-                "state": "on" if regime_packet else "off",
+                "state": "on" if tracked_pick else "off",
                 "value": regime_packet["label"] if regime_packet else None,
             },
             {

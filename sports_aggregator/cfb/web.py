@@ -27,7 +27,9 @@ from sports_aggregator.cfb.history import (
     team_historical_stats, upcoming_player_opponent_history)
 from sports_aggregator.cfb.game_projection import narrative as projection_narrative
 from sports_aggregator.cfb.game_projection import project_matchup
-from sports_aggregator.cfb.matchup_research import matchup_research_packet
+from sports_aggregator.cfb.matchup_research import (
+    matchup_research_packet, TOTALS_RESEARCH_OVERALL, TOTALS_TRACKED_OVERALL,
+    TOTALS_TRACKED_MIN_WIN_RATE)
 from sports_aggregator.cfb.lines import game_lines, lines_by_game
 from sports_aggregator.cfb import meta as page_meta_for
 from sports_aggregator.cfb import syndication
@@ -54,7 +56,12 @@ from sports_aggregator.cfb.passing_plays import (
 from sports_aggregator.cfb.rushing_plays import matchup_rushing, matchup_rushing_situational
 from sports_aggregator.cfb.pff import pff_summary
 from sports_aggregator.cfb.repository import CFBRepository
-from sports_aggregator.cfb.two_engine_live import display_packet as two_engine_display_packet, manifest_for_games
+from sports_aggregator.cfb.two_engine_live import (
+    ENGINE_A_OVERALL, ENGINE_B_OVERALL,
+    display_packet as two_engine_display_packet, manifest_for_games,
+    route_plain_language, season_record as two_engine_season_record,
+    team_ratings_display,
+)
 from sports_aggregator.cfb import views
 
 
@@ -749,6 +756,10 @@ def game_preview(game_id: int):
     two_engine_signal = two_engine_display_packet(
         repository, game, projection=projection, lines=market,
         research=research_intelligence)
+    engine_a_route_plain = route_plain_language(
+        (two_engine_signal.get("engine_a") or {}).get("route"))
+    team_ratings = team_ratings_display(repository, game)
+    season_record = two_engine_season_record(repository, season)
     return render_template(
         "cfb_game.html",
         meta=page_meta_for.game_meta(
@@ -766,6 +777,14 @@ def game_preview(game_id: int):
         projection=projection,
         research_intelligence=research_intelligence,
         two_engine_signal=two_engine_signal,
+        engine_a_route_plain=engine_a_route_plain,
+        engine_a_overall=ENGINE_A_OVERALL,
+        engine_b_overall=ENGINE_B_OVERALL,
+        totals_overall=TOTALS_RESEARCH_OVERALL,
+        totals_tracked_overall=TOTALS_TRACKED_OVERALL,
+        totals_tracked_min_win_rate=TOTALS_TRACKED_MIN_WIN_RATE,
+        team_ratings=team_ratings,
+        season_record=season_record,
         projection_lines=projection_narrative(projection),
         projection_table=views.game_projection_table(projection),
         game_shape=game_shape(

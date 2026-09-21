@@ -19,14 +19,15 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
+from sports_aggregator.cfb import coach_elo
 from sports_aggregator.cfb import conditional_convergence as cc
 from sports_aggregator.cfb import convergence_routing_holdout as routing
 from sports_aggregator.cfb import internal_power_lenses as ipl
 from sports_aggregator.cfb import narrative_family_rating_interactions as families
 from sports_aggregator.cfb import narrative_shapes as ns
 from sports_aggregator.cfb import narrative_shapes_v2 as nsv2
+from sports_aggregator.cfb import qb_elo
 from sports_aggregator.cfb.game_projection import project_matchup
-from sports_aggregator.cfb.depth_chart_observed import observed_depth_roles
 from sports_aggregator.cfb.lines import game_lines
 from sports_aggregator.cfb.live_margin_calibration import predict_live as predict_live_margin
 from sports_aggregator.cfb.matchup_research import (
@@ -40,18 +41,94 @@ from sports_aggregator.cfb.repository import CFBRepository
 MANIFEST_VERSION = "two-engine-pregame-v1"
 HISTORICAL_END_SEASON = 2025
 
+#: Reconciled 2026-09-21: internal_power_lenses._football_lab_margin_lookup
+#: used to fit its own one-variable calibration (raw offense-points margin
+#: -> actual margin), separate from the margin-v2 model the live Structural
+#: signal has always actually read (research["spread"]["projected_home_margin"],
+#: i.e. live_margin_calibration.predict_live). Discovery/validation and the
+#: live signal were quietly built from two different models. Both now read
+#: the same walk-forward margin-v2 (see internal_power_lenses.py's docstring
+#: on _football_lab_margin_lookup); these five win rates were re-measured
+#: via convergence_routing_holdout.report() under that single, consistent
+#: model. The route predicates themselves are untouched -- only the
+#: football_lab_edge input feeding "Structural" changed, so these numbers
+#: moved by a few points each (largest: fade_old_2_of_3, 63.6% -> 55.0%),
+#: not by a redefinition of what "confirms" means.
 ENGINE_A_HISTORY = {
-    "positive_4_of_4_spread_lt_14": {"n": 46, "hit_rate": 0.6304, "mean_residual": 6.750},
-    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 33, "hit_rate": 0.7273, "mean_residual": 7.238},
-    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 23, "hit_rate": 0.6522, "mean_residual": 6.103},
-    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 22, "hit_rate": 0.6364, "mean_residual": 3.405},
-    "fade_old_3_of_3_elo_disagrees_spread_14_plus": {"n": 22, "hit_rate": 0.6818, "mean_residual": 2.964},
+    "positive_4_of_4_spread_lt_14": {"n": 49, "hit_rate": 0.6327, "mean_residual": 7.181},
+    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 37, "hit_rate": 0.6757, "mean_residual": 6.707},
+    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 24, "hit_rate": 0.6667, "mean_residual": 6.589},
+    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 20, "hit_rate": 0.5500, "mean_residual": 2.404},
+    "fade_old_3_of_3_elo_disagrees_spread_14_plus": {"n": 21, "hit_rate": 0.7143, "mean_residual": 3.320},
 }
 ENGINE_B_HISTORY = {
     "rebound_vs_momentum_qb_opposes": {"n": 181, "hit_rate": 0.5801, "mean_residual": 2.706},
     "rebound_vs_post_success_qb_opposes": {"n": 82, "hit_rate": 0.6098, "mean_residual": 3.780},
 }
-PORTFOLIO_HISTORY = {"n": 317, "hit_rate": 0.6183, "mean_residual": 4.077}
+#: Reconciled alongside ENGINE_A_HISTORY above (two_engine_portfolio.report(),
+#: non_conflicting_combined_portfolio.all_2020_2025) -- Engine B is untouched
+#: by the football_lab_edge fix, so this barely moves (317->321, 61.83%->61.68%).
+PORTFOLIO_HISTORY = {"n": 321, "hit_rate": 0.6168, "mean_residual": 4.321}
+
+
+def _pooled(history: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Sample-weighted pool across every route/rule in a history dict --
+    the record a game with NO specific route/rule firing can still show,
+    instead of a blank dash, since "the engine has no pick here" and "the
+    engine has no track record" are different facts."""
+    total_n = sum(int(v["n"]) for v in history.values())
+    if not total_n:
+        return {"n": 0, "hit_rate": None, "mean_residual": None}
+    hits = sum(int(v["n"]) * float(v["hit_rate"]) for v in history.values())
+    residual = sum(int(v["n"]) * float(v["mean_residual"]) for v in history.values())
+    return {
+        "n": total_n,
+        "hit_rate": round(hits / total_n, 4),
+        "mean_residual": round(residual / total_n, 3),
+    }
+
+
+ENGINE_A_OVERALL = _pooled(ENGINE_A_HISTORY)
+ENGINE_B_OVERALL = _pooled(ENGINE_B_HISTORY)
+
+#: Plain-language versions of the five frozen route names -- the raw slug
+#: ("positive_old_2_of_3_elo_agrees_spread_3_to_6_5") encodes real meaning
+#: but only to someone who already knows the vocabulary. Keyed by the exact
+#: route name convergence_routing_holdout.ROUTES freezes, so this reads
+#: straight off whatever a stored (possibly old) manifest packet already
+#: has -- nothing needs to be re-frozen for this to apply.
+ROUTE_PLAIN_LANGUAGE = {
+    "positive_4_of_4_spread_lt_14": (
+        "Every signal agrees -- Margin Power, Structural, Line Elo, and "
+        "HC/QB Elo -- and the line isn't a lopsided one. Follow the favored side."
+    ),
+    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": (
+        "Margin Power plus one other signal agree, and HC/QB Elo backs the "
+        "same side, in a moderate (3-6.5 point) line. Follow the favored side."
+    ),
+    "positive_old_3_of_3_elo_disagrees_spread_lt_3": (
+        "Margin Power, Structural, and Line Elo all agree -- even though "
+        "HC/QB Elo favors the other team -- in a near-even game (under 3 "
+        "points). Follow the favored side; full agreement among the "
+        "original three signals has held up here even against HC/QB Elo."
+    ),
+    "fade_old_2_of_3_elo_agrees_spread_lt_3": (
+        "Margin Power plus one other signal agree, and HC/QB Elo backs the "
+        "same side, in a near-even game (under 3 points) -- but history "
+        "says to take the OTHER team here."
+    ),
+    "fade_old_3_of_3_elo_disagrees_spread_14_plus": (
+        "Margin Power, Structural, and Line Elo all agree, but HC/QB Elo "
+        "disagrees, in a lopsided line (14+ points) -- history says to "
+        "take the OTHER team here."
+    ),
+}
+
+
+def route_plain_language(route_name: str | None) -> str | None:
+    if not route_name:
+        return None
+    return ROUTE_PLAIN_LANGUAGE.get(route_name)
 
 _HISTORICAL_CACHE: dict[str, dict[str, Any]] = {}
 
@@ -161,13 +238,11 @@ def _margin_power_edge(
     }
 
 
-def _line_elo_edge(
-    game: dict[str, Any],
-    market_home_margin: float | None,
-    historical: dict[str, Any],
-) -> float | None:
-    if market_home_margin is None:
-        return None
+def _line_elo_teams(game: dict[str, Any], historical: dict[str, Any]) -> tuple[float, float]:
+    """Each team's own pregame Line Elo rating -- the market-fit rating
+    _line_elo_edge reduces to a single margin edge. 1500.0 (the base
+    rating) for a team with no prior Line Elo history, same default
+    _line_elo_edge already used before this was split out."""
     rows = historical["narrative_rows"]
     state = historical["line_state"]
     kickoff = str(game.get("start_date") or "")
@@ -184,6 +259,17 @@ def _line_elo_edge(
             latest[team] = (str(row.get("kickoff") or ""), float(post))
     home_value = latest.get(str(game["home_team"]), ("", 1500.0))[1]
     away_value = latest.get(str(game["away_team"]), ("", 1500.0))[1]
+    return home_value, away_value
+
+
+def _line_elo_edge(
+    game: dict[str, Any],
+    market_home_margin: float | None,
+    historical: dict[str, Any],
+) -> float | None:
+    if market_home_margin is None:
+        return None
+    home_value, away_value = _line_elo_teams(game, historical)
     predicted = (
         (home_value - away_value) / ns.ELO_POINTS_PER_SCORE_POINT
         + ns.DEFAULT_HOME_FIELD_POINTS
@@ -191,72 +277,8 @@ def _line_elo_edge(
     return predicted - float(market_home_margin)
 
 
-def _current_coach_rating(
-    repository: CFBRepository, *, season: int, team_id: int
-) -> tuple[float | None, str | None]:
-    """Current coach Elo carried forward from completed games."""
-    with repository._reader() as connection:
-        row = connection.execute(
-            """SELECT cs.coach_id,cs.first_name,cs.last_name,r.rating,cs.games
-               FROM coach_seasons cs
-               LEFT JOIN cfb_coach_elo_ratings r ON r.coach_id=cs.coach_id
-               WHERE cs.season=? AND cs.team_id=?
-               ORDER BY CASE WHEN r.rating IS NULL THEN 1 ELSE 0 END,
-                        cs.games DESC,cs.coach_id
-               LIMIT 1""",
-            (int(season), int(team_id)),
-        ).fetchone()
-    if row is None or row["rating"] is None:
-        return None, None
-    name = f'{row["first_name"] or ""} {row["last_name"] or ""}'.strip()
-    return float(row["rating"]), name or None
-
-
-def _current_qb_rating(
-    repository: CFBRepository, *, season: int, team: str
-) -> tuple[float | None, dict[str, Any]]:
-    """Best current QB rating using observed in-season role evidence.
-
-    The QB Elo game table contains completed starts only. For an upcoming game,
-    carry the player's current rating forward and identify the likely current QB
-    from recent observed usage among players still on the current roster.
-    """
-    roles = observed_depth_roles(repository, str(team), int(season))
-    with repository._reader() as connection:
-        rows = [
-            dict(row) for row in connection.execute(
-                """SELECT p.player_id,p.first_name,p.last_name,r.rating,r.starts
-                   FROM players p
-                   LEFT JOIN cfb_qb_elo_ratings r
-                     ON CAST(r.player_id AS TEXT)=CAST(p.player_id AS TEXT)
-                   WHERE p.season=? AND p.team=? AND UPPER(COALESCE(p.position,''))='QB'""",
-                (int(season), str(team)),
-            )
-        ]
-    candidates = []
-    for row in rows:
-        if row.get("rating") is None:
-            continue
-        role = roles.get(str(row["player_id"])) or {}
-        candidates.append((
-            float(role.get("observed_score") or 0.0),
-            int(role.get("observed_games") or 0),
-            int(row.get("starts") or 0),
-            row,
-            role,
-        ))
-    if not candidates:
-        return None, {"player": None, "source": "current_roster_qb_unrated"}
-    candidates.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
-    _, _, _, row, role = candidates[0]
-    name = f'{row.get("first_name") or ""} {row.get("last_name") or ""}'.strip()
-    return float(row["rating"]), {
-        "player_id": str(row["player_id"]),
-        "player": name or None,
-        "observed_games": int(role.get("observed_games") or 0),
-        "observed_confidence": role.get("confidence"),
-        "source": "observed_current_qb_rating",
-    }
+_current_coach_rating = coach_elo.current_rating
+_current_qb_rating = qb_elo.current_rating
 
 
 def _raw_hc_qb(
@@ -310,6 +332,105 @@ def _raw_hc_qb(
         "away_coach": away_coach_name,
         "home_qb": home_qb_meta,
         "away_qb": away_qb_meta,
+    }
+
+
+def team_ratings_display(
+    repository: CFBRepository, game: dict[str, Any], historical: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Each team's own HC Elo, QB Elo, CFBD "True" (pregame) Elo, and Line
+    Elo, for display -- not the combined edges/z-scores the engine lights
+    use, the raw per-team numbers those get built from. Computed fresh on
+    every call rather than stored in a frozen manifest packet: this is
+    supporting context, not part of the decision itself, so it can stay
+    live even for a game whose Engine A/B classification is already frozen.
+    """
+    historical = historical or _historical_context(repository)
+    game_id = int(game["game_id"])
+    home_team, away_team = str(game["home_team"]), str(game["away_team"])
+
+    with repository._reader() as connection:
+        hc_row = connection.execute(
+            """SELECT home_pre_elo,away_pre_elo,home_coach_id,away_coach_id
+               FROM cfb_coach_elo_games WHERE game_id=?""",
+            (game_id,),
+        ).fetchone()
+        qb_rows = connection.execute(
+            """SELECT side,pre_rating,player_id FROM cfb_qb_elo_games WHERE game_id=?""",
+            (game_id,),
+        ).fetchall()
+    qb_by_side = {str(row["side"]): row for row in qb_rows}
+
+    def _coach_name(coach_id: Any) -> str | None:
+        if coach_id is None:
+            return None
+        with repository._reader() as connection:
+            row = connection.execute(
+                "SELECT first_name,last_name FROM cfb_coach_elo_ratings WHERE coach_id=?", (coach_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        name = f'{row["first_name"] or ""} {row["last_name"] or ""}'.strip()
+        return name or None
+
+    def _qb_name(player_id: Any) -> str | None:
+        if player_id is None:
+            return None
+        with repository._reader() as connection:
+            row = connection.execute(
+                "SELECT name FROM cfb_qb_elo_ratings WHERE player_id=?", (str(player_id),)
+            ).fetchone()
+        return str(row["name"]) if row and row["name"] else None
+
+    if hc_row is not None:
+        hc_home, hc_away = float(hc_row["home_pre_elo"]), float(hc_row["away_pre_elo"])
+        home_coach_name = _coach_name(hc_row["home_coach_id"])
+        away_coach_name = _coach_name(hc_row["away_coach_id"])
+    else:
+        hc_home, home_coach_name = _current_coach_rating(
+            repository, season=int(game["season"]), team_id=int(game["home_team_id"]))
+        hc_away, away_coach_name = _current_coach_rating(
+            repository, season=int(game["season"]), team_id=int(game["away_team_id"]))
+
+    if "home" in qb_by_side and "away" in qb_by_side:
+        qb_home = float(qb_by_side["home"]["pre_rating"])
+        qb_away = float(qb_by_side["away"]["pre_rating"])
+        home_qb_name = _qb_name(qb_by_side["home"]["player_id"])
+        away_qb_name = _qb_name(qb_by_side["away"]["player_id"])
+        qb_source = "completed_game_pregame_row"
+    else:
+        qb_home, home_qb_meta = _current_qb_rating(
+            repository, season=int(game["season"]), team=home_team)
+        qb_away, away_qb_meta = _current_qb_rating(
+            repository, season=int(game["season"]), team=away_team)
+        home_qb_name = home_qb_meta.get("player")
+        away_qb_name = away_qb_meta.get("player")
+        qb_source = "carried_current_rating"
+
+    line_home, line_away = _line_elo_teams(game, historical)
+
+    def _team_block(hc: float | None, hc_name: str | None, qb: float | None, qb_name: str | None,
+                    true_elo: float | None, line: float | None) -> dict[str, Any]:
+        return {
+            "hc_elo": round(hc, 1) if hc is not None else None,
+            "hc_name": hc_name,
+            "qb_elo": round(qb, 1) if qb is not None else None,
+            "qb_name": qb_name,
+            "true_elo": round(float(true_elo), 1) if true_elo is not None else None,
+            "line_elo": round(float(line), 1) if line is not None else None,
+        }
+
+    return {
+        "home": _team_block(
+            hc_home, home_coach_name, qb_home, home_qb_name,
+            game.get("home_pregame_elo"), line_home,
+        ),
+        "away": _team_block(
+            hc_away, away_coach_name, qb_away, away_qb_name,
+            game.get("away_pregame_elo"), line_away,
+        ),
+        "source": "completed_game_pregame_row" if hc_row is not None else "carried_current_rating",
+        "qb_source": qb_source,
     }
 
 
@@ -900,4 +1021,99 @@ def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[st
             "resolved classifications are immutable; pending placeholders may "
             "finalize once before kickoff"
         ),
+    }
+
+
+def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
+    """Live-graded record of this season's frozen picks -- Engine A, Engine B,
+    and the Totals research lean -- against the closing line.
+
+    This is a results tracker, not a classifier: it runs after the fact, over
+    games the manifest already froze pregame, and never feeds back into
+    `classify_game` or a manifest row. It starts at 0-0 the day the manifest
+    is first populated for a season and fills in as those games complete, so
+    an early-season read here is a small sample by construction, not a bug.
+    """
+    _initialize_manifest(repository)
+    with repository._reader() as connection:
+        rows = [
+            dict(r) for r in connection.execute(
+                """SELECT m.game_id, m.packet_json, g.home_points, g.away_points
+                   FROM cfb_two_engine_manifest m
+                   JOIN games g ON g.game_id = m.game_id
+                   WHERE m.manifest_version=? AND m.season=?
+                     AND g.completed=1
+                     AND g.home_points IS NOT NULL AND g.away_points IS NOT NULL""",
+                (MANIFEST_VERSION, int(season)),
+            )
+        ]
+
+    def _blank() -> dict[str, Any]:
+        return {"wins": 0, "losses": 0, "pushes": 0, "n": 0}
+
+    engine_a, engine_b, totals = _blank(), _blank(), _blank()
+
+    def _grade(bucket: dict[str, Any], edge: float) -> None:
+        if abs(edge) < 1e-9:
+            bucket["pushes"] += 1
+        elif edge > 0:
+            bucket["wins"] += 1
+        else:
+            bucket["losses"] += 1
+        bucket["n"] += 1
+
+    for row in rows:
+        packet = json.loads(row["packet_json"])
+        home_margin = float(row["home_points"]) - float(row["away_points"])
+        lines = game_lines(repository, int(row["game_id"]))
+        spread = lines.get("consensus_spread")
+
+        if spread is not None:
+            for engine_key, bucket in (("engine_a", engine_a), ("engine_b", engine_b)):
+                leg = packet.get(engine_key) or {}
+                side = leg.get("selected_side")
+                if not leg.get("qualified") or side not in ("home", "away"):
+                    continue
+                margin = home_margin if side == "home" else -home_margin
+                side_spread = float(spread) if side == "home" else -float(spread)
+                _grade(bucket, margin + side_spread)
+
+        # Totals has no frozen action rule and so no stored pick to read back;
+        # it's recomputed the same way the live page shows it. The underlying
+        # calibration only ever fits on seasons before this one, so replaying
+        # it against a game that has since finished doesn't let that game's
+        # own result into the number.
+        game = repository.get_game(int(row["game_id"]))
+        if game is None:
+            continue
+        projection = project_matchup(
+            repository, game["home_team"], game["away_team"],
+            as_of_date=game.get("start_date"), game_id=game.get("game_id"),
+        )
+        research = matchup_research_packet(repository, game, projection, lines)
+        totals_signal = research.get("totals") or {}
+        direction = totals_signal.get("model_direction")
+        line_total = totals_signal.get("closing_total")
+        regime = totals_signal.get("regime_benchmark")
+        if not regime or not regime.get("tracked") or direction not in ("over", "under") \
+                or line_total is None:
+            continue
+        actual_total = float(row["home_points"]) + float(row["away_points"])
+        diff = actual_total - float(line_total)
+        _grade(totals, diff if direction == "over" else -diff)
+
+    def _finish(bucket: dict[str, Any]) -> dict[str, Any]:
+        bucket["record"] = (
+            f"{bucket['wins']}-{bucket['losses']}"
+            + (f"-{bucket['pushes']}" if bucket["pushes"] else "")
+        )
+        decided = bucket["wins"] + bucket["losses"]
+        bucket["hit_rate"] = round(bucket["wins"] / decided, 4) if decided else None
+        return bucket
+
+    return {
+        "season": int(season),
+        "engine_a": _finish(engine_a),
+        "engine_b": _finish(engine_b),
+        "totals": _finish(totals),
     }

@@ -145,238 +145,398 @@
     {% set model_abs = ph | abs if ph is not none else none %}
     {% set same_favorite = ((mh > 0 and ph > 0) or (mh < 0 and ph < 0)) if mh is not none and ph is not none else false %}
 
-    <div class="lab-board" id="forecast-score">
-        <div class="lab-row lab-score-row">
-            <div class="lab-label">SCORE</div>
-            <div class="lab-score-team"><strong>{{ game.away_team }}</strong><b>{{ research_intelligence.display_score.away | cell('f1') }}</b></div>
-            <div class="lab-score-team"><strong>{{ game.home_team }}</strong><b>{{ research_intelligence.display_score.home | cell('f1') }}</b></div>
-            <div class="lab-score-meta"><span>Total</span><b>{{ research_intelligence.display_score.total | cell('f1') }}</b></div>
-        </div>
+    <div class="lab-board lab-cards" id="forecast-score">
 
-        <div class="lab-row lab-shape-row" id="forecast-drivers">
-            <div class="lab-label">SHAPE</div>
-            <div class="lab-shape-team"><strong>{{ game.away_team }}</strong><span>{{ projection.away.drives | cell('f1') }} drv</span><span>{{ projection.away.plays | cell('f1') }} plays</span><span>{{ projection.away.pass_rate | cell('rate') }} pass</span><span>{{ projection.away.points_per_drive | cell('f2') }} PPD</span><span>{{ projection.away.total_yards | cell('int') }} yd</span><span>{{ projection.away.giveaways | cell('f2') }} TO</span></div>
-            <div class="lab-shape-team"><strong>{{ game.home_team }}</strong><span>{{ projection.home.drives | cell('f1') }} drv</span><span>{{ projection.home.plays | cell('f1') }} plays</span><span>{{ projection.home.pass_rate | cell('rate') }} pass</span><span>{{ projection.home.points_per_drive | cell('f2') }} PPD</span><span>{{ projection.home.total_yards | cell('int') }} yd</span><span>{{ projection.home.giveaways | cell('f2') }} TO</span></div>
-            <div></div>
-        </div>
-
-
-        <div class="lab-row lab-market-row">
-            <div class="lab-label">SPREAD</div>
-            <div><span>Football Lab</span><b>
-                {% if ph is none %}—
-                {% elif ph > 0 %}{{ game.home_team }} -{{ ph | abs | cell('f1') }}
-                {% elif ph < 0 %}{{ game.away_team }} -{{ ph | abs | cell('f1') }}
-                {% else %}PK{% endif %}
-            </b>
-            {% if research_intelligence.spread.margin_calibration %}
-            <i>{{ research_intelligence.spread.margin_calibration.model_version }} · {{ research_intelligence.spread.margin_calibration.variant }}</i>
-            {% endif %}
+        {# ---------- Projected score & total: always on the surface ---------- #}
+        <div class="lab-card lab-hero-card">
+            <div class="lab-card-title">Football Lab projection</div>
+            <div class="lab-hero-scores">
+                <div class="lab-hero-team"><span>{{ game.away_team }}</span><b>{{ research_intelligence.display_score.away | cell('f1') }}</b></div>
+                <div class="lab-hero-vs">&ndash;</div>
+                <div class="lab-hero-team"><span>{{ game.home_team }}</span><b>{{ research_intelligence.display_score.home | cell('f1') }}</b></div>
             </div>
-            <div><span>Market</span><b>
-                {% if mh is none %}—
-                {% elif mh > 0 %}{{ game.home_team }} -{{ mh | abs | cell('f1') }}
-                {% elif mh < 0 %}{{ game.away_team }} -{{ mh | abs | cell('f1') }}
-                {% else %}PK{% endif %}
-            </b></div>
-            <div class="lab-emphasis"><span>Gap</span><b>
-                {% if eh is none %}—
-                {% elif eh > 0 %}{{ game.home_team }} +{{ eh | abs | cell('f1') }}
-                {% elif eh < 0 %}{{ game.away_team }} +{{ eh | abs | cell('f1') }}
-                {% else %}0.0{% endif %}
-            </b></div>
+            <div class="lab-badge-row">
+                <span class="lab-badge">
+                    {% if ph is none %}Spread &mdash;
+                    {% elif ph > 0 %}{{ game.home_team }} &minus;{{ ph | abs | cell('f1') }} model
+                    {% elif ph < 0 %}{{ game.away_team }} &minus;{{ ph | abs | cell('f1') }} model
+                    {% else %}PK model{% endif %}
+                    {% if mh is not none %}(market
+                        {% if mh > 0 %}{{ game.home_team }} &minus;{{ mh | abs | cell('f1') }}
+                        {% elif mh < 0 %}{{ game.away_team }} &minus;{{ mh | abs | cell('f1') }}
+                        {% else %}PK{% endif %})
+                    {% endif %}
+                </span>
+                <span class="lab-badge lab-badge-gold">
+                    Total {{ (research_intelligence.totals.model_direction or '—') | capitalize }}
+                    {{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}
+                    (market {{ research_intelligence.totals.closing_total | cell('f1') }})
+                </span>
+                {% if research_intelligence.spread.inside_lt14_applicability is sameas true %}
+                <span class="lab-badge lab-badge-good">Applicability: supported (market &lt;14)</span>
+                {% elif research_intelligence.spread.inside_lt14_applicability is sameas false %}
+                <span class="lab-badge lab-badge-warn">Applicability: caution (market 14+)</span>
+                {% endif %}
+                {% set keys = [] %}
+                {% if mh is not none and ph is not none %}
+                    {% if not same_favorite and mh != 0 and ph != 0 %}{% set _ = keys.append('FLIP') %}{% endif %}
+                    {% if (market_abs < 3 <= model_abs) or (model_abs < 3 <= market_abs) %}{% set _ = keys.append('3') %}{% endif %}
+                    {% if (market_abs < 7 <= model_abs) or (model_abs < 7 <= market_abs) %}{% set _ = keys.append('7') %}{% endif %}
+                    {% if (market_abs < 10 <= model_abs) or (model_abs < 10 <= market_abs) %}{% set _ = keys.append('10') %}{% endif %}
+                    {% if (market_abs < 14 <= model_abs) or (model_abs < 14 <= market_abs) %}{% set _ = keys.append('14') %}{% endif %}
+                {% endif %}
+                {% if keys %}<span class="lab-badge">Keys crossed: {{ keys | join(' · ') }}</span>{% endif %}
+            </div>
+            <p class="lab-hero-note">
+                Independently calibrated score + total model &mdash; a separate pipeline from the Engine A/B
+                convergence signals below. The total's edge ({{ research_intelligence.totals.closing_edge | cell('signed') }}
+                pts vs. the closing line)
+                {% if research_intelligence.totals.regime_benchmark and research_intelligence.totals.regime_benchmark.tracked %}
+                matches a regime with a real historical edge (see below) &mdash; tracked, still research-only, not a frozen pick.
+                {% elif research_intelligence.totals.regime_benchmark %}
+                matches a regime, but that regime's win rate is too thin to track as a pick.
+                {% else %}
+                falls outside any historically studied regime, so it's shown for context only, not as a pick.
+                {% endif %}
+            </p>
+
+            <details class="lab-disclosure">
+                <summary>Full score &amp; total data</summary>
+                <dl class="lab-kv-grid">
+                    <div><dt>Raw projected total</dt><dd>{{ research_intelligence.totals.raw_projected_total | cell('f1') }}</dd></div>
+                    <div><dt>Calibrated total</dt><dd>{{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}</dd></div>
+                    <div><dt>Market total open &rarr; close</dt><dd>{{ research_intelligence.totals.opening_total | cell('f1') }} &rarr; {{ research_intelligence.totals.closing_total | cell('f1') }}</dd></div>
+                    <div><dt>50% scoring range</dt><dd>
+                        {% if research_intelligence.totals.interval50_low is not none and research_intelligence.totals.interval50_high is not none %}
+                        {{ research_intelligence.totals.interval50_low | cell('f1') }}&ndash;{{ research_intelligence.totals.interval50_high | cell('f1') }}
+                        {% else %}&mdash;{% endif %}
+                    </dd></div>
+                    <div><dt>Opening edge / bucket</dt><dd>{{ research_intelligence.totals.opening_edge | cell('signed') }} pts &middot; {{ research_intelligence.totals.opening_edge_bucket or '—' }}</dd></div>
+                    <div><dt>Market move since open</dt><dd>{{ (research_intelligence.totals.movement_state or '—') | replace('_', ' ') }}</dd></div>
+                    <div><dt>Regime match</dt><dd>
+                        {% if research_intelligence.totals.regime_benchmark %}
+                        {{ research_intelligence.totals.regime_benchmark.win_rate | cell('f1') }}% &middot; n={{ research_intelligence.totals.regime_benchmark.n }} ({{ research_intelligence.totals.regime_benchmark.label }}){{ ' -- tracked' if research_intelligence.totals.regime_benchmark.tracked else ' -- below the 55% tracking bar' }}
+                        {% else %}no comparable historical opening-gap/movement regime found{% endif %}
+                    </dd></div>
+                    <div><dt>Football Lab margin</dt><dd>
+                        {% if ph is none %}&mdash;
+                        {% elif ph > 0 %}{{ game.home_team }} +{{ ph | abs | cell('f1') }}
+                        {% elif ph < 0 %}{{ game.away_team }} +{{ ph | abs | cell('f1') }}
+                        {% else %}PK{% endif %}
+                        {% if research_intelligence.spread.margin_calibration %}({{ research_intelligence.spread.margin_calibration.model_version }} &middot; {{ research_intelligence.spread.margin_calibration.variant }}){% endif %}
+                    </dd></div>
+                    <div><dt>Model vs. market gap</dt><dd>
+                        {% if eh is none %}&mdash;
+                        {% elif eh > 0 %}{{ game.home_team }} +{{ eh | abs | cell('f1') }}
+                        {% elif eh < 0 %}{{ game.away_team }} +{{ eh | abs | cell('f1') }}
+                        {% else %}0.0{% endif %}
+                    </dd></div>
+                    <div><dt>Total calibration sample</dt><dd>{{ research_intelligence.totals.calibration.training_games | default('—', true) }} training games</dd></div>
+                </dl>
+            </details>
         </div>
 
-        <div class="lab-row lab-market-row">
-            <div class="lab-label">TOTAL</div>
-            <div><span>Football Lab</span><b>{{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}</b></div>
-            <div><span>Market</span><b>{{ research_intelligence.totals.closing_total | cell('f1') }}</b></div>
-            <div class="lab-emphasis"><span>Gap</span><b>{{ research_intelligence.totals.closing_edge | cell('signed') }}</b></div>
-        </div>
-
-        <div class="lab-row lab-total-detail-row">
-            <div class="lab-label">TOTAL CTX</div>
-            <div><span>50% scoring range</span><b>
-                {% if research_intelligence.totals.interval50_low is not none and research_intelligence.totals.interval50_high is not none %}
-                {{ research_intelligence.totals.interval50_low | cell('f1') }}–{{ research_intelligence.totals.interval50_high | cell('f1') }}
-                {% else %}—{% endif %}
-            </b></div>
-            <div><span>Open</span><b>{{ research_intelligence.totals.opening_total | cell('f1') }}</b></div>
-            <div><span>Historical regime</span>
-                {% if research_intelligence.totals.regime_benchmark %}
-                {% set regime = research_intelligence.totals.regime_benchmark %}
-                <b>{{ regime.win_rate | cell('f1') }}%</b><i>n={{ regime.n }} · {{ regime.label }}</i>
-                {% else %}<b>—</b>{% endif %}
+        {# ---------- Team shape & pace (kept from the old SHAPE row) ---------- #}
+        <div class="lab-card" id="forecast-drivers">
+            <div class="lab-card-title">Team shape &amp; pace</div>
+            <div class="lab-ratings-teams">
+                {% for team_name, side in [(game.away_team, 'away'), (game.home_team, 'home')] %}
+                <div class="lab-ratings-team">
+                    <span>{{ team_name }}</span>
+                    <div class="lab-ratings-grid lab-shape-grid">
+                        <div><small>Drives</small><b>{{ projection[side].drives | cell('f1') }}</b></div>
+                        <div><small>Plays</small><b>{{ projection[side].plays | cell('f1') }}</b></div>
+                        <div><small>Pass rate</small><b>{{ projection[side].pass_rate | cell('rate') }}</b></div>
+                        <div><small>PPD</small><b>{{ projection[side].points_per_drive | cell('f2') }}</b></div>
+                        <div><small>Total yards</small><b>{{ projection[side].total_yards | cell('int') }}</b></div>
+                        <div><small>Giveaways</small><b>{{ projection[side].giveaways | cell('f2') }}</b></div>
+                    </div>
+                </div>
+                {% endfor %}
             </div>
-        </div>
-
-        <div class="lab-row lab-total-status-row">
-            <div class="lab-label">TOTALS</div>
-            <div class="lab-total-decision">
-                <span>Status</span>
-                <b class="{{ 'lab-context' if research_intelligence.totals.decision_status.state == 'research_watch' else '' }}">
-                    {{ research_intelligence.totals.decision_status.label }}
-                </b>
-                <i>{{ research_intelligence.totals.decision_status.note }}</i>
-            </div>
-            {% for component in research_intelligence.totals.decision_status.components[:2] %}
-            <div class="lab-total-component {{ 'is-on' if component.state == 'on' else 'is-off' }}">
-                <span>{{ component.label }}</span>
-                <b>
-                    {% if component.value is number %}{{ component.value | cell('f1') }}
-                    {% elif component.value %}{{ component.value }}
-                    {% else %}—{% endif %}
-                </b>
-                <i>{{ 'matched' if component.state == 'on' else 'not met' }}</i>
-            </div>
-            {% endfor %}
         </div>
 
         {% set a = two_engine_signal.engine_a or {} %}
         {% set b = two_engine_signal.engine_b or {} %}
-        <div class="lab-row lab-engine-summary-row">
-            <div class="lab-label">PORTFOLIO</div>
-            <div class="lab-engine-decision">
-                <span>Portfolio decision</span>
-                <b class="engine-inline-state is-{{ two_engine_signal.state }}">{{ two_engine_signal.state_label }}</b>
-                {% if two_engine_signal.selected_team %}
-                <strong class="lab-portfolio-team">{{ two_engine_signal.selected_team }}</strong>
-                <i>{{ two_engine_signal.implication }}</i>
-                {% else %}<i>{{ two_engine_signal.implication }}</i>{% endif %}
-                <small>
-                    {% if two_engine_signal.source == 'frozen_manifest' %}Frozen {{ two_engine_signal.frozen_at }}
-                    {% elif two_engine_signal.source == 'pending_manifest_live_preview' %}Live refresh of pending manifest · rerun freeze to finalize
-                    {% else %}Live pregame preview · not frozen yet{% endif %}
-                </small>
-            </div>
-            <div><span>Applicability</span>
-                {% if research_intelligence.spread.inside_lt14_applicability is sameas true %}<b class="lab-good">Supported</b><i>market &lt;14</i>
-                {% elif research_intelligence.spread.inside_lt14_applicability is sameas false %}<b class="lab-warn">Caution</b><i>market 14+</i>
-                {% else %}<b>—</b>{% endif %}
-            </div>
-            <div><span>Keys crossed</span><b class="lab-keys">
-                {% if mh is not none and ph is not none %}
-                    {% if not same_favorite and mh != 0 and ph != 0 %}<em>FLIP</em>{% endif %}
-                    {% if (market_abs < 3 <= model_abs) or (model_abs < 3 <= market_abs) %}<em>3</em>{% endif %}
-                    {% if (market_abs < 7 <= model_abs) or (model_abs < 7 <= market_abs) %}<em>7</em>{% endif %}
-                    {% if (market_abs < 10 <= model_abs) or (model_abs < 10 <= market_abs) %}<em>10</em>{% endif %}
-                    {% if (market_abs < 14 <= model_abs) or (model_abs < 14 <= market_abs) %}<em>14</em>{% endif %}
-                {% else %}—{% endif %}
-            </b></div>
-        </div>
 
-        <div class="lab-row lab-engine-a-row">
-            <div class="lab-label">ENGINE A</div>
-            <div class="lab-engine-wide">
-                <div class="lab-engine-title">
-                    <span>1 · Quantitative convergence</span>
-                    {% if a.qualified %}
-                    <b class="lab-good">{{ a.selected_team }}</b>
-                    <i>{{ a.route | replace('_', ' ') }}</i>
-                    {% elif a.ready %}
-                    <b>NO ROUTE</b>
-                    <i>Inputs complete; frozen route conditions not met.</i>
-                    {% else %}
-                    <b class="lab-context">INPUTS PENDING</b>
-                    <i>{{ a.reason or 'Waiting for required pregame inputs.' }}</i>
-                    {% endif %}
-                </div>
-                <div class="lab-fc-lights lab-fc-lights-four">
-                    {% for light in a.lights or [] %}
-                    <div class="lab-fc-light is-{{ light.state }}">
-                        <em></em>
-                        <strong>{{ light.label }}</strong>
-                        <small>{{ light.requirement }}</small>
-                        {% if light.key == 'margin_power' and a.components %}<i>{{ a.components.margin_power_z | cell('signed') }}</i>
-                        {% elif light.key == 'structural' and a.components %}<i>{{ a.components.structural_z | cell('signed') }}</i>
-                        {% elif light.key == 'line_elo' and a.components %}<i>{{ a.components.line_elo_z | cell('signed') }}</i>
-                        {% elif light.key == 'hc_qb' and a.components %}<i>{{ a.components.hc_qb_aligned | cell('signed') }}</i>{% endif %}
-                    </div>
-                    {% endfor %}
-                </div>
+        {% if two_engine_signal.state in ('agreement', 'conflict') %}
+        <div class="lab-card">
+            <div class="lab-badge-row">
+                <span class="lab-badge {{ 'lab-badge-good' if two_engine_signal.state == 'agreement' else 'lab-badge-warn' }}">{{ two_engine_signal.state_label }}</span>
             </div>
-        </div>
-
-        <div class="lab-row lab-engine-b-row">
-            <div class="lab-label">ENGINE B</div>
-            <div class="lab-engine-wide lab-engine-b-content">
-                <div>
-                    <span>2 · Narrative / QB overreaction</span>
-                    {% if b.qualified %}
-                    <b class="lab-good">{{ b.selected_team }}</b>
-                    <i>{{ b.rules | join(' + ') | replace('_', ' ') }}</i>
-                    {% elif b.ready %}
-                    <b>NO RULE</b>
-                    <i>QB and narrative inputs are complete; no frozen family qualifies.</i>
-                    {% else %}
-                    <b class="lab-context">INPUTS PENDING</b>
-                    <i>{{ b.reason or 'Waiting for Narrative/QB inputs.' }}</i>
-                    {% endif %}
-                </div>
-                <div class="lab-engine-family">
-                    <span>Active families</span>
-                    {% if b.families %}
-                    <small>{{ game.away_team }}: {{ (b.families.get(game.away_team) or ['none']) | join(', ') | replace('_', ' ') }}</small>
-                    <small>{{ game.home_team }}: {{ (b.families.get(game.home_team) or ['none']) | join(', ') | replace('_', ' ') }}</small>
-                    {% else %}<small>—</small>{% endif %}
-                </div>
-                <div class="lab-engine-family">
-                    <span>QB direction</span>
-                    {% if b.qb_diff is not none %}<b>{{ b.qb_diff | cell('signed') }}</b><small>home minus away rating</small>
-                    {% else %}<b>—</b><small>not resolved</small>{% endif %}
-                </div>
-            </div>
-        </div>
-
-        <div class="lab-row lab-performance-row">
-            <div class="lab-label">HISTORY</div>
-            <div>
-                <span>Engine A route</span>
-                {% if a.historical %}<b>{{ (a.historical.hit_rate * 100) | cell('f1') }}%</b><i>n={{ a.historical.n }} · {{ a.historical.mean_residual | cell('signed') }} pts</i>
-                {% else %}<b>—</b><i>No active route</i>{% endif %}
-            </div>
-            <div>
-                <span>Engine B rule</span>
-                {% if b.historical %}<b>{{ (b.historical[0].hit_rate * 100) | cell('f1') }}%</b><i>n={{ b.historical[0].n }}{% if b.historical|length > 1 %} · +{{ b.historical|length - 1 }} overlapping rule{% endif %}</i>
-                {% else %}<b>—</b><i>No active rule</i>{% endif %}
-            </div>
-            <div>
-                <span>Two-engine portfolio</span>
-                {% if two_engine_signal.portfolio_reference %}<b>{{ (two_engine_signal.portfolio_reference.hit_rate * 100) | cell('f1') }}%</b><i>n={{ two_engine_signal.portfolio_reference.n }} · 2020–25 research</i>
-                {% else %}<b>—</b>{% endif %}
-            </div>
-        </div>
-
-        {% if research_intelligence.narrative and research_intelligence.narrative.available %}
-        <div class="lab-row lab-narrative-row lab-narrative-compact">
-            <div class="lab-label">CONTEXT</div>
-            {% for team_context in research_intelligence.narrative.teams %}
-            <div class="lab-narrative-team">
-                <strong>{{ team_context.team }}</strong>
-                <div class="lab-tag-cloud">
-                    {% for tag in team_context.tags %}
-                    <span class="lab-tag-chip">{{ tag.label }}</span>
-                    {% endfor %}
-                </div>
-                {% set shown = namespace(count=0) %}
-                {% for tag in team_context.tags %}
-                    {% for interaction in tag.interactions %}
-                        {% if shown.count < 3 %}
-                        <div class="lab-interaction-line">
-                            <span>{{ tag.label }} vs {{ interaction.opponent_label }}</span>
-                            <b>{{ (interaction.cover_rate * 100) | cell('f1') }}%</b>
-                            <i>n={{ interaction.n }}</i>
-                        </div>
-                        {% set shown.count = shown.count + 1 %}
-                        {% endif %}
-                    {% endfor %}
-                {% endfor %}
-                {% if shown.count == 0 %}<small class="lab-no-interactions">No stored interaction sample for the active tags.</small>{% endif %}
-            </div>
-            {% endfor %}
-            <div></div>
+            <p class="lab-verdict-sub">{{ two_engine_signal.implication }}</p>
         </div>
         {% endif %}
+
+        {# ---------- Engine A verdict ---------- #}
+        <div class="lab-card">
+            <div class="lab-badge-row">
+                <span class="lab-badge lab-badge-accent">Engine A &middot; quantitative convergence</span>
+                {% if a.qualified %}
+                <span class="lab-badge {{ 'lab-badge-red' if a.action == 'fade' else 'lab-badge-good' }}">{{ a.action | capitalize }}{{ ' route' if a.action }}</span>
+                {% endif %}
+                {% if a.agreement_label %}<span class="lab-badge lab-badge-muted">{{ a.agreement_label }} signals agree</span>{% endif %}
+                {% if a.spread_bucket %}<span class="lab-badge lab-badge-muted">Spread {{ a.spread_bucket }}</span>{% endif %}
+                {% if a.qualified %}<span class="lab-badge lab-badge-muted">Qualified &amp; ready</span>{% endif %}
+            </div>
+
+            {% if a.qualified %}
+            <h3 class="lab-verdict-headline">Take {{ a.selected_team }}</h3>
+            <p class="lab-verdict-sub">{{ engine_a_route_plain or (a.route | replace('_', ' ')) }}</p>
+            {% elif a.ready %}
+            <h3 class="lab-verdict-headline lab-context">No Engine A pick</h3>
+            <p class="lab-verdict-sub">Every signal resolved, but this matchup doesn't match any of the five
+                frozen betting patterns.</p>
+            {% else %}
+            <h3 class="lab-verdict-headline lab-context">Engine A pending</h3>
+            <p class="lab-verdict-sub">{{ a.reason or 'Waiting for required pregame inputs.' }}
+                A light below marked "pending" with a number still shown is already computed -- it just can't be
+                scored as agree/disagree until Margin Power resolves.</p>
+            {% endif %}
+
+            <div class="lab-signal-grid">
+                {% for light in a.lights or [] %}
+                {#- light.value covers both a live packet and any manifest row frozen after
+                    this field was added; a.components is the fallback for an older frozen
+                    packet that predates it, so a light still shows its number either way. -#}
+                {% set fallback_value = (
+                    a.components.margin_power_z if light.key == 'margin_power' and a.components
+                    else a.components.structural_z if light.key == 'structural' and a.components
+                    else a.components.line_elo_z if light.key == 'line_elo' and a.components
+                    else a.components.hc_qb_aligned if light.key == 'hc_qb' and a.components
+                    else none
+                ) %}
+                {% set shown_value = light.value if (light.value is defined and light.value is not none) else fallback_value %}
+                <div class="lab-signal-tile is-{{ light.state }}">
+                    <div class="lab-signal-head"><em></em><strong>{{ light.label }}</strong></div>
+                    {% if shown_value is not none %}<b>{{ shown_value | cell('signed') }}</b>{% endif %}
+                    <small>{{ light.requirement }}</small>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if two_engine_signal.source %}
+            <div class="lab-verdict-meta">
+                {% if two_engine_signal.source == 'frozen_manifest' %}Frozen {{ two_engine_signal.frozen_at }}
+                {% elif two_engine_signal.source == 'pending_manifest_live_preview' %}Live refresh of pending manifest &middot; rerun freeze to finalize
+                {% else %}Live pregame preview &middot; not frozen yet{% endif %}
+            </div>
+            {% endif %}
+
+            <details class="lab-disclosure">
+                <summary>Full signal data</summary>
+                <dl class="lab-kv-grid">
+                    <div><dt>Route (frozen)</dt><dd class="lab-mono">{{ a.route or '—' }}</dd></div>
+                    <div><dt>Primary side</dt><dd>{{ a.primary_team or '—' }}</dd></div>
+                    <div><dt>Selected side</dt><dd>{{ a.selected_team or '—' }}</dd></div>
+                    {% if a.margin_power %}
+                    <div><dt>Margin Power prior games</dt><dd>away {{ a.margin_power.away_prior_games }} &middot; home {{ a.margin_power.home_prior_games }}</dd></div>
+                    {% if a.margin_power.projected_home_margin is defined %}
+                    <div><dt>Margin Power home margin</dt><dd>{{ a.margin_power.projected_home_margin | cell('signed') }}</dd></div>
+                    {% endif %}
+                    {% endif %}
+                    {% if a.components %}
+                    <div><dt>Structural members agreeing</dt><dd>{{ (a.components.structural_members or []) | join(', ') | replace('_', ' ') or '—' }}</dd></div>
+                    <div><dt>Line Elo z</dt><dd>{{ a.components.line_elo_z | cell('signed') }} ({{ 'confirms' if a.components.line_elo_confirms else 'does not confirm' }})</dd></div>
+                    {% endif %}
+                    {% if a.ratings %}
+                    <div><dt>HC Elo diff / z</dt><dd>{{ a.ratings.hc_diff | cell('f2') }} / {{ (a.ratings.hc_z if a.ratings.hc_z is defined else none) | cell('signed') }}</dd></div>
+                    <div><dt>QB Elo diff / z</dt><dd>{{ a.ratings.qb_diff | cell('f2') }} / {{ (a.ratings.qb_z if a.ratings.qb_z is defined else none) | cell('signed') }}</dd></div>
+                    <div><dt>Ratings source</dt><dd>{{ a.ratings.source or '—' }}</dd></div>
+                    {% endif %}
+                    <div><dt>Agreement</dt><dd>{{ a.agreement_label or '—' }}</dd></div>
+                    <div><dt>Qualified / ready</dt><dd>{{ a.qualified }} / {{ a.ready }}</dd></div>
+                </dl>
+            </details>
+        </div>
+
+        {# ---------- Team ratings ---------- #}
+        <div class="lab-card">
+            <div class="lab-card-title">Team ratings</div>
+            <div class="lab-ratings-teams">
+                {% for team_name, block in [(game.away_team, team_ratings.away), (game.home_team, team_ratings.home)] %}
+                <div class="lab-ratings-team">
+                    <span>{{ team_name }}</span>
+                    <div class="lab-ratings-grid">
+                        <div><small>HC Elo</small><b>{{ block.hc_elo | cell('f1') if block.hc_elo is not none else '—' }}</b>
+                            {% if block.hc_name %}<i>{{ block.hc_name }}</i>{% endif %}</div>
+                        <div><small>QB Elo</small><b>{{ block.qb_elo | cell('f1') if block.qb_elo is not none else '—' }}</b>
+                            {% if block.qb_name %}<i>{{ block.qb_name }}</i>{% endif %}</div>
+                        <div><small>True Elo</small><b>{{ block.true_elo | cell('f1') if block.true_elo is not none else '—' }}</b>
+                            <i>CFBD pregame</i></div>
+                        <div><small>Line Elo</small><b>{{ block.line_elo | cell('f1') if block.line_elo is not none else '—' }}</b>
+                            <i>market-fit</i></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# ---------- Engine B ---------- #}
+        <div class="lab-card">
+            <div class="lab-badge-row">
+                <span class="lab-badge lab-badge-muted">Engine B &middot; narrative / QB overreaction</span>
+                {% if b.qualified %}
+                <span class="lab-badge lab-badge-good">{{ b.selected_team }}</span>
+                {% elif b.ready %}
+                <span class="lab-badge lab-badge-muted">No rule</span>
+                {% else %}
+                <span class="lab-badge lab-badge-gold">Inputs pending</span>
+                {% endif %}
+            </div>
+            {% if b.qualified %}
+            <p class="lab-verdict-sub">{{ b.rules | join(' + ') | replace('_', ' ') }}</p>
+            {% elif b.ready %}
+            <p class="lab-verdict-sub">QB and narrative inputs are complete; no frozen family qualifies this game.</p>
+            {% else %}
+            <p class="lab-verdict-sub lab-context">{{ b.reason or 'Waiting for Narrative/QB inputs.' }}</p>
+            {% endif %}
+            <div class="lab-engine-b-detail">
+                <div>
+                    <span class="lab-kv-label">{{ game.away_team }} families</span>
+                    {% if b.families and b.families.get(game.away_team) %}
+                    {% for fam in b.families.get(game.away_team) %}<span class="lab-badge lab-badge-muted">{{ fam | replace('_', ' ') | title }}</span>{% endfor %}
+                    {% else %}<span class="lab-badge lab-badge-muted">none</span>{% endif %}
+                </div>
+                <div>
+                    <span class="lab-kv-label">{{ game.home_team }} families</span>
+                    {% if b.families and b.families.get(game.home_team) %}
+                    {% for fam in b.families.get(game.home_team) %}<span class="lab-badge lab-badge-muted">{{ fam | replace('_', ' ') | title }}</span>{% endfor %}
+                    {% else %}<span class="lab-badge lab-badge-muted">none</span>{% endif %}
+                </div>
+                <div>
+                    <span class="lab-kv-label">QB direction</span>
+                    {% if b.qb_diff is defined and b.qb_diff is not none %}<span>{{ b.qb_diff | cell('signed') }} <i>home minus away rating</i></span>{% else %}<span>&mdash;</span>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# ---------- Track record: historical + this season ---------- #}
+        <div class="lab-card">
+            <div class="lab-card-title">Track record</div>
+            <div class="lab-record-list">
+                <div class="lab-record-row">
+                    <div><b>This route</b><i>{% if a.route %}{{ a.route | replace('_', ' ') }}{% else %}no route this game{% endif %}</i></div>
+                    {% if a.historical %}
+                    <div class="lab-record-figure"><b>{{ (a.historical.hit_rate * 100) | cell('f1') }}%</b><i>n={{ a.historical.n }} &middot; {{ a.historical.mean_residual | cell('signed') }} pts</i></div>
+                    {% else %}
+                    <div class="lab-record-figure"><b>&mdash;</b><i>no route this game</i></div>
+                    {% endif %}
+                </div>
+                <div class="lab-record-row">
+                    <div><b>Engine A overall</b><i>2020&ndash;25 research</i></div>
+                    <div class="lab-record-figure"><b>{{ (engine_a_overall.hit_rate * 100) | cell('f1') }}%</b><i>n={{ engine_a_overall.n }} &middot; {{ engine_a_overall.mean_residual | cell('signed') }} pts</i></div>
+                </div>
+                <div class="lab-record-row">
+                    <div><b>Engine B overall</b><i>2020&ndash;25 research</i></div>
+                    <div class="lab-record-figure"><b>{{ (engine_b_overall.hit_rate * 100) | cell('f1') }}%</b><i>n={{ engine_b_overall.n }} &middot; {{ engine_b_overall.mean_residual | cell('signed') }} pts</i></div>
+                </div>
+                <div class="lab-record-row">
+                    <div><b>Combined portfolio</b><i>A + B qualifying picks together, 2020&ndash;25</i></div>
+                    {% if two_engine_signal.portfolio_reference %}
+                    <div class="lab-record-figure"><b>{{ (two_engine_signal.portfolio_reference.hit_rate * 100) | cell('f1') }}%</b><i>n={{ two_engine_signal.portfolio_reference.n }} &middot; {{ two_engine_signal.portfolio_reference.mean_residual | cell('signed') }} pts</i></div>
+                    {% else %}<div class="lab-record-figure"><b>&mdash;</b></div>{% endif %}
+                </div>
+                <div class="lab-record-row">
+                    <div><b>Totals <span class="lab-badge lab-badge-gold lab-badge-inline">research only</span></b><i>tracked regimes &ge;{{ totals_tracked_min_win_rate | cell('f1') }}% win rate</i></div>
+                    <div class="lab-record-figure"><b class="lab-gold">{{ (totals_tracked_overall.hit_rate * 100) | cell('f1') }}%</b><i>n={{ totals_tracked_overall.n }} &middot; {{ totals_tracked_overall.mean_residual | cell('signed') }} pts &middot; all regimes {{ (totals_overall.hit_rate * 100) | cell('f1') }}%</i></div>
+                </div>
+            </div>
+
+            <div class="lab-record-divider">This season ({{ season_record.season }}) &mdash; graded at the closing line as picks resolve</div>
+            <div class="lab-record-list">
+                <div class="lab-record-row">
+                    <div><b>Engine A</b></div>
+                    <div class="lab-record-figure">
+                        <b>{{ season_record.engine_a.record }}</b>
+                        <i>{% if season_record.engine_a.hit_rate is not none %}{{ (season_record.engine_a.hit_rate * 100) | cell('f1') }}% &middot; {% endif %}n={{ season_record.engine_a.n }}{% if season_record.engine_a.n == 0 %} &middot; nothing graded yet{% endif %}</i>
+                    </div>
+                </div>
+                <div class="lab-record-row">
+                    <div><b>Engine B</b></div>
+                    <div class="lab-record-figure">
+                        <b>{{ season_record.engine_b.record }}</b>
+                        <i>{% if season_record.engine_b.hit_rate is not none %}{{ (season_record.engine_b.hit_rate * 100) | cell('f1') }}% &middot; {% endif %}n={{ season_record.engine_b.n }}{% if season_record.engine_b.n == 0 %} &middot; nothing graded yet{% endif %}</i>
+                    </div>
+                </div>
+                <div class="lab-record-row">
+                    <div><b>Totals <span class="lab-badge lab-badge-gold lab-badge-inline">research only</span></b></div>
+                    <div class="lab-record-figure">
+                        <b class="lab-gold">{{ season_record.totals.record }}</b>
+                        <i>{% if season_record.totals.hit_rate is not none %}{{ (season_record.totals.hit_rate * 100) | cell('f1') }}% &middot; {% endif %}n={{ season_record.totals.n }}{% if season_record.totals.n == 0 %} &middot; nothing graded yet{% endif %}</i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# ---------- Matchup context (kept from the old CONTEXT/narrative row) ---------- #}
+        {% if research_intelligence.narrative and research_intelligence.narrative.available %}
+        <div class="lab-card">
+            <div class="lab-card-title">Matchup context</div>
+            <div class="lab-ratings-teams">
+                {% for team_context in research_intelligence.narrative.teams %}
+                <div class="lab-ratings-team">
+                    <span>{{ team_context.team }}</span>
+                    <div class="lab-tag-cloud">
+                        {% for tag in team_context.tags %}<span class="lab-tag-chip">{{ tag.label }}</span>{% endfor %}
+                    </div>
+                    {% set shown = namespace(count=0) %}
+                    {% for tag in team_context.tags %}
+                        {% for interaction in tag.interactions %}
+                            {% if shown.count < 3 %}
+                            <div class="lab-interaction-line">
+                                <span>{{ tag.label }} vs {{ interaction.opponent_label }}</span>
+                                <b>{{ (interaction.cover_rate * 100) | cell('f1') }}%</b>
+                                <i>n={{ interaction.n }}</i>
+                            </div>
+                            {% set shown.count = shown.count + 1 %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endfor %}
+                    {% if shown.count == 0 %}<small class="lab-no-interactions">No stored interaction sample for the active tags.</small>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {# ---------- Glossary ---------- #}
+        <div class="lab-card">
+            <details class="lab-disclosure">
+                <summary>Glossary &mdash; what do these terms mean?</summary>
+                <div class="lab-glossary">
+                    <div><b>Margin Power</b><p>Our primary point-margin projection, comparing the two teams' scoring
+                        and efficiency profiles. Shown as a z-score &mdash; how unusual the edge is compared to a
+                        typical week.</p></div>
+                    <div><b>Structural</b><p>A confirmation signal requiring at least 2 of 3 team-strength inputs
+                        &mdash; our Football Lab rating, team Elo, and efficiency power &mdash; to agree with Margin
+                        Power's side.</p></div>
+                    <div><b>Line Elo</b><p>A separate Elo system trained to fit betting-market behavior rather than
+                        game outcomes. Used as a check on whether the market itself is confirming the same side.</p></div>
+                    <div><b>HC / QB Elo</b><p>A person-level Elo system that tracks head coaches and starting
+                        quarterbacks individually, carried across team changes. Gives a fourth, personnel-based read
+                        on the matchup.</p></div>
+                    <div><b>True Elo</b><p>The raw team Elo rating from our play-by-play data provider (CFBD).
+                        Unrelated to Line Elo or our own coach/QB Elo systems &mdash; shown for reference.</p></div>
+                    <div><b>Agreement (e.g. &ldquo;3/4&rdquo;)</b><p>How many of the four signals &mdash; Margin
+                        Power, Structural, Line Elo, HC/QB &mdash; point the same direction. Frozen routes require
+                        specific agreement patterns before producing a pick.</p></div>
+                    <div><b>Route</b><p>A specific, frozen combination of agreement count and spread range that
+                        historically produced a real edge in 2020&ndash;2025 backtesting. Routes are locked and never
+                        changed after being discovered, to avoid fitting to results already seen.</p></div>
+                    <div><b>Follow vs. Fade</b><p>Some routes back the side the signals point to
+                        (&ldquo;follow&rdquo;); others have historically performed better betting the opposite side
+                        (&ldquo;fade&rdquo;). Both are frozen, backtested behaviors &mdash; not live judgment calls.</p></div>
+                    <div><b>Engine A vs. Engine B</b><p>Engine A is the quantitative convergence engine (the four
+                        signals above). Engine B is a separate narrative/overreaction engine looking for markets
+                        over- or under-reacting to a team's last result or a QB change. They can agree, disagree, or
+                        fire independently.</p></div>
+                    <div><b>Totals (research only)</b><p>A signal we're tracking and measuring but haven't frozen
+                        into an action rule yet. Shown for context and future evaluation, not as a pick.</p></div>
+                </div>
+            </details>
+        </div>
+
     </div>
 
     <details class="lab-history">

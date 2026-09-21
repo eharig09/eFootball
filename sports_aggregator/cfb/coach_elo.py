@@ -264,6 +264,30 @@ def build(repository: CFBRepository, *, start_season: int = 2015) -> int:
     return len(history)
 
 
+def current_rating(
+    repository: CFBRepository, *, season: int, team_id: int
+) -> tuple[float | None, str | None]:
+    """Current coach Elo carried forward from completed games -- the
+    upcoming-game fallback shared by Engine A's live HC/QB signal and
+    margin-v2's hc_diff feature, so both read the same coach for the
+    same game rather than risking two independently-derived answers."""
+    with repository._reader() as connection:
+        row = connection.execute(
+            """SELECT cs.coach_id,cs.first_name,cs.last_name,r.rating,cs.games
+               FROM coach_seasons cs
+               LEFT JOIN cfb_coach_elo_ratings r ON r.coach_id=cs.coach_id
+               WHERE cs.season=? AND cs.team_id=?
+               ORDER BY CASE WHEN r.rating IS NULL THEN 1 ELSE 0 END,
+                        cs.games DESC,cs.coach_id
+               LIMIT 1""",
+            (int(season), int(team_id)),
+        ).fetchone()
+    if row is None or row["rating"] is None:
+        return None, None
+    name = f'{row["first_name"] or ""} {row["last_name"] or ""}'.strip()
+    return float(row["rating"]), name or None
+
+
 def _zscore(values: dict[int, float]) -> dict[int, float]:
     if not values:
         return {}

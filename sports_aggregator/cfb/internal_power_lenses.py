@@ -19,6 +19,7 @@ import math
 from statistics import median
 from typing import Any
 
+from sports_aggregator.cfb import live_margin_calibration as lmc
 from sports_aggregator.cfb import narrative_shapes as v1
 from sports_aggregator.cfb import narrative_shapes_v2 as v2
 from sports_aggregator.cfb import narrative_composite as nc
@@ -187,72 +188,38 @@ def efficiency_power_snapshots(repository: CFBRepository,
     return snapshots
 
 
-def _scoreboard_calibration(repository: CFBRepository,
-                            target_season: int) -> dict[str, float] | None:
-    """Map Football Lab offense-margin to final scoreboard margin using prior seasons."""
-    with repository._reader() as connection:
-        rows = [dict(r) for r in connection.execute(
-            """SELECT game_id,side,season,projected_offensive_points,actual_score_points
-               FROM cfb_projection_backtest
-               WHERE backtest_version=? AND season<?""",
-            (BACKTEST_VERSION, int(target_season)),
-        )]
-    games: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
-    for row in rows:
-        games[int(row["game_id"])][str(row["side"])] = row
-    pairs = []
-    for sides in games.values():
-        home, away = sides.get("home"), sides.get("away")
-        if not home or not away:
-            continue
-        vals = (
-            home.get("projected_offensive_points"), away.get("projected_offensive_points"),
-            home.get("actual_score_points"), away.get("actual_score_points"),
-        )
-        if any(v is None for v in vals):
-            continue
-        x = float(home["projected_offensive_points"]) - float(away["projected_offensive_points"])
-        y = float(home["actual_score_points"]) - float(away["actual_score_points"])
-        pairs.append((x, y))
-    if len(pairs) < 50:
-        return None
-    mx = sum(x for x, _ in pairs) / len(pairs)
-    my = sum(y for _, y in pairs) / len(pairs)
-    denom = sum((x - mx) ** 2 for x, _ in pairs)
-    slope = sum((x - mx) * (y - my) for x, y in pairs) / denom if denom else 0.0
-    return {"intercept": my - slope * mx, "slope": slope, "n": len(pairs)}
-
-
 def _football_lab_margin_lookup(repository: CFBRepository,
                                 target_season: int) -> dict[int, float]:
-    calibration = _scoreboard_calibration(repository, target_season)
-    if not calibration:
-        return {}
-    with repository._reader() as connection:
-        rows = [dict(r) for r in connection.execute(
-            """SELECT game_id,side,season,projected_offensive_points
-               FROM cfb_projection_backtest
-               WHERE backtest_version=? AND season=?""",
-            (BACKTEST_VERSION, int(target_season)),
-        )]
-    games: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
-    for row in rows:
-        games[int(row["game_id"])][str(row["side"])] = row
-    out = {}
-    for gid, sides in games.items():
-        home, away = sides.get("home"), sides.get("away")
-        if not home or not away:
-            continue
-        if home.get("projected_offensive_points") is None or away.get("projected_offensive_points") is None:
-            continue
-        offense_margin = (
-            float(home["projected_offensive_points"])
-            - float(away["projected_offensive_points"])
-        )
-        out[gid] = (
-            float(calibration["intercept"])
-            + float(calibration["slope"]) * offense_margin
-        )
+    """Football Lab's projected home margin for every game in `target_season`,
+    trained walk-forward on strictly prior seasons only.
+
+    This is the SAME margin-v2 nested-tier model live_margin_calibration.py
+    serves live (predict_live/live_features), reusing its own walk-forward
+    fit (_historical_rows already filters to season < target). Before this,
+    `build_lens_rows` computed football_lab_edge from a much simpler
+    one-variable calibration of raw offense-points margin -- meaning the
+    live Structural signal (which has always read predict_live_margin's
+    output) and the discovery/validation dataset that produced
+    ENGINE_A_HISTORY's win rates were quietly built from two different
+    models. Reconciling them onto one model shifted the five frozen
+    routes' discovery-period hit rates by a few points each (verified via
+    convergence_routing_holdout.report(), routes/predicates unchanged --
+    see two_engine_live.ENGINE_A_HISTORY's comment for the before/after
+    numbers): mostly within what these already-small, already-wide-CI
+    samples would move on a reasonable methodology choice alone, largest
+    on fade_old_2_of_3_elo_agrees_spread_lt_3 (63.6% -> 55.0%, n=22->20).
+    """
+    train = lmc._historical_rows(repository, target_season=int(target_season))
+    test_rows = [
+        row for row in lmc._historical_rows(repository, target_season=int(target_season) + 1)
+        if int(row["season"]) == int(target_season)
+    ]
+    models = lmc.fit_models(train)
+    out: dict[int, float] = {}
+    for row in test_rows:
+        _, value, _ = lmc.predict_with_models(models, row)
+        if value is not None:
+            out[int(row["game_id"])] = value
     return out
 
 

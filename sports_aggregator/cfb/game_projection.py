@@ -386,6 +386,27 @@ def _blend(offense_value: float | None, defense_allowed_value: float | None) -> 
     return (offense_value + defense_allowed_value) / 2
 
 
+#: Shrinkage constants for the two red-zone rates, each picked by sweeping
+#: pseudo-games against xredzone.py's own dataset (cfb_xredzone_dataset,
+#: 12,150 team-games, cold-start dropped) and comparing MAE/RMSE to the
+#: baselines xredzone.evaluate_baselines() already reports. xturnovers.py's
+#: own D_shrunk_blend baseline was checked the same way for giveaways and
+#: did not clear the league prior already live below (see comment there);
+#: red-zone trips and TD rate did:
+#:   trips_per_drive:  matchup blend (no shrink) mae=0.12301 -> shrunk (pseudo=4) mae=0.12262
+#:   red_zone_td_rate:      league prior (pseudo=inf) mae=0.24719 -> shrunk (pseudo=10) mae=0.24544
+def _shrunk_blend(team_value: float | None, allowed_value: float | None,
+                  league_value: float | None, sample_games: int | None,
+                  pseudo_games: float) -> float | None:
+    if league_value is None:
+        return _blend(team_value, allowed_value)
+    blend = _blend(team_value, allowed_value)
+    if blend is None or not sample_games:
+        return league_value
+    weight = sample_games / (sample_games + pseudo_games)
+    return weight * blend + (1 - weight) * league_value
+
+
 def _round(value: float | None, digits: int = 1) -> float | None:
     return round(value, digits) if value is not None else None
 
@@ -420,12 +441,21 @@ def _project_side(offense: dict[str, Any], defense: dict[str, Any],
     # serve the simpler winner until a held-out model earns extra complexity.
     turnover_rate = league.get("giveaway_rate") or matchup_turnover_rate
     giveaways = plays * turnover_rate if None not in (plays, turnover_rate) else None
-    trips_rate = _blend(scoring_offense["trips_per_drive"],
-                        scoring_defense["trips_per_drive_allowed"])
+    matchup_trips_rate = _blend(scoring_offense["trips_per_drive"],
+                                scoring_defense["trips_per_drive_allowed"])
+    trips_sample = min(scoring_offense.get("games") or 0, scoring_defense.get("games") or 0)
+    trips_rate = _shrunk_blend(
+        scoring_offense["trips_per_drive"], scoring_defense["trips_per_drive_allowed"],
+        league.get("trips_per_drive"), trips_sample, pseudo_games=4.0,
+    )
     red_zone_trips = drives * trips_rate if None not in (drives, trips_rate) else None
     matchup_red_zone_td_rate = _blend(scoring_offense["red_zone_td_rate"],
                                       scoring_defense["red_zone_td_rate_allowed"])
-    red_zone_td_rate = league.get("red_zone_td_rate") or matchup_red_zone_td_rate
+    td_sample = min(scoring_offense.get("games") or 0, scoring_defense.get("games") or 0)
+    red_zone_td_rate = _shrunk_blend(
+        scoring_offense["red_zone_td_rate"], scoring_defense["red_zone_td_rate_allowed"],
+        league.get("red_zone_td_rate"), td_sample, pseudo_games=10.0,
+    )
     red_zone_touchdowns = (red_zone_trips * red_zone_td_rate
                            if None not in (red_zone_trips, red_zone_td_rate) else None)
     special_offense = special_offense or {}
@@ -489,9 +519,19 @@ def _project_side(offense: dict[str, Any], defense: dict[str, Any],
         "turnover_rate": _round(turnover_rate, 4),
         "matchup_turnover_rate": _round(matchup_turnover_rate, 4),
         "giveaways": _round(giveaways, 2),
+        "trips_per_drive": _round(trips_rate, 4),
+        "matchup_trips_per_drive": _round(matchup_trips_rate, 4),
         "red_zone_trips": _round(red_zone_trips, 2),
         "red_zone_td_rate": _round(red_zone_td_rate, 3),
         "matchup_red_zone_td_rate": _round(matchup_red_zone_td_rate, 3),
+        # trips_rate x red_zone_td_rate: expected red-zone TDs per drive.
+        # margin_feature_ablation.py found the home-minus-away difference of
+        # this exact quantity a real, walk-forward-validated margin-v2
+        # feature (see live_margin_calibration.py's "plus_redzone" tier).
+        "red_zone_scoring_rate": (
+            _round(trips_rate * red_zone_td_rate, 4)
+            if None not in (trips_rate, red_zone_td_rate) else None
+        ),
         "red_zone_touchdowns": _round(red_zone_touchdowns, 2),
         "start_yards_to_goal": _round(start_yards_to_goal, 1),
         "matchup_start_yards_to_goal": _round(matchup_start, 1),

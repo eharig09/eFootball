@@ -126,6 +126,27 @@ class DatasetTests(ScoringFixture):
         self.assertAlmostEqual(redzone["team_prior_trips_per_drive"], .2)
         self.assertAlmostEqual(redzone["opponent_prior_trips_allowed_per_drive"], .2)
 
+    def test_evaluate_baselines_reports_a_shrunk_blend_for_red_zone_rates(self):
+        """xredzone.py never had a D_shrunk_blend baseline (unlike xturnovers.py) until
+        the live formula started using one -- this locks in that evaluate_baselines()
+        actually reports it, with the same shape the other three baselines use, so a
+        future change to the dataset schema can't silently drop it."""
+        for week, game_id in enumerate((1, 2, 3), start=1):
+            self.game(game_id, week=week,
+                     start_date=f"2026-08-{23 + 7 * week:02d}")
+            self.actual(game_id=game_id, team="Michigan", opponent="Ohio State",
+                       giveaways=1, trips=4, touchdowns=3)
+            self.actual(game_id=game_id, team="Ohio State", opponent="Michigan",
+                       giveaways=1, trips=3, touchdowns=1)
+        xredzone.build_dataset(self.repository)
+        report = xredzone.evaluate_baselines(self.repository)
+        for label in ("trips_per_drive", "red_zone_td_rate"):
+            baselines = report[label]["overall"]
+            self.assertIn("D_shrunk_blend", baselines)
+            for key in ("A_league_prior", "B_team_rate", "C_matchup_blend", "D_shrunk_blend"):
+                self.assertGreaterEqual(baselines[key]["games"], 1)
+                self.assertIsNotNone(baselines[key]["mae"])
+
     def test_live_projection_shrinks_turnovers_and_projects_red_zone_opportunity(self):
         self.game(1, week=1, start_date="2026-08-30")
         self.actual(game_id=1, team="Michigan", opponent="Ohio State", giveaways=0, trips=2, touchdowns=1)
@@ -139,7 +160,13 @@ class DatasetTests(ScoringFixture):
         self.assertAlmostEqual(home["giveaway_rate_allowed"], 2 / 60)
         self.assertAlmostEqual(away["trips_per_drive_allowed"], .2)
 
-    def test_live_side_uses_matchup_trips_but_league_turnover_and_td_rates(self):
+    def test_live_side_uses_league_turnover_and_shrinks_trips_and_td_rate_toward_league(self):
+        """Giveaway rate still takes the league prior outright (the 2022-25
+        backtest found matchup and shrunk-matchup blends both lose to it).
+        Trips-per-drive and red-zone TD rate instead take a games-weighted
+        shrink toward league -- xredzone.py's own dataset showed a light
+        shrink beats both the raw matchup blend and the league-only rate for
+        both of those, unlike giveaways."""
         offense = {"drives": 10.0, "plays_per_drive": 6.0, "pass_rate": .5,
                    "yards_per_dropback": 7.0, "yards_per_rush": 4.0}
         defense = {"drives_allowed": 10.0, "plays_per_drive_allowed": 6.0,
@@ -152,12 +179,35 @@ class DatasetTests(ScoringFixture):
                            "red_zone_td_rate_allowed": .70}
         side = game_projection._project_side(
             offense, defense, scoring_offense, scoring_defense,
-            {"giveaway_rate": .02, "red_zone_td_rate": .60})
+            {"giveaway_rate": .02, "trips_per_drive": .22, "red_zone_td_rate": .60})
         self.assertAlmostEqual(side["giveaways"], 1.2)
-        self.assertAlmostEqual(side["red_zone_trips"], 2.5)
-        self.assertAlmostEqual(side["red_zone_touchdowns"], 1.5)
         self.assertAlmostEqual(side["matchup_turnover_rate"], .02)
+        self.assertAlmostEqual(side["matchup_trips_per_drive"], .25)
+        # weight = 8 / (8 + pseudo_games=4) = 2/3; shrunk = 2/3*.25 + 1/3*.22
+        self.assertAlmostEqual(side["trips_per_drive"], .24)
+        self.assertAlmostEqual(side["red_zone_trips"], 2.4)
         self.assertAlmostEqual(side["matchup_red_zone_td_rate"], .75)
+        # weight = 8 / (8 + pseudo_games=10) = 4/9; shrunk = 4/9*.75 + 5/9*.60
+        self.assertAlmostEqual(side["red_zone_td_rate"], round(2 / 3, 3))
+        self.assertAlmostEqual(side["red_zone_touchdowns"], 1.6)
+
+    def test_live_side_falls_back_to_matchup_blend_when_no_league_rate(self):
+        """No stored league prior yet (e.g. week 0): trips and TD rate fall
+        back to the plain matchup blend rather than shrinking toward nothing."""
+        offense = {"drives": 10.0, "plays_per_drive": 6.0, "pass_rate": .5,
+                   "yards_per_dropback": 7.0, "yards_per_rush": 4.0}
+        defense = {"drives_allowed": 10.0, "plays_per_drive_allowed": 6.0,
+                   "pass_rate_allowed": .5, "yards_per_dropback_allowed": 7.0,
+                   "yards_per_rush_allowed": 4.0}
+        scoring_offense = {"games": 8, "giveaway_rate": .01,
+                           "trips_per_drive": .30, "red_zone_td_rate": .80}
+        scoring_defense = {"games": 8, "giveaway_rate_allowed": .03,
+                           "trips_per_drive_allowed": .20,
+                           "red_zone_td_rate_allowed": .70}
+        side = game_projection._project_side(
+            offense, defense, scoring_offense, scoring_defense, {})
+        self.assertAlmostEqual(side["trips_per_drive"], .25)
+        self.assertAlmostEqual(side["red_zone_td_rate"], .75)
 
 
 if __name__ == "__main__":

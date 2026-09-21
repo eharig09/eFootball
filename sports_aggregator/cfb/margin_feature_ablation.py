@@ -11,8 +11,12 @@ from collections import defaultdict
 import math
 from typing import Any
 
+from sports_aggregator.cfb.game_projection import _shrunk_blend
 from sports_aggregator.cfb.projection_backtest import BACKTEST_VERSION
 from sports_aggregator.cfb.xpoints import DATASET_VERSION as XPOINTS_VERSION
+from sports_aggregator.cfb.xredzone import DATASET_VERSION as XREDZONE_VERSION
+from sports_aggregator.cfb.xredzone import SHRINKAGE_PSEUDO_GAMES as REDZONE_PSEUDO_GAMES
+from sports_aggregator.cfb.xturnovers import DATASET_VERSION as XTURNOVERS_VERSION
 
 
 FEATURE_SETS = {
@@ -31,6 +35,50 @@ FEATURE_SETS = {
     "plus_returning_production": (
         "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
         "fpi_margin", "recent_margin_diff", "yards_diff", "returning_ppa_diff",
+    ),
+    # Do these two Milestone 9 shape signals add anything to margin once
+    # plus_recent (the live margin-v2 variant) is already in? turnover_diff
+    # differences a team-vs-league-prior giveaway estimate that xturnovers.py's
+    # own backtest found LESS accurate than the league prior alone at
+    # predicting turnovers themselves -- included anyway, since a feature
+    # can still carry margin signal even if it's a mediocre turnover-rate
+    # predictor in isolation. red_zone_diff differences each side's shrunk
+    # trips-per-drive x red-zone-TD-rate (the pairing xredzone.py's own
+    # backtest found DOES beat the league prior), so it's the more likely
+    # of the two to earn its place.
+    "plus_turnovers": (
+        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
+        "fpi_margin", "recent_margin_diff", "turnover_diff",
+    ),
+    "plus_redzone": (
+        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
+        "fpi_margin", "recent_margin_diff", "red_zone_diff",
+    ),
+    "plus_turnovers_redzone": (
+        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
+        "fpi_margin", "recent_margin_diff", "turnover_diff", "red_zone_diff",
+    ),
+    # Built on plus_redzone (the live margin-v2 tier as of this pass), not
+    # plus_recent: any further addition should earn its keep against what's
+    # actually deployed, not an older baseline. hc_diff/qb_diff are the same
+    # pregame person-Elo differentials Engine A already uses categorically as
+    # its 4th convergence signal -- untested here as continuous regression
+    # inputs to margin-v2 itself. Weather features are the latest pregame
+    # forecast per game (same source the live matchup page already shows),
+    # never post-game observed conditions.
+    "plus_hc_qb_elo": (
+        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
+        "fpi_margin", "recent_margin_diff", "red_zone_diff", "hc_diff", "qb_diff",
+    ),
+    "plus_weather": (
+        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
+        "fpi_margin", "recent_margin_diff", "red_zone_diff",
+        "weather_temperature", "weather_wind", "weather_precipitation",
+    ),
+    "plus_hc_qb_weather": (
+        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
+        "fpi_margin", "recent_margin_diff", "red_zone_diff", "hc_diff", "qb_diff",
+        "weather_temperature", "weather_wind", "weather_precipitation",
     ),
 }
 
@@ -104,6 +152,39 @@ def _linear_total_fit(train):
     return {"intercept": my - slope * mx, "slope": slope, "n": len(pairs)}
 
 
+def _side_turnover_rate(row: dict[str, Any]) -> float | None:
+    """Same shrink xredzone-style modules use, applied to the giveaway rate
+    for this diff feature specifically -- not what the live projection
+    serves for giveaways themselves, which uses the league prior outright
+    (see game_projection.py's comment: shrinkage never beat it there)."""
+    league = row.get("league_prior_giveaway_rate")
+    if league is None:
+        return None
+    team = row.get("team_prior_giveaway_rate")
+    allowed = row.get("opponent_prior_takeaway_rate")
+    sample = min(row.get("to_team_games") or 0, row.get("to_opp_games") or 0)
+    return _shrunk_blend(team, allowed, league, sample, pseudo_games=6.0)
+
+
+def _side_red_zone_rate(row: dict[str, Any]) -> float | None:
+    """Expected red-zone TDs per drive: shrunk trips-per-drive x shrunk
+    red-zone TD rate, the same two shrinks the live projection now serves."""
+    trips_league = row.get("league_prior_trips_per_drive")
+    td_league = row.get("league_prior_red_zone_td_rate")
+    if trips_league is None or td_league is None:
+        return None
+    sample = min(row.get("rz_team_games") or 0, row.get("rz_opp_games") or 0)
+    trips = _shrunk_blend(
+        row.get("team_prior_trips_per_drive"), row.get("opponent_prior_trips_allowed_per_drive"),
+        trips_league, sample, pseudo_games=REDZONE_PSEUDO_GAMES["trips_per_drive"],
+    )
+    td_rate = _shrunk_blend(
+        row.get("team_prior_red_zone_td_rate"), row.get("opponent_prior_red_zone_td_rate_allowed"),
+        td_league, sample, pseudo_games=REDZONE_PSEUDO_GAMES["red_zone_td_rate"],
+    )
+    return trips * td_rate if trips is not None and td_rate is not None else None
+
+
 def _load(repository, start: int, end: int, version: str):
     with repository._reader() as connection:
         rows = [dict(r) for r in connection.execute(
@@ -114,6 +195,28 @@ def _load(repository, start: int, end: int, version: str):
                       x.elo_difference,x.core_margin,x.fpi_margin,
                       x.team_recent_margin,x.opponent_recent_margin,
                       rp.percent_ppa AS returning_percent_ppa,
+                      t.team_prior_games AS to_team_games, t.team_prior_giveaway_rate,
+                      t.opponent_prior_games AS to_opp_games, t.opponent_prior_takeaway_rate,
+                      t.league_prior_giveaway_rate,
+                      rz.team_prior_games AS rz_team_games,
+                      rz.team_prior_trips_per_drive, rz.team_prior_red_zone_td_rate,
+                      rz.opponent_prior_games AS rz_opp_games,
+                      rz.opponent_prior_trips_allowed_per_drive,
+                      rz.opponent_prior_red_zone_td_rate_allowed,
+                      rz.league_prior_trips_per_drive, rz.league_prior_red_zone_td_rate,
+                      hc.home_pre_elo AS hc_home_pre_elo, hc.away_pre_elo AS hc_away_pre_elo,
+                      (SELECT q.pre_rating FROM cfb_qb_elo_games q
+                       WHERE q.game_id=p.game_id AND q.side='home') qb_home_pre_rating,
+                      (SELECT q.pre_rating FROM cfb_qb_elo_games q
+                       WHERE q.game_id=p.game_id AND q.side='away') qb_away_pre_rating,
+                      (SELECT w.temperature FROM game_weather w WHERE w.game_id=p.game_id
+                       ORDER BY w.forecast_generated_at DESC LIMIT 1) weather_temperature,
+                      (SELECT w.sustained_wind FROM game_weather w WHERE w.game_id=p.game_id
+                       ORDER BY w.forecast_generated_at DESC LIMIT 1) weather_wind,
+                      (SELECT w.precipitation_amount FROM game_weather w WHERE w.game_id=p.game_id
+                       ORDER BY w.forecast_generated_at DESC LIMIT 1) weather_precipitation,
+                      (SELECT w.indoor FROM game_weather w WHERE w.game_id=p.game_id
+                       ORDER BY w.forecast_generated_at DESC LIMIT 1) weather_indoor,
                       (SELECT AVG(gl.spread) FROM game_lines gl
                        WHERE gl.game_id=p.game_id AND gl.spread IS NOT NULL) market_spread
                FROM cfb_projection_backtest p
@@ -122,11 +225,18 @@ def _load(repository, start: int, end: int, version: str):
                  ON x.game_id=p.game_id AND x.team=p.team AND x.dataset_version=?
                LEFT JOIN returning_production rp
                  ON rp.season=p.season AND rp.team=p.team
+               LEFT JOIN cfb_xturnovers_dataset t
+                 ON t.game_id=p.game_id AND t.team=p.team AND t.dataset_version=?
+               LEFT JOIN cfb_xredzone_dataset rz
+                 ON rz.game_id=p.game_id AND rz.team=p.team AND rz.dataset_version=?
+               LEFT JOIN cfb_coach_elo_games hc
+                 ON hc.game_id=p.game_id
                WHERE p.backtest_version=? AND p.season BETWEEN ? AND ?
                  AND p.projected_offensive_points IS NOT NULL
                  AND p.actual_score_points IS NOT NULL
                ORDER BY p.season,g.week,p.game_id,p.side""",
-            (XPOINTS_VERSION, version, int(start), int(end)),
+            (XPOINTS_VERSION, XTURNOVERS_VERSION, XREDZONE_VERSION,
+             version, int(start), int(end)),
         )]
     grouped = defaultdict(dict)
     for r in rows:
@@ -138,6 +248,8 @@ def _load(repository, start: int, end: int, version: str):
             continue
         rh = float(h["projected_offensive_points"]); ra = float(a["projected_offensive_points"])
         ah = float(h["actual_score_points"]); aa = float(a["actual_score_points"])
+        h_turnover, a_turnover = _side_turnover_rate(h), _side_turnover_rate(a)
+        h_red_zone, a_red_zone = _side_red_zone_rate(h), _side_red_zone_rate(a)
         out.append({
             "game_id": gid, "season": int(h["season"]), "week": int(h["week"] or 0),
             "raw_total": rh + ra, "raw_margin": rh - ra,
@@ -161,9 +273,37 @@ def _load(repository, start: int, end: int, version: str):
                 float(h["team_recent_margin"]) - float(h["opponent_recent_margin"])
                 if h["team_recent_margin"] is not None and h["opponent_recent_margin"] is not None else None
             ),
+            "turnover_diff": (
+                a_turnover - h_turnover if h_turnover is not None and a_turnover is not None else None
+            ),
+            "red_zone_diff": (
+                h_red_zone - a_red_zone if h_red_zone is not None and a_red_zone is not None else None
+            ),
             "returning_ppa_diff": (
                 float(h["returning_percent_ppa"]) - float(a["returning_percent_ppa"])
                 if h["returning_percent_ppa"] is not None and a["returning_percent_ppa"] is not None else None
+            ),
+            "hc_diff": (
+                float(h["hc_home_pre_elo"]) - float(h["hc_away_pre_elo"])
+                if h["hc_home_pre_elo"] is not None and h["hc_away_pre_elo"] is not None else None
+            ),
+            "qb_diff": (
+                float(h["qb_home_pre_rating"]) - float(h["qb_away_pre_rating"])
+                if h["qb_home_pre_rating"] is not None and h["qb_away_pre_rating"] is not None else None
+            ),
+            # Indoor games have no real pregame forecast worth regressing on;
+            # treated as missing rather than as 0 wind/typical temperature.
+            "weather_temperature": (
+                float(h["weather_temperature"])
+                if h["weather_temperature"] is not None and not h["weather_indoor"] else None
+            ),
+            "weather_wind": (
+                float(h["weather_wind"])
+                if h["weather_wind"] is not None and not h["weather_indoor"] else None
+            ),
+            "weather_precipitation": (
+                float(h["weather_precipitation"])
+                if h["weather_precipitation"] is not None and not h["weather_indoor"] else None
             ),
             "market_spread": float(h["market_spread"]) if h["market_spread"] is not None else None,
         })

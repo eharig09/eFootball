@@ -13,6 +13,15 @@ from sports_aggregator.cfb.xdrives import RECENCY_LAMBDA, TRAILING_WINDOW_GAMES
 
 DATASET_VERSION = "xredzone-dataset-v1"
 
+#: Unlike xturnovers.py's giveaway rate (where the league prior alone beat
+#: every shrunk/matchup blend, see two_engine_live.py's live formula), a
+#: light games-weighted shrink of the matchup blend toward league beats BOTH
+#: the raw matchup blend and the league-only rate here. Picked by sweeping
+#: pseudo-games against this module's own dataset:
+#:   trips_per_drive:  matchup mae=0.12301 -> shrunk(pseudo=4)  mae=0.12262
+#:   red_zone_td_rate: league  mae=0.24719 -> shrunk(pseudo=10) mae=0.24544
+SHRINKAGE_PSEUDO_GAMES = {"trips_per_drive": 4.0, "red_zone_td_rate": 10.0}
+
 
 @schema_once("xredzone")
 def initialize(repository) -> None:
@@ -167,15 +176,21 @@ def evaluate_baselines(repository, *, from_season: int | None = None,
     }
     for label, keys in definitions.items():
         actual_key, team_key, allowed_key, league_key = keys
-        errors = {key: [] for key in ("A_league_prior", "B_team_rate", "C_matchup_blend")}
+        errors = {key: [] for key in
+                  ("A_league_prior", "B_team_rate", "C_matchup_blend", "D_shrunk_blend")}
         dropped = 0
+        pseudo_games = SHRINKAGE_PSEUDO_GAMES[label]
         for row in rows:
             values = [row.get(key) for key in keys]
             if any(value is None for value in values):
                 dropped += 1
                 continue
             actual, team, allowed, league = values
-            for key, predicted in zip(errors, (league, team, (team + allowed) / 2)):
+            blend = (team + allowed) / 2
+            sample = min(row["team_prior_games"], row["opponent_prior_games"])
+            weight = sample / (sample + pseudo_games)
+            shrunk = weight * blend + (1 - weight) * league
+            for key, predicted in zip(errors, (league, team, blend, shrunk)):
                 errors[key].append((predicted, actual))
         reports[label] = {"rows_dropped": dropped,
                           "overall": {key: _finish(value) for key, value in errors.items()}}
