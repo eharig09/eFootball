@@ -34,6 +34,23 @@ from typing import Any
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb.weather_market_impact import PRECIP_BUCKETS, TEMP_BUCKETS, WIND_BUCKETS
 
+#: How close the market itself rates a game -- same boundaries as NFL's
+#: uncertainty-calibration regime buckets, so "the 3-6.5 range" means the
+#: same thing here as it does there.
+SPREAD_CLOSENESS_BUCKETS = (
+    ("<3", lambda x: x < 3),
+    ("3-6.5", lambda x: 3 <= x < 7),
+    ("7-13.5", lambda x: 7 <= x < 14),
+    ("14+", lambda x: x >= 14),
+)
+#: How much the curve disagrees with the market, in points.
+DISAGREEMENT_BUCKETS = (
+    ("<1", lambda x: x < 1),
+    ("1-2.99", lambda x: 1 <= x < 3),
+    ("3-5.99", lambda x: 3 <= x < 6),
+    ("6+", lambda x: x >= 6),
+)
+
 
 def _load_dataset(repository: CFBRepository, *, start_season: int, end_season: int) -> list[dict[str, Any]]:
     with repository._reader() as connection:
@@ -415,35 +432,34 @@ def _error_summary(group: list[dict[str, Any]], pred_key: str, actual_key: str =
     }
 
 
-def vegas_comparison_report(rows: list[dict[str, Any]], *, test_from_season: int = 2020) -> dict[str, Any]:
-    """Fits a single curve (actual_margin ~ combined_z_avg) walk-forward --
-    trained only on strictly prior seasons, exactly like this codebase's
-    other market-facing backtests (margin_feature_ablation.py,
-    market_anchor_leverage.py) -- then compares it to the closing market
-    line on the same held-out games. Comparing an in-sample-fit curve to a
+def _walk_forward_curve_predictions(
+    rows: list[dict[str, Any]], *, test_from_season: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Fits actual_margin ~ combined_z_avg, and separately actual_margin ~
+    market_margin + combined_z_avg, walk-forward -- trained only on
+    strictly prior seasons, exactly like this codebase's other
+    market-facing backtests (margin_feature_ablation.py,
+    market_anchor_leverage.py). Comparing an in-sample-fit curve to a
     genuinely out-of-sample market price would be an unfair fight in the
-    curve's favor, so this one is not in-sample like the earlier reports
-    in this module.
+    curve's favor.
 
-    Also fits an "anchored" variant (actual_margin ~ market_margin +
-    combined_z_avg, same walk-forward discipline) to ask the more useful
-    practical question: does the combined HC/QB signal add anything ON TOP
-    of what the market already prices in, not just whether it can match
-    the market cold.
+    test_from_season defaults to 2020 in every caller, not the 2015 start
+    of the coach/QB Elo history: per-game box scores (game_player_box_stats),
+    which QB Elo's starter inference depends on, only exist from 2019
+    onward in this database -- 2015-2018 games have zero QB Elo coverage,
+    confirmed directly rather than assumed. Any season with insufficient
+    training history is skipped automatically below, so an earlier
+    test_from_season is harmless, just produces the same folds.
 
-    test_from_season defaults to 2020, not the 2015 start of the coach/QB
-    Elo history: per-game box scores (game_player_box_stats), which QB
-    Elo's starter inference depends on, only exist from 2019 onward in
-    this database -- 2015-2018 games have zero QB Elo coverage, confirmed
-    directly rather than assumed. Any season with insufficient training
-    history is skipped automatically (the walk-forward loop below), so an
-    earlier test_from_season is harmless, just produces the same folds.
+    Shared by vegas_comparison_report (does the curve/anchor beat the
+    market on raw accuracy) and directional_edge_report (when the curve
+    disagrees with the market, is it right about the direction) so the
+    walk-forward fitting only happens once.
     """
     usable = [r for r in _scored_rows(rows) if r.get("market_margin") is not None]
     seasons = sorted({r["season"] for r in usable})
     folds = []
-    pooled_curve_alone: list[dict[str, Any]] = []
-    pooled_anchored: list[dict[str, Any]] = []
+    pooled: list[dict[str, Any]] = []
 
     for season in seasons:
         if season < test_from_season:
@@ -461,14 +477,20 @@ def vegas_comparison_report(rows: list[dict[str, Any]], *, test_from_season: int
         for r in test:
             r["curve_predicted_margin"] = c0 + c1 * r["combined_z_avg"]
             r["anchored_predicted_margin"] = a0 + a1 * r["market_margin"] + a2 * r["combined_z_avg"]
-        pooled_curve_alone.extend(test)
-        pooled_anchored.extend(test)
+        pooled.extend(test)
         folds.append({
             "season": season, "train_games": len(train), "test_games": len(test),
             "curve_alone": _error_summary(test, "curve_predicted_margin"),
             "market": _error_summary(test, "market_margin"),
             "anchored_market_plus_signal": _error_summary(test, "anchored_predicted_margin"),
         })
+    return folds, pooled
+
+
+def vegas_comparison_report(rows: list[dict[str, Any]], *, test_from_season: int = 2020) -> dict[str, Any]:
+    """How well does the walk-forward curve (and an anchored market+curve
+    blend) predict actual margin, compared to just using the closing line."""
+    folds, pooled = _walk_forward_curve_predictions(rows, test_from_season=test_from_season)
 
     def closer_rate(group: list[dict[str, Any]], challenger_key: str) -> float | None:
         n = len(group)
@@ -484,12 +506,110 @@ def vegas_comparison_report(rows: list[dict[str, Any]], *, test_from_season: int
         "test_from_season": test_from_season,
         "walk_forward": folds,
         "pooled": {
-            "n": len(pooled_curve_alone),
-            "curve_alone": _error_summary(pooled_curve_alone, "curve_predicted_margin"),
-            "market": _error_summary(pooled_curve_alone, "market_margin"),
-            "anchored_market_plus_signal": _error_summary(pooled_anchored, "anchored_predicted_margin"),
-            "curve_closer_than_market_rate": closer_rate(pooled_curve_alone, "curve_predicted_margin"),
-            "anchored_closer_than_market_rate": closer_rate(pooled_anchored, "anchored_predicted_margin"),
+            "n": len(pooled),
+            "curve_alone": _error_summary(pooled, "curve_predicted_margin"),
+            "market": _error_summary(pooled, "market_margin"),
+            "anchored_market_plus_signal": _error_summary(pooled, "anchored_predicted_margin"),
+            "curve_closer_than_market_rate": closer_rate(pooled, "curve_predicted_margin"),
+            "anchored_closer_than_market_rate": closer_rate(pooled, "anchored_predicted_margin"),
+        },
+    }
+
+
+def directional_edge_report(rows: list[dict[str, Any]], *, test_from_season: int = 2020) -> dict[str, Any]:
+    """The curve loses on raw accuracy (vegas_comparison_report), but raw
+    MAE and directional edge are different questions -- a signal can be a
+    worse point estimate than the market while still being right more
+    often than chance about *which side* of the market's own number the
+    result lands on. Three separate cuts, matching the NFL market-leverage
+    backtest's _directional() shape (edge = model - market, actual_edge =
+    actual - market, a "win" is edge and actual_edge pointing the same way):
+
+    1. Overall directional win rate against the market.
+    2. Bucketed by how close the market itself rates the game
+       (SPREAD_CLOSENESS_BUCKETS, "3-6.5" etc.) -- is the edge concentrated
+       in games the market already considers close, not blowouts.
+    3. Bucketed by how much the curve disagrees with the market
+       (DISAGREEMENT_BUCKETS) -- does a bigger gap mean a more trustworthy
+       pick, or just a louder wrong one.
+
+    Also separately checks "upset spots": among games where the curve
+    flips the favorite outright (it likes the market's underdog to win
+    straight up, not just to cover), what fraction of those actually saw
+    the underdog win -- compared to the baseline underdog win rate, so
+    "the model calls upsets" is checked against "underdogs win X% of the
+    time anyway," not against 50%. That comparison is bucket-matched by
+    market closeness, not just pooled: flip calls concentrate in games the
+    market already rates close (a bigger disagreement is needed to flip a
+    big favorite), and close games have a higher baseline upset rate for
+    reasons that have nothing to do with the model -- a pooled comparison
+    alone made the effect look roughly 1.5x bigger than it is within any
+    single closeness bucket, confirmed by checking both ways before
+    reporting either.
+    """
+    _, pooled = _walk_forward_curve_predictions(rows, test_from_season=test_from_season)
+    for r in pooled:
+        r["model_edge"] = r["curve_predicted_margin"] - r["market_margin"]
+        r["actual_edge"] = r["actual_margin"] - r["market_margin"]
+
+    decided = [r for r in pooled if abs(r["model_edge"]) > 1e-9]
+
+    def directional_summary(group: list[dict[str, Any]]) -> dict[str, Any]:
+        n = len(group)
+        if not n:
+            return {"n": 0}
+        wins = sum(1 for r in group if r["model_edge"] * r["actual_edge"] > 0)
+        losses = sum(1 for r in group if r["model_edge"] * r["actual_edge"] < 0)
+        pushes = n - wins - losses
+        decisions = wins + losses
+        return {
+            "n": n, "wins": wins, "losses": losses, "pushes": pushes,
+            "win_rate_ex_pushes": round(wins / decisions, 4) if decisions else None,
+        }
+
+    by_market_closeness = {}
+    by_disagreement_size = {}
+    for label, predicate in SPREAD_CLOSENESS_BUCKETS:
+        by_market_closeness[label] = directional_summary(
+            [r for r in decided if predicate(abs(r["market_margin"]))])
+    for label, predicate in DISAGREEMENT_BUCKETS:
+        by_disagreement_size[label] = directional_summary(
+            [r for r in decided if predicate(abs(r["model_edge"]))])
+
+    def is_upset(r: dict[str, Any]) -> bool:
+        return (r["market_margin"] > 0 and r["actual_margin"] < 0) or (
+            r["market_margin"] < 0 and r["actual_margin"] > 0)
+
+    flips_favorite = [
+        r for r in pooled
+        if r["market_margin"] != 0 and r["curve_predicted_margin"] != 0
+        and (r["curve_predicted_margin"] > 0) != (r["market_margin"] > 0)
+    ]
+
+    def upset_rate(group: list[dict[str, Any]]) -> float | None:
+        return round(sum(1 for r in group if is_upset(r)) / len(group), 4) if group else None
+
+    upset_spots_by_bucket = {}
+    for label, predicate in SPREAD_CLOSENESS_BUCKETS:
+        in_bucket = [r for r in pooled if predicate(abs(r["market_margin"]))]
+        flips_in_bucket = [r for r in flips_favorite if predicate(abs(r["market_margin"]))]
+        upset_spots_by_bucket[label] = {
+            "n_games_in_bucket": len(in_bucket),
+            "baseline_upset_rate": upset_rate(in_bucket),
+            "n_flip_calls": len(flips_in_bucket),
+            "flip_call_upset_rate": upset_rate(flips_in_bucket),
+        }
+
+    return {
+        "n": len(pooled), "n_with_a_real_disagreement": len(decided),
+        "overall": directional_summary(decided),
+        "by_market_closeness": by_market_closeness,
+        "by_disagreement_size": by_disagreement_size,
+        "upset_spots": {
+            "games_where_curve_flips_the_market_favorite": len(flips_favorite),
+            "naive_pooled_flip_call_upset_rate": upset_rate(flips_favorite),
+            "naive_pooled_baseline_upset_rate": upset_rate(pooled),
+            "bucket_matched_by_market_closeness": upset_spots_by_bucket,
         },
     }
 
@@ -507,4 +627,5 @@ def report(repository: CFBRepository, *, start_season: int = 2015, end_season: i
         "weather_interaction": weather_interaction_report(rows),
         "weather_week_controlled": weather_week_controlled_report(rows),
         "vegas_comparison": vegas_comparison_report(rows),
+        "directional_edge": directional_edge_report(rows),
     }

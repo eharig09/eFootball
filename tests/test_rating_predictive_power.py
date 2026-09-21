@@ -4,8 +4,9 @@ from __future__ import annotations
 import math
 
 from sports_aggregator.cfb.rating_predictive_power import (
-    _error_summary, _ols, _partial_correlation, _pearson, _win_rate_when_favored,
-    _zscore_diff, agreement_report, magnitude_report, vegas_comparison_report,
+    SPREAD_CLOSENESS_BUCKETS, _error_summary, _ols, _partial_correlation, _pearson,
+    _win_rate_when_favored, _zscore_diff, agreement_report, directional_edge_report,
+    magnitude_report, vegas_comparison_report,
 )
 
 
@@ -170,3 +171,42 @@ def test_magnitude_report_buckets_are_monotonic_for_a_clean_relationship():
     result = magnitude_report(rows, n_buckets=5)
     means = [b["mean_actual_margin"] for b in result["buckets_low_to_high_combined_signal"]]
     assert means == sorted(means)
+
+
+def _directional_dataset(n_per_season=60, seed=7):
+    import random
+    rng = random.Random(seed)
+    rows = []
+    for season in (2020, 2021, 2022):
+        for i in range(n_per_season):
+            rows.append(_synthetic_game(
+                f"{season}-{i}", season,
+                hc=rng.uniform(-50, 50), qb=rng.uniform(-50, 50),
+                market=rng.uniform(-14, 14), actual=rng.uniform(-40, 40)))
+    return rows
+
+
+def test_directional_edge_report_buckets_are_exhaustive_and_consistent():
+    result = directional_edge_report(_directional_dataset(), test_from_season=2021)
+    # Every scored game falls into exactly one closeness bucket.
+    total_in_buckets = sum(b["n"] for b in result["by_market_closeness"].values())
+    assert total_in_buckets == result["n_with_a_real_disagreement"]
+    assert set(result["by_market_closeness"]) == {label for label, _ in SPREAD_CLOSENESS_BUCKETS}
+    for bucket in result["by_market_closeness"].values():
+        if bucket["n"] == 0:
+            continue
+        assert bucket["wins"] + bucket["losses"] + bucket["pushes"] == bucket["n"]
+
+
+def test_upset_spots_reports_both_naive_and_bucket_matched_views():
+    result = directional_edge_report(_directional_dataset(), test_from_season=2021)
+    spots = result["upset_spots"]
+    assert "naive_pooled_flip_call_upset_rate" in spots
+    assert "bucket_matched_by_market_closeness" in spots
+    matched = spots["bucket_matched_by_market_closeness"]
+    assert set(matched) == {label for label, _ in SPREAD_CLOSENESS_BUCKETS}
+    for bucket in matched.values():
+        assert "baseline_upset_rate" in bucket
+        assert "flip_call_upset_rate" in bucket
+        # Every flip call in a bucket is also one of that bucket's games.
+        assert bucket["n_flip_calls"] <= bucket["n_games_in_bucket"]
