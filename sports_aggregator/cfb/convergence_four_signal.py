@@ -24,6 +24,7 @@ from typing import Any
 from sports_aggregator.cfb import convergence_robustness as cr
 from sports_aggregator.cfb import convergence_validation as cv
 from sports_aggregator.cfb.rating_predictive_power import _load_dataset, _scored_rows
+from sports_aggregator.cfb.rating_walkforward import walk_forward_combined_scores
 from sports_aggregator.cfb.repository import CFBRepository
 
 FROZEN_MARGIN_THRESHOLD = 1.0
