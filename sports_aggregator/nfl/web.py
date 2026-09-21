@@ -679,6 +679,51 @@ def _data_status_packet() -> dict:
     pff_season = _pff_season(season) or season
     pff_counts = pff_service.counts(pff_season)
     coverage = content.source_coverage(_directory_sources())
+
+    instance = Path(current_app.config["NFL_DATABASE_PATH"]).parent
+    history_path = instance / "nfl_refresh_history.jsonl"
+    refresh_history = []
+    if history_path.exists():
+        try:
+            for line in history_path.read_text(encoding="utf-8", errors="replace").splitlines()[-20:]:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(row, dict):
+                    refresh_history.append({
+                        **row,
+                        "relative": _relative_time(row.get("finished_at") or row.get("started_at")),
+                    })
+        except OSError:
+            pass
+    refresh_history.reverse()
+
+    segments = ("core-foundation", "core-stats", "core-depth", "core-pbp", "content", "weather", "pff")
+    segment_health = []
+    for segment in segments:
+        row = next((item for item in refresh_history if item.get("segment") == segment
+                    and item.get("status") != "running"), None)
+        segment_health.append({
+            "segment": segment,
+            "status": row.get("status") if row else "unknown",
+            "relative": row.get("relative") if row else None,
+            "seconds": row.get("seconds") if row else None,
+            "error": row.get("error") if row else None,
+        })
+
+    upload_root = Path(current_app.config["NFL_PFF_UPLOAD_ROOT"])
+    source_root = Path(current_app.config["NFL_PFF_SOURCE_ROOT"])
+    pff_upload_files = list(upload_root.rglob("*.csv")) if upload_root.exists() else []
+    blob_count = 0
+    try:
+        repository.initialize()
+        with repository._connect() as connection:
+            blob_count = connection.execute("SELECT COUNT(*) FROM nfl_pff_upload_blobs").fetchone()[0]
+    except Exception:
+        blob_count = 0
+
+    latest_ingestion = content.latest_ingestion_run()
     issues = []
     if seed.get("status") == "failed":
         issues.append({"label": "Production seed failed",
@@ -694,6 +739,12 @@ def _data_status_packet() -> dict:
     if coverage["errors"]:
         issues.append({"label": f"{coverage['errors']} configured source(s) erroring",
                        "detail": "See the source audit page for which accounts and their last error."})
+    if not refresh_history:
+        issues.append({"label": "No NFL refresh history",
+                       "detail": "No scheduled/manual NFL refresh has completed since refresh logging was added."})
+    if not pff_counts.get("metrics"):
+        issues.append({"label": "No PFF metrics loaded",
+                       "detail": f"{len(pff_upload_files)} CSV file(s) on disk · {blob_count} SQLite backup file(s)."})
     return {
         "season": season, "pff_season": pff_season, "seed": seed,
         "counts": counts, "pff_counts": pff_counts,
@@ -704,6 +755,16 @@ def _data_status_packet() -> dict:
         "latest_season": repository.latest_season(),
         "latest_week": repository.latest_stat_week(season),
         "issues": issues,
+        "latest_ingestion": latest_ingestion,
+        "refresh_history": refresh_history,
+        "segment_health": segment_health,
+        "pff_storage": {
+            "upload_root": str(upload_root),
+            "upload_files": len(pff_upload_files),
+            "blob_backups": blob_count,
+            "source_root": str(source_root),
+            "database_path": str(current_app.config["NFL_DATABASE_PATH"]),
+        },
     }
 
 
