@@ -385,14 +385,36 @@ def _engine_a(
         repository, game, historical
     )
     if state is None:
+        # Margin Power itself didn't resolve, so there's no primary direction
+        # for the other three signals to confirm or deny against -- the route
+        # genuinely can't qualify. But that's a different fact from "this
+        # signal's own input is missing," and the two used to be conflated:
+        # every light showed "pending" even when, say, HC/QB Elo was already
+        # sitting right there (confirmed live: Engine B's qb_diff resolves for
+        # several games where Engine A's HC/QB light showed blank pending).
+        # Each light now reports whether ITS OWN input is available, with the
+        # raw value attached where it is, while staying "pending" (not
+        # on/off) since none of them can be scored as agree/disagree without
+        # Margin Power's direction to compare against.
+        structural_inputs = [lens_row.get(key) for key in cc.STRUCTURAL_KEYS]
+        structural_available = sum(1 for v in structural_inputs if v is not None) >= cc.MIN_STRUCTURAL_COMPONENTS
+        structural_value = (
+            round(sum(v for v in structural_inputs if v is not None)
+                  / sum(1 for v in structural_inputs if v is not None), 3)
+            if structural_available else None
+        )
         return {
             "ready": False, "qualified": False, "reason": "Margin Power unavailable.",
             "margin_power": margin_meta, "ratings": rating_meta,
             "lights": [
-                {"key": "margin_power", "label": "Margin Power", "requirement": "|z| ≥ 1.0", "state": "pending"},
-                {"key": "structural", "label": "Structural", "requirement": "same direction", "state": "pending"},
-                {"key": "line_elo", "label": "Line Elo", "requirement": "same direction", "state": "pending"},
-                {"key": "hc_qb", "label": "HC/QB", "requirement": "route-specific vote", "state": "pending"},
+                {"key": "margin_power", "label": "Margin Power", "requirement": "|z| ≥ 1.0",
+                 "state": "pending", "value": None},
+                {"key": "structural", "label": "Structural", "requirement": "same direction",
+                 "state": "pending", "value": structural_value},
+                {"key": "line_elo", "label": "Line Elo", "requirement": "same direction",
+                 "state": "pending", "value": round(float(line_edge), 3) if line_edge is not None else None},
+                {"key": "hc_qb", "label": "HC/QB", "requirement": "route-specific vote",
+                 "state": "pending", "value": round(float(hc_qb_z), 3) if hc_qb_z is not None else None},
             ],
         }
 
@@ -465,6 +487,7 @@ def _engine_a(
                 "label": "Margin Power",
                 "requirement": "|z| ≥ 1.0",
                 "state": "on" if margin_threshold_met else "off",
+                "value": round(float(state["margin_z"]), 3),
             },
             {
                 "key": "structural",
@@ -474,6 +497,10 @@ def _engine_a(
                     "on" if structural_confirms is True
                     else "off" if structural_confirms is False
                     else "pending"
+                ),
+                "value": (
+                    round(float(state["structural_z"]), 3)
+                    if state.get("structural_z") is not None else None
                 ),
             },
             {
@@ -485,6 +512,10 @@ def _engine_a(
                     else "off" if market_confirms is False
                     else "pending"
                 ),
+                "value": (
+                    round(float(state["market_z"]), 3)
+                    if state.get("market_z") is not None else None
+                ),
             },
             {
                 "key": "hc_qb",
@@ -495,6 +526,7 @@ def _engine_a(
                     else "off" if hc_qb_aligned is not None
                     else "pending"
                 ),
+                "value": round(float(hc_qb_z), 3) if hc_qb_z is not None else None,
             },
         ],
         "components": {
