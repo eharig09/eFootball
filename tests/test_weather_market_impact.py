@@ -1,8 +1,10 @@
 """Tests for the weather-vs-market-movement bucketing and stat math."""
 from __future__ import annotations
 
+from sports_aggregator.cfb import views
 from sports_aggregator.cfb.weather_market_impact import (
-    PRECIP_BUCKETS, TEMP_BUCKETS, WIND_BUCKETS, _bucket_stats, _dimension, _extremes,
+    FLAG_HISTORICAL_CONTEXT, PRECIP_BUCKETS, TEMP_BUCKETS, WIND_BUCKETS,
+    _bucket_stats, _dimension, _extremes,
 )
 
 
@@ -70,3 +72,28 @@ def test_extremes_ranks_and_truncates():
 
     coldest = _extremes(rows, "sustained_wind", top=2, reverse=False)
     assert [r["sustained_wind"] for r in coldest] == [5, 10]
+
+
+def test_weather_panel_attaches_historical_context_to_known_flags():
+    weather = {
+        "available": True,
+        "latest": {"condition": "Windy", "temperature": 40, "sustained_wind": 27,
+                   "wind_gust": 48, "precipitation_probability": 10, "venue": "V",
+                   "forecast_generated_at": "now"},
+        "flags": [
+            {"flag": "HIGH_WIND", "detail": "27 mph sustained wind"},
+            {"flag": "RAIN_RISK", "detail": "some rain"},
+        ],
+        "indoor": False, "snapshots": 1, "movement": {},
+    }
+    panel = views.weather_panel(weather)
+    by_flag = {f["flag"]: f for f in panel["flags"]}
+    assert by_flag["HIGH_WIND"]["historical_context"] == FLAG_HISTORICAL_CONTEXT["HIGH_WIND"]
+    # RAIN_RISK deliberately has no entry -- the backtest sample was too thin
+    # to say anything reliable, so the card should show nothing rather than
+    # a fabricated number.
+    assert by_flag["RAIN_RISK"]["historical_context"] is None
+
+
+def test_weather_panel_returns_none_when_unavailable():
+    assert views.weather_panel({"available": False}) is None

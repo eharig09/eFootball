@@ -13,6 +13,8 @@ import json
 import re
 from typing import Any, Iterable, Sequence
 
+from sports_aggregator.cfb.weather_market_impact import FLAG_HISTORICAL_CONTEXT
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -2571,6 +2573,12 @@ def weather_panel(weather):
     if not weather.get("available"):
         return None
     latest = weather["latest"]
+    flags = []
+    for flag in weather.get("flags") or []:
+        flags.append({
+            **flag,
+            "historical_context": FLAG_HISTORICAL_CONTEXT.get(flag.get("flag")),
+        })
     return {
         "indoor": weather.get("indoor"),
         "condition": latest.get("condition"),
@@ -2578,7 +2586,7 @@ def weather_panel(weather):
         "wind": latest.get("sustained_wind"),
         "gusts": latest.get("wind_gust"),
         "precipitation_probability": latest.get("precipitation_probability"),
-        "flags": weather.get("flags") or [],
+        "flags": flags,
         "snapshots": weather.get("snapshots"),
         "movement": weather.get("movement") or {},
         "venue": latest.get("venue"),

@@ -571,6 +571,7 @@
         <article class="situation-card">
             <h3>{{ flag.flag | replace('_', ' ') | title }}</h3>
             <p>{{ flag.detail }}.</p>
+            {% if flag.historical_context %}<div class="meta">{{ flag.historical_context }}</div>{% endif %}
         </article>
         {% endfor %}
         {% endif %}

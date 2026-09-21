@@ -143,6 +143,46 @@ def _extremes(rows: list[dict[str, Any]], field: str, *, top: int = 10, reverse:
     ]
 
 
+#: Static historical context for the live weather card, one entry per flag
+#: sports_aggregator.providers.weather.weather_flags() can raise. Computed
+#: from report(repository, start_season=2015, end_season=2025)'s output at
+#: exactly the same thresholds weather_flags() itself fires on (HIGH_WIND_MPH,
+#: HEAVY_GUST_MPH, EXTREME_HEAT_F, EXTREME_COLD_F) -- a hand-tuned separate
+#: bucket boundary would talk about a different population than the one the
+#: badge is actually flagging. Kept as a checked-in static lookup rather than
+#: recomputed per page load, the same choice NFL's Football Lab panel made
+#: for its own backtest summary: this is a settled research finding, not a
+#: live number, and the query behind it scans the whole games/weather/lines
+#: history. RAIN_RISK intentionally has no entry -- the same backtest, run at
+#: RAIN_RISK's own 0.15in threshold, found only 14 qualifying games and no
+#: reliable under bias among them, too thin to say anything a reader should
+#: trust. Showing a number there would overstate a pattern that isn't
+#: actually supported; re-add it if a future rerun (more seasons, or a
+#: rethought threshold) finds a real one.
+FLAG_HISTORICAL_CONTEXT: dict[str, str] = {
+    "HIGH_WIND": (
+        "Since 2015, games with sustained wind at or above 15 mph (138 games) "
+        "have finished 1.2 points under the opening total on average, and the "
+        "total line has moved down before kickoff 80% of the time."
+    ),
+    "HEAVY_GUSTS": (
+        "Since 2015, games with gusts at or above 25 mph (449 games) have "
+        "finished 1.1 points under the opening total on average, and the "
+        "total line has moved down before kickoff 71% of the time."
+    ),
+    "EXTREME_HEAT": (
+        "Since 2015, games at or above 88°F at kickoff (197 games) have "
+        "finished 0.6 points under the opening total on average -- a real but "
+        "modest effect the market only partly prices in before kickoff."
+    ),
+    "EXTREME_COLD": (
+        "Since 2015, games at or below 28°F at kickoff (37 games) have "
+        "finished 1.1 points under the opening total on average, and the "
+        "total line has moved down before kickoff 78% of the time."
+    ),
+}
+
+
 def report(repository: CFBRepository, *, start_season: int = 2015, end_season: int = 2025) -> dict[str, Any]:
     rows = _game_rows(repository, start_season=start_season, end_season=end_season)
     return {
