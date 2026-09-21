@@ -74,11 +74,7 @@ def _joined_rows(
         start_season=int(elo_start_season),
         end_season=int(test_season),
     )
-    elo_scores = {
-        int(r["game_id"]): float(r["combined_z_avg"])
-        for r in _scored_rows(elo_source)
-        if r.get("combined_z_avg") is not None
-    }
+    elo_scores, elo_normalization = walk_forward_combined_scores(elo_source)
 
     complete: list[dict[str, Any]] = []
     missing_elo = 0
@@ -109,6 +105,7 @@ def _joined_rows(
         "complete_four_signal_rows": len(complete),
         "missing_hc_qb_elo": missing_elo,
         "neutral_hc_qb_elo": neutral_elo,
+        "hc_qb_normalization": elo_normalization,
     }
     return complete, coverage
 
@@ -343,7 +340,7 @@ def report(
         "notes": [
             "Research only: this does not modify the frozen Full Convergence production definition.",
             "All original convergence z-scores remain walk-forward and are reused from convergence_robustness.",
-            "HC/QB Elo uses the existing pregame combined_z_avg signal; no refit is performed here.",
+            "HC/QB Elo combines leak-safe pregame ratings with prior-seasons-only walk-forward normalization.",
             "Exact tiers answer quality by agreement count; cumulative tiers answer the volume-versus-hit-rate widening question.",
             "The transition table is the cleanest direct test of whether HC/QB Elo adds information beyond the old three-signal state.",
             "Exact 3/4 is split by origin because old 3/3 + Elo disagreement and old 2/3 + Elo agreement represent different information states.",
