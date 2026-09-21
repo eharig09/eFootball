@@ -124,6 +124,12 @@
                         {% if loop.first %}<span class="watch-vs">VS</span>{% endif %}
                         {% endfor %}
                     </div>
+                    {% if game.two_engine %}
+                    <div class="watch-engine-signal watch-engine-{{ game.two_engine.state }}">
+                        <strong>{{ game.two_engine.state_label }}</strong>
+                        <span>{% if game.two_engine.selected_team %}{{ game.two_engine.selected_team }}{% else %}No portfolio side{% endif %}</span>
+                    </div>
+                    {% endif %}
                     <div class="watch-card-bottom">
                         <span class="watch-card-edge">
                             <strong>{{ game.matchup_edge_team or 'Even matchup' }}</strong>
