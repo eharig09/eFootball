@@ -80,7 +80,7 @@
 <nav class="mobile-page-tabs" data-mobile-page-tabs="always" role="tablist" aria-label="Matchup page sections">
     <button type="button" role="tab" data-mobile-tab="overview" aria-selected="true">Overview</button>
     <button type="button" role="tab" data-mobile-tab="stats" aria-selected="false">Stats</button>
-    <button type="button" role="tab" data-mobile-tab="projection" aria-selected="false">Forecast</button>
+    <button type="button" role="tab" data-mobile-tab="projection" aria-selected="false">Engine</button>
     <button type="button" role="tab" data-mobile-tab="matchups" aria-selected="false">Matchups</button>
     <button type="button" role="tab" data-mobile-tab="players" aria-selected="false">Players</button>
     <button type="button" role="tab" data-mobile-tab="coverage" aria-selected="false">Coverage</button>
@@ -133,7 +133,7 @@
     {% endif %}
 
     <div class="lab-board-head">
-        <div><span class="eyebrow">Football Lab</span><h2>{{ game.away_team }} @ {{ game.home_team }}</h2></div>
+        <div><span class="eyebrow">Football Lab Engine</span><h2>{{ game.away_team }} @ {{ game.home_team }}</h2></div>
         {% if projection.points_model %}<span>{{ projection.points_model.model_version }}</span>{% endif %}
     </div>
 
@@ -224,24 +224,20 @@
             {% endfor %}
         </div>
 
-        <div class="lab-row lab-state-row">
-            <div class="lab-label">STATE</div>
-            <div class="lab-fc-cell {{ 'is-qualified' if research_intelligence.convergence.qualified else '' }}">
-                <span>Full Convergence</span>
-                {% if research_intelligence.convergence.qualified %}
-                <b class="lab-good lab-fc-status">QUALIFIED</b><i>All 3 frozen criteria passed</i>
-                {% else %}
-                <b class="lab-context lab-fc-status">PENDING</b><i>All three must pass</i>
-                {% endif %}
-                <div class="lab-fc-lights">
-                    {% for criterion in research_intelligence.convergence.criteria %}
-                    <div class="lab-fc-light is-{{ criterion.state }}">
-                        <em></em>
-                        <strong>{{ criterion.label }}</strong>
-                        <small>{{ criterion.requirement }}</small>
-                    </div>
-                    {% endfor %}
-                </div>
+        {% set a = two_engine_signal.engine_a or {} %}
+        {% set b = two_engine_signal.engine_b or {} %}
+        <div class="lab-row lab-engine-summary-row">
+            <div class="lab-label">PORTFOLIO</div>
+            <div class="lab-engine-decision">
+                <span>Two-engine state</span>
+                <b class="engine-inline-state is-{{ two_engine_signal.state }}">{{ two_engine_signal.state_label }}</b>
+                {% if two_engine_signal.selected_team %}<i>{{ two_engine_signal.selected_team }}</i>
+                {% else %}<i>{{ two_engine_signal.implication }}</i>{% endif %}
+                <small>
+                    {% if two_engine_signal.source == 'frozen_manifest' %}Frozen {{ two_engine_signal.frozen_at }}
+                    {% elif two_engine_signal.source == 'pending_manifest_live_preview' %}Live refresh of pending manifest · rerun freeze to finalize
+                    {% else %}Live pregame preview · not frozen yet{% endif %}
+                </small>
             </div>
             <div><span>Applicability</span>
                 {% if research_intelligence.spread.inside_lt14_applicability is sameas true %}<b class="lab-good">Supported</b><i>market &lt;14</i>
@@ -259,17 +255,86 @@
             </b></div>
         </div>
 
+        <div class="lab-row lab-engine-a-row">
+            <div class="lab-label">ENGINE A</div>
+            <div class="lab-engine-wide">
+                <div class="lab-engine-title">
+                    <span>Quantitative convergence</span>
+                    {% if a.qualified %}
+                    <b class="lab-good">{{ a.selected_team }}</b>
+                    <i>{{ a.route | replace('_', ' ') }}</i>
+                    {% elif a.ready %}
+                    <b>NO ROUTE</b>
+                    <i>Inputs complete; frozen route conditions not met.</i>
+                    {% else %}
+                    <b class="lab-context">INPUTS PENDING</b>
+                    <i>{{ a.reason or 'Waiting for required pregame inputs.' }}</i>
+                    {% endif %}
+                </div>
+                <div class="lab-fc-lights lab-fc-lights-four">
+                    {% for light in a.lights or [] %}
+                    <div class="lab-fc-light is-{{ light.state }}">
+                        <em></em>
+                        <strong>{{ light.label }}</strong>
+                        <small>{{ light.requirement }}</small>
+                        {% if light.key == 'margin_power' and a.components %}<i>{{ a.components.margin_power_z | cell('signed') }}</i>
+                        {% elif light.key == 'structural' and a.components %}<i>{{ a.components.structural_z | cell('signed') }}</i>
+                        {% elif light.key == 'line_elo' and a.components %}<i>{{ a.components.line_elo_z | cell('signed') }}</i>
+                        {% elif light.key == 'hc_qb' and a.components %}<i>{{ a.components.hc_qb_aligned | cell('signed') }}</i>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="lab-row lab-engine-b-row">
+            <div class="lab-label">ENGINE B</div>
+            <div class="lab-engine-wide lab-engine-b-content">
+                <div>
+                    <span>Narrative / QB overreaction</span>
+                    {% if b.qualified %}
+                    <b class="lab-good">{{ b.selected_team }}</b>
+                    <i>{{ b.rules | join(' + ') | replace('_', ' ') }}</i>
+                    {% elif b.ready %}
+                    <b>NO RULE</b>
+                    <i>QB and narrative inputs are complete; no frozen family qualifies.</i>
+                    {% else %}
+                    <b class="lab-context">INPUTS PENDING</b>
+                    <i>{{ b.reason or 'Waiting for Narrative/QB inputs.' }}</i>
+                    {% endif %}
+                </div>
+                <div class="lab-engine-family">
+                    <span>Active families</span>
+                    {% if b.families %}
+                    <small>{{ game.away_team }}: {{ (b.families.get(game.away_team) or ['none']) | join(', ') | replace('_', ' ') }}</small>
+                    <small>{{ game.home_team }}: {{ (b.families.get(game.home_team) or ['none']) | join(', ') | replace('_', ' ') }}</small>
+                    {% else %}<small>—</small>{% endif %}
+                </div>
+                <div class="lab-engine-family">
+                    <span>QB direction</span>
+                    {% if b.qb_diff is not none %}<b>{{ b.qb_diff | cell('signed') }}</b><small>home minus away rating</small>
+                    {% else %}<b>—</b><small>not resolved</small>{% endif %}
+                </div>
+            </div>
+        </div>
+
         <div class="lab-row lab-performance-row">
-            <div class="lab-label">2026 FC</div>
-            {% if research_intelligence.actionable_2026.available %}
-            <div><span>Record</span><b>{{ research_intelligence.actionable_2026.record }}</b><i>DraftKings graded</i></div>
-            <div><span>Net units</span><b>{{ research_intelligence.actionable_2026.net_units | cell('signed') }}u</b><i>1u risked / pick</i></div>
-            <div><span>ROI</span><b>{{ (research_intelligence.actionable_2026.roi * 100) | cell('f1') }}%</b><i>real DK prices</i></div>
-            {% else %}
-            <div><span>Record</span><b>—</b><i>No stored DK grades yet</i></div>
-            <div><span>Net units</span><b>—</b><i>Run DK convergence audit</i></div>
-            <div><span>ROI</span><b>—</b><i>Never substitutes -110</i></div>
-            {% endif %}
+            <div class="lab-label">HISTORY</div>
+            <div>
+                <span>Engine A route</span>
+                {% if a.historical %}<b>{{ (a.historical.hit_rate * 100) | cell('f1') }}%</b><i>n={{ a.historical.n }} · {{ a.historical.mean_residual | cell('signed') }} pts</i>
+                {% else %}<b>—</b><i>No active route</i>{% endif %}
+            </div>
+            <div>
+                <span>Engine B rule</span>
+                {% if b.historical %}<b>{{ (b.historical[0].hit_rate * 100) | cell('f1') }}%</b><i>n={{ b.historical[0].n }}{% if b.historical|length > 1 %} · +{{ b.historical|length - 1 }} overlapping rule{% endif %}</i>
+                {% else %}<b>—</b><i>No active rule</i>{% endif %}
+            </div>
+            <div>
+                <span>Two-engine portfolio</span>
+                {% if two_engine_signal.portfolio_reference %}<b>{{ (two_engine_signal.portfolio_reference.hit_rate * 100) | cell('f1') }}%</b><i>n={{ two_engine_signal.portfolio_reference.n }} · 2020–25 research</i>
+                {% else %}<b>—</b>{% endif %}
+            </div>
         </div>
 
         <div class="lab-row lab-shape-row" id="forecast-drivers">
@@ -313,7 +378,7 @@
 
     <details class="forecast-method" id="forecast-method">
         <summary>
-            <span><b>How the forecast is built</b><i>Model mechanics, full detail &amp; research limitations</i></span>
+            <span><b>How the engine is built</b><i>Projection mechanics, signal logic &amp; research limitations</i></span>
         </summary>
         <div class="forecast-method-body">
             <p class="section-note">
@@ -459,80 +524,6 @@
     {{ game_shape_module(game_shape) }}
     {% if not (game_shape and game_shape.rows | selectattr('away') | list) %}
     <div class="empty">Not enough charted play-by-play to project this game's shape yet.</div>
-    {% endif %}
-</section>
-
-<section class="section two-engine-panel" data-mobile-tab-panel="stats">
-    <div class="two-engine-head">
-        <div>
-            <div class="eyebrow">Two-engine read</div>
-            <h2>Market implication</h2>
-        </div>
-        <span class="engine-state engine-state-{{ two_engine_signal.state or 'none' }}">{{ two_engine_signal.state_label }}</span>
-    </div>
-    <p class="two-engine-implication">{{ two_engine_signal.implication }}</p>
-
-    {% if two_engine_signal.source == 'frozen_manifest' %}
-    <div class="engine-freeze-note">Frozen pregame snapshot · {{ two_engine_signal.frozen_at }}</div>
-    {% elif two_engine_signal.source == 'live_preview' %}
-    <div class="engine-freeze-note is-live">Live preview · not yet frozen into the holdout manifest</div>
-    {% endif %}
-
-    {% if two_engine_signal.engine_a or two_engine_signal.engine_b %}
-    <div class="engine-grid">
-        {% set a = two_engine_signal.engine_a or {} %}
-        <article class="engine-card{{ ' is-qualified' if a.qualified else '' }}">
-            <div class="engine-card-head"><strong>Engine A</strong><span>Quantitative convergence</span></div>
-            {% if a.qualified %}
-            <h3>{{ a.selected_team }}</h3>
-            <p>{{ a.route | replace('_', ' ') }}</p>
-            <div class="engine-metrics">
-                <span><b>{{ a.agreement_label }}</b> signal agreement</span>
-                {% if a.historical %}<span><b>{{ (a.historical.hit_rate * 100) | cell('f1') }}%</b> historical hit rate</span>
-                <span><b>{{ a.historical.n }}</b> historical games</span>{% endif %}
-            </div>
-            {% else %}
-            <h3>No frozen A route</h3>
-            <p>{% if not a.ready %}Inputs are still incomplete.{% else %}The quantitative state does not match one of the five frozen routes.{% endif %}</p>
-            {% endif %}
-            {% if a.components %}
-            <div class="engine-components">
-                <span>Margin Power <b>{{ a.components.margin_power_z | cell('signed') }}</b></span>
-                <span>Structural <b>{{ a.components.structural_z | cell('signed') }}</b></span>
-                <span>Line Elo <b>{{ a.components.line_elo_z | cell('signed') }}</b></span>
-                <span>HC/QB <b>{{ a.components.hc_qb_aligned | cell('signed') }}</b></span>
-            </div>
-            {% endif %}
-        </article>
-
-        {% set b = two_engine_signal.engine_b or {} %}
-        <article class="engine-card{{ ' is-qualified' if b.qualified else '' }}">
-            <div class="engine-card-head"><strong>Engine B</strong><span>Narrative / QB overreaction</span></div>
-            {% if b.qualified %}
-            <h3>{{ b.selected_team }}</h3>
-            <p>QB Elo points the other way while the recent-result narrative matches a frozen rebound setup.</p>
-            {% for history in b.historical or [] %}
-            <div class="engine-rule-line">
-                <span>{{ history.rule | replace('_', ' ') }}</span>
-                <b>{{ (history.hit_rate * 100) | cell('f1') }}% · n={{ history.n }}</b>
-            </div>
-            {% endfor %}
-            {% else %}
-            <h3>No frozen B rule</h3>
-            <p>{% if not b.ready %}Narrative or QB inputs are still incomplete.{% else %}No frozen rebound/QB overreaction family is active.{% endif %}</p>
-            {% endif %}
-        </article>
-    </div>
-    {% endif %}
-
-    {% if two_engine_signal.portfolio_reference %}
-    <div class="engine-context">
-        <strong>Research context:</strong>
-        the non-conflicting two-engine portfolio was
-        {{ (two_engine_signal.portfolio_reference.hit_rate * 100) | cell('f1') }}%
-        across {{ two_engine_signal.portfolio_reference.n }} games from 2020–25.
-        This is historical context, not a probability forecast for this game.
-    </div>
     {% endif %}
 </section>
 
