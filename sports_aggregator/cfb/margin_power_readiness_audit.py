@@ -17,7 +17,7 @@ def _completed_games(repository: CFBRepository, season: int) -> list[dict[str, A
             dict(row)
             for row in connection.execute(
                 """SELECT game_id,season,week,start_date,home_team,away_team,
-                          home_points,away_points
+                          home_points,away_points,completed
                    FROM games
                    WHERE season=?
                      AND completed=1
@@ -27,6 +27,69 @@ def _completed_games(repository: CFBRepository, season: int) -> list[dict[str, A
                 (int(season),),
             )
         ]
+
+
+def _scheduled_games(repository: CFBRepository, season: int, week: int) -> list[dict[str, Any]]:
+    with repository._reader() as connection:
+        return [
+            dict(row)
+            for row in connection.execute(
+                """SELECT game_id,season,week,start_date,home_team,away_team,
+                          home_points,away_points,completed
+                   FROM games
+                   WHERE season=? AND week=?
+                   ORDER BY start_date,game_id""",
+                (int(season), int(week)),
+            )
+        ]
+
+
+def _infer_upcoming_week(repository: CFBRepository, season: int) -> int | None:
+    with repository._reader() as connection:
+        row = connection.execute(
+            """SELECT MIN(week)
+               FROM games
+               WHERE season=? AND completed=0 AND week IS NOT NULL""",
+            (int(season),),
+        ).fetchone()
+    return int(row[0]) if row and row[0] is not None else None
+
+
+def _upcoming_week_readiness(
+    completed_games: list[dict[str, Any]],
+    scheduled_games: list[dict[str, Any]],
+    upcoming_week: int,
+) -> list[dict[str, Any]]:
+    prior = [
+        game for game in completed_games
+        if game.get("week") is not None and int(game["week"]) < int(upcoming_week)
+    ]
+    ratings, counts = ipl._solve_srs(prior)
+    output = []
+    for game in scheduled_games:
+        home = str(game["home_team"])
+        away = str(game["away_team"])
+        home_prior = int(counts.get(home, 0))
+        away_prior = int(counts.get(away, 0))
+        both_ready = (
+            home_prior >= ipl.MIN_SRS_GAMES
+            and away_prior >= ipl.MIN_SRS_GAMES
+        )
+        projected_home_margin = None
+        if both_ready and home in ratings and away in ratings:
+            projected_home_margin = (
+                float(ratings[home]) - float(ratings[away]) + float(ipl.HFA_POINTS)
+            )
+        output.append({
+            **game,
+            "home_prior_games": home_prior,
+            "away_prior_games": away_prior,
+            "home_ready": home_prior >= ipl.MIN_SRS_GAMES,
+            "away_ready": away_prior >= ipl.MIN_SRS_GAMES,
+            "both_ready": both_ready,
+            "diagnostic_home_margin_if_played_now": projected_home_margin,
+        })
+    return output
 
 
 def _readiness_rows(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -85,7 +148,12 @@ def _by_week(rows: list[dict[str, Any]], snapshots: dict[tuple[int, str], float]
     return output
 
 
-def report(repository: CFBRepository, *, season: int = DEFAULT_SEASON) -> dict[str, Any]:
+def report(
+    repository: CFBRepository,
+    *,
+    season: int = DEFAULT_SEASON,
+    upcoming_week: int | None = None,
+) -> dict[str, Any]:
     season = int(season)
     games = _completed_games(repository, season)
     readiness = _readiness_rows(games)
@@ -115,6 +183,18 @@ def report(repository: CFBRepository, *, season: int = DEFAULT_SEASON) -> dict[s
             ),
         })
 
+    if upcoming_week is None:
+        upcoming_week = _infer_upcoming_week(repository, season)
+    upcoming_games = (
+        _scheduled_games(repository, season, int(upcoming_week))
+        if upcoming_week is not None else []
+    )
+    upcoming_rows = (
+        _upcoming_week_readiness(games, upcoming_games, int(upcoming_week))
+        if upcoming_week is not None else []
+    )
+    upcoming_eligible = [r for r in upcoming_rows if r["both_ready"]]
+
     eligible = [r for r in enriched if r["both_ready"]]
     snapshot_games = [r for r in enriched if r["home_snapshot_exists"]]
     eligible_without_snapshot = [
@@ -143,6 +223,24 @@ def report(repository: CFBRepository, *, season: int = DEFAULT_SEASON) -> dict[s
             "snapshot_without_lens_margin_power_edge": len(snapshot_without_lens_edge),
         },
         "by_week": _by_week(enriched, snapshots, lens_by_game),
+        "upcoming_week": {
+            "week": upcoming_week,
+            "scheduled_games": len(upcoming_rows),
+            "games_home_3_plus_prior": sum(bool(r["home_ready"]) for r in upcoming_rows),
+            "games_away_3_plus_prior": sum(bool(r["away_ready"]) for r in upcoming_rows),
+            "games_both_3_plus_prior": len(upcoming_eligible),
+            "eligible_rate": (
+                round(len(upcoming_eligible) / len(upcoming_rows), 4)
+                if upcoming_rows else None
+            ),
+            "eligible_games": upcoming_eligible,
+            "all_scheduled_games": upcoming_rows,
+            "note": (
+                "These are pregame readiness checks using only completed prior weeks. "
+                "diagnostic_home_margin_if_played_now mirrors the frozen SRS equation "
+                "but is not persisted as a production snapshot."
+            ),
+        },
         "sample_theoretically_eligible_games": eligible[:SAMPLE_LIMIT],
         "sample_eligible_without_snapshot": eligible_without_snapshot[:SAMPLE_LIMIT],
         "sample_snapshot_without_lens_edge": snapshot_without_lens_edge[:SAMPLE_LIMIT],
@@ -160,6 +258,8 @@ def report(repository: CFBRepository, *, season: int = DEFAULT_SEASON) -> dict[s
         "notes": [
             "Diagnostic only; no Margin Power threshold, SRS equation, or routing rule is changed.",
             "Prior-game eligibility is computed by completed week, matching margin_power_snapshots.",
+            "The upcoming-week section includes scheduled games and uses only completed prior weeks, so Week 4 can be inspected before its games are played.",
+            "Upcoming diagnostic margins do not alter or persist Margin Power; they only show whether the frozen SRS inputs are already sufficient.",
             "Samples are ordered by week/start_date/game_id and capped for compact output.",
         ],
     }

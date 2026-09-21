@@ -23,6 +23,12 @@ def main(argv: list[str] | None = None) -> int:
         description="Audit current-season Margin Power prior-game readiness"
     )
     parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument(
+        "--upcoming-week",
+        type=int,
+        default=None,
+        help="Week to inspect before kickoff; defaults to the earliest scheduled incomplete week.",
+    )
     parser.add_argument("--database", default=None)
     parser.add_argument("--output", default=None)
     args = parser.parse_args(argv)
@@ -30,7 +36,11 @@ def main(argv: list[str] | None = None) -> int:
     repository = CFBRepository(
         args.database or os.getenv("CFB_DATABASE_PATH", "instance/cfb.sqlite3")
     )
-    payload = report(repository, season=args.season)
+    payload = report(
+        repository,
+        season=args.season,
+        upcoming_week=args.upcoming_week,
+    )
 
     output_path = (
         Path(args.output).expanduser()

@@ -1,4 +1,7 @@
-from sports_aggregator.cfb.margin_power_readiness_audit import _readiness_rows
+from sports_aggregator.cfb.margin_power_readiness_audit import (
+    _readiness_rows,
+    _upcoming_week_readiness,
+)
 
 
 def _game(game_id, week, home, away):
@@ -41,3 +44,30 @@ def test_same_week_games_do_not_count_as_prior_games():
     assert rows[1]["home_prior_games"] == 0
     assert rows[2]["home_prior_games"] == 0
     assert rows[3]["home_prior_games"] == 2
+
+
+def test_upcoming_week_uses_completed_prior_weeks_only():
+    completed = [
+        _game(1, 1, "A", "B"),
+        _game(2, 2, "A", "B"),
+        _game(3, 3, "A", "B"),
+    ]
+    scheduled = [_game(4, 4, "A", "B")]
+    row = _upcoming_week_readiness(completed, scheduled, 4)[0]
+    assert row["home_prior_games"] == 3
+    assert row["away_prior_games"] == 3
+    assert row["both_ready"] is True
+    assert row["diagnostic_home_margin_if_played_now"] is not None
+
+
+def test_upcoming_week_excludes_completed_games_from_same_week():
+    completed = [
+        _game(1, 1, "A", "B"),
+        _game(2, 2, "A", "B"),
+        _game(3, 3, "A", "B"),
+        _game(4, 4, "A", "B"),
+    ]
+    scheduled = [_game(5, 4, "A", "B")]
+    row = _upcoming_week_readiness(completed, scheduled, 4)[0]
+    assert row["home_prior_games"] == 3
+    assert row["away_prior_games"] == 3
