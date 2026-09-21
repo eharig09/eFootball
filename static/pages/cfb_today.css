@@ -297,3 +297,64 @@
 
 /* Picks sit below, not inside, the scrollable Games to Watch body. */
 .briefing > .panel:first-child > .weekly-picks { flex:0 0 auto; }
+
+/* Today hierarchy: Picks replace Draft in the top briefing; Draft moves beside Matchups. */
+.weekly-picks-panel .panel-body { max-height:31rem; overflow-y:auto; }
+.picks-record-bar {
+    display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:1px; background:var(--line); border-bottom:1px solid var(--line);
+}
+.picks-record-bar > div {
+    min-width:0; padding:8px 9px; background:var(--paper);
+}
+.picks-record-bar span {
+    display:block; color:var(--muted); font-size:.5rem;
+    text-transform:uppercase; letter-spacing:.06em;
+}
+.picks-record-bar b {
+    display:inline-block; margin-top:2px;
+    font:900 .9rem/1 var(--display-font); color:var(--ink);
+}
+.picks-record-bar b.is-positive { color:var(--green); }
+.picks-record-bar b.is-negative { color:var(--red); }
+.picks-record-bar small { margin-left:4px; color:var(--muted); font-size:.48rem; }
+.picks-scroll .weekly-pick-list { padding:10px; }
+
+.today-lower-grid {
+    display:grid; grid-template-columns:minmax(0,1.65fr) minmax(320px,.75fr);
+    gap:14px; margin-top:18px; align-items:start;
+}
+.today-lower-grid > .section { margin:0; min-width:0; }
+.today-lower-grid .section-title {
+    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+}
+.section-more {
+    flex:0 0 auto; color:var(--rust); font-size:.62rem; font-weight:800;
+    text-transform:uppercase; letter-spacing:.06em; text-decoration:none;
+}
+.section-more:hover { text-decoration:underline; }
+.compact-note {
+    margin-bottom:7px; font-size:.66rem; line-height:1.35;
+}
+.compact-table-scroll {
+    min-width:0; overflow:auto; max-height:27rem;
+    border:1px solid var(--line);
+}
+.compact-table-scroll .table-wrap { margin:0; border:0; }
+.matchups-compact .compact-table-scroll table,
+.draft-watch-compact .compact-table-scroll table {
+    font-size:.68rem;
+}
+.matchups-compact .compact-table-scroll th,
+.matchups-compact .compact-table-scroll td,
+.draft-watch-compact .compact-table-scroll th,
+.draft-watch-compact .compact-table-scroll td {
+    padding:5px 7px;
+}
+@media (max-width:1050px) {
+    .today-lower-grid { grid-template-columns:1fr; }
+    .draft-watch-compact .compact-table-scroll { max-height:22rem; }
+}
+@media (max-width:620px) {
+    .picks-record-bar { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
