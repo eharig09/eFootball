@@ -75,3 +75,61 @@ def test_elo_constants_match_the_nfl_engine_shape():
     assert BASE == 1500.0
     assert K_FACTOR == 20.0
     assert HOME_ADVANTAGE > 0
+
+
+def test_current_season_single_zero_game_coach_uses_safe_fallback():
+    games = [
+        _game(1, 2025, home_id=1, away_id=9),
+        _game(2, 2026, home_id=1, away_id=9),
+        _game(3, 2026, home_id=1, away_id=9),
+    ]
+    coach_seasons = {
+        (2025, 1): [{"coach_id": 100, "team_id": 1, "games": 1,
+                     "first_name": "A", "last_name": "One"}],
+        (2025, 9): [{"coach_id": 900, "team_id": 9, "games": 1,
+                     "first_name": "B", "last_name": "Nine"}],
+        (2026, 1): [{"coach_id": 100, "team_id": 1, "games": 0,
+                     "first_name": "A", "last_name": "One"}],
+        (2026, 9): [{"coach_id": 900, "team_id": 9, "games": 0,
+                     "first_name": "B", "last_name": "Nine"}],
+    }
+    assignment = _assign_coaches(games, coach_seasons)
+    assert assignment[2]["home"] == (100, "A One", "current_single_coach_fallback")
+    assert assignment[3]["home"] == (100, "A One", "current_single_coach_fallback")
+    assert assignment[2]["away"] == (900, "B Nine", "current_single_coach_fallback")
+
+
+def test_historical_single_zero_game_coach_is_not_backfilled():
+    games = [
+        _game(1, 2024, home_id=1, away_id=2),
+        _game(2, 2025, home_id=3, away_id=4),
+    ]
+    coach_seasons = {
+        (2024, 1): [{"coach_id": 100, "team_id": 1, "games": 0,
+                     "first_name": "Old", "last_name": "Zero"}],
+        (2024, 2): [{"coach_id": 200, "team_id": 2, "games": 0,
+                     "first_name": "Old", "last_name": "Away"}],
+        (2025, 3): [{"coach_id": 300, "team_id": 3, "games": 1,
+                     "first_name": "New", "last_name": "Home"}],
+        (2025, 4): [{"coach_id": 400, "team_id": 4, "games": 1,
+                     "first_name": "New", "last_name": "Away"}],
+    }
+    assignment = _assign_coaches(games, coach_seasons)
+    assert 1 not in assignment or not assignment[1]
+
+
+def test_current_season_multiple_zero_game_coaches_remain_unassigned():
+    games = [_game(1, 2026, home_id=1, away_id=2)]
+    coach_seasons = {
+        (2026, 1): [
+            {"coach_id": 100, "team_id": 1, "games": 0,
+             "first_name": "A", "last_name": "One"},
+            {"coach_id": 101, "team_id": 1, "games": 0,
+             "first_name": "B", "last_name": "Interim"},
+        ],
+        (2026, 2): [{"coach_id": 200, "team_id": 2, "games": 0,
+                     "first_name": "C", "last_name": "Two"}],
+    }
+    assignment = _assign_coaches(games, coach_seasons)
+    assert "home" not in assignment.get(1, {})
+    assert assignment[1]["away"] == (200, "C Two", "current_single_coach_fallback")

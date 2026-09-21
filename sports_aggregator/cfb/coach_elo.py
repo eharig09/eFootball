@@ -78,17 +78,31 @@ def initialize(repository: CFBRepository) -> None:
 
 
 def _coach_seasons(repository: CFBRepository) -> dict[tuple[int, int], list[dict[str, Any]]]:
-    """(season, team_id) -> coach stints, ordered most-games-first."""
+    """(season, team_id) -> usable coach stints, ordered most-games-first.
+
+    CFBD can publish the current season's coach/team association before it
+    populates the season-level credited-games field. Preserve the historical
+    rule whenever credited games exist. When every row is still at zero, keep
+    a single unambiguous coach row so _assign_coaches can apply the guarded
+    current-season fallback; multiple zero-game rows remain ambiguous.
+    """
     with repository._reader() as connection:
         rows = [dict(r) for r in connection.execute(
             """SELECT season,coach_id,team_id,first_name,last_name,games
-               FROM coach_seasons WHERE games > 0"""
+               FROM coach_seasons"""
         )]
-    grouped: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
+    grouped_all: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        grouped[(int(row["season"]), int(row["team_id"]))].append(row)
-    for key, stints in grouped.items():
-        stints.sort(key=lambda r: -int(r["games"]))
+        grouped_all[(int(row["season"]), int(row["team_id"]))].append(row)
+
+    grouped: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for key, stints in grouped_all.items():
+        credited = [r for r in stints if int(r.get("games") or 0) > 0]
+        if credited:
+            credited.sort(key=lambda r: -int(r["games"]))
+            grouped[key] = credited
+        elif len(stints) == 1:
+            grouped[key] = stints
     return grouped
 
 
@@ -109,7 +123,15 @@ def _games(repository: CFBRepository, start_season: int) -> list[dict[str, Any]]
 
 def _assign_coaches(games: list[dict[str, Any]], coach_seasons: dict[tuple[int, int], list[dict[str, Any]]]):
     """Walk each team's season schedule in order, consuming coach stints by
-    their credited game count. Returns {game_id: {"home": (coach_id, name, method), "away": (...)}}."""
+    their credited game count.
+
+    For the newest season only, CFBD may expose one coach for a team while its
+    credited-games counter is still zero. That single-coach case is safe to
+    apply to all currently completed team games. Zero-game multi-coach cases
+    remain unassigned because there is no defensible stint boundary.
+
+    Returns {game_id: {"home": (coach_id, name, method), "away": (...)}}.
+    """
     by_team_season: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
     for game in games:
         by_team_season[(int(game["season"]), int(game["home_team_id"]))].append(game)
@@ -119,11 +141,30 @@ def _assign_coaches(games: list[dict[str, Any]], coach_seasons: dict[tuple[int, 
     # only ever walking it once per (season, team_id) via a cursor dict.
     cursor: dict[tuple[int, int], int] = {}
     assignment: dict[int, dict[str, tuple[int, str, str]]] = defaultdict(dict)
+    newest_season = max((int(g["season"]) for g in games), default=None)
 
     for key, team_games in by_team_season.items():
         stints = coach_seasons.get(key)
         if not stints:
             continue
+
+        if (
+            len(stints) == 1
+            and int(stints[0].get("games") or 0) <= 0
+        ):
+            if newest_season is None or int(key[0]) != int(newest_season):
+                continue
+            stint = stints[0]
+            name = f"{stint['first_name']} {stint['last_name']}".strip()
+            for game in team_games:
+                side = "home" if int(game["home_team_id"]) == key[1] else "away"
+                assignment[int(game["game_id"])][side] = (
+                    int(stint["coach_id"]),
+                    name,
+                    "current_single_coach_fallback",
+                )
+            continue
+
         method = "direct" if len(stints) == 1 else "heuristic_split"
         pos = 0
         for stint in stints:
@@ -255,7 +296,9 @@ def leaderboard(repository: CFBRepository, *, min_games: int = MIN_GAMES_FOR_COM
             opp_elo = game[f"{side}_opponent_pregame_elo"]
             if opp_elo is not None:
                 bucket["opponent_elo"].append(opp_elo)
-            if game[f"{side}_attribution_method"] == "heuristic_split":
+            if game[f"{side}_attribution_method"] in {
+                "heuristic_split", "current_single_coach_fallback"
+            }:
                 bucket["heuristic_games"] += 1
         home_won = game["home_points"] > game["away_points"]
         per_coach[game["home_coach_id"]]["home_games"] += 1
