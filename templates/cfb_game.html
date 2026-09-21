@@ -385,10 +385,13 @@
                 {% endif %}
             </div>
             {% if b.qualified %}
-            <p class="lab-verdict-sub">{{ b.rules | join(' + ') | replace('_', ' ') }}</p>
+            <h3 class="lab-verdict-headline">Take {{ b.selected_team }}</h3>
+            <p class="lab-verdict-sub">{{ engine_b_rules_plain or (b.rules | join(' + ') | replace('_', ' ')) }}</p>
             {% elif b.ready %}
+            <h3 class="lab-verdict-headline lab-context">No Engine B pick</h3>
             <p class="lab-verdict-sub">QB and narrative inputs are complete; no frozen family qualifies this game.</p>
             {% else %}
+            <h3 class="lab-verdict-headline lab-context">Engine B pending</h3>
             <p class="lab-verdict-sub lab-context">{{ b.reason or 'Waiting for Narrative/QB inputs.' }}</p>
             {% endif %}
             <div class="lab-engine-b-detail">
@@ -416,10 +419,24 @@
             <div class="lab-card-title">Track record</div>
             <div class="lab-record-list">
                 <div class="lab-record-row">
-                    <div><b>This route</b><i>{% if a.route %}{{ a.route | replace('_', ' ') }}{% else %}no route this game{% endif %}</i></div>
+                    {% if a.route %}
+                    <div><b>This route</b><i>Engine A &middot; {{ a.route | replace('_', ' ') }}</i></div>
                     {% if a.historical %}
                     <div class="lab-record-figure"><b>{{ (a.historical.hit_rate * 100) | cell('f1') }}%</b><i>n={{ a.historical.n }} &middot; {{ a.historical.mean_residual | cell('signed') }} pts</i></div>
                     {% else %}
+                    <div class="lab-record-figure"><b>&mdash;</b><i>no track record</i></div>
+                    {% endif %}
+                    {% elif b.qualified %}
+                    {#- Engine A has no pick this game, but Engine B does -- show
+                        its own rule(s)' track record instead of a blank dash. -#}
+                    <div><b>This route</b><i>Engine B &middot; {{ b.rules | join(' + ') | replace('_', ' ') }}</i></div>
+                    {% if engine_b_route_pooled and engine_b_route_pooled.n %}
+                    <div class="lab-record-figure"><b>{{ (engine_b_route_pooled.hit_rate * 100) | cell('f1') }}%</b><i>n={{ engine_b_route_pooled.n }} &middot; {{ engine_b_route_pooled.mean_residual | cell('signed') }} pts</i></div>
+                    {% else %}
+                    <div class="lab-record-figure"><b>&mdash;</b><i>no track record</i></div>
+                    {% endif %}
+                    {% else %}
+                    <div><b>This route</b><i>no route this game</i></div>
                     <div class="lab-record-figure"><b>&mdash;</b><i>no route this game</i></div>
                     {% endif %}
                 </div>

@@ -59,7 +59,9 @@ from sports_aggregator.cfb.pff import pff_summary
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb.two_engine_live import (
     ENGINE_A_OVERALL, ENGINE_B_OVERALL,
+    _pooled as _two_engine_pooled,
     display_packet as two_engine_display_packet, manifest_for_games,
+    engine_b_rules_plain_language,
     route_plain_language, season_record as two_engine_season_record,
     team_ratings_display,
 )
@@ -886,6 +888,17 @@ def game_preview(game_id: int):
         research=research_intelligence)
     engine_a_route_plain = route_plain_language(
         (two_engine_signal.get("engine_a") or {}).get("route"))
+    engine_b_packet = two_engine_signal.get("engine_b") or {}
+    engine_b_rules_plain = engine_b_rules_plain_language(engine_b_packet.get("rules"))
+    engine_b_historical = engine_b_packet.get("historical") or []
+    # Sample-weighted pool across whichever Engine B rule(s) fired for this
+    # game (there can be one or two) -- "Track record" needs a single figure
+    # to show, the same way ENGINE_A_OVERALL/ENGINE_B_OVERALL already pool
+    # across a whole history dict rather than listing each entry separately.
+    engine_b_route_pooled = (
+        _two_engine_pooled({item["rule"]: item for item in engine_b_historical})
+        if engine_b_historical else None
+    )
     team_ratings = team_ratings_display(repository, game)
     season_record = two_engine_season_record(repository, season)
     return render_template(
@@ -906,6 +919,8 @@ def game_preview(game_id: int):
         research_intelligence=research_intelligence,
         two_engine_signal=two_engine_signal,
         engine_a_route_plain=engine_a_route_plain,
+        engine_b_rules_plain=engine_b_rules_plain,
+        engine_b_route_pooled=engine_b_route_pooled,
         engine_a_overall=ENGINE_A_OVERALL,
         engine_b_overall=ENGINE_B_OVERALL,
         totals_overall=TOTALS_RESEARCH_OVERALL,

@@ -167,6 +167,32 @@ def route_plain_language(route_name: str | None) -> str | None:
         return None
     return ROUTE_PLAIN_LANGUAGE.get(route_name)
 
+
+#: Both Engine B rules share the same rebounding side and QB-opposition
+#: condition (see _engine_b()) -- they differ only in what the opponent's
+#: overreaction-worthy state is -- so unlike ROUTE_PLAIN_LANGUAGE this is
+#: composed from clauses rather than a flat per-rule sentence, letting a
+#: game where both rules fire together read as one coherent explanation
+#: instead of two concatenated slugs.
+_ENGINE_B_CLAUSES = {
+    "rebound_vs_momentum_qb_opposes": "its opponent is riding a hot streak",
+    "rebound_vs_post_success_qb_opposes":
+        "its opponent is coming off a big recent success (real letdown risk)",
+}
+
+
+def engine_b_rules_plain_language(rules: list[str] | None) -> str | None:
+    if not rules:
+        return None
+    clauses = [_ENGINE_B_CLAUSES[rule] for rule in rules if rule in _ENGINE_B_CLAUSES]
+    if not clauses:
+        return None
+    return (
+        f"The rebounding side is coming off a rough recent result while "
+        f"{' and '.join(clauses)} -- and the market hasn't priced that "
+        "rebound into the QB ratings yet. Follow the rebounding side."
+    )
+
 _HISTORICAL_CACHE: dict[str, dict[str, Any]] = {}
 
 
