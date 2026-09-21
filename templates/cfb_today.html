@@ -145,6 +145,54 @@
                 <div class="empty">No upcoming games are stored for this season.</div>
                 {% endfor %}
             </div>
+
+            <div class="weekly-picks">
+                <div class="weekly-picks-head">
+                    <div>
+                        <strong>Picks of the Week</strong>
+                        <span>Frozen two-engine selections</span>
+                    </div>
+                    {% if nearest_week is not none %}<em>Week {{ nearest_week }}</em>{% endif %}
+                </div>
+                {% if weekly_engine_picks %}
+                <div class="weekly-pick-list">
+                    {% for pick in weekly_engine_picks %}
+                    <a class="weekly-pick is-{{ pick.pick_state }}"
+                       href="{{ url_for('cfb.game_preview', game_id=pick.game_id) }}">
+                        <div class="weekly-pick-top">
+                            <span>{{ pick.away_team }} @ {{ pick.home_team }}</span>
+                            <b>{{ pick.pick_state_label }}</b>
+                        </div>
+                        <div class="weekly-pick-main">
+                            <div>
+                                <small>Pick</small>
+                                <strong>{{ pick.pick_team }}
+                                    {% if pick.pick_spread is not none %}
+                                    {{ pick.pick_spread | cell('signed') }}
+                                    {% endif %}
+                                </strong>
+                            </div>
+                            <div>
+                                <small>Kickoff</small>
+                                <span>{{ pick.date_label }} · {{ pick.time_label or 'TBD' }}</span>
+                            </div>
+                        </div>
+                        <p>{{ pick.pick_detail }}</p>
+                        <div class="weekly-pick-foot">
+                            <span>Frozen pregame</span>
+                            {% if pick.market and pick.market.spread is not none %}
+                            <span>Market {{ pick.market.spread | cell('signed') }} home</span>
+                            {% endif %}
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="weekly-picks-empty">
+                    No frozen Engine A or Engine B selections for Week {{ nearest_week or '—' }} yet.
+                </div>
+                {% endif %}
+            </div>
         </div>
     </section>
 

@@ -209,3 +209,88 @@
 .watch-engine-agreement { border-color:#2f7d32; }
 .watch-engine-conflict { border-color:#b33; }
 .watch-engine-engine_a_only, .watch-engine-engine_b_only { border-color:var(--rust); }
+
+/* Frozen two-engine selections, intentionally nested beneath Games to Watch. */
+.weekly-picks {
+    border-top: 1px solid var(--line-strong);
+    background: color-mix(in srgb, var(--surface) 42%, var(--paper));
+}
+.weekly-picks-head {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 12px 8px;
+}
+.weekly-picks-head > div { min-width:0; }
+.weekly-picks-head strong {
+    display:block;
+    font:900 .88rem/1.1 var(--display-font);
+    color:var(--ink);
+}
+.weekly-picks-head span {
+    display:block; margin-top:2px;
+    color:var(--muted); font-size:.57rem; text-transform:uppercase;
+    letter-spacing:.065em;
+}
+.weekly-picks-head em {
+    flex:0 0 auto; font:900 .58rem var(--display-font); font-style:normal;
+    color:var(--rust); text-transform:uppercase; letter-spacing:.06em;
+}
+.weekly-pick-list {
+    display:grid; gap:7px; padding:0 10px 10px;
+}
+.weekly-pick {
+    display:block; color:var(--ink); text-decoration:none;
+    border:1px solid var(--line); border-left:4px solid var(--rust);
+    border-radius:6px; background:var(--paper);
+    padding:9px 10px;
+    transition:transform .12s ease, border-color .12s ease;
+}
+.weekly-pick:hover {
+    transform:translateY(-1px);
+    border-color:var(--line-strong);
+}
+.weekly-pick.is-agreement { border-left-color:var(--green); }
+.weekly-pick.is-engine_b_only { border-left-color:var(--blue); }
+.weekly-pick-top {
+    display:flex; justify-content:space-between; gap:10px; align-items:baseline;
+}
+.weekly-pick-top > span {
+    min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font:800 .68rem var(--display-font);
+}
+.weekly-pick-top > b {
+    flex:0 0 auto; color:var(--muted);
+    font:900 .52rem var(--display-font); letter-spacing:.055em;
+}
+.weekly-pick.is-agreement .weekly-pick-top > b { color:var(--green); }
+.weekly-pick.is-engine_b_only .weekly-pick-top > b { color:var(--blue); }
+.weekly-pick-main {
+    display:grid; grid-template-columns:minmax(0,1fr) auto;
+    gap:12px; align-items:end; margin-top:7px;
+}
+.weekly-pick-main small {
+    display:block; color:var(--muted); font-size:.49rem;
+    text-transform:uppercase; letter-spacing:.06em;
+}
+.weekly-pick-main strong {
+    display:block; margin-top:1px;
+    font:900 .94rem var(--display-font); color:var(--ink);
+}
+.weekly-pick-main span { color:var(--muted); font-size:.59rem; }
+.weekly-pick p {
+    margin:7px 0 0; color:var(--muted);
+    font-size:.59rem; line-height:1.35;
+}
+.weekly-pick-foot {
+    display:flex; justify-content:space-between; gap:8px;
+    margin-top:7px; padding-top:6px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:.51rem;
+    text-transform:uppercase; letter-spacing:.045em;
+}
+.weekly-picks-empty {
+    margin:0 10px 10px; padding:10px;
+    border:1px dashed var(--line); color:var(--muted); font-size:.62rem;
+}
+@media (max-width:620px) {
+    .weekly-pick-main { grid-template-columns:1fr; gap:5px; }
+    .weekly-pick-foot { flex-direction:column; gap:3px; }
+}

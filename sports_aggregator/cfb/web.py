@@ -291,6 +291,64 @@ def _nearest_week_games(games: list[dict]) -> tuple[int | None, list[dict]]:
     return nearest, [game for game in games if game.get("week") == nearest]
 
 
+def _weekly_engine_picks(
+    games: list[dict],
+    signals: dict[int, dict],
+    market: dict[int, dict],
+) -> list[dict]:
+    """Qualified frozen two-engine selections for the current week."""
+    priority = {"agreement": 0, "engine_a_only": 1, "engine_b_only": 2}
+    picks: list[dict] = []
+    for game in games:
+        packet = signals.get(int(game["game_id"]))
+        if not packet or packet.get("state") not in priority:
+            continue
+        selected_team = packet.get("selected_team")
+        selected_side = packet.get("selected_side")
+        if not selected_team or selected_side not in {"home", "away"}:
+            continue
+
+        market_row = market.get(int(game["game_id"])) or {}
+        home_spread = market_row.get("spread")
+        pick_spread = None
+        if home_spread is not None:
+            pick_spread = float(home_spread) if selected_side == "home" else -float(home_spread)
+
+        engine_a = packet.get("engine_a") or {}
+        engine_b = packet.get("engine_b") or {}
+        if packet.get("state") == "agreement":
+            detail = "Both engines agree"
+        elif packet.get("state") == "engine_a_only":
+            detail = route_plain_language(engine_a.get("route")) or "Frozen Engine A route"
+        else:
+            rules = [
+                str(rule).replace("_", " ")
+                for rule in (engine_b.get("rules") or [])
+            ]
+            detail = " + ".join(rules) if rules else "Frozen Engine B rule"
+
+        picks.append({
+            **game,
+            "pick_state": packet.get("state"),
+            "pick_state_label": packet.get("state_label"),
+            "pick_team": selected_team,
+            "pick_side": selected_side,
+            "pick_spread": pick_spread,
+            "pick_detail": detail,
+            "pick_route": engine_a.get("route"),
+            "pick_rules": engine_b.get("rules") or [],
+            "pick_frozen_at": packet.get("frozen_at"),
+            "market": market_row,
+        })
+
+    picks.sort(key=lambda row: (
+        priority.get(row["pick_state"], 9),
+        str(row.get("start_date") or ""),
+        int(row["game_id"]),
+    ))
+    return picks
+
+
 @cfb_pages.get("/college-football/")
 @cached_page
 def today():
@@ -308,13 +366,20 @@ def today():
     brands = {team_id: team_identity(brand) for team_id, brand in raw_brands.items()}
     slate = _with_matchup_edges(repository, _label_games(watch_games))
     weekly_slate = _label_games(games_to_watch(week_games, limit=20))
+    weekly_games_labelled = _label_games([dict(game) for game in week_games])
     market = lines_by_game(repository, season)
-    frozen_signals = manifest_for_games(
-        repository, [int(game["game_id"]) for game in slate]
-    )
+    frozen_ids = {
+        int(game["game_id"]) for game in slate
+    } | {
+        int(game["game_id"]) for game in weekly_games_labelled
+    }
+    frozen_signals = manifest_for_games(repository, sorted(frozen_ids))
     for game in slate:
         game['market'] = market.get(game['game_id']) or {}
         game['two_engine'] = frozen_signals.get(int(game["game_id"]))
+    weekly_engine_picks = _weekly_engine_picks(
+        weekly_games_labelled, frozen_signals, market
+    )
     national_stories = _story_repository().list_stories(limit=16)
     slate_day, slate_games = _current_slate(repository, season)
     return render_template(
@@ -333,6 +398,7 @@ def today():
         games_table=views.games_to_watch_compact(slate, brands),
         watch_games=slate,
         watch_brands=brands,
+        weekly_engine_picks=weekly_engine_picks,
         weekly_matchups_table=views.weekly_matchups_table(
             _weekly_matchup_watches(repository, weekly_slate), season),
         nearest_week=nearest_week,
