@@ -5,6 +5,8 @@ from collections import defaultdict
 from typing import Any
 
 from sports_aggregator.cfb import internal_power_lenses as ipl
+from sports_aggregator.cfb.projection_backtest import BACKTEST_VERSION
+from sports_aggregator.cfb.xpoints import DATASET_VERSION as XPOINTS_VERSION
 from sports_aggregator.cfb.repository import CFBRepository
 
 DEFAULT_SEASON = 2026
@@ -148,6 +150,79 @@ def _by_week(rows: list[dict[str, Any]], snapshots: dict[tuple[int, str], float]
     return output
 
 
+
+def _lens_prerequisites(repository: CFBRepository, game_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Explain why a completed game with a Margin Power snapshot may lack a lens row."""
+    if not game_ids:
+        return {}
+    placeholders = ",".join("?" for _ in game_ids)
+    params = tuple(int(gid) for gid in game_ids)
+    output = {
+        int(gid): {
+            "game_id": int(gid),
+            "xpoints_rows": 0,
+            "narrative_rows": 0,
+            "home_narrative_market_margin_residual": None,
+            "home_narrative_market_expected_margin": None,
+            "projection_backtest_rows": 0,
+            "line_quotes": 0,
+        }
+        for gid in game_ids
+    }
+    with repository._reader() as connection:
+        for row in connection.execute(
+            f"""SELECT game_id,COUNT(*) AS n
+                FROM cfb_xpoints_dataset
+                WHERE dataset_version=? AND game_id IN ({placeholders})
+                GROUP BY game_id""",
+            (XPOINTS_VERSION, *params),
+        ):
+            output[int(row["game_id"])]["xpoints_rows"] = int(row["n"])
+        for row in connection.execute(
+            f"""SELECT game_id,side,market_margin_residual,market_expected_margin
+                FROM cfb_narrative_state
+                WHERE game_id IN ({placeholders})""",
+            params,
+        ):
+            packet = output[int(row["game_id"])]
+            packet["narrative_rows"] += 1
+            if str(row["side"]) == "home":
+                packet["home_narrative_market_margin_residual"] = row["market_margin_residual"]
+                packet["home_narrative_market_expected_margin"] = row["market_expected_margin"]
+        for row in connection.execute(
+            f"""SELECT game_id,COUNT(*) AS n
+                FROM cfb_projection_backtest
+                WHERE backtest_version=? AND game_id IN ({placeholders})
+                GROUP BY game_id""",
+            (BACKTEST_VERSION, *params),
+        ):
+            output[int(row["game_id"])]["projection_backtest_rows"] = int(row["n"])
+        for row in connection.execute(
+            f"""SELECT game_id,COUNT(*) AS n
+                FROM game_lines
+                WHERE spread IS NOT NULL AND game_id IN ({placeholders})
+                GROUP BY game_id""",
+            params,
+        ):
+            output[int(row["game_id"])]["line_quotes"] = int(row["n"])
+
+    for packet in output.values():
+        reasons = []
+        if packet["xpoints_rows"] < 2:
+            reasons.append("missing_two_sided_xpoints")
+        if packet["narrative_rows"] < 2:
+            reasons.append("missing_two_sided_narrative_state")
+        if packet["home_narrative_market_margin_residual"] is None:
+            reasons.append("missing_home_market_margin_residual")
+        if packet["home_narrative_market_expected_margin"] is None:
+            reasons.append("missing_home_market_expected_margin")
+        if packet["projection_backtest_rows"] < 2:
+            reasons.append("missing_two_sided_projection_backtest")
+        if packet["line_quotes"] == 0:
+            reasons.append("missing_spread_quote")
+        packet["likely_exclusion_reasons"] = reasons
+    return output
+
 def report(
     repository: CFBRepository,
     *,
@@ -203,6 +278,13 @@ def report(
     snapshot_without_lens_edge = [
         r for r in snapshot_games if not r["margin_power_edge_exists"]
     ]
+    missing_lens_ids = [
+        int(r["game_id"]) for r in snapshot_without_lens_edge
+        if not r["lens_row_exists"]
+    ]
+    prerequisites = _lens_prerequisites(repository, missing_lens_ids)
+    for row in snapshot_without_lens_edge:
+        row["lens_prerequisites"] = prerequisites.get(int(row["game_id"]))
 
     return {
         "version": "cfb-margin-power-readiness-audit-v1",
@@ -260,6 +342,7 @@ def report(
             "Prior-game eligibility is computed by completed week, matching margin_power_snapshots.",
             "The upcoming-week section includes scheduled games and uses only completed prior weeks, so Week 4 can be inspected before its games are played.",
             "Upcoming diagnostic margins do not alter or persist Margin Power; they only show whether the frozen SRS inputs are already sufficient.",
+            "Games with a valid Margin Power snapshot but no lens row include prerequisite counts and likely exclusion reasons.",
             "Samples are ordered by week/start_date/game_id and capped for compact output.",
         ],
     }
