@@ -160,13 +160,22 @@ def _zscore_diff(rows: list[dict[str, Any]], key: str) -> dict[int, float]:
     return {r["game_id"]: (r[key] - mean) / stdev for r in rows if r.get(key) is not None}
 
 
-def solo_vs_combined_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _scored_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The subset with both ratings, each row carrying combined_z_avg --
+    the shared starting point for every report below that needs the
+    combined signal rather than either rating alone."""
     both = [r for r in rows if r.get("qb_diff") is not None]
     hc_z = _zscore_diff(both, "hc_diff")
     qb_z = _zscore_diff(both, "qb_diff")
+    out = []
     for r in both:
         if r["game_id"] in hc_z and r["game_id"] in qb_z:
-            r["combined_z_avg"] = (hc_z[r["game_id"]] + qb_z[r["game_id"]]) / 2.0
+            out.append({**r, "combined_z_avg": (hc_z[r["game_id"]] + qb_z[r["game_id"]]) / 2.0})
+    return out
+
+
+def solo_vs_combined_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    both = _scored_rows(rows)
 
     return {
         "hc_only_full_sample": {
@@ -227,15 +236,7 @@ def agreement_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def magnitude_report(rows: list[dict[str, Any]], *, n_buckets: int = 5) -> dict[str, Any]:
-    both = [r for r in rows if r.get("qb_diff") is not None]
-    hc_z = _zscore_diff(both, "hc_diff")
-    qb_z = _zscore_diff(both, "qb_diff")
-    scored = []
-    for r in both:
-        if r["game_id"] in hc_z and r["game_id"] in qb_z:
-            combined = (hc_z[r["game_id"]] + qb_z[r["game_id"]]) / 2.0
-            scored.append({**r, "combined_z_avg": combined})
-    scored.sort(key=lambda r: r["combined_z_avg"])
+    scored = sorted(_scored_rows(rows), key=lambda r: r["combined_z_avg"])
     n = len(scored)
     size = max(1, n // n_buckets)
     out = []
@@ -264,13 +265,7 @@ def _weather_bucket_label(row: dict[str, Any], dimension: str, buckets: tuple) -
 
 
 def weather_interaction_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    both = [r for r in rows if r.get("qb_diff") is not None]
-    hc_z = _zscore_diff(both, "hc_diff")
-    qb_z = _zscore_diff(both, "qb_diff")
-    scored = []
-    for r in both:
-        if r["game_id"] in hc_z and r["game_id"] in qb_z:
-            scored.append({**r, "combined_z_avg": (hc_z[r["game_id"]] + qb_z[r["game_id"]]) / 2.0})
+    scored = _scored_rows(rows)
 
     # An "upset": the combined signal strongly favored one side (top tercile
     # by |combined_z_avg|) but the other side won anyway.
@@ -324,6 +319,80 @@ def weather_interaction_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _partial_correlation(triplets: list[tuple[float, float, float]]) -> dict[str, Any] | None:
+    """r_xy.z -- the correlation between x and y with z's linear effect on
+    both removed, via the standard closed-form single-control-variable
+    formula (equivalent to correlating the residuals of x~z and y~z
+    regressions, without needing to actually fit those regressions)."""
+    if len(triplets) < 5:
+        return None
+    r_xy = _pearson([(x, y) for x, y, _ in triplets])
+    r_xz = _pearson([(x, z) for x, _, z in triplets])
+    r_yz = _pearson([(y, z) for _, y, z in triplets])
+    if r_xy is None or r_xz is None or r_yz is None:
+        return None
+    denominator = math.sqrt((1 - r_xz ** 2) * (1 - r_yz ** 2))
+    if denominator == 0:
+        return None
+    return {
+        "n": len(triplets),
+        "raw_correlation_x_vs_y": round(r_xy, 4),
+        "control_correlation_x_vs_z": round(r_xz, 4),
+        "control_correlation_y_vs_z": round(r_yz, 4),
+        "partial_correlation_x_vs_y_given_z": round((r_xy - r_xz * r_yz) / denominator, 4),
+    }
+
+
+def weather_week_controlled_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Temperature tracks week closely in this dataset (hotter early,
+    colder late -- r=-0.58), and a team's/starter's current-season signal
+    is also thinnest early. A raw temperature-vs-predictability
+    relationship could just be rediscovering "early season is noisier,"
+    not a real weather effect. Removes week's linear effect from both
+    temperature and a continuous "how surprising was this result" measure
+    (the absolute residual off a simple combined-signal margin fit, which
+    uses the whole sample rather than just top-tercile "upsets") before
+    crediting temperature with anything, then cross-checks with a
+    transparent within-week-bucket view for anyone who'd rather not trust
+    the partial-correlation algebra.
+    """
+    scored = _scored_rows(rows)
+    fit = _ols(scored, ("combined_z_avg",), "actual_margin")
+    if fit is None:
+        return {"error": "insufficient data to fit a baseline margin model"}
+    intercept, slope = fit["coefficients"]
+    for r in scored:
+        predicted = intercept + slope * r["combined_z_avg"]
+        r["abs_residual"] = abs(r["actual_margin"] - predicted)
+
+    usable = [r for r in scored if r.get("temperature") is not None and r.get("week") is not None]
+    partial = _partial_correlation([(r["temperature"], r["abs_residual"], r["week"]) for r in usable])
+
+    by_week_bucket = {}
+    for label, predicate in (
+        ("weeks 1-4", lambda w: w <= 4),
+        ("weeks 5-9", lambda w: 5 <= w <= 9),
+        ("weeks 10+", lambda w: w >= 10),
+    ):
+        group = [r for r in usable if predicate(r["week"])]
+        by_week_bucket[label] = {
+            "n": len(group),
+            "mean_temperature": round(sum(r["temperature"] for r in group) / len(group), 1) if group else None,
+            "correlation_temperature_vs_abs_residual": (
+                round(_pearson([(r["temperature"], r["abs_residual"]) for r in group]) or 0, 4)
+                if len(group) >= 5 else None
+            ),
+        }
+
+    return {
+        "n": len(usable),
+        "baseline_margin_fit": {"intercept": round(intercept, 3), "slope": round(slope, 3), "r_squared": fit["r_squared"]},
+        "correlation_week_vs_temperature": round(_pearson([(r["week"], r["temperature"]) for r in usable]) or 0, 4),
+        "week_controlled": partial,
+        "within_week_bucket_view": by_week_bucket,
+    }
+
+
 def report(repository: CFBRepository, *, start_season: int = 2015, end_season: int = 2025) -> dict[str, Any]:
     rows = _load_dataset(repository, start_season=start_season, end_season=end_season)
     return {
@@ -335,4 +404,5 @@ def report(repository: CFBRepository, *, start_season: int = 2015, end_season: i
         "agreement_2_0_1_1_0_2": agreement_report(rows),
         "magnitude": magnitude_report(rows),
         "weather_interaction": weather_interaction_report(rows),
+        "weather_week_controlled": weather_week_controlled_report(rows),
     }
