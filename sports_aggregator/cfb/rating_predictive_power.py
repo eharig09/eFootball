@@ -60,6 +60,10 @@ def _load_dataset(repository: CFBRepository, *, start_season: int, end_season: i
                    FROM game_weather gw
                ) w WHERE w.rn = 1"""
         )}
+        market_rows = {row["game_id"]: row["spread"] for row in connection.execute(
+            """SELECT game_id, AVG(spread) AS spread FROM game_lines
+               WHERE spread IS NOT NULL GROUP BY game_id"""
+        )}
 
     out = []
     for game_id, hc in hc_rows.items():
@@ -72,10 +76,15 @@ def _load_dataset(repository: CFBRepository, *, start_season: int, end_season: i
             if "home" in qb and "away" in qb else None
         )
         weather = weather_rows.get(game_id, {})
+        spread = market_rows.get(game_id)
         out.append({
             "game_id": game_id, "season": hc["season"], "week": hc["week"],
             "hc_diff": float(hc["home_pre_elo"]) - float(hc["away_pre_elo"]),
             "qb_diff": qb_diff,
+            # Spread convention (matching margin_feature_ablation.py):
+            # negative spread means the home team is favored by that many
+            # points, so the market's implied home margin is -spread.
+            "market_margin": -float(spread) if spread is not None else None,
             "actual_margin": actual_margin,
             "home_won": actual_margin > 0,
             "sustained_wind": weather.get("sustained_wind"),
@@ -393,6 +402,98 @@ def weather_week_controlled_report(rows: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def _error_summary(group: list[dict[str, Any]], pred_key: str, actual_key: str = "actual_margin") -> dict[str, Any]:
+    n = len(group)
+    if not n:
+        return {"n": 0}
+    errors = [abs(r[pred_key] - r[actual_key]) for r in group]
+    return {
+        "n": n,
+        "mae": round(sum(errors) / n, 3),
+        "rmse": round(math.sqrt(sum(e * e for e in errors) / n), 3),
+        "correlation_with_actual": round(_pearson([(r[pred_key], r[actual_key]) for r in group]) or 0, 4),
+    }
+
+
+def vegas_comparison_report(rows: list[dict[str, Any]], *, test_from_season: int = 2020) -> dict[str, Any]:
+    """Fits a single curve (actual_margin ~ combined_z_avg) walk-forward --
+    trained only on strictly prior seasons, exactly like this codebase's
+    other market-facing backtests (margin_feature_ablation.py,
+    market_anchor_leverage.py) -- then compares it to the closing market
+    line on the same held-out games. Comparing an in-sample-fit curve to a
+    genuinely out-of-sample market price would be an unfair fight in the
+    curve's favor, so this one is not in-sample like the earlier reports
+    in this module.
+
+    Also fits an "anchored" variant (actual_margin ~ market_margin +
+    combined_z_avg, same walk-forward discipline) to ask the more useful
+    practical question: does the combined HC/QB signal add anything ON TOP
+    of what the market already prices in, not just whether it can match
+    the market cold.
+
+    test_from_season defaults to 2020, not the 2015 start of the coach/QB
+    Elo history: per-game box scores (game_player_box_stats), which QB
+    Elo's starter inference depends on, only exist from 2019 onward in
+    this database -- 2015-2018 games have zero QB Elo coverage, confirmed
+    directly rather than assumed. Any season with insufficient training
+    history is skipped automatically (the walk-forward loop below), so an
+    earlier test_from_season is harmless, just produces the same folds.
+    """
+    usable = [r for r in _scored_rows(rows) if r.get("market_margin") is not None]
+    seasons = sorted({r["season"] for r in usable})
+    folds = []
+    pooled_curve_alone: list[dict[str, Any]] = []
+    pooled_anchored: list[dict[str, Any]] = []
+
+    for season in seasons:
+        if season < test_from_season:
+            continue
+        train = [r for r in usable if r["season"] < season]
+        test = [dict(r) for r in usable if r["season"] == season]
+        if not test:
+            continue
+        curve_fit = _ols(train, ("combined_z_avg",), "actual_margin")
+        anchored_fit = _ols(train, ("market_margin", "combined_z_avg"), "actual_margin")
+        if curve_fit is None or anchored_fit is None:
+            continue
+        c0, c1 = curve_fit["coefficients"]
+        a0, a1, a2 = anchored_fit["coefficients"]
+        for r in test:
+            r["curve_predicted_margin"] = c0 + c1 * r["combined_z_avg"]
+            r["anchored_predicted_margin"] = a0 + a1 * r["market_margin"] + a2 * r["combined_z_avg"]
+        pooled_curve_alone.extend(test)
+        pooled_anchored.extend(test)
+        folds.append({
+            "season": season, "train_games": len(train), "test_games": len(test),
+            "curve_alone": _error_summary(test, "curve_predicted_margin"),
+            "market": _error_summary(test, "market_margin"),
+            "anchored_market_plus_signal": _error_summary(test, "anchored_predicted_margin"),
+        })
+
+    def closer_rate(group: list[dict[str, Any]], challenger_key: str) -> float | None:
+        n = len(group)
+        if not n:
+            return None
+        closer = sum(
+            1 for r in group
+            if abs(r[challenger_key] - r["actual_margin"]) < abs(r["market_margin"] - r["actual_margin"])
+        )
+        return round(closer / n, 4)
+
+    return {
+        "test_from_season": test_from_season,
+        "walk_forward": folds,
+        "pooled": {
+            "n": len(pooled_curve_alone),
+            "curve_alone": _error_summary(pooled_curve_alone, "curve_predicted_margin"),
+            "market": _error_summary(pooled_curve_alone, "market_margin"),
+            "anchored_market_plus_signal": _error_summary(pooled_anchored, "anchored_predicted_margin"),
+            "curve_closer_than_market_rate": closer_rate(pooled_curve_alone, "curve_predicted_margin"),
+            "anchored_closer_than_market_rate": closer_rate(pooled_anchored, "anchored_predicted_margin"),
+        },
+    }
+
+
 def report(repository: CFBRepository, *, start_season: int = 2015, end_season: int = 2025) -> dict[str, Any]:
     rows = _load_dataset(repository, start_season=start_season, end_season=end_season)
     return {
@@ -405,4 +506,5 @@ def report(repository: CFBRepository, *, start_season: int = 2015, end_season: i
         "magnitude": magnitude_report(rows),
         "weather_interaction": weather_interaction_report(rows),
         "weather_week_controlled": weather_week_controlled_report(rows),
+        "vegas_comparison": vegas_comparison_report(rows),
     }

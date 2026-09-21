@@ -4,8 +4,8 @@ from __future__ import annotations
 import math
 
 from sports_aggregator.cfb.rating_predictive_power import (
-    _ols, _partial_correlation, _pearson, _win_rate_when_favored, _zscore_diff,
-    agreement_report, magnitude_report,
+    _error_summary, _ols, _partial_correlation, _pearson, _win_rate_when_favored,
+    _zscore_diff, agreement_report, magnitude_report, vegas_comparison_report,
 )
 
 
@@ -103,6 +103,59 @@ def test_partial_correlation_preserves_a_real_independent_relationship():
 
 def test_partial_correlation_needs_enough_points():
     assert _partial_correlation([(1, 1, 1), (2, 2, 2)]) is None
+
+
+def test_error_summary_computes_mae_rmse_and_correlation():
+    rows = [
+        {"pred": 10.0, "actual_margin": 8.0},
+        {"pred": -5.0, "actual_margin": -5.0},
+    ]
+    result = _error_summary(rows, "pred")
+    assert result["n"] == 2
+    assert result["mae"] == 1.0
+    assert math.isclose(result["rmse"], math.sqrt(2.0), abs_tol=1e-3)
+
+
+def test_error_summary_empty_is_zero_not_a_crash():
+    assert _error_summary([], "pred") == {"n": 0}
+
+
+def _synthetic_game(game_id, season, hc, qb, market, actual):
+    return {
+        "game_id": game_id, "season": season, "week": 1,
+        "hc_diff": hc, "qb_diff": qb, "market_margin": market,
+        "actual_margin": actual, "home_won": actual > 0,
+    }
+
+
+def test_vegas_comparison_skips_a_season_with_no_prior_training_data():
+    rows = [_synthetic_game(i, 2020, float(i), float(i), float(i), float(i))
+            for i in range(20)]
+    result = vegas_comparison_report(rows, test_from_season=2020)
+    # 2020 is the only season present -- there's no strictly-prior season to
+    # train on, so it must not appear as a walk-forward test fold.
+    assert result["walk_forward"] == []
+
+
+def test_vegas_comparison_only_trains_on_strictly_prior_seasons():
+    # hc/qb/market/actual are independent random draws, not scalar multiples
+    # of each other or of a shared index -- avoids handing the two-feature
+    # anchored fit (or the hc/qb z-score average) an accidentally collinear
+    # or zero-variance synthetic dataset.
+    import random
+    rng = random.Random(2)
+
+    def game(i, season):
+        return _synthetic_game(
+            i, season, hc=rng.uniform(-50, 50), qb=rng.uniform(-50, 50),
+            market=rng.uniform(-10, 10), actual=rng.uniform(-30, 30))
+    rows = [game(i, 2020) for i in range(20)] + [game(100 + i, 2021) for i in range(20)]
+    result = vegas_comparison_report(rows, test_from_season=2021)
+    assert len(result["walk_forward"]) == 1
+    fold = result["walk_forward"][0]
+    assert fold["season"] == 2021
+    assert fold["train_games"] == 20  # only 2020's games, none of 2021's own
+    assert fold["test_games"] == 20
 
 
 def test_magnitude_report_buckets_are_monotonic_for_a_clean_relationship():
