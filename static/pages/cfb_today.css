@@ -358,3 +358,46 @@
 @media (max-width:620px) {
     .picks-record-bar { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+/* Small alignment pass for the three-column briefing and lower research row. */
+@media (min-width:1180px) {
+    .briefing { align-items:stretch; }
+    .briefing > .panel {
+        height:31rem;
+        min-height:31rem;
+        max-height:31rem;
+    }
+    .briefing > .panel > .panel-body {
+        flex:1 1 auto;
+        min-height:0;
+        max-height:none;
+        overflow-y:auto;
+    }
+    .briefing > .weekly-picks-panel > .picks-record-bar {
+        flex:0 0 auto;
+    }
+    .briefing > .weekly-picks-panel > .picks-scroll {
+        flex:1 1 auto;
+        min-height:0;
+        max-height:none;
+    }
+    .today-lower-grid {
+        grid-template-columns:minmax(0,1.55fr) minmax(350px,.85fr);
+        align-items:start;
+    }
+    .draft-watch-compact .compact-table-scroll {
+        margin-top:28px;
+    }
+}
+.picks-record-bar > div {
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    min-height:44px;
+}
+.weekly-picks-panel .weekly-pick-list {
+    align-content:start;
+}
+.today-lower-grid .section-title {
+    min-height:25px;
+}
