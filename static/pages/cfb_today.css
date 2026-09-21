@@ -294,3 +294,6 @@
     .weekly-pick-main { grid-template-columns:1fr; gap:5px; }
     .weekly-pick-foot { flex-direction:column; gap:3px; }
 }
+
+/* Picks sit below, not inside, the scrollable Games to Watch body. */
+.briefing > .panel:first-child > .weekly-picks { flex:0 0 auto; }
