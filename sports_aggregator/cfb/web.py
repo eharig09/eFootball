@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+import json
 import os
 from zoneinfo import ZoneInfo
 
@@ -349,6 +350,65 @@ def _weekly_engine_picks(
     return picks
 
 
+def _portfolio_season_record(
+    repository: CFBRepository,
+    season: int,
+) -> dict:
+    """Grade the unique non-conflicting frozen portfolio at flat -110."""
+    with repository._reader() as connection:
+        rows = [
+            dict(row) for row in connection.execute(
+                """SELECT m.game_id,m.packet_json,g.home_points,g.away_points
+                   FROM cfb_two_engine_manifest m
+                   JOIN games g ON g.game_id=m.game_id
+                   WHERE m.manifest_version=? AND m.season=?
+                     AND g.completed=1
+                     AND g.home_points IS NOT NULL
+                     AND g.away_points IS NOT NULL""",
+                ("two-engine-pregame-v1", int(season)),
+            )
+        ]
+
+    wins = losses = pushes = 0
+    for row in rows:
+        packet = json.loads(str(row["packet_json"]))
+        if packet.get("state") not in {"engine_a_only", "engine_b_only", "agreement"}:
+            continue
+        side = packet.get("selected_side")
+        if side not in {"home", "away"}:
+            continue
+        lines = game_lines(repository, int(row["game_id"]))
+        spread = lines.get("consensus_spread")
+        if spread is None:
+            continue
+
+        home_margin = float(row["home_points"]) - float(row["away_points"])
+        selected_margin = home_margin if side == "home" else -home_margin
+        selected_spread = float(spread) if side == "home" else -float(spread)
+        edge = selected_margin + selected_spread
+        if abs(edge) < 1e-9:
+            pushes += 1
+        elif edge > 0:
+            wins += 1
+        else:
+            losses += 1
+
+    n = wins + losses + pushes
+    decided = wins + losses
+    net_units = wins * (100.0 / 110.0) - losses
+    return {
+        "wins": wins,
+        "losses": losses,
+        "pushes": pushes,
+        "n": n,
+        "record": f"{wins}-{losses}" + (f"-{pushes}" if pushes else ""),
+        "hit_rate": round(wins / decided, 4) if decided else None,
+        "net_units": round(net_units, 2),
+        "roi": round((net_units / n) * 100.0, 1) if n else None,
+        "price": "-110",
+    }
+
+
 @cfb_pages.get("/college-football/")
 @cached_page
 def today():
@@ -380,6 +440,7 @@ def today():
     weekly_engine_picks = _weekly_engine_picks(
         weekly_games_labelled, frozen_signals, market
     )
+    portfolio_record = _portfolio_season_record(repository, season)
     national_stories = _story_repository().list_stories(limit=16)
     slate_day, slate_games = _current_slate(repository, season)
     return render_template(
@@ -399,6 +460,7 @@ def today():
         watch_games=slate,
         watch_brands=brands,
         weekly_engine_picks=weekly_engine_picks,
+        portfolio_record=portfolio_record,
         weekly_matchups_table=views.weekly_matchups_table(
             _weekly_matchup_watches(repository, weekly_slate), season),
         nearest_week=nearest_week,

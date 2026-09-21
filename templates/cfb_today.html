@@ -147,53 +147,6 @@
             </div>
         </div>
 
-        <div class="weekly-picks">
-                <div class="weekly-picks-head">
-                    <div>
-                        <strong>Picks of the Week</strong>
-                        <span>Frozen two-engine selections</span>
-                    </div>
-                    {% if nearest_week is not none %}<em>Week {{ nearest_week }}</em>{% endif %}
-                </div>
-                {% if weekly_engine_picks %}
-                <div class="weekly-pick-list">
-                    {% for pick in weekly_engine_picks %}
-                    <a class="weekly-pick is-{{ pick.pick_state }}"
-                       href="{{ url_for('cfb.game_preview', game_id=pick.game_id) }}">
-                        <div class="weekly-pick-top">
-                            <span>{{ pick.away_team }} @ {{ pick.home_team }}</span>
-                            <b>{{ pick.pick_state_label }}</b>
-                        </div>
-                        <div class="weekly-pick-main">
-                            <div>
-                                <small>Pick</small>
-                                <strong>{{ pick.pick_team }}
-                                    {% if pick.pick_spread is not none %}
-                                    {{ pick.pick_spread | cell('signed') }}
-                                    {% endif %}
-                                </strong>
-                            </div>
-                            <div>
-                                <small>Kickoff</small>
-                                <span>{{ pick.date_label }} · {{ pick.time_label or 'TBD' }}</span>
-                            </div>
-                        </div>
-                        <p>{{ pick.pick_detail }}</p>
-                        <div class="weekly-pick-foot">
-                            <span>Frozen pregame</span>
-                            {% if pick.market and pick.market.spread is not none %}
-                            <span>Market {{ pick.market.spread | cell('signed') }} home</span>
-                            {% endif %}
-                        </div>
-                    </a>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="weekly-picks-empty">
-                    No frozen Engine A or Engine B selections for Week {{ nearest_week or '—' }} yet.
-                </div>
-                {% endif %}
-            </div>
     </section>
 
     <section class="panel">
@@ -271,30 +224,78 @@
     </section>
 
 
-    <section class="panel">
-        {#- The panel shows as many rows as it can display and says how many
-            there are; this is the way to the rest of them. It used to render
-            the whole hundred-player board into a scroll region, which was 89 KB
-            to show twelve, but cutting that left no route to the other 88. -#}
-        <div class="panel-head"><strong>2027 Draft Watch</strong>
-            <a class="panel-more" href="{{ url_for('cfb.draft_watch', season=season) }}"
-               >Full board &rarr;</a></div>
-        <div class="panel-body">{{ data_table(draft_table) }}</div>
+    <section class="panel weekly-picks-panel">
+        <div class="panel-head">
+            <strong>Picks of the Week</strong>
+            <span>{% if nearest_week is not none %}Week {{ nearest_week }}{% endif %} · frozen portfolio</span>
+        </div>
+        <div class="picks-record-bar">
+            <div><span>Overall record</span><b>{{ portfolio_record.record }}</b></div>
+            <div><span>ROI</span><b class="{{ 'is-positive' if portfolio_record.roi is not none and portfolio_record.roi >= 0 else 'is-negative' }}">
+                {% if portfolio_record.roi is not none %}{{ portfolio_record.roi | cell('signed') }}%{% else %}—{% endif %}
+            </b></div>
+            <div><span>Net</span><b>{% if portfolio_record.n %}{{ portfolio_record.net_units | cell('signed') }}u{% else %}—{% endif %}</b></div>
+            <div><span>Graded</span><b>{{ portfolio_record.n }}</b><small>@ {{ portfolio_record.price }}</small></div>
+        </div>
+        <div class="panel-body picks-scroll">
+            {% if weekly_engine_picks %}
+            <div class="weekly-pick-list">
+                {% for pick in weekly_engine_picks %}
+                <a class="weekly-pick is-{{ pick.pick_state }}"
+                   href="{{ url_for('cfb.game_preview', game_id=pick.game_id) }}">
+                    <div class="weekly-pick-top">
+                        <span>{{ pick.away_team }} @ {{ pick.home_team }}</span>
+                        <b>{{ pick.pick_state_label }}</b>
+                    </div>
+                    <div class="weekly-pick-main">
+                        <div>
+                            <small>Pick</small>
+                            <strong>{{ pick.pick_team }}{% if pick.pick_spread is not none %} {{ pick.pick_spread | cell('signed') }}{% endif %}</strong>
+                        </div>
+                        <div>
+                            <small>Kickoff</small>
+                            <span>{{ pick.date_label }} · {{ pick.time_label or 'TBD' }}</span>
+                        </div>
+                    </div>
+                    <p>{{ pick.pick_detail }}</p>
+                    <div class="weekly-pick-foot">
+                        <span>Frozen pregame</span>
+                        {% if pick.market and pick.market.spread is not none %}
+                        <span>Market {{ pick.market.spread | cell('signed') }} home</span>
+                        {% endif %}
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="weekly-picks-empty">
+                No frozen Engine A or Engine B selections for Week {{ nearest_week or '—' }} yet.
+            </div>
+            {% endif %}
+        </div>
     </section>
 </div>
 
-<section class="section">
-    <div class="section-title">
-        <h2>Upcoming Week{% if nearest_week is not none %} {{ nearest_week }}{% endif %}: Matchups to Watch</h2>
-        <span>Players, units, and assignment-aware one-on-ones</span>
-    </div>
-    <div class="section-note">
-        Receiver/corner pairings require a substantial man-coverage sample. Otherwise
-        the receiver is evaluated against the full coverage unit; backs and tight ends
-        are matched to the linebackers and safeties responsible for the relevant space.
-    </div>
-    {{ data_table(weekly_matchups_table) }}
-</section>
+<div class="today-lower-grid">
+    <section class="section matchups-compact">
+        <div class="section-title">
+            <h2>Upcoming Week{% if nearest_week is not none %} {{ nearest_week }}{% endif %}: Matchups to Watch</h2>
+            <span>Players, units, and assignment-aware one-on-ones</span>
+        </div>
+        <div class="section-note compact-note">
+            Receiver/corner pairings require a substantial man-coverage sample; otherwise the receiver is evaluated against the full coverage unit.
+        </div>
+        <div class="compact-table-scroll">{{ data_table(weekly_matchups_table) }}</div>
+    </section>
+
+    <section class="section draft-watch-compact">
+        <div class="section-title">
+            <h2>2027 Draft Watch</h2>
+            <a class="section-more" href="{{ url_for('cfb.draft_watch', season=season) }}">Full board &rarr;</a>
+        </div>
+        <div class="compact-table-scroll draft-table-scroll">{{ data_table(draft_table) }}</div>
+    </section>
+</div>
 
 <section class="section">
     <div class="section-title">
