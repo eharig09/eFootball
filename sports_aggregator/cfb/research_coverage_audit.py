@@ -119,6 +119,70 @@ def _raw_table_stages(repository: CFBRepository, season: int) -> list[dict[str, 
     return output
 
 
+def _lens_field_coverage(rows: list[dict[str, Any]], season: int) -> dict[str, Any]:
+    target = [r for r in rows if int(r.get("season", -1)) == int(season)]
+    fields = (
+        "margin_power_edge",
+        "football_lab_edge",
+        "elo_edge",
+        "efficiency_power_edge",
+        "line_elo_edge",
+        "narrative_interaction_edge",
+    )
+    coverage = {
+        field: sum(1 for r in target if r.get(field) is not None)
+        for field in fields
+    }
+    structural_ready = sum(
+        1
+        for r in target
+        if sum(
+            r.get(field) is not None
+            for field in ("football_lab_edge", "elo_edge", "efficiency_power_edge")
+        ) >= 2
+    )
+    line_ready = sum(1 for r in target if r.get("line_elo_edge") is not None)
+    primary_ready = sum(1 for r in target if r.get("margin_power_edge") is not None)
+    fully_state_ready = sum(
+        1
+        for r in target
+        if r.get("margin_power_edge") is not None
+        and r.get("line_elo_edge") is not None
+        and sum(
+            r.get(field) is not None
+            for field in ("football_lab_edge", "elo_edge", "efficiency_power_edge")
+        ) >= 2
+    )
+    return {
+        "n": len(target),
+        "field_non_null_counts": coverage,
+        "primary_margin_power_ready": primary_ready,
+        "structural_cluster_ready_min_2_of_3": structural_ready,
+        "line_elo_ready": line_ready,
+        "state_ready_primary_plus_structural_plus_line": fully_state_ready,
+    }
+
+
+def _coach_season_attribution_count(repository: CFBRepository, season: int) -> dict[str, Any]:
+    result = _safe_sql_count(
+        repository,
+        """SELECT COUNT(*) FROM coach_seasons WHERE season=? AND games > 0""",
+        (int(season),),
+    )
+    if result.get("status") != "ok":
+        return result
+    try:
+        with repository._reader() as connection:
+            teams = connection.execute(
+                """SELECT COUNT(DISTINCT team_id)
+                   FROM coach_seasons WHERE season=? AND games > 0""",
+                (int(season),),
+            ).fetchone()[0]
+        return {**result, "teams": int(teams or 0)}
+    except sqlite3.Error as exc:
+        return {"n": None, "status": "error", "error": str(exc)}
+
+
 def _derived_stages(repository: CFBRepository, season: int, elo_start_season: int) -> list[dict[str, Any]]:
     hc_qb_rows: list[dict[str, Any]] | None = None
 
@@ -132,12 +196,20 @@ def _derived_stages(repository: CFBRepository, season: int, elo_start_season: in
             )
         return hc_qb_rows
 
+    lens_rows: list[dict[str, Any]] | None = None
+
+    def load_lens_rows() -> list[dict[str, Any]]:
+        nonlocal lens_rows
+        if lens_rows is None:
+            lens_rows = ipl.build_lens_rows(repository, test_season=int(season))
+        return lens_rows
+
     stages = [
         _safe_builder("hc_qb_dataset_completed", load_hc_qb, season),
         _safe_builder("hc_qb_scored_both_ratings", lambda: _scored_rows(load_hc_qb()), season),
         _safe_builder(
             "internal_power_lens_rows",
-            lambda: ipl.build_lens_rows(repository, test_season=int(season)),
+            load_lens_rows,
             season,
         ),
         _safe_builder(
@@ -189,6 +261,20 @@ def _derived_stages(repository: CFBRepository, season: int, elo_start_season: in
             "n": None,
             "error": f"{type(exc).__name__}: {exc}",
         })
+    try:
+        stages.append({
+            "stage": "internal_power_lens_field_coverage",
+            "status": "ok",
+            **_lens_field_coverage(load_lens_rows(), season),
+        })
+    except Exception as exc:
+        stages.append({
+            "stage": "internal_power_lens_field_coverage",
+            "status": "error",
+            "n": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        })
+
     return stages
 
 
@@ -233,12 +319,15 @@ def report(
         "season": season,
         "elo_start_season": int(elo_start_season),
         "raw_and_persisted_stages": raw,
+        "coach_season_attribution": _coach_season_attribution_count(repository, season),
         "derived_pipeline_stages": derived,
         "diagnosis": _diagnosis(ordered),
         "notes": [
             "Diagnostic only: no tables are written or backfilled.",
             "Counts are target-season game counts unless a stage explicitly reports all_rows as context.",
             "The HC/QB dataset requires completed coach-Elo games; scored rows additionally require both QB sides.",
+            "Coach Elo can only assign target-season games when coach_seasons contains target-season team/coach attribution rows.",
+            "Lens field coverage distinguishes missing Margin Power, Structural-cluster components, and Line Elo when lens rows exist but convergence classification is zero.",
             "Internal power lenses depend on narrative/composite inputs plus Margin Power, xPoints efficiency, and projection-backtest calibration.",
             "Four-signal complete rows additionally require a non-neutral combined HC/QB Elo score.",
         ],
