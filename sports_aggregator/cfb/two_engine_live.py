@@ -63,11 +63,25 @@ FROZEN_QB_STATS = (-0.09133302884958344, 82.76569033618398)
 #: football_lab_edge input feeding "Structural" changed, so these numbers
 #: moved by a few points each (largest: fade_old_2_of_3, 63.6% -> 55.0%),
 #: not by a redefinition of what "confirms" means.
+#:
+#: Re-reconciled 2026-09-21 (same day, second pass): game_projection.py's
+#: drive-count projection was rewired from the plain Baseline C blend to the
+#: validated walk-forward advanced xdrives regression (see xdrives.py's
+#: ADVANCED_FEATURES_LIVE). Margin Power's own prediction
+#: (live_margin_calibration.predict_live) uses drive_diff as a feature, so a
+#: more accurate drives projection changes Margin Power's numeric edge for
+#: every game, which can flip which spread-bucket/elo-agreement route a game
+#: lands in even though no route predicate or threshold changed. Re-measured
+#: the same way as the reconciliation above (convergence_routing_holdout's
+#: _route_report over all 2020-2025 rows); one route
+#: (fade_old_3_of_3_elo_disagrees_spread_14_plus) is byte-for-byte identical,
+#: confirming this reflects routing movement from the new drives-informed
+#: margin, not a change to route logic itself.
 ENGINE_A_HISTORY = {
-    "positive_4_of_4_spread_lt_14": {"n": 49, "hit_rate": 0.6327, "mean_residual": 7.181},
-    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 37, "hit_rate": 0.6757, "mean_residual": 6.707},
-    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 24, "hit_rate": 0.6667, "mean_residual": 6.589},
-    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 20, "hit_rate": 0.5500, "mean_residual": 2.404},
+    "positive_4_of_4_spread_lt_14": {"n": 51, "hit_rate": 0.6471, "mean_residual": 7.072},
+    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 33, "hit_rate": 0.6061, "mean_residual": 5.753},
+    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 25, "hit_rate": 0.6800, "mean_residual": 6.262},
+    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 23, "hit_rate": 0.5652, "mean_residual": 3.337},
     "fade_old_3_of_3_elo_disagrees_spread_14_plus": {"n": 21, "hit_rate": 0.7143, "mean_residual": 3.320},
 }
 ENGINE_B_HISTORY = {
@@ -75,9 +89,12 @@ ENGINE_B_HISTORY = {
     "rebound_vs_post_success_qb_opposes": {"n": 82, "hit_rate": 0.6098, "mean_residual": 3.780},
 }
 #: Reconciled alongside ENGINE_A_HISTORY above (two_engine_portfolio.report(),
-#: non_conflicting_combined_portfolio.all_2020_2025) -- Engine B is untouched
-#: by the football_lab_edge fix, so this barely moves (317->321, 61.83%->61.68%).
-PORTFOLIO_HISTORY = {"n": 321, "hit_rate": 0.6168, "mean_residual": 4.321}
+#: non_conflicting_combined_portfolio.all_2020_2025). Engine B's own policy
+#: definitions (narrative-family + rating-direction, not Margin Power) are
+#: untouched by the xdrives rewiring, so ENGINE_B_HISTORY above is unchanged;
+#: this combined figure still moves because the A/B overlap partition shifts
+#: whenever Engine A's routed game set shifts (321->323, 61.68%->61.30%).
+PORTFOLIO_HISTORY = {"n": 323, "hit_rate": 0.6130, "mean_residual": 4.225}
 
 
 def _pooled(history: dict[str, dict[str, Any]]) -> dict[str, Any]:
