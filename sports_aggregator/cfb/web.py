@@ -59,10 +59,13 @@ from sports_aggregator.cfb.pff import pff_summary
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb.two_engine_live import (
     ENGINE_A_OVERALL, ENGINE_B_OVERALL,
+    _initialize_manifest as _initialize_two_engine_manifest,
     _pooled as _two_engine_pooled,
     display_packet as two_engine_display_packet, manifest_for_games,
+    manifest_history_for_game,
     engine_b_rules_plain_language,
     route_plain_language, season_record as two_engine_season_record,
+    season_record_first_appearance as two_engine_season_record_first_appearance,
     team_ratings_display,
 )
 from sports_aggregator.cfb import views
@@ -330,6 +333,9 @@ def _weekly_engine_picks(
             ]
             detail = " + ".join(rules) if rules else "Frozen Engine B rule"
 
+        is_final = bool(game.get("completed")) or (
+            game.get("home_points") is not None and game.get("away_points") is not None
+        )
         picks.append({
             **game,
             "pick_state": packet.get("state"),
@@ -341,6 +347,7 @@ def _weekly_engine_picks(
             "pick_route": engine_a.get("route"),
             "pick_rules": engine_b.get("rules") or [],
             "pick_frozen_at": packet.get("frozen_at"),
+            "pick_is_final": is_final,
             "market": market_row,
         })
 
@@ -357,6 +364,7 @@ def _portfolio_season_record(
     season: int,
 ) -> dict:
     """Grade the unique non-conflicting frozen portfolio at flat -110."""
+    _initialize_two_engine_manifest(repository)
     with repository._reader() as connection:
         rows = [
             dict(row) for row in connection.execute(
@@ -383,6 +391,75 @@ def _portfolio_season_record(
         spread = lines.get("consensus_spread")
         if spread is None:
             continue
+
+        home_margin = float(row["home_points"]) - float(row["away_points"])
+        selected_margin = home_margin if side == "home" else -home_margin
+        selected_spread = float(spread) if side == "home" else -float(spread)
+        edge = selected_margin + selected_spread
+        if abs(edge) < 1e-9:
+            pushes += 1
+        elif edge > 0:
+            wins += 1
+        else:
+            losses += 1
+
+    n = wins + losses + pushes
+    decided = wins + losses
+    net_units = wins * (100.0 / 110.0) - losses
+    return {
+        "wins": wins,
+        "losses": losses,
+        "pushes": pushes,
+        "n": n,
+        "record": f"{wins}-{losses}" + (f"-{pushes}" if pushes else ""),
+        "hit_rate": round(wins / decided, 4) if decided else None,
+        "net_units": round(net_units, 2),
+        "roi": round((net_units / n) * 100.0, 1) if n else None,
+        "price": "-110",
+    }
+
+
+def _portfolio_season_record_first_appearance(
+    repository: CFBRepository,
+    season: int,
+) -> dict:
+    """Same as _portfolio_season_record(), except each game is graded
+    against the line it had the moment the non-conflicting portfolio FIRST
+    qualified, not the closing line -- sourced from
+    cfb_two_engine_manifest_history rather than the current manifest row."""
+    _initialize_two_engine_manifest(repository)
+    with repository._reader() as connection:
+        rows = [
+            dict(row) for row in connection.execute(
+                """SELECT h.game_id,h.recorded_at,h.market_spread,h.packet_json,
+                          g.home_points,g.away_points
+                   FROM cfb_two_engine_manifest_history h
+                   JOIN games g ON g.game_id=h.game_id
+                   WHERE h.manifest_version=? AND g.season=?
+                     AND g.completed=1
+                     AND g.home_points IS NOT NULL
+                     AND g.away_points IS NOT NULL
+                   ORDER BY h.game_id, h.recorded_at""",
+                ("two-engine-pregame-v1", int(season)),
+            )
+        ]
+
+    wins = losses = pushes = 0
+    seen_game_ids: set[int] = set()
+    for row in rows:
+        game_id = int(row["game_id"])
+        if game_id in seen_game_ids:
+            continue  # already graded this game's first qualifying appearance
+        packet = json.loads(str(row["packet_json"]))
+        if packet.get("state") not in {"engine_a_only", "engine_b_only", "agreement"}:
+            continue
+        side = packet.get("selected_side")
+        if side not in {"home", "away"}:
+            continue
+        spread = row["market_spread"]
+        if spread is None:
+            continue
+        seen_game_ids.add(game_id)
 
         home_margin = float(row["home_points"]) - float(row["away_points"])
         selected_margin = home_margin if side == "home" else -home_margin
@@ -901,6 +978,8 @@ def game_preview(game_id: int):
     )
     team_ratings = team_ratings_display(repository, game)
     season_record = two_engine_season_record(repository, season)
+    season_record_first_appearance = two_engine_season_record_first_appearance(repository, season)
+    two_engine_history = manifest_history_for_game(repository, game_id)
     return render_template(
         "cfb_game.html",
         meta=page_meta_for.game_meta(
@@ -928,6 +1007,8 @@ def game_preview(game_id: int):
         totals_tracked_min_win_rate=TOTALS_TRACKED_MIN_WIN_RATE,
         team_ratings=team_ratings,
         season_record=season_record,
+        season_record_first_appearance=season_record_first_appearance,
+        two_engine_history=two_engine_history,
         projection_lines=projection_narrative(projection),
         projection_table=views.game_projection_table(projection),
         game_shape=game_shape(

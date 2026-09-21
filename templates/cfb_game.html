@@ -317,9 +317,9 @@
 
             {% if two_engine_signal.source %}
             <div class="lab-verdict-meta">
-                {% if two_engine_signal.source == 'frozen_manifest' %}Frozen {{ two_engine_signal.frozen_at }}
-                {% elif two_engine_signal.source == 'pending_manifest_live_preview' %}Live refresh of pending manifest &middot; rerun freeze to finalize
-                {% else %}Live pregame preview &middot; not frozen yet{% endif %}
+                {% if two_engine_signal.source == 'frozen_manifest' and two_engine_signal.is_final %}Final pregame state &middot; {{ two_engine_signal.frozen_at }}
+                {% elif two_engine_signal.source == 'frozen_manifest' %}Live &middot; updated {{ two_engine_signal.frozen_at }} &middot; updates until kickoff
+                {% else %}Live pregame preview &middot; not yet in the tracked manifest{% endif %}
             </div>
             {% endif %}
 
@@ -484,7 +484,51 @@
                     </div>
                 </div>
             </div>
+
+            <div class="lab-record-divider">First appearance ({{ season_record_first_appearance.season }}) &mdash; graded at the line each pick had the moment it first qualified, not the closing line. Compare against "closing" above to see whether the model beats the market before it moves.</div>
+            <div class="lab-record-list">
+                <div class="lab-record-row">
+                    <div><b>Engine A</b></div>
+                    <div class="lab-record-figure">
+                        <b>{{ season_record_first_appearance.engine_a.record }}</b>
+                        <i>{% if season_record_first_appearance.engine_a.hit_rate is not none %}{{ (season_record_first_appearance.engine_a.hit_rate * 100) | cell('f1') }}% &middot; {% endif %}n={{ season_record_first_appearance.engine_a.n }}{% if season_record_first_appearance.engine_a.n == 0 %} &middot; nothing graded yet{% endif %}</i>
+                    </div>
+                </div>
+                <div class="lab-record-row">
+                    <div><b>Engine B</b></div>
+                    <div class="lab-record-figure">
+                        <b>{{ season_record_first_appearance.engine_b.record }}</b>
+                        <i>{% if season_record_first_appearance.engine_b.hit_rate is not none %}{{ (season_record_first_appearance.engine_b.hit_rate * 100) | cell('f1') }}% &middot; {% endif %}n={{ season_record_first_appearance.engine_b.n }}{% if season_record_first_appearance.engine_b.n == 0 %} &middot; nothing graded yet{% endif %}</i>
+                    </div>
+                </div>
+            </div>
         </div>
+
+        {# ---------- Pick history: how this game's classification has moved ---------- #}
+        {% if two_engine_history %}
+        <div class="lab-card">
+            <div class="lab-card-title">Pick history</div>
+            <div class="lab-record-list">
+                {% for entry in two_engine_history %}
+                <div class="lab-record-row">
+                    <div>
+                        <b>{{ entry.state | replace('_', ' ') | title }}</b>
+                        <i>{{ entry.recorded_at }}{% if entry.market_spread is not none %} &middot; market {{ entry.market_spread | cell('signed') }} home{% endif %}</i>
+                    </div>
+                    <div class="lab-record-figure">
+                        <b>{% if entry.selected_team %}{{ entry.selected_team }}{% else %}&mdash;{% endif %}</b>
+                        <i>
+                            {% if entry.engine_a.qualified %}A: {{ entry.engine_a.selected_team }}{% endif %}
+                            {% if entry.engine_a.qualified and entry.engine_b.qualified %} &middot; {% endif %}
+                            {% if entry.engine_b.qualified %}B: {{ entry.engine_b.selected_team }}{% endif %}
+                            {% if not entry.engine_a.qualified and not entry.engine_b.qualified %}neither qualified{% endif %}
+                        </i>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
 
         {# ---------- Matchup context (kept from the old CONTEXT/narrative row) ---------- #}
         {% if research_intelligence.narrative and research_intelligence.narrative.available %}

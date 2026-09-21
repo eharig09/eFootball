@@ -227,7 +227,7 @@
     <section class="panel weekly-picks-panel">
         <div class="panel-head">
             <strong>Picks of the Week</strong>
-            <span>{% if nearest_week is not none %}Week {{ nearest_week }}{% endif %} · frozen portfolio</span>
+            <span>{% if nearest_week is not none %}Week {{ nearest_week }}{% endif %} · live portfolio, updates until kickoff</span>
         </div>
         <div class="picks-record-bar">
             <div><span>Overall record</span><b>{{ portfolio_record.record }}</b></div>
@@ -259,7 +259,7 @@
                     </div>
                     <p>{{ pick.pick_detail }}</p>
                     <div class="weekly-pick-foot">
-                        <span>Frozen pregame</span>
+                        <span>{% if pick.pick_is_final %}Final pregame{% else %}Live, updates until kickoff{% endif %}</span>
                         {% if pick.market and pick.market.spread is not none %}
                         <span>Market {{ pick.market.spread | cell('signed') }} home</span>
                         {% endif %}

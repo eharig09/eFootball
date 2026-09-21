@@ -213,6 +213,34 @@ def _initialize_manifest(repository: CFBRepository) -> None:
                    PRIMARY KEY (manifest_version, game_id)
                )"""
         )
+        # Append-only change log alongside cfb_two_engine_manifest (which now
+        # holds the current/closing state, mutable until kickoff -- see
+        # freeze_week()). A row is written only when the classification
+        # actually changes, so this doubles as both a "how did this pick
+        # evolve" timeline and the source for first-appearance grading
+        # (season_record_first_appearance): the earliest qualifying row per
+        # engine leg captures the market_spread at the moment that pick first
+        # showed up, which cfb_two_engine_manifest/game_lines can no longer
+        # reconstruct once the market has since moved. Mirrors
+        # pregame_snapshots.py's cfb_pregame_snapshots: append-only via
+        # INSERT OR IGNORE, never UPDATE.
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS cfb_two_engine_manifest_history (
+                   manifest_version TEXT NOT NULL,
+                   game_id INTEGER NOT NULL,
+                   recorded_at TEXT NOT NULL,
+                   state TEXT NOT NULL,
+                   selected_side TEXT,
+                   selected_team TEXT,
+                   market_spread REAL,
+                   packet_json TEXT NOT NULL,
+                   PRIMARY KEY (manifest_version, game_id, recorded_at)
+               )"""
+        )
+        connection.execute(
+            """CREATE INDEX IF NOT EXISTS idx_two_engine_manifest_history_game
+               ON cfb_two_engine_manifest_history(game_id)"""
+        )
 
 
 def _historical_context(repository: CFBRepository) -> dict[str, Any]:
@@ -898,6 +926,11 @@ def classify_game(
         "implication": _implication(state, selected_team),
         "engine_a": engine_a,
         "engine_b": engine_b,
+        # The consensus spread this classification was computed against --
+        # not re-derivable later once the market has moved (game_lines only
+        # holds current + opening, no timeline), so a history snapshot needs
+        # to capture it here rather than reading it back afterward.
+        "market_spread": spread,
         "portfolio_reference": PORTFOLIO_HISTORY,
         "method_note": (
             "Pregame-only classification. Engine A uses corrected walk-forward "
@@ -943,6 +976,37 @@ def manifest_for_games(repository: CFBRepository, game_ids: list[int]) -> dict[i
     return out
 
 
+def manifest_history_for_game(repository: CFBRepository, game_id: int) -> list[dict[str, Any]]:
+    """The full change timeline for one game, oldest first -- every entry
+    freeze_week() ever logged because the classification actually differed
+    from what came before it. Empty for a game whose classification has
+    never changed since it first appeared (nothing to show beyond the
+    current manifest row) as well as for one that's never been classified."""
+    _initialize_manifest(repository)
+    with repository._reader() as connection:
+        rows = connection.execute(
+            """SELECT recorded_at,state,selected_side,selected_team,
+                      market_spread,packet_json
+               FROM cfb_two_engine_manifest_history
+               WHERE manifest_version=? AND game_id=?
+               ORDER BY recorded_at""",
+            (MANIFEST_VERSION, int(game_id)),
+        ).fetchall()
+    out = []
+    for row in rows:
+        packet = json.loads(str(row["packet_json"]))
+        out.append({
+            "recorded_at": row["recorded_at"],
+            "state": row["state"],
+            "selected_side": row["selected_side"],
+            "selected_team": row["selected_team"],
+            "market_spread": row["market_spread"],
+            "engine_a": packet.get("engine_a") or {},
+            "engine_b": packet.get("engine_b") or {},
+        })
+    return out
+
+
 def display_packet(
     repository: CFBRepository,
     game: dict[str, Any],
@@ -951,12 +1015,20 @@ def display_packet(
     lines: dict[str, Any] | None = None,
     research: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    frozen = frozen_manifest_for_game(repository, int(game["game_id"]))
-    if frozen is not None and frozen.get("state") != "pending":
-        return frozen
-    if game.get("completed") or (
+    """cfb_two_engine_manifest now holds the current/closing state and stays
+    mutable until kickoff (see freeze_week()), so there's no more pending-vs-
+    resolved distinction here -- a manifest row, if one exists, IS the
+    current answer regardless of its state. `is_final` tells the caller
+    whether that row can still change (False, pre-kickoff) or is the
+    game's last-ever pregame state (True, once it's started/completed)."""
+    is_final = bool(game.get("completed")) or (
         game.get("home_points") is not None and game.get("away_points") is not None
-    ):
+    )
+    frozen = frozen_manifest_for_game(repository, int(game["game_id"]))
+    if frozen is not None:
+        frozen["is_final"] = is_final
+        return frozen
+    if is_final:
         return {
             "state": "unfrozen_completed",
             "state_label": "NO PREGAME MANIFEST",
@@ -964,24 +1036,45 @@ def display_packet(
             "selected_team": None,
             "implication": "This completed game was not frozen into the pregame two-engine manifest.",
             "source": "none",
+            "is_final": True,
         }
     packet = classify_game(
         repository, game, projection=projection, lines=lines, research=research
     )
-    if frozen is not None:
-        packet["source"] = "pending_manifest_live_preview"
-        packet["pending_manifest_at"] = frozen.get("frozen_at")
-    else:
-        packet["source"] = "live_preview"
+    packet["source"] = "live_preview"
+    packet["is_final"] = False
     return packet
 
 
-def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[str, Any]:
-    """Freeze or finalize one week's pregame portfolio classifications.
+def _leg_signature(packet: dict[str, Any]) -> tuple[Any, ...]:
+    """The parts of a packet that matter for "did this classification
+    actually change" -- the packet's own summary `state` PLUS each engine
+    leg's own qualification independently, since Engine A and Engine B can
+    resolve at different times and a leg flipping sides (or losing/gaining
+    qualification) while the other leg is untouched must still count as a
+    change worth logging."""
+    engine_a = packet.get("engine_a") or {}
+    engine_b = packet.get("engine_b") or {}
+    return (
+        packet.get("state"),
+        bool(engine_a.get("qualified")), engine_a.get("selected_team"),
+        bool(engine_b.get("qualified")), engine_b.get("selected_team"),
+    )
 
-    A pending row is not a prediction. It may be replaced before kickoff once
-    both engines have enough inputs to resolve to a real portfolio state.
-    Resolved rows remain immutable.
+
+def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[str, Any]:
+    """Recompute one week's pregame portfolio classifications.
+
+    cfb_two_engine_manifest holds the current/closing state for a game and
+    stays mutable right up to kickoff -- a close game can flip on very little
+    line movement, and the displayed pick should track that, not lock onto
+    whatever happened to be true the first time this ran. Every classification
+    that differs from what's currently stored is also appended to
+    cfb_two_engine_manifest_history (never overwritten), so "first appearance"
+    stays recoverable even after the current state has moved on -- see
+    season_record_first_appearance(). A game is only ever touched here before
+    its own kickoff; once it starts, both tables stop changing for it, which
+    is what actually makes a record final rather than an explicit lock flag.
     """
     _initialize_manifest(repository)
     now = datetime.now(timezone.utc)
@@ -995,93 +1088,111 @@ def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[st
             )
         ]
 
-    frozen = []
-    finalized_pending = []
-    pending_remaining = []
+    updated = []
+    unchanged = []
     skipped_started = []
-    already_frozen = []
     for game in games:
         kickoff = datetime.fromisoformat(str(game["start_date"]).replace("Z", "+00:00"))
         if kickoff <= now or game.get("home_points") is not None or game.get("away_points") is not None:
             skipped_started.append(int(game["game_id"]))
             continue
 
-        existing = frozen_manifest_for_game(repository, int(game["game_id"]))
-        if existing is not None and existing.get("state") != "pending":
-            already_frozen.append(int(game["game_id"]))
-            continue
-
+        game_id = int(game["game_id"])
+        existing = frozen_manifest_for_game(repository, game_id)
         packet = classify_game(repository, game)
-        frozen_at = datetime.now(timezone.utc).isoformat()
-        if existing is not None and existing.get("state") == "pending":
-            if packet["state"] == "pending":
-                pending_remaining.append(int(game["game_id"]))
-                continue
-            packet["initial_pending_at"] = existing.get("frozen_at")
-            packet["finalized_from_pending"] = True
-            payload = json.dumps(packet, sort_keys=True)
-            with repository.transaction() as connection:
-                connection.execute(
-                    """UPDATE cfb_two_engine_manifest
-                       SET frozen_at=?,state=?,selected_side=?,selected_team=?,packet_json=?
-                       WHERE manifest_version=? AND game_id=? AND state='pending'""",
-                    (
-                        frozen_at, packet["state"], packet.get("selected_side"),
-                        packet.get("selected_team"), payload,
-                        MANIFEST_VERSION, int(game["game_id"]),
-                    ),
-                )
-            finalized_pending.append({
-                "game_id": int(game["game_id"]),
-                "state": packet["state"],
-                "selected_team": packet.get("selected_team"),
-            })
+        if existing is not None and _leg_signature(existing) == _leg_signature(packet):
+            unchanged.append(game_id)
             continue
 
+        recorded_at = datetime.now(timezone.utc).isoformat()
         payload = json.dumps(packet, sort_keys=True)
         with repository.transaction() as connection:
             connection.execute(
-                """INSERT OR IGNORE INTO cfb_two_engine_manifest (
+                """INSERT INTO cfb_two_engine_manifest (
                        manifest_version,game_id,season,week,kickoff,frozen_at,
                        state,selected_side,selected_team,packet_json
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(manifest_version,game_id) DO UPDATE SET
+                       frozen_at=excluded.frozen_at, state=excluded.state,
+                       selected_side=excluded.selected_side,
+                       selected_team=excluded.selected_team,
+                       packet_json=excluded.packet_json""",
                 (
-                    MANIFEST_VERSION, int(game["game_id"]), int(game["season"]),
+                    MANIFEST_VERSION, game_id, int(game["season"]),
                     int(game["week"]) if game.get("week") is not None else None,
-                    game.get("start_date"), frozen_at, packet["state"],
+                    game.get("start_date"), recorded_at, packet["state"],
                     packet.get("selected_side"), packet.get("selected_team"), payload,
                 ),
             )
-        frozen.append({
-            "game_id": int(game["game_id"]),
+            connection.execute(
+                """INSERT OR IGNORE INTO cfb_two_engine_manifest_history (
+                       manifest_version,game_id,recorded_at,state,
+                       selected_side,selected_team,market_spread,packet_json
+                   ) VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    MANIFEST_VERSION, game_id, recorded_at, packet["state"],
+                    packet.get("selected_side"), packet.get("selected_team"),
+                    packet.get("market_spread"), payload,
+                ),
+            )
+        updated.append({
+            "game_id": game_id,
             "state": packet["state"],
             "selected_team": packet.get("selected_team"),
         })
-        if packet["state"] == "pending":
-            pending_remaining.append(int(game["game_id"]))
 
     return {
         "manifest_version": MANIFEST_VERSION,
         "season": int(season),
         "week": int(week),
-        "frozen": frozen,
-        "finalized_pending": finalized_pending,
-        "pending_remaining_game_ids": pending_remaining,
-        "already_frozen_game_ids": already_frozen,
+        "updated": updated,
+        "unchanged_game_ids": unchanged,
         "skipped_started_or_completed_game_ids": skipped_started,
-        "immutability": (
-            "resolved classifications are immutable; pending placeholders may "
-            "finalize once before kickoff"
+        "note": (
+            "cfb_two_engine_manifest is the current/closing state and stays "
+            "mutable until kickoff; cfb_two_engine_manifest_history records "
+            "every change, oldest first, and is never rewritten"
         ),
     }
 
 
+def _season_grade_blank() -> dict[str, Any]:
+    return {"wins": 0, "losses": 0, "pushes": 0, "n": 0}
+
+
+def _season_grade(bucket: dict[str, Any], edge: float) -> None:
+    if abs(edge) < 1e-9:
+        bucket["pushes"] += 1
+    elif edge > 0:
+        bucket["wins"] += 1
+    else:
+        bucket["losses"] += 1
+    bucket["n"] += 1
+
+
+def _season_grade_finish(bucket: dict[str, Any]) -> dict[str, Any]:
+    bucket["record"] = (
+        f"{bucket['wins']}-{bucket['losses']}"
+        + (f"-{bucket['pushes']}" if bucket["pushes"] else "")
+    )
+    decided = bucket["wins"] + bucket["losses"]
+    bucket["hit_rate"] = round(bucket["wins"] / decided, 4) if decided else None
+    return bucket
+
+
 def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
-    """Live-graded record of this season's frozen picks -- Engine A, Engine B,
+    """Live-graded record of this season's CLOSING picks -- Engine A, Engine B,
     and the Totals research lean -- against the closing line.
 
+    "Closing" here means whatever cfb_two_engine_manifest holds by the time a
+    game completes, which -- now that freeze_week() keeps recomputing a game
+    right up to kickoff instead of locking on first resolution -- really is
+    each pick's final pregame state. See season_record_first_appearance()
+    for the same games graded against the line each pick had when it FIRST
+    qualified instead.
+
     This is a results tracker, not a classifier: it runs after the fact, over
-    games the manifest already froze pregame, and never feeds back into
+    games the manifest already tracked pregame, and never feeds back into
     `classify_game` or a manifest row. It starts at 0-0 the day the manifest
     is first populated for a season and fills in as those games complete, so
     an early-season read here is a small sample by construction, not a bug.
@@ -1100,19 +1211,7 @@ def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
             )
         ]
 
-    def _blank() -> dict[str, Any]:
-        return {"wins": 0, "losses": 0, "pushes": 0, "n": 0}
-
-    engine_a, engine_b, totals = _blank(), _blank(), _blank()
-
-    def _grade(bucket: dict[str, Any], edge: float) -> None:
-        if abs(edge) < 1e-9:
-            bucket["pushes"] += 1
-        elif edge > 0:
-            bucket["wins"] += 1
-        else:
-            bucket["losses"] += 1
-        bucket["n"] += 1
+    engine_a, engine_b, totals = _season_grade_blank(), _season_grade_blank(), _season_grade_blank()
 
     for row in rows:
         packet = json.loads(row["packet_json"])
@@ -1128,7 +1227,7 @@ def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
                     continue
                 margin = home_margin if side == "home" else -home_margin
                 side_spread = float(spread) if side == "home" else -float(spread)
-                _grade(bucket, margin + side_spread)
+                _season_grade(bucket, margin + side_spread)
 
         # Totals has no frozen action rule and so no stored pick to read back;
         # it's recomputed the same way the live page shows it. The underlying
@@ -1152,20 +1251,67 @@ def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
             continue
         actual_total = float(row["home_points"]) + float(row["away_points"])
         diff = actual_total - float(line_total)
-        _grade(totals, diff if direction == "over" else -diff)
-
-    def _finish(bucket: dict[str, Any]) -> dict[str, Any]:
-        bucket["record"] = (
-            f"{bucket['wins']}-{bucket['losses']}"
-            + (f"-{bucket['pushes']}" if bucket["pushes"] else "")
-        )
-        decided = bucket["wins"] + bucket["losses"]
-        bucket["hit_rate"] = round(bucket["wins"] / decided, 4) if decided else None
-        return bucket
+        _season_grade(totals, diff if direction == "over" else -diff)
 
     return {
         "season": int(season),
-        "engine_a": _finish(engine_a),
-        "engine_b": _finish(engine_b),
-        "totals": _finish(totals),
+        "engine_a": _season_grade_finish(engine_a),
+        "engine_b": _season_grade_finish(engine_b),
+        "totals": _season_grade_finish(totals),
+    }
+
+
+def season_record_first_appearance(repository: CFBRepository, season: int) -> dict[str, Any]:
+    """Same shape as season_record(), except Engine A and Engine B are each
+    graded against the line they had the moment they FIRST qualified, not
+    the closing line -- the direct answer to "does the model produce early
+    value before the public moves the line." Sourced from
+    cfb_two_engine_manifest_history, which season_record() never touches.
+
+    Totals has no per-game frozen pick to track a first-appearance moment
+    for (see season_record()'s own note on how it grades Totals), so it's
+    left out here rather than reported as a meaningless always-empty bucket.
+    """
+    _initialize_manifest(repository)
+    with repository._reader() as connection:
+        rows = [
+            dict(r) for r in connection.execute(
+                """SELECT h.game_id, h.recorded_at, h.market_spread, h.packet_json,
+                          g.home_points, g.away_points
+                   FROM cfb_two_engine_manifest_history h
+                   JOIN games g ON g.game_id = h.game_id
+                   WHERE h.manifest_version=? AND g.season=?
+                     AND g.completed=1
+                     AND g.home_points IS NOT NULL AND g.away_points IS NOT NULL
+                   ORDER BY h.game_id, h.recorded_at""",
+                (MANIFEST_VERSION, int(season)),
+            )
+        ]
+
+    engine_a, engine_b = _season_grade_blank(), _season_grade_blank()
+    first_seen: dict[tuple[int, str], bool] = {}
+
+    for row in rows:
+        packet = json.loads(row["packet_json"])
+        home_margin = float(row["home_points"]) - float(row["away_points"])
+        spread = row["market_spread"]
+        if spread is None:
+            continue
+        for engine_key, bucket in (("engine_a", engine_a), ("engine_b", engine_b)):
+            key = (int(row["game_id"]), engine_key)
+            if first_seen.get(key):
+                continue  # already graded this leg's first qualifying appearance
+            leg = packet.get(engine_key) or {}
+            side = leg.get("selected_side")
+            if not leg.get("qualified") or side not in ("home", "away"):
+                continue
+            first_seen[key] = True
+            margin = home_margin if side == "home" else -home_margin
+            side_spread = float(spread) if side == "home" else -float(spread)
+            _season_grade(bucket, margin + side_spread)
+
+    return {
+        "season": int(season),
+        "engine_a": _season_grade_finish(engine_a),
+        "engine_b": _season_grade_finish(engine_b),
     }
