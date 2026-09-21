@@ -28,6 +28,7 @@ from sports_aggregator.scheduled_refresh import (
     _run_cfbd_split,
     _run_low_memory_phase,
     _run_news_shard,
+    _run_command,
     _run_player_stats_split,
     _touch_lock,
     _write_progress,
@@ -79,6 +80,56 @@ PROJECTION_STEPS = [
     "pbp", "pbp-derive", "team-pace", "team-scoring",
     "team-special-teams", "team-drive-outcomes",
 ]
+
+
+def _nearest_upcoming_week(repository, season: int) -> int | None:
+    upcoming = repository.upcoming_games(int(season), limit=1)
+    if not upcoming:
+        return None
+    week = upcoming[0].get("week")
+    return int(week) if week is not None else None
+
+
+def _refresh_two_engine_manifest(season: int, *, root: Path, log) -> dict:
+    from sports_aggregator.cfb.repository import CFBRepository
+
+    configured = (os.getenv("CFB_DATABASE_PATH") or "").strip()
+    database = Path(configured) if configured else root / "instance" / "cfb.sqlite3"
+    if not database.is_absolute():
+        database = root / database
+
+    repository = CFBRepository(database)
+    week = _nearest_upcoming_week(repository, season)
+    if week is None:
+        return {
+            "step": "two-engine-manifest",
+            "status": "skipped",
+            "message": "no upcoming week found",
+            "seconds": 0.0,
+            "optional": True,
+            "parent_rss_mb": _rss_mb(),
+            "child_peak_rss_mb": _children_rss_mb(),
+        }
+
+    status, message, seconds = _run_command(
+        [
+            "sports_aggregator.cfb.two_engine_manifest_cli",
+            "--season", str(int(season)),
+            "--week", str(int(week)),
+            "--database", str(database),
+        ],
+        timeout=600,
+        log=log,
+    )
+    return {
+        "step": "two-engine-manifest",
+        "status": status,
+        "message": f"week {week}: {message}",
+        "seconds": seconds,
+        "optional": True,
+        "parent_rss_mb": _rss_mb(),
+        "child_peak_rss_mb": _children_rss_mb(),
+    }
 
 #: The maintenance segments, which the hourly trigger reaches one at a time by
 #: the clock. Nameable directly so a segment can also be run on demand: a
@@ -214,7 +265,7 @@ def _segment_results(segment: str, season: int, *, root: Path, log, heartbeat) -
         # Frequent live-model maintenance: ingest only newly completed PBP,
         # derive it, then rebuild the current-season team-game actuals consumed
         # directly by game_projection.py. No model fitting occurs here.
-        return _run_low_memory_phase(
+        results = _run_low_memory_phase(
             "refresh",
             season,
             root=root,
@@ -223,6 +274,16 @@ def _segment_results(segment: str, season: int, *, root: Path, log, heartbeat) -
             log=log,
             heartbeat=heartbeat,
         )
+        if heartbeat:
+            heartbeat()
+        results.append(
+            _refresh_two_engine_manifest(
+                season,
+                root=root,
+                log=log,
+            )
+        )
+        return results
 
     if segment == "content":
         return _run_low_memory_phase(
