@@ -154,6 +154,20 @@ def steps(season: int, *, history_from: int | None = None,
         Step("cfbd-models", "CFBD CORE ratings and ESPN FPI model data",
              ["sports_aggregator.cfb.models_cli", "sync", "--year", year],
              ("initial", "refresh"), requires_env=("CFBD_API_KEY",)),
+        # Never had a production step at all -- qb_elo.build()'s _ppa_lookup()
+        # silently degrades to "no PPA for any start" when game_player_ppa is
+        # empty rather than raising, so this went unnoticed: every QB's
+        # rating carried forward unchanged from BASE (1500) start to start,
+        # for every player, forever (discovered live: a 25-start transfer QB
+        # showing a flat 1500.0 "current rating" on the site). Must run
+        # before coach-elo/qb-elo below (execution order follows definition
+        # order here, not MODEL_STEPS' listed order) so the same refresh that
+        # rebuilds QB Elo has fresh PPA to build it from. Scoped like
+        # cfbd-box-scores -- a full season is not needed every run.
+        Step("cfbd-game-ppa", "Per-player PPA for the weeks just played",
+             ["sports_aggregator.cfb.cli", "sync-game-ppa", "--year", year,
+              "--recent-weeks", "3"],
+             ("initial", "refresh"), requires_env=("CFBD_API_KEY",)),
         # Neither of these calls CFBD -- both replay games/box scores already
         # in the store -- so no requires_env. Had no path to the deployed
         # database at all (same class of gap NFL's analytics steps had, see
