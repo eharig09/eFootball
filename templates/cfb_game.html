@@ -153,6 +153,14 @@
             <div class="lab-score-meta"><span>Total</span><b>{{ research_intelligence.display_score.total | cell('f1') }}</b></div>
         </div>
 
+        <div class="lab-row lab-shape-row" id="forecast-drivers">
+            <div class="lab-label">SHAPE</div>
+            <div class="lab-shape-team"><strong>{{ game.away_team }}</strong><span>{{ projection.away.drives | cell('f1') }} drv</span><span>{{ projection.away.plays | cell('f1') }} plays</span><span>{{ projection.away.pass_rate | cell('rate') }} pass</span><span>{{ projection.away.points_per_drive | cell('f2') }} PPD</span><span>{{ projection.away.total_yards | cell('int') }} yd</span><span>{{ projection.away.giveaways | cell('f2') }} TO</span></div>
+            <div class="lab-shape-team"><strong>{{ game.home_team }}</strong><span>{{ projection.home.drives | cell('f1') }} drv</span><span>{{ projection.home.plays | cell('f1') }} plays</span><span>{{ projection.home.pass_rate | cell('rate') }} pass</span><span>{{ projection.home.points_per_drive | cell('f2') }} PPD</span><span>{{ projection.home.total_yards | cell('int') }} yd</span><span>{{ projection.home.giveaways | cell('f2') }} TO</span></div>
+            <div></div>
+        </div>
+
+
         <div class="lab-row lab-market-row">
             <div class="lab-label">SPREAD</div>
             <div><span>Football Lab</span><b>
@@ -229,9 +237,11 @@
         <div class="lab-row lab-engine-summary-row">
             <div class="lab-label">PORTFOLIO</div>
             <div class="lab-engine-decision">
-                <span>Two-engine state</span>
+                <span>Portfolio decision</span>
                 <b class="engine-inline-state is-{{ two_engine_signal.state }}">{{ two_engine_signal.state_label }}</b>
-                {% if two_engine_signal.selected_team %}<i>{{ two_engine_signal.selected_team }}</i>
+                {% if two_engine_signal.selected_team %}
+                <strong class="lab-portfolio-team">{{ two_engine_signal.selected_team }}</strong>
+                <i>{{ two_engine_signal.implication }}</i>
                 {% else %}<i>{{ two_engine_signal.implication }}</i>{% endif %}
                 <small>
                     {% if two_engine_signal.source == 'frozen_manifest' %}Frozen {{ two_engine_signal.frozen_at }}
@@ -259,7 +269,7 @@
             <div class="lab-label">ENGINE A</div>
             <div class="lab-engine-wide">
                 <div class="lab-engine-title">
-                    <span>Quantitative convergence</span>
+                    <span>1 · Quantitative convergence</span>
                     {% if a.qualified %}
                     <b class="lab-good">{{ a.selected_team }}</b>
                     <i>{{ a.route | replace('_', ' ') }}</i>
@@ -291,7 +301,7 @@
             <div class="lab-label">ENGINE B</div>
             <div class="lab-engine-wide lab-engine-b-content">
                 <div>
-                    <span>Narrative / QB overreaction</span>
+                    <span>2 · Narrative / QB overreaction</span>
                     {% if b.qualified %}
                     <b class="lab-good">{{ b.selected_team }}</b>
                     <i>{{ b.rules | join(' + ') | replace('_', ' ') }}</i>
@@ -337,25 +347,31 @@
             </div>
         </div>
 
-        <div class="lab-row lab-shape-row" id="forecast-drivers">
-            <div class="lab-label">SHAPE</div>
-            <div class="lab-shape-team"><strong>{{ game.away_team }}</strong><span>{{ projection.away.drives | cell('f1') }} drv</span><span>{{ projection.away.plays | cell('f1') }} plays</span><span>{{ projection.away.pass_rate | cell('rate') }} pass</span><span>{{ projection.away.points_per_drive | cell('f2') }} PPD</span><span>{{ projection.away.total_yards | cell('int') }} yd</span><span>{{ projection.away.giveaways | cell('f2') }} TO</span></div>
-            <div class="lab-shape-team"><strong>{{ game.home_team }}</strong><span>{{ projection.home.drives | cell('f1') }} drv</span><span>{{ projection.home.plays | cell('f1') }} plays</span><span>{{ projection.home.pass_rate | cell('rate') }} pass</span><span>{{ projection.home.points_per_drive | cell('f2') }} PPD</span><span>{{ projection.home.total_yards | cell('int') }} yd</span><span>{{ projection.home.giveaways | cell('f2') }} TO</span></div>
-            <div></div>
-        </div>
-
         {% if research_intelligence.narrative and research_intelligence.narrative.available %}
-        <div class="lab-row lab-narrative-row">
-            <div class="lab-label">NARRATIVE</div>
+        <div class="lab-row lab-narrative-row lab-narrative-compact">
+            <div class="lab-label">CONTEXT</div>
             {% for team_context in research_intelligence.narrative.teams %}
             <div class="lab-narrative-team">
                 <strong>{{ team_context.team }}</strong>
+                <div class="lab-tag-cloud">
+                    {% for tag in team_context.tags %}
+                    <span class="lab-tag-chip">{{ tag.label }}</span>
+                    {% endfor %}
+                </div>
+                {% set shown = namespace(count=0) %}
                 {% for tag in team_context.tags %}
-                <span class="lab-narrative-line"><em>{{ tag.label }}</em>
-                    {% if tag.solo.n %}<b>{{ (tag.solo.cover_rate * 100) | cell('f1') }}%</b><i>solo n={{ tag.solo.n }}</i>{% endif %}
-                    {% for interaction in tag.interactions %}<small>vs {{ interaction.opponent_label }}</small><b>{{ (interaction.cover_rate * 100) | cell('f1') }}%</b><i>n={{ interaction.n }}</i>{% endfor %}
-                </span>
+                    {% for interaction in tag.interactions %}
+                        {% if shown.count < 3 %}
+                        <div class="lab-interaction-line">
+                            <span>{{ tag.label }} vs {{ interaction.opponent_label }}</span>
+                            <b>{{ (interaction.cover_rate * 100) | cell('f1') }}%</b>
+                            <i>n={{ interaction.n }}</i>
+                        </div>
+                        {% set shown.count = shown.count + 1 %}
+                        {% endif %}
+                    {% endfor %}
                 {% endfor %}
+                {% if shown.count == 0 %}<small class="lab-no-interactions">No stored interaction sample for the active tags.</small>{% endif %}
             </div>
             {% endfor %}
             <div></div>
