@@ -34,12 +34,21 @@ from sports_aggregator.cfb.matchup_research import (
     _live_narrative_context,
     matchup_research_packet,
 )
-from sports_aggregator.cfb.rating_predictive_power import _load_dataset
-from sports_aggregator.cfb.rating_walkforward import _mean_std
 from sports_aggregator.cfb.repository import CFBRepository
 
 MANIFEST_VERSION = "two-engine-pregame-v1"
 HISTORICAL_END_SEASON = 2025
+
+FROZEN_LENS_SCALES = {
+    "margin_power_edge": 9.110221102599258,
+    "football_lab_edge": 5.257101818290439,
+    "elo_edge": 6.0505729824328895,
+    "efficiency_power_edge": 12.377866509585655,
+    "line_elo_edge": 7.007189888407126,
+    "narrative_interaction_edge": 0.36044178601547494,
+}
+FROZEN_HC_STATS = (19.431141388518345, 208.13062292367948)
+FROZEN_QB_STATS = (-0.09133302884958344, 82.76569033618398)
 
 #: Reconciled 2026-09-21: internal_power_lenses._football_lab_margin_lookup
 #: used to fit its own one-variable calibration (raw offense-points margin
@@ -153,23 +162,11 @@ def _initialize_manifest(repository: CFBRepository) -> None:
 
 
 def _historical_context(repository: CFBRepository) -> dict[str, Any]:
+    """Production-safe historical context using frozen research artifacts."""
     key = str(repository.path)
     cached = _HISTORICAL_CACHE.get(key)
     if cached is not None:
         return cached
-
-    lens_rows = ipl.build_lens_rows(repository, test_season=HISTORICAL_END_SEASON)
-    lens_train = [row for row in lens_rows if int(row["season"]) <= HISTORICAL_END_SEASON]
-    scales = cc._lens_scales(lens_train)
-
-    rating_rows = [
-        row for row in _load_dataset(
-            repository, start_season=2015, end_season=HISTORICAL_END_SEASON
-        )
-        if row.get("qb_diff") is not None
-    ]
-    hc_stats = _mean_std([float(row["hc_diff"]) for row in rating_rows])
-    qb_stats = _mean_std([float(row["qb_diff"]) for row in rating_rows])
 
     narrative_rows = nsv2._load_rows(repository)
     historical_narrative = [
@@ -183,12 +180,13 @@ def _historical_context(repository: CFBRepository) -> dict[str, Any]:
     )
 
     cached = {
-        "lens_scales": scales,
-        "hc_stats": hc_stats,
-        "qb_stats": qb_stats,
+        "lens_scales": dict(FROZEN_LENS_SCALES),
+        "hc_stats": FROZEN_HC_STATS,
+        "qb_stats": FROZEN_QB_STATS,
         "narrative_rows": narrative_rows,
         "line_state": line_state,
         "line_rate": float(line_rate),
+        "historical_calibration_source": "frozen_2015_2025_research_artifacts",
     }
     _HISTORICAL_CACHE[key] = cached
     return cached
