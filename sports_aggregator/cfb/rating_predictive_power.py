@@ -54,6 +54,20 @@ DISAGREEMENT_BUCKETS = (
 
 def _load_dataset(repository: CFBRepository, *, start_season: int, end_season: int) -> list[dict[str, Any]]:
     with repository._reader() as connection:
+        # This is called from the live request path (two_engine_live.py's
+        # HC/QB normalization), not just research CLIs -- on an environment
+        # where coach_elo.build()/qb_elo.build() has never populated these
+        # tables, they don't exist at all rather than existing-but-empty,
+        # and every caller downstream already treats an empty dataset (and
+        # the _mean_std(None) it produces) as "HC/QB signal unavailable,"
+        # the same as any other missing-input case.
+        existing = {
+            str(row[0]) for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        if "cfb_coach_elo_games" not in existing or "cfb_qb_elo_games" not in existing:
+            return []
         hc_rows = {row["game_id"]: dict(row) for row in connection.execute(
             """SELECT game_id,season,week,home_points,away_points,
                       home_pre_elo,away_pre_elo
@@ -67,16 +81,18 @@ def _load_dataset(repository: CFBRepository, *, start_season: int, end_season: i
             (int(start_season), int(end_season)),
         ):
             qb_rows[row["game_id"]][row["side"]] = row["pre_rating"]
-        weather_rows = {row["game_id"]: dict(row) for row in connection.execute(
-            """SELECT w.game_id,w.temperature,w.sustained_wind,w.precipitation_amount
-               FROM (
-                   SELECT gw.*, ROW_NUMBER() OVER (
-                       PARTITION BY gw.game_id
-                       ORDER BY ABS(strftime('%s', gw.forecast_generated_at) - strftime('%s', gw.kickoff_time))
-                   ) AS rn
-                   FROM game_weather gw
-               ) w WHERE w.rn = 1"""
-        )}
+        weather_rows = {}
+        if "game_weather" in existing:
+            weather_rows = {row["game_id"]: dict(row) for row in connection.execute(
+                """SELECT w.game_id,w.temperature,w.sustained_wind,w.precipitation_amount
+                   FROM (
+                       SELECT gw.*, ROW_NUMBER() OVER (
+                           PARTITION BY gw.game_id
+                           ORDER BY ABS(strftime('%s', gw.forecast_generated_at) - strftime('%s', gw.kickoff_time))
+                       ) AS rn
+                       FROM game_weather gw
+                   ) w WHERE w.rn = 1"""
+            )}
         market_rows = {row["game_id"]: row["spread"] for row in connection.execute(
             """SELECT game_id, AVG(spread) AS spread FROM game_lines
                WHERE spread IS NOT NULL GROUP BY game_id"""
