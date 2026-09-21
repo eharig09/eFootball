@@ -14,6 +14,17 @@ Vegas is intentionally excluded from model fitting and prediction.
 If a live external rating is unavailable, fall back through nested
 walk-forward-tested feature sets rather than imputing market information.
 
+Every tier requires elo_diff. There used to be a further, elo-less "base"
+tier (raw_margin/ppd_diff/drive_diff only) as a last-resort fallback; it was
+removed after the team missing pregame Elo turned out to almost always be an
+FCS opponent CFBD never rates, and applying a model fit on well-matched
+FBS-vs-FBS games to that kind of blowout produced wildly unstable margins
+(one 2022 buy game reached a -74pt edge). A team with no Elo is now simply
+not assessed by margin-v2 -- predict_with_models() returns no tier, and
+callers fall back to their own simpler estimate (e.g. matchup_research.py's
+raw projected-points margin) instead of a ridge model extrapolating outside
+its training distribution.
+
 red_zone_diff (home minus away, each side's shrunk trips-per-drive x
 shrunk red-zone-TD-rate, the same two shrinks game_projection.py serves
 live) was added after margin_feature_ablation.py's walk-forward test found
@@ -78,7 +89,6 @@ FEATURE_SETS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("plus_elo", (
         "raw_margin", "ppd_diff", "drive_diff", "elo_diff",
     )),
-    ("base", ("raw_margin", "ppd_diff", "drive_diff")),
 )
 
 
@@ -410,15 +420,30 @@ def predict_live(repository, *, target_season: int,
             "market_used": False,
         }
 
+    missing = [key for key in FEATURE_SETS[0][1] if features.get(key) is None]
+    if features.get("elo_diff") is None:
+        # A team with no pregame Elo on record (almost always an FCS
+        # opponent CFBD doesn't rate) is not assessed at all, rather than
+        # falling back to a raw points-based margin that looks like a real
+        # prediction -- see the module docstring for why.
+        return {
+            "value": None,
+            "model_version": MODEL_VERSION,
+            "variant": "not_assessed_missing_elo",
+            "features": features,
+            "missing_features": missing,
+            "training_games": 0,
+            "l2": L2,
+            "market_used": False,
+        }
+
     raw = features.get("raw_margin")
     return {
         "value": raw,
         "model_version": MODEL_VERSION,
         "variant": "raw_fallback",
         "features": features,
-        "missing_features": [
-            key for key in FEATURE_SETS[0][1] if features.get(key) is None
-        ],
+        "missing_features": missing,
         "training_games": 0,
         "l2": L2,
         "market_used": False,

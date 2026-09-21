@@ -49,6 +49,54 @@ class FeatureSetOrderingTests(unittest.TestCase):
         self.assertEqual(set(richest) - set(mid), {"hc_diff", "qb_diff"})
 
 
+class MissingEloTests(unittest.TestCase):
+    """A team with no pregame Elo (almost always an FCS opponent CFBD
+    doesn't rate) must not be assessed by margin-v2 at all -- applying a
+    model fit on well-matched FBS games to that kind of blowout produced
+    wildly unstable margins (see the module docstring)."""
+
+    def _rich_row(self, **overrides):
+        row = {
+            "raw_margin": 3.0, "ppd_diff": 0.2, "drive_diff": 1.0, "elo_diff": 50.0,
+            "core_margin": 2.0, "fpi_margin": 1.5, "recent_margin_diff": 4.0,
+            "red_zone_diff": 0.05, "hc_diff": 10.0, "qb_diff": -5.0,
+        }
+        row.update(overrides)
+        return row
+
+    def test_no_tier_requires_only_raw_margin_ppd_drive(self):
+        # The old elo-less "base" tier is gone -- every remaining tier
+        # requires elo_diff.
+        for _, features in lmc.FEATURE_SETS:
+            self.assertIn("elo_diff", features)
+
+    def test_predict_with_models_skips_a_row_missing_elo(self):
+        history = [self._rich_row(actual_margin=float(i % 9) - 4) for i in range(150)]
+        models = lmc.fit_models(history)
+        label, value, model = lmc.predict_with_models(models, self._rich_row(elo_diff=None))
+        self.assertIsNone(label)
+        self.assertIsNone(value)
+        self.assertIsNone(model)
+
+    def test_predict_live_reports_not_assessed_instead_of_a_raw_fallback_value(self):
+        from unittest.mock import patch
+
+        projection = {
+            "home": {"expected_points": 28.0, "points_per_drive": 2.3, "drives": 12.0},
+            "away": {"expected_points": 3.0, "points_per_drive": 0.4, "drives": 11.0},
+            "opponent_quality": {"home": {"components": {}}},
+        }
+        # elo_diff is None (no quality components supplied) with no repository
+        # history behind it -> the old code returned a raw_margin fallback
+        # that looked like a real prediction; it must now report "not
+        # assessed" instead.
+        with patch.object(lmc, "_historical_rows", return_value=[]):
+            result = lmc.predict_live(
+                repository=None, target_season=2026, projection=projection, game=None)
+        self.assertIsNone(result["value"])
+        self.assertEqual(result["variant"], "not_assessed_missing_elo")
+
+
 class HcQbDiffTests(unittest.TestCase):
     def test_none_game_returns_none_none(self):
         self.assertEqual(lmc._hc_qb_diff(repository=None, game=None), (None, None))

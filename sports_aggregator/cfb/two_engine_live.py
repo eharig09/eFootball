@@ -41,7 +41,7 @@ HISTORICAL_END_SEASON = 2025
 
 FROZEN_LENS_SCALES = {
     "margin_power_edge": 9.110221102599258,
-    "football_lab_edge": 5.257101818290439,
+    "football_lab_edge": 6.1027852283045005,
     "elo_edge": 6.0505729824328895,
     "efficiency_power_edge": 12.377866509585655,
     "line_elo_edge": 7.007189888407126,
@@ -71,18 +71,28 @@ FROZEN_QB_STATS = (-0.09133302884958344, 82.76569033618398)
 #: (live_margin_calibration.predict_live) uses drive_diff as a feature, so a
 #: more accurate drives projection changes Margin Power's numeric edge for
 #: every game, which can flip which spread-bucket/elo-agreement route a game
-#: lands in even though no route predicate or threshold changed. Re-measured
-#: the same way as the reconciliation above (convergence_routing_holdout's
-#: _route_report over all 2020-2025 rows); one route
-#: (fade_old_3_of_3_elo_disagrees_spread_14_plus) is byte-for-byte identical,
-#: confirming this reflects routing movement from the new drives-informed
-#: margin, not a change to route logic itself.
+#: lands in even though no route predicate or threshold changed.
+#:
+#: Re-reconciled again 2026-09-21 (same day, third pass): re-measuring
+#: FROZEN_LENS_SCALES for the pass above surfaced a real bug the drives
+#: rewiring exposed, not just routing movement -- football_lab_edge's stdev
+#: had jumped 5.26 -> 8.15 (+55%), traced to ~40 FBS-vs-FCS buy games (e.g.
+#: TCU vs Tarleton State, edge -74pts) where the opponent has no pregame Elo
+#: on record. margin-v2 used to fall back to an elo-less "base" feature tier
+#: for these, extrapolating a model fit on well-matched FBS games onto a
+#: blowout. Fixed in live_margin_calibration.py: a team with no Elo is now
+#: not assessed by margin-v2 at all (FEATURE_SETS' "base" tier removed;
+#: predict_live returns variant="not_assessed_missing_elo"). Every number
+#: below is measured under that fix, superseding the second pass -- the
+#: football_lab_edge stdev used for FROZEN_LENS_SCALES above is now 6.10, not
+#: 8.15 (still up from 5.26: a genuine, more modest widening from the better
+#: drives input on ordinary games, not an extrapolation artifact).
 ENGINE_A_HISTORY = {
     "positive_4_of_4_spread_lt_14": {"n": 51, "hit_rate": 0.6471, "mean_residual": 7.072},
-    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 33, "hit_rate": 0.6061, "mean_residual": 5.753},
-    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 25, "hit_rate": 0.6800, "mean_residual": 6.262},
-    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 23, "hit_rate": 0.5652, "mean_residual": 3.337},
-    "fade_old_3_of_3_elo_disagrees_spread_14_plus": {"n": 21, "hit_rate": 0.7143, "mean_residual": 3.320},
+    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 34, "hit_rate": 0.5882, "mean_residual": 5.481},
+    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 26, "hit_rate": 0.6923, "mean_residual": 7.655},
+    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 23, "hit_rate": 0.5652, "mean_residual": 3.619},
+    "fade_old_3_of_3_elo_disagrees_spread_14_plus": {"n": 22, "hit_rate": 0.7273, "mean_residual": 3.298},
 }
 ENGINE_B_HISTORY = {
     "rebound_vs_momentum_qb_opposes": {"n": 181, "hit_rate": 0.5801, "mean_residual": 2.706},
@@ -91,10 +101,11 @@ ENGINE_B_HISTORY = {
 #: Reconciled alongside ENGINE_A_HISTORY above (two_engine_portfolio.report(),
 #: non_conflicting_combined_portfolio.all_2020_2025). Engine B's own policy
 #: definitions (narrative-family + rating-direction, not Margin Power) are
-#: untouched by the xdrives rewiring, so ENGINE_B_HISTORY above is unchanged;
-#: this combined figure still moves because the A/B overlap partition shifts
-#: whenever Engine A's routed game set shifts (321->323, 61.68%->61.30%).
-PORTFOLIO_HISTORY = {"n": 323, "hit_rate": 0.6130, "mean_residual": 4.225}
+#: untouched by the xdrives rewiring and the missing-Elo fix, so
+#: ENGINE_B_HISTORY above is unchanged; this combined figure still moves
+#: because the A/B overlap partition shifts whenever Engine A's routed game
+#: set shifts (321->326, 61.68%->61.35%).
+PORTFOLIO_HISTORY = {"n": 326, "hit_rate": 0.6135, "mean_residual": 4.335}
 
 
 def _pooled(history: dict[str, dict[str, Any]]) -> dict[str, Any]:
