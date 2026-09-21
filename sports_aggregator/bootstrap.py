@@ -154,6 +154,24 @@ def steps(season: int, *, history_from: int | None = None,
         Step("cfbd-models", "CFBD CORE ratings and ESPN FPI model data",
              ["sports_aggregator.cfb.models_cli", "sync", "--year", year],
              ("initial", "refresh"), requires_env=("CFBD_API_KEY",)),
+        # Neither of these calls CFBD -- both replay games/box scores already
+        # in the store -- so no requires_env. Had no path to the deployed
+        # database at all (same class of gap NFL's analytics steps had, see
+        # ANALYTICS_STEPS's comment in tracked_refresh.py): the two-engine
+        # live signal and margin-v2's hc_diff/qb_diff feature both read
+        # cfb_coach_elo_games/cfb_qb_elo_games, and on an environment where
+        # these steps had never run, the tables didn't exist at all -- 500ing
+        # every CFB game page (rating_predictive_power._load_dataset() now
+        # degrades gracefully if that happens again, but the fix here is
+        # giving these a real, scheduled path to the deployed database).
+        # ~8s combined locally over 8,400+/12,300+ games; generous timeout
+        # is headroom for a slower/cold instance, not an expected duration.
+        Step("coach-elo", "Head-coach Elo ratings, keyed by person",
+             ["sports_aggregator.cfb.coach_elo_cli", "build"],
+             ("initial", "refresh"), timeout_seconds=120),
+        Step("qb-elo", "Starting-QB Elo ratings, keyed by person",
+             ["sports_aggregator.cfb.qb_elo_cli", "build"],
+             ("initial", "refresh"), timeout_seconds=120),
         # Box scores were only ever synced by the history phase, for seasons
         # that were already over. Nothing refreshed the current one, so a game
         # played this season had an empty box score page and never joined the
