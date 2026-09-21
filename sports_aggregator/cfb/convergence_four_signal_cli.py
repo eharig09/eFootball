@@ -19,6 +19,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--test-season", type=int, default=2025)
     parser.add_argument("--elo-start-season", type=int, default=2015)
     parser.add_argument("--database", default=None)
+    parser.add_argument(
+        "--include-game-rows",
+        action="store_true",
+        help="Include the full game-level payload. Default output is compact.",
+    )
     args = parser.parse_args(argv)
 
     repository = CFBRepository(
@@ -29,6 +34,10 @@ def main(argv: list[str] | None = None) -> int:
         test_season=args.test_season,
         elo_start_season=args.elo_start_season,
     )
+
+    if not args.include_game_rows:
+        payload = {k: v for k, v in payload.items() if k != "game_rows"}
+
     print(json.dumps(payload, indent=2))
     return 0
 
