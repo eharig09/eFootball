@@ -76,7 +76,7 @@ def build_snapshot(repository, game: dict[str, Any]) -> dict[str, Any]:
     """Build a compact, JSON-safe packet using only already stored data."""
     game_id = int(game["game_id"]); season = int(game["season"])
     home_id = int(game["home_team_id"]); away_id = int(game["away_team_id"])
-    pff_season = season - 1
+    pff_season = _safe(lambda: repository.latest_pff_season(), season - 1)
     elo = _safe(lambda: repository.team_elo(season), {})
     market = _safe(lambda: game_lines(repository, game_id), {})
     fpi = _safe(lambda: fpi_for_game(repository, game_id), None)

@@ -3107,6 +3107,22 @@ class CFBRepository:
             "poll_ranked": sum(1 for row in opponents if row.get("poll_rank")),
         }
 
+    def latest_pff_season(self, default: int = 2025) -> int:
+        """Newest season with any imported PFF grade rows.
+
+        PFF grades are a manual, licensed CSV upload (`/college-football/
+        data-import/pff`), not a live sync, so there is no "current season"
+        to derive from the calendar the way CFBD stats can be. A team page
+        should show whichever season was actually uploaded most recently,
+        so re-uploading a fresh season's export is enough to move every PFF
+        display over -- no code change needed each year.
+        """
+        self.initialize()
+        with self._reader() as connection:
+            row = connection.execute(
+                "SELECT MAX(season) FROM pff_player_metrics").fetchone()
+        return int(row[0]) if row and row[0] is not None else default
+
     def pff_team_context(self, team_id: int, season: int=2025, player_limit: int=12) -> dict[str,Any]:
         self.initialize()
         with self._reader() as connection:

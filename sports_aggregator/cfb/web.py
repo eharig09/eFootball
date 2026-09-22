@@ -193,7 +193,7 @@ def _team_packet(team_id: int, season: int) -> dict:
         "depth_chart": repository.team_depth_chart(team_id, season, movements=movements),
         "movements": movements,
         "leaders": repository.team_player_leaders(team["school"], season),
-        "pff": repository.pff_team_context(team_id, 2025),
+        "pff": repository.pff_team_context(team_id, repository.latest_pff_season()),
         "production": team_production(repository, team_id, season, movements=movements),
         "stories": [{**story, "coverage_label": "Team linked"} for story in team_stories],
         "conference_stories": conference_stories,
@@ -223,13 +223,14 @@ def _with_matchup_edges(repository: CFBRepository, games: list[dict]) -> list[di
     # One load for the whole slate, the way `_weekly_matchup_watches` does it:
     # without this each game fetched its own two teams' grade rows, so the
     # dashboard ran the pair of grade queries once per game.
+    pff_season = repository.latest_pff_season()
     prefetched = repository.pff_matchup_rows(
         [team for game in games
          for team in (game.get("home_team_id"), game.get("away_team_id"))],
-        2025)
+        pff_season)
     for game in games:
         report = game_matchup_report(
-            repository.pff_matchups(game["home_team_id"], game["away_team_id"], 2025,
+            repository.pff_matchups(game["home_team_id"], game["away_team_id"], pff_season,
                                     prefetched=prefetched),
             game["away_team"], game["home_team"], limit=1,
         )
@@ -249,10 +250,11 @@ def _weekly_matchup_watches(repository: CFBRepository, games: list[dict],
     watches = []
     # Every game in the slate needs the same kind of grade rows, so load them
     # for the whole week at once rather than twice per game.
+    pff_season = repository.latest_pff_season()
     prefetched = repository.pff_matchup_rows(
         [team for game in games
          for team in (game.get("home_team_id"), game.get("away_team_id"))],
-        2025)
+        pff_season)
     for game in games:
         attention = float(game.get("attention_score") or 0)
         for matchup in player_matchups(
@@ -272,7 +274,7 @@ def _weekly_matchup_watches(repository: CFBRepository, games: list[dict],
                 "weekly_score": round(0.8 * matchup["interest"] + 0.2 * attention, 1),
             })
         report = game_matchup_report(
-            repository.pff_matchups(game["home_team_id"], game["away_team_id"], 2025,
+            repository.pff_matchups(game["home_team_id"], game["away_team_id"], pff_season,
                                     prefetched=prefetched),
             game["away_team"], game["home_team"], limit=1)
         for matchup in report["matchups"]:
@@ -647,7 +649,8 @@ def conference_preview(slug: str):
         leader_groups=views.leader_groups(leaders, season),
         pff_table=views.pff_players_table(
             repository.conference_pff_players(
-                name, 2025, roster_season=season, limit=20), season, dense=True
+                name, repository.latest_pff_season(), roster_season=season, limit=20
+            ), season, dense=True
         ),
         stories=_story_repository().list_stories(conference=name, limit=24),
     )
@@ -798,10 +801,13 @@ def _team_tables(packet: dict, season: int, *, schedule_year: int | None = None,
             packet["team"]["school"], opponent_quality, schedule_year,
             upcoming=schedule_is_current),
         "fpi_season": fpi_team_season(_repository(), season, packet["team"]["team_id"]),
+        # Returning share always compares last season's grades to this
+        # year's roster (see the matching comment in game_preview), even
+        # once this season's own PFF grades exist.
         "unit_continuity_table": views.unit_continuity_table(
             units_with_continuity(_repository(), packet["team"]["team_id"],
-                                  prior_season=2025, current_season=season),
-            2025),
+                                  prior_season=season - 1, current_season=season),
+            season - 1),
         "position_philosophy_table": views.position_philosophy_table(
             history["identity"], history["latest_production_season"],
             # Empty until the season starts producing, which is what the column
@@ -916,9 +922,10 @@ def game_preview(game_id: int):
         repository.team_impact_players(game["home_team"], season))
     away_impact = views.impact_player_index(
         repository.team_impact_players(game["away_team"], season))
-    home_pff = repository.pff_team_context(game["home_team_id"], 2025, 8)
-    away_pff = repository.pff_team_context(game["away_team_id"], 2025, 8)
-    pff_matchups = repository.pff_matchups(game["home_team_id"], game["away_team_id"], 2025)
+    pff_season = repository.latest_pff_season()
+    home_pff = repository.pff_team_context(game["home_team_id"], pff_season, 8)
+    away_pff = repository.pff_team_context(game["away_team_id"], pff_season, 8)
+    pff_matchups = repository.pff_matchups(game["home_team_id"], game["away_team_id"], pff_season)
     matchup_report = game_matchup_report(pff_matchups, game["away_team"], game["home_team"])
     brands_by_school = {
         game["away_team"]: repository.brand_for(game["away_team_id"]),
@@ -939,14 +946,17 @@ def game_preview(game_id: int):
         game["home_team_id"]: repository.team_metrics(
             game["home_team"], season).get("core"),
     }
-    # Unit grades describe last season's players; the share still on each
-    # roster is what tells a reader how much of that grade to believe.
+    # Unit grades describe the most recently graded season's players. Returning
+    # share is a deliberately different question -- how much of *last* season's
+    # production carries into this year's roster -- so it always compares
+    # season - 1 to season, even once this season's own grades are in and
+    # pff_season above has moved on to display them.
     pff_game_units = repository.pff_game_units(
-        game["home_team_id"], game["away_team_id"], 2025)
+        game["home_team_id"], game["away_team_id"], pff_season)
     away_carry = unit_continuity(repository, game["away_team_id"],
-                                 prior_season=2025, current_season=season)
+                                 prior_season=season - 1, current_season=season)
     home_carry = unit_continuity(repository, game["home_team_id"],
-                                 prior_season=2025, current_season=season)
+                                 prior_season=season - 1, current_season=season)
     for unit in pff_game_units:
         key = (unit["dataset"], unit["position_group"])
         unit["away_returning_share"] = (away_carry.get(key) or {}).get("returning_share")
@@ -1334,7 +1344,8 @@ def draft_watch():
     board = {**full_board, "prospects": (full_board.get("prospects") or [])[:80]}
     comparison = reconcile(repository, full_board, draft_year=2027)
     # Both boards want the same schedule and the same opponent grades.
-    context = board_context(repository, season=season)
+    context = board_context(repository, season=season,
+                            pff_season=repository.latest_pff_season())
     annotate_board(repository, board.get("prospects") or [], season=season,
                    context=context)
     watch_entries = annotate_board(
@@ -1482,16 +1493,18 @@ def game_matchups_api(game_id: int):
     game = repository.get_game(game_id)
     if game is None:
         abort(404)
+    pff_season = repository.latest_pff_season()
     report = game_matchup_report(
-        repository.pff_matchups(game["home_team_id"], game["away_team_id"], 2025),
+        repository.pff_matchups(game["home_team_id"], game["away_team_id"], pff_season),
         game["away_team"], game["home_team"],
     )
-    return jsonify({"game_id": game_id, "pff_season": 2025, **report})
+    return jsonify({"game_id": game_id, "pff_season": pff_season, **report})
 
 
 @cfb_pages.get("/api/v1/cfb/pff/summary")
 def pff_summary_api():
-    season = request.args.get("season", 2025, type=int) or 2025
+    default_season = _repository().latest_pff_season()
+    season = request.args.get("season", default_season, type=int) or default_season
     if season < 1869 or season > datetime.now().year:
         abort(400)
     return jsonify(pff_summary(_repository(), season))
@@ -1587,7 +1600,7 @@ def conference_api(slug: str):
         "games": repository.conference_games(name, season),
         "player_leaders": repository.conference_player_leaders(name, season),
         "pff_players": repository.conference_pff_players(
-            name, 2025, roster_season=season, limit=20),
+            name, repository.latest_pff_season(), roster_season=season, limit=20),
         "stories": _story_repository().list_stories(conference=name, limit=24),
     })
 
@@ -1638,20 +1651,21 @@ def game_preview_api(game_id: int):
     home_conference_stories = _story_repository().list_stories(
         conference=game["home_conference"], limit=6
     ) if game.get("home_conference") else []
+    pff_season = repository.latest_pff_season()
     return jsonify({
         "game": game,
         "projection": _game_projection(repository, game),
-        "pff_season": 2025,
+        "pff_season": pff_season,
         "pff_units": repository.pff_game_units(
-            game["home_team_id"], game["away_team_id"], 2025
+            game["home_team_id"], game["away_team_id"], pff_season
         ),
         "pff_matchups": repository.pff_matchups(
-            game["home_team_id"], game["away_team_id"], 2025
+            game["home_team_id"], game["away_team_id"], pff_season
         ),
         "player_unit_watches": player_matchups(
             repository, game["home_team_id"], game["away_team_id"]),
-        "home_pff": repository.pff_team_context(game["home_team_id"], 2025, 8),
-        "away_pff": repository.pff_team_context(game["away_team_id"], 2025, 8),
+        "home_pff": repository.pff_team_context(game["home_team_id"], pff_season, 8),
+        "away_pff": repository.pff_team_context(game["away_team_id"], pff_season, 8),
         "home_leaders": repository.team_player_leaders(game["home_team"], game["season"], 5),
         "away_leaders": repository.team_player_leaders(game["away_team"], game["season"], 5),
         "home_quality": repository.team_quality_snapshot(game["home_team_id"], game["season"]),
