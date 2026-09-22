@@ -2033,10 +2033,10 @@ class CFBRepository:
 
     #: How many games a team must have played this season before its own
     #: partial numbers, rather than last year's full ones, rank the leaderboard.
-    #: One game reshuffles the board around a single carry; by four the sample
+    #: One game reshuffles the board around a single carry; by three the sample
     #: is real. Until then the board stays on the prior season and each row
     #: carries its current-season line so this year's production is still shown.
-    LEADER_SETTLE_GAMES = 4
+    LEADER_SETTLE_GAMES = 3
 
     def _season_games_played(self, connection, season: int,
                              scope_column: str, scope_value: str) -> int:
