@@ -107,7 +107,7 @@ def test_v2_market_tags_use_centered_state():
     }
     state = {
         (1, "A"): {
-            "centered_line_gap": 90.0,
+            "centered_line_gap": 120.0,
             "perception_change_v2": -40.0,
         }
     }

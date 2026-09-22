@@ -171,6 +171,17 @@ def _line_elo_pass(rows: list[dict[str, Any]], *, learning_rate: float,
     gap_history: dict[str, list[float]] = defaultdict(list)
     state: dict[tuple[int, str], dict[str, float | None]] = {}
     line_prediction_error: dict[int, float] = {}
+    # centered_gap's own population-mean-vs-population-mean centering does
+    # NOT cancel line_elo's drift in practice: teams drop in and out of
+    # line_elo/last_true's cumulative (never-reset, multi-season) pools at
+    # different rates, so the "centered" gap still drifts hard -- measured
+    # at +155 mean in 2019 growing to +304 by 2026, market_darling firing on
+    # 79-95% of team-games every season (worse than v1's uncorrected bug).
+    # Apply the same leak-safe, chronologically-expanding per-season
+    # baseline correction used in narrative_shapes.py/matchup_research.py:
+    # subtract that season's running mean of the raw centered gap so far.
+    season_gap_sum: dict[int, float] = defaultdict(float)
+    season_gap_n: dict[int, int] = defaultdict(int)
 
     for gid in order:
         game_rows = by_game[gid]
@@ -207,6 +218,11 @@ def _line_elo_pass(rows: list[dict[str, Any]], *, learning_rate: float,
         if away_row.get("true_elo") is not None:
             last_true[away] = float(away_row["true_elo"])
 
+        season = int(home_row["season"])
+        season_baseline = (
+            season_gap_sum[season] / season_gap_n[season] if season_gap_n[season] else 0.0
+        )
+        raw_gaps_this_round: list[float] = []
         for row, team, opponent, pre_value, post_value in (
             (home_row, home, away, pre_home, post_home),
             (away_row, away, home, pre_away, post_away),
@@ -216,9 +232,14 @@ def _line_elo_pass(rows: list[dict[str, Any]], *, learning_rate: float,
             active_true = [float(v) for v in last_true.values()]
             line_mean = sum(active_line) / len(active_line) if active_line else 1500.0
             true_mean = sum(active_true) / len(active_true) if active_true else 1500.0
-            centered_gap = (
+            raw_centered_gap = (
                 (post_value - line_mean) - (float(true_elo) - true_mean)
                 if true_elo is not None else None
+            )
+            if raw_centered_gap is not None:
+                raw_gaps_this_round.append(raw_centered_gap)
+            centered_gap = (
+                raw_centered_gap - season_baseline if raw_centered_gap is not None else None
             )
             prior_gap = gap_history[team][-1] if gap_history[team] else None
             perception_change = (
@@ -235,6 +256,10 @@ def _line_elo_pass(rows: list[dict[str, Any]], *, learning_rate: float,
                 gap_history[team].append(float(centered_gap))
                 if len(gap_history[team]) > 3:
                     gap_history[team].pop(0)
+
+        for raw_gap in raw_gaps_this_round:
+            season_gap_sum[season] += raw_gap
+            season_gap_n[season] += 1
 
     return state, line_prediction_error
 
@@ -360,9 +385,9 @@ def _v2_tags(row: dict[str, Any],
     state = line_state.get((int(row["game_id"]), str(row["team"])), {})
     gap = state.get("centered_line_gap")
     change = state.get("perception_change_v2")
-    if gap is not None and float(gap) >= 75.0:
+    if gap is not None and float(gap) >= v1.MARKET_PERCEPTION_TAG_THRESHOLD:
         tags.append("market_darling")
-    if gap is not None and float(gap) <= -75.0:
+    if gap is not None and float(gap) <= -v1.MARKET_PERCEPTION_TAG_THRESHOLD:
         tags.append("market_skepticism")
     if change is not None and float(change) >= 35.0:
         tags.append("market_chase")
