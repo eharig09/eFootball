@@ -2190,7 +2190,14 @@ class CFBRepository:
                                 "arrival":False, "games_played":team_games(row["team"])}
                                for row in rows],
                 }
-            if team:
+            # Arrivals fill a gap only while the board still ranks on a season
+            # before this team's own current-season stats exist under its own
+            # scope (available < season). Once available reaches season, every
+            # current-roster player -- transfers included -- already has a real
+            # row from the query above; merging their old school's prior-season
+            # line back in would re-inject a stale, often larger number that
+            # outranks their actual current production.
+            if team and available < season:
                 self._merge_arrivals(connection, groups, season, team, limit)
 
             # A category with no returning or incoming production still
