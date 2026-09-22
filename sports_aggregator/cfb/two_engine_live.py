@@ -2,10 +2,11 @@
 
 Engine A keeps the five frozen convergence route definitions, using:
 - same-season Margin Power from completed prior games only,
-- Structural confirmation from live Football Lab + pregame Elo + Efficiency
-  Power (all three of its defined members now wired live -- Efficiency Power
-  was the last one, added by reusing game_projection.py's already-live
-  residual_points_per_drive rather than a second parallel computation),
+- Structural confirmation from live Football Lab + pregame Elo (Efficiency
+  Power, its third defined member, is fully built and reconciled with
+  discovery -- see _efficiency_power_edge() -- but held back pending its
+  own holdout validation before it changes what a route discovered under
+  a 2-signal Structural actually confirms),
 - pre-line Line Elo,
 - corrected prior-seasons-only HC/QB normalization.
 
@@ -91,44 +92,43 @@ FROZEN_QB_STATS = (-0.09133302884958344, 82.76569033618398)
 #: 8.15 (still up from 5.26: a genuine, more modest widening from the better
 #: drives input on ordinary games, not an extrapolation artifact).
 #:
-#: Re-reconciled once more 2026-09-21 (same day, fourth pass): Structural's
-#: third defined member, efficiency_power_edge, was wired live for the first
-#: time (previously hardcoded None -- see _efficiency_power_edge()). Fitting
-#: it against internal_power_lenses.efficiency_power_snapshots()'s own
-#: unbounded-decayed-history formula first (the pre-existing research
-#: convention) found only 0.76 correlation with what the live signal
-#: actually computes (game_projection.py's 12-game trailing window), with
-#: some games disagreeing on direction entirely -- the same class of gap
-#: football_lab_edge had in the first pass above. Fixed the same way: made
-#: discovery read the identical persisted value the live signal uses
-#: (projected_residual_points_per_drive, added to cfb_projection_backtest;
-#: see internal_power_lenses._efficiency_power_margin_lookup()) instead of a
-#: second, separate computation -- confirmed by direct comparison to be an
-#: exact match (correlation 1.0000) once reconciled.
+#: A fourth pass wired Structural's third defined member,
+#: efficiency_power_edge, live for the first time (previously hardcoded
+#: None) and reconciled it against discovery the same way football_lab_edge
+#: was reconciled above -- exact match, correlation 1.0000, once discovery
+#: was switched to read the same persisted value the live signal uses (see
+#: internal_power_lenses._efficiency_power_margin_lookup() and
+#: cfb_projection_backtest.projected_residual_points_per_drive). That work
+#: is still in place and still correct.
 #:
-#: This is NOT a "requires 2 of 3 to agree" vote gaining a stricter
-#: threshold -- see conditional_convergence._state(): structural_z is the
-#: MEAN of whichever members are available, and it's that mean's sign that
-#: gets compared to Margin Power's direction. With only 2 possible members
-#: before, "confirms" was mathematically identical to "both agree" (two
-#: same-signed numbers always average to that sign). With a real third
-#: number now in the average, a game where the original two members still
-#: individually agree exactly as before can lose confirmation if
-#: efficiency_power_edge disagrees strongly enough to pull the mean across
-#: zero -- outvoted by magnitude, not count. The reverse also happens (a
-#: game with only 1 of the old 2 members available, previously below
-#: MIN_STRUCTURAL_COMPONENTS and unable to confirm at all, can newly
-#: qualify once efficiency_power fills the second slot), just less often on
-#: this data: every route's sample size fell net (largest:
-#: positive_old_3_of_3, n=26->15), so these are noisier estimates than the
-#: passes above, not just moved ones -- worth another look once more of
-#: this season's games are graded.
+#: It was then reverted (still 2026-09-21): the 5 frozen routes were
+#: discovered and validated with Structural as a 2-signal average, and a
+#: real third signal changes what "confirms" means (see
+#: conditional_convergence._state() -- structural_z is the MEAN of whichever
+#: members are available, so a real third number can outvote two members
+#: that still individually agree, by magnitude rather than count; it also
+#: newly enables confirmation for games that had only 1 of the old 2
+#: available before, just less often on this data -- net effect was every
+#: route's sample size falling, largest positive_old_3_of_3 n=26->15).
+#: Re-scoring the frozen routes against that redefinition on the SAME
+#: 2020-2025 window they were already discovered on isn't a genuine
+#: validation of the change, only a "does this look okay in hindsight" check
+#: -- exactly what this system's own discipline says not to trust (compare
+#: how xdrives earned its way in via a real train/test split). Ran the
+#: actual holdout test this system defines for exactly this purpose
+#: (convergence_routing_holdout.DISCOVERY_END_SEASON=2025,
+#: HOLDOUT_SEASON=2026): 2026 doesn't have enough completed, route-qualifying
+#: games yet to answer the question either way (0 qualifying rows in the
+#: holdout on both versions). efficiency_power_edge is back to None in
+#: _engine_a() until that holdout test has a real sample to run against --
+#: the reconciled live/discovery code is untouched and ready to flip back on
+#: then, not deleted.
 ENGINE_A_HISTORY = {
-    "positive_4_of_4_spread_lt_14": {"n": 36, "hit_rate": 0.6667, "mean_residual": 7.222},
-    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 27, "hit_rate": 0.6296, "mean_residual": 6.997},
-    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 15, "hit_rate": 0.8000, "mean_residual": 8.131},
-    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 17, "hit_rate": 0.4706, "mean_residual": 4.103},
-    "fade_old_3_of_3_elo_disagrees_spread_14_plus": {"n": 13, "hit_rate": 0.6923, "mean_residual": 2.859},
+    "positive_4_of_4_spread_lt_14": {"n": 51, "hit_rate": 0.6471, "mean_residual": 7.072},
+    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 34, "hit_rate": 0.5882, "mean_residual": 5.481},
+    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 26, "hit_rate": 0.6923, "mean_residual": 7.655},
+    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 23, "hit_rate": 0.5652, "mean_residual": 3.619},
+    "fade_old_3_of_3_elo_disagrees_spread_14_plus": {"n": 22, "hit_rate": 0.7273, "mean_residual": 3.298},
 }
 ENGINE_B_HISTORY = {
     "rebound_vs_momentum_qb_opposes": {"n": 181, "hit_rate": 0.5801, "mean_residual": 2.706},
@@ -138,10 +138,8 @@ ENGINE_B_HISTORY = {
 #: non_conflicting_combined_portfolio.all_2020_2025). Engine B's own policy
 #: definitions (narrative-family + rating-direction, not Margin Power or
 #: Structural) are untouched by any of the passes above, so ENGINE_B_HISTORY
-#: itself is unchanged; this combined figure still moves whenever Engine A's
-#: routed game set shifts, which the efficiency-power wiring did substantially
-#: (326->279, a real coverage drop from the stricter 2-of-3 bar, not a bug).
-PORTFOLIO_HISTORY = {"n": 279, "hit_rate": 0.6057, "mean_residual": 4.191}
+#: itself is unchanged.
+PORTFOLIO_HISTORY = {"n": 326, "hit_rate": 0.6135, "mean_residual": 4.335}
 
 
 def _pooled(history: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -654,18 +652,29 @@ def _engine_a(
         if elo_margin is not None and market_home_margin is not None else None
     )
     line_edge = _line_elo_edge(game, market_home_margin, historical)
-    league_drives = (
-        _live_league_drives_this_season(
-            repository, season=int(game["season"]), before_date=str(game.get("start_date") or ""))
-        if game.get("start_date") else None
-    )
-    efficiency_edge = _efficiency_power_edge(projection, league_drives, market_home_margin)
 
     lens_row = {
         "margin_power_edge": margin_edge,
         "football_lab_edge": football_lab_edge,
         "elo_edge": elo_edge,
-        "efficiency_power_edge": efficiency_edge,
+        # Deliberately still None, same as always -- _efficiency_power_edge()
+        # and _live_league_drives_this_season() above are fully wired,
+        # reconciled 1:1 with the discovery-side lookup (see
+        # internal_power_lenses._efficiency_power_margin_lookup(), and the
+        # ENGINE_A_HISTORY comment below), but NOT switched on here. The
+        # 5 frozen routes were discovered and validated with Structural as a
+        # 2-signal average; adding a real third signal changes what
+        # "confirms" means, which is a new claim needing its own
+        # discovery/holdout test (mirroring how xdrives earned its way in),
+        # not just a re-score of the same 2020-2025 window the routes were
+        # already fit to. Ran that test 2026-09-21 against the real holdout
+        # split (convergence_routing_holdout.DISCOVERY_END_SEASON=2025,
+        # HOLDOUT_SEASON=2026): the 2026 season doesn't have enough completed,
+        # route-qualifying games yet to answer the question either way
+        # (0 qualifying rows on both the with- and without-efficiency-power
+        # versions). Re-run that same holdout test later in the season once
+        # there's a real sample, and only flip this on if it wins there.
+        "efficiency_power_edge": None,
         "line_elo_edge": line_edge,
         "narrative_interaction_edge": None,
     }
