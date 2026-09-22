@@ -28,6 +28,7 @@ from sports_aggregator.cfb.recruiting import evidence_score
 from sports_aggregator.cfb.repository import _logo_pair
 from sports_aggregator.cfb.statlines import (
     CATEGORY_ORDER, category_label, leader_table, player_stat_tables, sort_stat)
+from sports_aggregator.cfb.pff_statlines import pff_dataset_tables
 from sports_aggregator.tables import Column, Table, format_value
 
 
@@ -849,7 +850,18 @@ def leader_groups(leaders: dict[str, Any], season: int, *,
 
 def player_stat_groups(player: dict[str, Any]) -> list[dict[str, Any]]:
     """Career stat lines, pivoted out of the long-form statistics store."""
-    return player_stat_tables(player.get("stats") or [])
+    pff_usage = {
+        (row["dataset"], row.get("season")): row.get("usage_count")
+        for row in player.get("pff") or []
+        if row.get("dataset") in {"passing", "receiving", "defense"}
+        and row.get("usage_count") is not None
+    }
+    return player_stat_tables(player.get("stats") or [], pff_usage=pff_usage)
+
+
+def pff_dataset_groups(player: dict[str, Any]) -> list[dict[str, Any]]:
+    """Full-detail PFF tables, one tab per dataset, beside the CFBD box score."""
+    return pff_dataset_tables(player)
 
 
 def _pff_detail(grade: dict[str, Any]) -> str | None:

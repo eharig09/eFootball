@@ -60,6 +60,10 @@
             <h2>PFF performance</h2>
             <div class="section-note">Licensed historical snapshot; grades are shown with dataset and usage context.</div>
             {{ data_table(pff_table) }}
+            {% if pff_dataset_groups %}
+            <div class="section-note">Full metric breakdown per dataset PFF published, not just the headline grade.</div>
+            {{ tabbed_tables(pff_dataset_groups, 'player-pff-detail') }}
+            {% endif %}
         </section>
 
         {{ passer_profile_module(passer_profile, career_passing_field, player.name) }}

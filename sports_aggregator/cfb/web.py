@@ -874,6 +874,7 @@ def player_preview(player_id: str):
         player_trend=player_trend,
         pff_table=views.pff_grades_table(
             (player.get("pff") or []) + (player.get("pff_supplemental") or [])),
+        pff_dataset_groups=views.pff_dataset_groups(player),
         stories=[{**story, "coverage_label": "Player linked"} for story in direct],
         team_stories=team_context,
         opponent_history=opponent_history,

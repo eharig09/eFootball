@@ -179,6 +179,19 @@ def category_columns(category: str) -> list[Column]:
     ]
 
 
+#: category -> (PFF dataset supplying the usage figure, row key, header, tooltip).
+#: CFBD's own box score has no snap/route/dropback counts, so this borrows the
+#: one PFF already imports for each dataset's usage_count rather than parsing
+#: a new field out of metrics_json. Rushing is deliberately absent: PFF's own
+#: usage figure there is "attempts", identical to the CAR column already shown.
+PFF_USAGE_COLUMNS: dict[str, tuple[str, str, str, str]] = {
+    "passing": ("passing", "pff_dropbacks", "DB",
+                "PFF-recorded dropbacks (pass attempts plus sacks and scrambles)"),
+    "receiving": ("receiving", "pff_routes", "RTE", "PFF-recorded routes run"),
+    "defensive": ("defense", "pff_snaps", "SNP", "PFF-recorded defensive snaps"),
+}
+
+
 def category_label(category: str) -> str:
     spec = CATEGORY_SPECS.get(category)
     return spec["label"] if spec else category.replace("_", " ").title()
@@ -209,13 +222,20 @@ def _unordered_columns(rows: list[dict[str, Any]]) -> list[Column]:
     ]
 
 
-def player_stat_tables(stat_rows: Iterable[Any]) -> list[dict[str, Any]]:
+def player_stat_tables(stat_rows: Iterable[Any],
+                       pff_usage: dict[tuple[str, int], float] | None = None) -> list[dict[str, Any]]:
     """Career stat lines for one player: one table per category, newest first.
 
     Returns ``{"category", "label", "table"}`` entries so a page renders
     "Passing" and "Rushing" as separate, correctly-headed tables instead of one
     undifferentiated key/value dump. With prior seasons backfilled these become
     career lines, one row per season, newest first.
+
+    ``pff_usage`` is ``{(dataset, season): usage_count}``, built from the
+    player's PFF rows. It adds one extra column to the categories in
+    ``PFF_USAGE_COLUMNS`` -- CFBD's box score has no snap/route/dropback
+    counts of its own, so a category volume number sits with no denominator
+    to judge it against until this joins one in.
     """
     rows = [record if isinstance(record, dict) else dict(record) for record in stat_rows]
     categories = {row["category"] for row in rows}
@@ -229,6 +249,13 @@ def player_stat_tables(stat_rows: Iterable[Any]) -> list[dict[str, Any]]:
             key=lambda line: -(line.get("season") or 0),
         )
         statistics = category_columns(category) or _unordered_columns(category_rows)
+        usage_spec = PFF_USAGE_COLUMNS.get(category)
+        if usage_spec and pff_usage:
+            dataset, row_key, header, title = usage_spec
+            for line in lines:
+                line[row_key] = pff_usage.get((dataset, line.get("season")))
+            statistics = [*statistics,
+                          Column(key=row_key, label=header, format="int", title=title)]
         tables.append({
             "category": category,
             "label": category_label(category),
