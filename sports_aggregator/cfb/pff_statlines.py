@@ -29,15 +29,20 @@ DATASET_SPECS: dict[str, dict[str, Any]] = {
         "columns": [
             ("dropbacks", "DB", "int", "Dropbacks (attempts plus sacks and scrambles)"),
             ("completion_percent", "CMP%", "pct", "Completion percentage"),
+            ("accuracy_percent", "ACC%", "pct",
+             "Accuracy percentage (excludes throwaways, spikes, batted passes, and drops)"),
             ("yards", "YDS", "int", "Passing yards"),
             ("ypa", "YPA", "f1", "Yards per attempt"),
             ("touchdowns", "TD", "int", "Touchdowns"),
             ("interceptions", "INT", "int", "Interceptions"),
             ("big_time_throws", "BTT", "int", "Big-time throws"),
             ("turnover_worthy_plays", "TWP", "int", "Turnover-worthy plays"),
+            ("sack_percent", "SK%", "pct", "Sack rate"),
             ("avg_depth_of_target", "ADOT", "f1", "Average depth of target"),
             ("avg_time_to_throw", "TT", "f2", "Average time to throw, seconds"),
             ("pressure_to_sack_rate", "PRSK%", "pct", "Pressure-to-sack rate"),
+            ("epa", "EPA", "f2", "Expected points added per play"),
+            ("positive_epa_percent", "+EPA%", "pct", "Share of plays with positive EPA"),
             ("qb_rating", "RTG", "f1", "PFF quarterback rating"),
         ],
     },
@@ -60,6 +65,7 @@ DATASET_SPECS: dict[str, dict[str, Any]] = {
         "label": "PFF receiving",
         "columns": [
             ("routes", "RTE", "int", "Routes run"),
+            ("route_rate", "RTE%", "pct", "Share of offensive snaps spent running a route"),
             ("targets", "TGT", "int", "Targets"),
             ("receptions", "REC", "int", "Receptions"),
             ("caught_percent", "CATCH%", "pct", "Catch rate"),
@@ -69,10 +75,13 @@ DATASET_SPECS: dict[str, dict[str, Any]] = {
             ("avg_depth_of_target", "ADOT", "f1", "Average depth of target"),
             ("contested_catch_rate", "CC%", "pct", "Contested catch rate"),
             ("drop_rate", "DROP%", "pct", "Drop rate"),
+            ("epa", "EPA", "f2", "Expected points added per target"),
+            ("targeted_qb_rating", "TQBR", "f1", "Quarterback rating when targeting this receiver"),
         ],
     },
     "blocking": {
         "label": "PFF blocking",
+        "snap_field": "snap_counts_offense",
         "columns": [
             ("snap_counts_offense", "SNP", "int", "Offensive snaps"),
             ("pass_block_percent", "PB%", "pct", "Share of snaps pass-blocking"),
@@ -85,6 +94,7 @@ DATASET_SPECS: dict[str, dict[str, Any]] = {
     },
     "pass_rush": {
         "label": "PFF pass rush",
+        "snap_field": "snap_counts_pass_rush",
         "columns": [
             ("snap_counts_pass_rush", "SNP", "int", "Pass-rush snaps"),
             ("total_pressures", "PRSS", "int", "Total pressures"),
@@ -92,11 +102,19 @@ DATASET_SPECS: dict[str, dict[str, Any]] = {
             ("hits", "HIT", "int", "QB hits"),
             ("hurries", "HUR", "int", "Hurries"),
             ("pass_rush_win_rate", "WIN%", "pct", "Pass-rush win rate"),
-            ("prp", "PRP", "f1", "Pass-rush productivity"),
+            ("prp", "PRP", "f1", "Pass-rush productivity (pressure rate weighted for opponent quality)"),
+            # PFF's "true pass set" cut removes screens, play-action, and RPOs
+            # to isolate snaps where the rusher was actually rushing a real
+            # dropback -- the version PFF itself treats as the real signal.
+            ("true_pass_set_snap_counts_pass_rush", "TPS SNP", "int", "True-pass-set pass-rush snaps"),
+            ("true_pass_set_total_pressures", "TPS PRSS", "int", "True-pass-set total pressures"),
+            ("true_pass_set_pass_rush_win_rate", "TPS WIN%", "pct", "True-pass-set pass-rush win rate"),
+            ("true_pass_set_grades_pass_rush_defense", "TPS GRD", "f1", "True-pass-set pass-rush grade"),
         ],
     },
     "defense": {
         "label": "PFF run defense & tackling",
+        "snap_field": "snap_counts_defense",
         "columns": [
             ("snap_counts_defense", "SNP", "int", "Defensive snaps"),
             ("tackles", "TKL", "int", "Tackles"),
@@ -106,12 +124,23 @@ DATASET_SPECS: dict[str, dict[str, Any]] = {
             ("tackles_for_loss", "TFL", "int", "Tackles for loss"),
             ("stops", "STOP", "int", "Stops"),
             ("forced_fumbles", "FF", "int", "Forced fumbles"),
+            # PFF's overall defensive grade is itself a blend of these four
+            # role grades; showing them separately is what tells a reader
+            # whether a strong overall number came from run defense, pass
+            # rush, coverage, or tackling specifically.
+            ("grades_run_defense", "RD GRD", "f1", "Run-defense grade"),
+            ("grades_pass_rush_defense", "PRSH GRD", "f1", "Pass-rush grade"),
+            ("grades_coverage_defense", "COV GRD", "f1", "Coverage grade"),
+            ("grades_tackle", "TKL GRD", "f1", "Tackling grade"),
         ],
     },
     "coverage": {
         "label": "PFF coverage",
+        "snap_field": "snap_counts_coverage",
         "columns": [
             ("snap_counts_coverage", "SNP", "int", "Coverage snaps"),
+            ("coverage_percent", "COV%", "pct", "Share of defensive snaps in coverage"),
+            ("avg_depth_of_target", "ADOT", "f1", "Average depth of target allowed"),
             ("targets", "TGT", "int", "Targets allowed"),
             ("receptions", "REC", "int", "Receptions allowed"),
             ("catch_rate", "CATCH%", "pct", "Catch rate allowed"),
@@ -125,6 +154,7 @@ DATASET_SPECS: dict[str, dict[str, Any]] = {
     },
     "run_defense_detail": {
         "label": "PFF run defense detail",
+        "snap_field": "snap_counts_run",
         "columns": [
             ("snap_counts_run", "SNP", "int", "Run-defense snaps"),
             ("stops", "STOP", "int", "Stops"),
@@ -213,11 +243,19 @@ def _parse_metrics(raw_json: str | None) -> dict[str, Any]:
 
 
 def _dataset_table(rows: list[dict[str, Any]], spec: dict[str, Any], *, team_key: str) -> Table:
+    snap_field = spec.get("snap_field")
     lines = []
     for row in rows:
         metrics = _parse_metrics(row.get("metrics_json"))
+        games = row.get("games")
         line = {"season": row.get("season"), "team": row.get(team_key),
-                "grade": row.get("primary_grade")}
+                "games": games, "grade": row.get("primary_grade")}
+        if snap_field:
+            snaps = metrics.get(snap_field)
+            try:
+                line["snaps_per_game"] = round(float(snaps) / int(games), 1) if snaps and games else None
+            except (TypeError, ValueError, ZeroDivisionError):
+                line["snaps_per_game"] = None
         for field, *_ in spec["columns"]:
             line[field] = metrics.get(field)
         lines.append(line)
@@ -225,11 +263,17 @@ def _dataset_table(rows: list[dict[str, Any]], spec: dict[str, Any], *, team_key
     columns = [
         Column(key="season", label="Season", format="rank", align="left"),
         Column(key="team", label="Team", align="left"),
-        *(Column(key=field, label=header, format=fmt, title=title)
-          for field, header, fmt, title in spec["columns"]),
-        Column(key="grade", label="Grade", format="f1", emphasis=True,
-               title="PFF grade for this dataset"),
+        Column(key="games", label="G", format="int", title="Games recorded"),
     ]
+    if snap_field:
+        columns.append(Column(key="snaps_per_game", label="SNP/G", format="f1",
+                              title="Snaps per game"))
+    columns.extend(
+        Column(key=field, label=header, format=fmt, title=title)
+        for field, header, fmt, title in spec["columns"]
+    )
+    columns.append(Column(key="grade", label="Grade", format="f1", emphasis=True,
+                          title="PFF grade for this dataset"))
     return Table(columns=columns, rows=lines, caption=spec["label"],
                  empty=f"No {spec['label']} rows are stored for this player.")
 
