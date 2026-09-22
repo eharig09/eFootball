@@ -1,5 +1,6 @@
 from sports_aggregator.cfb.two_engine_live import (
-    _implication, _spread_bucket, engine_b_rules_plain_language, route_plain_language,
+    _efficiency_power_edge, _implication, _spread_bucket,
+    engine_b_rules_plain_language, route_plain_language,
 )
 
 
@@ -39,3 +40,25 @@ def test_engine_b_plain_language_both_rules_combine_into_one_sentence():
     assert "hot streak" in text
     assert "letdown risk" in text
     assert text.count("Follow the rebounding side") == 1
+
+
+def test_efficiency_power_edge_returns_none_with_missing_inputs():
+    assert _efficiency_power_edge(None, 12.0, -3.0) is None
+    assert _efficiency_power_edge({"home": {}, "away": {}}, 12.0, -3.0) is None
+    projection = {
+        "home": {"residual_points_per_drive": 2.0},
+        "away": {"residual_points_per_drive": 1.8},
+    }
+    assert _efficiency_power_edge(projection, None, -3.0) is None
+    assert _efficiency_power_edge(projection, 12.0, None) is None
+
+
+def test_efficiency_power_edge_matches_the_documented_formula():
+    # home_margin = (home_residual - away_residual) * league_drives + HFA_POINTS(2.5)
+    projection = {
+        "home": {"residual_points_per_drive": 2.2},
+        "away": {"residual_points_per_drive": 1.8},
+    }
+    edge = _efficiency_power_edge(projection, 12.0, market_home_margin=1.0)
+    expected_home_margin = (2.2 - 1.8) * 12.0 + 2.5
+    assert abs(edge - (expected_home_margin - 1.0)) < 1e-9

@@ -109,6 +109,17 @@ def initialize(repository: CFBRepository) -> None:
     initialize_special_teams(repository)
     with closing(repository._connect()) as connection:
         connection.executescript(SCHEMA)
+        # cfb_projection_backtest predates the efficiency-power reconciliation
+        # below -- CREATE TABLE IF NOT EXISTS is a no-op against an
+        # already-existing production table, so this column needs an
+        # explicit migration the same way xdrives.py backfills its own
+        # additions.
+        existing = {str(row[1]) for row in connection.execute(
+            "PRAGMA table_info(cfb_projection_backtest)")}
+        if "projected_residual_points_per_drive" not in existing:
+            connection.execute(
+                "ALTER TABLE cfb_projection_backtest "
+                "ADD COLUMN projected_residual_points_per_drive REAL")
         connection.commit()
 
 
@@ -460,6 +471,7 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
                 actual.get("giveaways"), actual.get("red_zone_trips"),
                 actual.get("red_zone_touchdowns"),
                 spread, total, implied, now,
+                predicted.get("residual_points_per_drive"),
             ))
         if len(rows) > game_rows_before:
             games_projected += 1
@@ -472,9 +484,28 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
                WHERE backtest_version=? AND season BETWEEN ? AND ?""",
             (backtest_version, int(from_season), int(to_season)),
         )
+        # Named columns, not positional VALUES(...): ALTER TABLE always
+        # appends a new column (projected_residual_points_per_drive) at the
+        # table's physical end, not wherever the CREATE TABLE text above
+        # visually shows it -- a bare VALUES(...) would silently misalign
+        # every value the moment the column count changed again. See
+        # xdrives.py's own build_dataset() for the same rule applied there.
         connection.executemany(
-            """INSERT INTO cfb_projection_backtest VALUES(
-               ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO cfb_projection_backtest(
+               game_id,team,opponent,side,backtest_version,season,week,kickoff,
+               projection_model_version,prior_games,quality_edge,quality_sources,
+               projected_drives,projected_plays,projected_dropbacks,
+               projected_rush_attempts,projected_pass_yards,projected_rush_yards,
+               projected_total_yards,projected_points_per_drive,
+               projected_offensive_points,projected_giveaways,
+               projected_red_zone_trips,projected_red_zone_touchdowns,
+               actual_drives,actual_plays,actual_dropbacks,actual_rush_attempts,
+               actual_pass_yards,actual_rush_yards,actual_total_yards,
+               actual_points_per_drive,actual_offensive_points,actual_score_points,
+               actual_giveaways,actual_red_zone_trips,actual_red_zone_touchdowns,
+               market_spread,market_total,market_implied_points,built_at,
+               projected_residual_points_per_drive
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             rows,
         )
 

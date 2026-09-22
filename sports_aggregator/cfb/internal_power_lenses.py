@@ -188,6 +188,85 @@ def efficiency_power_snapshots(repository: CFBRepository,
     return snapshots
 
 
+def _efficiency_power_margin_lookup(
+    repository: CFBRepository, *, from_season: int, to_season: int,
+) -> dict[tuple[int, str], float]:
+    """Efficiency Power's projected margin for every team in every game from
+    from_season through to_season, using the SAME live formula
+    two_engine_live.py's _efficiency_power_edge() uses: game_projection.py's
+    residual_points_per_drive (persisted here as
+    cfb_projection_backtest.projected_residual_points_per_drive), times this
+    season's actual-drives environment so far, plus HFA.
+
+    Before this, discovery and the live Structural signal quietly used two
+    different residual-computation windows for the same idea -- this
+    function's predecessor (efficiency_power_snapshots(), still used
+    elsewhere) walks an unbounded, decayed history straight off
+    cfb_xpoints_dataset, while the live signal (necessarily) uses
+    game_projection.py's 12-game trailing window. Measured correlation on a
+    sample was only 0.76, with some games disagreeing on direction entirely
+    (see two_engine_live.py's ENGINE_A_HISTORY comment for the reconciled
+    win rates after switching to this). Reads bulk from
+    cfb_projection_backtest/cfb_team_game_pace rather than re-running
+    project_matchup() per historical game, matching
+    _football_lab_margin_lookup()'s own bulk-read pattern for the same
+    performance reason.
+    """
+    with repository._reader() as connection:
+        rows = [dict(r) for r in connection.execute(
+            """SELECT p.game_id,p.team,p.side,p.season,p.kickoff,
+                      p.projected_residual_points_per_drive
+               FROM cfb_projection_backtest p
+               WHERE p.backtest_version=? AND p.season BETWEEN ? AND ?
+                 AND p.projected_residual_points_per_drive IS NOT NULL""",
+            (BACKTEST_VERSION, int(from_season), int(to_season)),
+        )]
+        drive_rows = [dict(r) for r in connection.execute(
+            """SELECT g.season,g.start_date,a.meaningful_drives
+               FROM cfb_team_game_pace a JOIN games g ON g.game_id=a.game_id
+               WHERE g.season BETWEEN ? AND ?""",
+            (int(from_season), int(to_season)),
+        )]
+
+    # Season-scoped, date-ordered running average of actual drives -- the
+    # same season-scoped "strictly prior games only" convention
+    # two_engine_live.py's _live_league_drives_this_season() uses live.
+    drive_rows.sort(key=lambda r: (int(r["season"]), str(r["start_date"])))
+    league_drives_by_date: dict[tuple[int, str], float | None] = {}
+    running: dict[int, list[float]] = defaultdict(list)
+    for row in drive_rows:
+        season = int(row["season"])
+        key = (season, str(row["start_date"]))
+        if key not in league_drives_by_date:
+            league_drives_by_date[key] = (
+                sum(running[season]) / len(running[season]) if running[season] else None
+            )
+        if row.get("meaningful_drives") is not None:
+            running[season].append(float(row["meaningful_drives"]))
+
+    by_game: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in rows:
+        by_game[int(row["game_id"])][str(row["side"])] = row
+
+    out: dict[tuple[int, str], float] = {}
+    for gid, sides in by_game.items():
+        home, away = sides.get("home"), sides.get("away")
+        if not home or not away:
+            continue
+        home_res = home.get("projected_residual_points_per_drive")
+        away_res = away.get("projected_residual_points_per_drive")
+        if home_res is None or away_res is None:
+            continue
+        league_drives = league_drives_by_date.get(
+            (int(home["season"]), str(home["kickoff"])))
+        if league_drives is None:
+            continue
+        home_margin = (float(home_res) - float(away_res)) * float(league_drives) + HFA_POINTS
+        out[(gid, str(home["team"]))] = home_margin
+        out[(gid, str(away["team"]))] = -home_margin
+    return out
+
+
 def _football_lab_margin_lookup(repository: CFBRepository,
                                 target_season: int) -> dict[int, float]:
     """Football Lab's projected home margin for every game in `target_season`,
@@ -236,7 +315,7 @@ def build_lens_rows(repository: CFBRepository,
     min_season = min(int(r["season"]) for r in base)
     margin_power = margin_power_snapshots(
         repository, from_season=min_season, to_season=int(test_season))
-    efficiency_power = efficiency_power_snapshots(
+    efficiency_power = _efficiency_power_margin_lookup(
         repository, from_season=min_season, to_season=int(test_season))
 
     fl_by_season = {

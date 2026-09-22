@@ -574,13 +574,14 @@
                         z-score against its own historical scale, so &ldquo;&#8805;1.0&rdquo; means the edge is
                         larger than a typical week's, not just nonzero.</p></div>
                     <div><b>Structural</b><p>A confirmation check, not a rating of its own: does at least 2 of 3
-                        independent team-strength views agree with Margin Power's side? The two currently live are
-                        (1) our full walk-forward margin model &mdash; the same nested model that blends projected
-                        points, drives, pace, team Elo, CORE, FPI and recent-form differentials, deliberately built
-                        without any market inputs &mdash; and (2) CFBD's own raw team Elo, converted to an expected
-                        margin. A third input (efficiency power) is defined but not yet wired into a live,
-                        leak-safe feed, so in practice this requires <em>both</em> live members to agree with Margin
-                        Power, not a genuine 2-of-3 vote yet.</p></div>
+                        independent team-strength views agree with Margin Power's side? The three are (1) our full
+                        walk-forward margin model &mdash; the same nested model that blends projected points,
+                        drives, pace, team Elo, CORE, FPI and recent-form differentials, deliberately built without
+                        any market inputs, (2) CFBD's own raw team Elo, converted to an expected margin, and
+                        (3) Efficiency Power &mdash; each side's opponent-adjusted points-per-drive, converted to a
+                        margin using this season's actual pace so far. Genuinely a 2-of-3 vote now, not the 2-of-2
+                        it used to be before Efficiency Power was wired in &mdash; a stricter bar to clear, which is
+                        why route sample sizes shrank a bit when it went live.</p></div>
                     <div><b>Line Elo</b><p>A separate, slow-moving Elo system that treats each week's closing
                         betting line as a noisy read on team strength, nudging both teams' rating a little toward
                         what that line implied rather than jumping straight to it. Its expected margin reflects a
