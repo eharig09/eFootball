@@ -573,15 +573,18 @@
                         a season, or right after a coaching change resets what "this season" means. Reported as a
                         z-score against its own historical scale, so &ldquo;&#8805;1.0&rdquo; means the edge is
                         larger than a typical week's, not just nonzero.</p></div>
-                    <div><b>Structural</b><p>A confirmation check, not a rating of its own: does at least 2 of 3
-                        independent team-strength views agree with Margin Power's side? The three are (1) our full
+                    <div><b>Structural</b><p>A confirmation check, not a rating of its own: does the <em>average</em>
+                        of the available independent team-strength views point the same direction as Margin Power?
+                        (Not a literal "2 of 3 agree" vote &mdash; one input disagreeing strongly enough can outweigh
+                        two that agree, the same way it would in any average.) The three are (1) our full
                         walk-forward margin model &mdash; the same nested model that blends projected points,
                         drives, pace, team Elo, CORE, FPI and recent-form differentials, deliberately built without
                         any market inputs, (2) CFBD's own raw team Elo, converted to an expected margin, and
                         (3) Efficiency Power &mdash; each side's opponent-adjusted points-per-drive, converted to a
-                        margin using this season's actual pace so far. Genuinely a 2-of-3 vote now, not the 2-of-2
-                        it used to be before Efficiency Power was wired in &mdash; a stricter bar to clear, which is
-                        why route sample sizes shrank a bit when it went live.</p></div>
+                        margin using this season's actual pace so far, added live for the first time recently. A
+                        real third number in that average changes outcomes both ways: some games that used to
+                        confirm now don't (outvoted by Efficiency Power's magnitude, not its vote), and some that
+                        couldn't confirm at all before (only 1 of the other two available) now can.</p></div>
                     <div><b>Line Elo</b><p>A separate, slow-moving Elo system that treats each week's closing
                         betting line as a noisy read on team strength, nudging both teams' rating a little toward
                         what that line implied rather than jumping straight to it. Its expected margin reflects a

@@ -104,12 +104,25 @@ FROZEN_QB_STATS = (-0.09133302884958344, 82.76569033618398)
 #: (projected_residual_points_per_drive, added to cfb_projection_backtest;
 #: see internal_power_lenses._efficiency_power_margin_lookup()) instead of a
 #: second, separate computation -- confirmed by direct comparison to be an
-#: exact match (correlation 1.0000) once reconciled. Structural now
-#: genuinely requires 2 of 3 live members to agree instead of 2 of the only
-#: 2 that were ever available, which is a strictly harder bar to clear:
-#: every route's sample size fell (largest: positive_old_3_of_3, n=26->15),
-#: so these are noisier estimates than the passes above, not just moved
-#: ones -- worth another look once more of this season's games are graded.
+#: exact match (correlation 1.0000) once reconciled.
+#:
+#: This is NOT a "requires 2 of 3 to agree" vote gaining a stricter
+#: threshold -- see conditional_convergence._state(): structural_z is the
+#: MEAN of whichever members are available, and it's that mean's sign that
+#: gets compared to Margin Power's direction. With only 2 possible members
+#: before, "confirms" was mathematically identical to "both agree" (two
+#: same-signed numbers always average to that sign). With a real third
+#: number now in the average, a game where the original two members still
+#: individually agree exactly as before can lose confirmation if
+#: efficiency_power_edge disagrees strongly enough to pull the mean across
+#: zero -- outvoted by magnitude, not count. The reverse also happens (a
+#: game with only 1 of the old 2 members available, previously below
+#: MIN_STRUCTURAL_COMPONENTS and unable to confirm at all, can newly
+#: qualify once efficiency_power fills the second slot), just less often on
+#: this data: every route's sample size fell net (largest:
+#: positive_old_3_of_3, n=26->15), so these are noisier estimates than the
+#: passes above, not just moved ones -- worth another look once more of
+#: this season's games are graded.
 ENGINE_A_HISTORY = {
     "positive_4_of_4_spread_lt_14": {"n": 36, "hit_rate": 0.6667, "mean_residual": 7.222},
     "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 27, "hit_rate": 0.6296, "mean_residual": 6.997},
