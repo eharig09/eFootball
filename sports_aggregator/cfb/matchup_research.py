@@ -252,6 +252,20 @@ def _live_narrative_context(
     for row in core_rows:
         latest_core[str(row["team"])] = float(row["overall"])
     line_elo = {home: current_line_home, away: current_line_away}
+    # Same de-drifting correction as narrative_shapes.build(): line_elo's
+    # league-wide mean vs true_elo drifts upward over a build/season (see
+    # MARKET_PERCEPTION_TAG_THRESHOLD's docstring there) -- compare this
+    # game's gap against the mean of already-played games from THIS season
+    # only (leak-safe: strictly before this kickoff), not a fixed constant.
+    season_prior_gaps = [
+        float(r["line_minus_true_elo"]) for r in history
+        if int(r.get("season") or -1) == season
+        and (not kickoff or str(r.get("kickoff") or "") < str(kickoff))
+        and r.get("line_minus_true_elo") is not None
+    ]
+    season_gap_baseline = (
+        sum(season_prior_gaps) / len(season_prior_gaps) if season_prior_gaps else 0.0
+    )
     market_expected = {
         home: market_home,
         away: (-market_home if market_home is not None else None),
@@ -289,6 +303,7 @@ def _live_narrative_context(
         gap = None
         if true_elo[team] is not None:
             gap = float(line_elo[team]) - float(true_elo[team])
+        gap_excess = gap - season_gap_baseline if gap is not None else None
         prior_gap = (
             float(previous["line_minus_true_elo"])
             if previous and previous.get("line_minus_true_elo") is not None else None
@@ -365,8 +380,10 @@ def _live_narrative_context(
             "won_big_then_underdog": int(
                 bool(statement) and team_market is not None and float(team_market) < 0.0
             ),
-            "market_darling": int(gap is not None and gap >= 75.0),
-            "market_skepticism": int(gap is not None and gap <= -75.0),
+            "market_darling": int(
+                gap_excess is not None and gap_excess >= ns.MARKET_PERCEPTION_TAG_THRESHOLD),
+            "market_skepticism": int(
+                gap_excess is not None and gap_excess <= -ns.MARKET_PERCEPTION_TAG_THRESHOLD),
             "market_chase": int(change is not None and change >= 35.0),
             "market_lag": int(change is not None and change <= -35.0),
             "lookahead_candidate": int(

@@ -24,6 +24,26 @@ ELO_POINTS_PER_SCORE_POINT = 25.0
 DEFAULT_HOME_FIELD_POINTS = 2.5
 DEFAULT_LINE_LEARNING_RATE = 0.35
 
+# line_elo resets to 1500 for every team at the start of each build() call and
+# only converges toward the market slowly (half-update per game at
+# DEFAULT_LINE_LEARNING_RATE), while true_elo (results-based) stays anchored
+# near 1500 throughout. That makes the league-wide mean of
+# (line_elo - true_elo) drift upward the further a build run gets from its
+# start -- confirmed on real data: +84 early in a from_year=2022 run, +253 by
+# 2026. A fixed absolute threshold against the raw gap therefore drifts out
+# of calibration over the course of a single build run (market_darling was
+# firing on 72%+ of 2026 team-games instead of flagging anything unusual).
+# market_darling/market_skepticism compare each row's gap against a
+# leak-safe, chronologically-expanding running mean of that same season's
+# gap-so-far (see _season_gap_baseline below) instead of an absolute
+# constant, so what's being flagged is "elevated relative to the rest of
+# the league right now," not "elevated relative to a stale historical
+# number." MARKET_PERCEPTION_TAG_THRESHOLD is set near one pooled standard
+# deviation of the season-demeaned gap (~103 Elo points, measured on
+# 2019-2026 data), which is a comparably selective bar to what the original
+# 75-point constant was aiming for before drift outran it.
+MARKET_PERCEPTION_TAG_THRESHOLD = 100.0
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS cfb_narrative_state (
   game_id INTEGER NOT NULL,
@@ -210,6 +230,13 @@ def build(repository, *, from_season: int = 2022, to_season: int = 2025,
     elo_surprise_history: dict[str, deque] = defaultdict(lambda: deque(maxlen=3))
     market_surprise_history: dict[str, deque] = defaultdict(lambda: deque(maxlen=3))
     last_game: dict[str, dict[str, Any]] = {}
+    # Leak-safe, chronologically-expanding per-season mean of
+    # (line_elo - true_elo), used to de-drift market_darling/market_skepticism
+    # -- see MARKET_PERCEPTION_TAG_THRESHOLD above. Updated only after BOTH
+    # teams in a game have been tagged, so neither team's own gap (nor its
+    # same-kickoff opponent's) ever informs its own tag.
+    season_gap_sum: dict[int, float] = defaultdict(float)
+    season_gap_n: dict[int, int] = defaultdict(int)
 
     output: list[tuple[Any, ...]] = []
     now = datetime.now(timezone.utc).isoformat()
@@ -224,6 +251,13 @@ def build(repository, *, from_season: int = 2022, to_season: int = 2025,
         home_row, away_row = by_team.get(home), by_team.get(away)
         if not home_row or not away_row:
             continue
+
+        game_season = int(home_row.get("season"))
+        season_gap_baseline = (
+            season_gap_sum[game_season] / season_gap_n[game_season]
+            if season_gap_n[game_season] else 0.0
+        )
+        game_gaps_this_round: list[float] = []
 
         home_spread = home_row.get("market_spread")
         if home_spread is not None:
@@ -246,6 +280,9 @@ def build(repository, *, from_season: int = 2022, to_season: int = 2025,
             current_line_elo = float(line_elo[team])
             opponent_line = float(line_elo[opponent])
             gap = (current_line_elo - float(true_elo)) if true_elo is not None else None
+            if gap is not None:
+                game_gaps_this_round.append(gap)
+            gap_excess = gap - season_gap_baseline if gap is not None else None
             prior_gap = gap_history[team][-1] if gap_history[team] else None
             perception_change = (
                 gap - prior_gap if gap is not None and prior_gap is not None else None
@@ -314,8 +351,8 @@ def build(repository, *, from_season: int = 2022, to_season: int = 2025,
                 and opponent_true is not None else None
             )
 
-            market_darling = int(gap is not None and gap >= 75.0)
-            market_skepticism = int(gap is not None and gap <= -75.0)
+            market_darling = int(gap_excess is not None and gap_excess >= MARKET_PERCEPTION_TAG_THRESHOLD)
+            market_skepticism = int(gap_excess is not None and gap_excess <= -MARKET_PERCEPTION_TAG_THRESHOLD)
             market_chase = int(perception_change is not None and perception_change >= 35.0)
             market_lag = int(perception_change is not None and perception_change <= -35.0)
             letdown = int(
@@ -382,6 +419,10 @@ def build(repository, *, from_season: int = 2022, to_season: int = 2025,
                 "sandwich_score": sandwich_score,
                 "tags": tags,
             }
+
+        for gap_value in game_gaps_this_round:
+            season_gap_sum[game_season] += gap_value
+            season_gap_n[game_season] += 1
 
         # Outcomes are attached only after all pregame state for both sides exists.
         home_points, away_points = home_row.get("home_points"), home_row.get("away_points")
