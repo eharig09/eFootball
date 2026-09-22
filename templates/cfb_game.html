@@ -566,14 +566,28 @@
             <details class="lab-disclosure">
                 <summary>Glossary &mdash; what do these terms mean?</summary>
                 <div class="lab-glossary">
-                    <div><b>Margin Power</b><p>Our primary point-margin projection, comparing the two teams' scoring
-                        and efficiency profiles. Shown as a z-score &mdash; how unusual the edge is compared to a
-                        typical week.</p></div>
-                    <div><b>Structural</b><p>A confirmation signal requiring at least 2 of 3 team-strength inputs
-                        &mdash; our Football Lab rating, team Elo, and efficiency power &mdash; to agree with Margin
-                        Power's side.</p></div>
-                    <div><b>Line Elo</b><p>A separate Elo system trained to fit betting-market behavior rather than
-                        game outcomes. Used as a check on whether the market itself is confirming the same side.</p></div>
+                    <div><b>Margin Power</b><p>A same-season Simple Rating System (SRS): each team's strength is
+                        solved directly from the final margins of its own completed games so far, plus a standard
+                        home-field adjustment, then compared against the closing market line. Needs both teams to
+                        have played enough games to solve for &mdash; it stays unavailable in the first few weeks of
+                        a season, or right after a coaching change resets what "this season" means. Reported as a
+                        z-score against its own historical scale, so &ldquo;&#8805;1.0&rdquo; means the edge is
+                        larger than a typical week's, not just nonzero.</p></div>
+                    <div><b>Structural</b><p>A confirmation check, not a rating of its own: does at least 2 of 3
+                        independent team-strength views agree with Margin Power's side? The two currently live are
+                        (1) our full walk-forward margin model &mdash; the same nested model that blends projected
+                        points, drives, pace, team Elo, CORE, FPI and recent-form differentials, deliberately built
+                        without any market inputs &mdash; and (2) CFBD's own raw team Elo, converted to an expected
+                        margin. A third input (efficiency power) is defined but not yet wired into a live,
+                        leak-safe feed, so in practice this requires <em>both</em> live members to agree with Margin
+                        Power, not a genuine 2-of-3 vote yet.</p></div>
+                    <div><b>Line Elo</b><p>A separate, slow-moving Elo system that treats each week's closing
+                        betting line as a noisy read on team strength, nudging both teams' rating a little toward
+                        what that line implied rather than jumping straight to it. Its expected margin reflects a
+                        team's whole run of market pricing, not just this week's number &mdash; so comparing it
+                        against today's actual line asks whether the market is pricing this specific matchup
+                        consistently with how it's valued this team over time, or whether something about this game
+                        is pulling the number away from that established pattern.</p></div>
                     <div><b>HC / QB Elo</b><p>A person-level Elo system that tracks head coaches and starting
                         quarterbacks individually, carried across team changes. Gives a fourth, personnel-based read
                         on the matchup.</p></div>
@@ -597,25 +611,13 @@
                 </div>
             </details>
         </div>
-
     </div>
-
-    <details class="lab-history">
-        <summary>Validation / methodology</summary>
-        <div class="lab-history-grid">
-            {% for key in ['full_convergence', 'full_convergence_lt14'] %}
-            {% set item = research_intelligence.spread_research[key] %}
-            <div><span>{{ item.label }}</span><b>{{ item.record }}</b><i>{{ item.win_rate | cell('f1') }}% · n={{ item.n }}</i></div>
-            {% endfor %}
-            {% set total_item = research_intelligence.total_research['overall'] %}
-            <div><span>{{ total_item.label }}</span><b>{{ total_item.record }}</b><i>{{ total_item.win_rate | cell('f1') }}% · n={{ total_item.n }}</i></div>
-        </div>
-    </details>
     {% endif %}
 
     <details class="forecast-method" id="forecast-method">
         <summary>
-            <span><b>How the engine is built</b><i>Projection mechanics, signal logic &amp; research limitations</i></span>
+            <span><b>How the projection engine is built</b><i>Drive/play/yardage mechanics &amp; research limitations
+                &mdash; separate from the Engine A/B picks above, this is the underlying game projection they read from</i></span>
         </summary>
         <div class="forecast-method-body">
             <p class="section-note">
