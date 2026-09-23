@@ -177,6 +177,17 @@
 .prod-shape-facts span { padding: 9px 10px; background: var(--cream); color: var(--muted); font-size: .58rem; }
 .prod-shape-facts b { display: block; color: var(--ink); font: 800 1rem var(--display-font); }
 
+/* Ranked PFF unit grade bars */
+.prod-unit-bars { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--paper); box-shadow: var(--shadow-soft); }
+.prod-unit-row { display: grid; grid-template-columns: 110px 1fr 48px; gap: 10px;
+    align-items: center; min-height: 30px; border-top: 1px solid var(--cell-line); font-size: .68rem; }
+.prod-unit-row:first-child { border-top: 0; }
+.prod-unit-label { color: var(--muted); }
+.prod-unit-track { background: var(--cell-line); height: 8px; border-radius: 4px; overflow: hidden; }
+.prod-unit-fill { display: block; height: 100%; width: var(--value); background: var(--accent); border-radius: 4px; }
+.prod-unit-row b { text-align: right; font-variant-numeric: tabular-nums; }
+
 /* Weekly team/player trend (Chart.js-driven) */
 .prod-trend { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px;
     background: var(--paper); box-shadow: var(--shadow-soft); }

@@ -1,6 +1,6 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import data_table, story_list, tabbed_tables, tabs_script %}
-{% from "_cfb_page_visuals.html" import depth_formation, trend_chart, trend_scripts, visual_scripts %}
+{% from "_cfb_page_visuals.html" import depth_formation, pff_unit_bars_module, trend_chart, trend_scripts, visual_scripts %}
 
 {% block title %}{{ team.school }}{% if team.mascot %} {{ team.mascot }}{% endif %} | {{ season }} Team Intelligence{% endblock %}
 
@@ -112,6 +112,11 @@
             <h3 class="subhead">Elo &amp; AP rank trajectory</h3>
             <div class="section-note">Weekly pregame Elo and AP Top 25 rank, {{ season }} season. AP rank is only plotted for weeks this team was ranked.</div>
             {{ trend_chart(rank_trend, 'rank-trend-chart', 'Rank trend') }}
+            {% endif %}
+            {% if pff_unit_bars %}
+            <h3 class="subhead">PFF unit grades</h3>
+            <div class="section-note">Ranked best to worst; each bar is a usage-weighted average across the unit's graded players.</div>
+            {{ pff_unit_bars_module(pff_unit_bars) }}
             {% endif %}
         </section>
         <section class="section" data-mobile-tab-panel="stats">

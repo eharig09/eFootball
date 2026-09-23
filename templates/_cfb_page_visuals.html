@@ -79,6 +79,16 @@
 </div>{% endif %}
 {% endmacro %}
 
+{% macro pff_unit_bars_module(units) %}
+{% if units %}<div class="prod-unit-bars">
+  {% for unit in units %}<div class="prod-unit-row">
+    <span class="prod-unit-label">{{ unit.label }}</span>
+    <div class="prod-unit-track" role="img" aria-label="{{ unit.label }} PFF grade {{ unit.grade | cell('f1') }}"><span class="prod-unit-fill" style="--value:{{ unit.bar_pct }}%"></span></div>
+    <b>{{ unit.grade | cell('f1') }}</b>
+  </div>{% endfor %}
+</div>{% endif %}
+{% endmacro %}
+
 {% macro trend_chart(data, chart_id, key_label='Trend') %}
 {% if data %}<div class="prod-trend" data-prod-trend data-chart-id="{{ chart_id }}">
   <div class="prod-switch" role="group" aria-label="{{ key_label }} metric">{% for metric in data.metrics %}<button type="button" class="{{ 'active' if loop.first else '' }}" data-trend-metric="{{ metric.key }}">{{ metric.label }}</button>{% endfor %}</div>

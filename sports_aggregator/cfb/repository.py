@@ -3214,6 +3214,13 @@ class CFBRepository:
             player["position"] = player["current_position"] or player["position"]
         return players
 
+    #: (label, position_group, dataset) -- one representative dataset per unit
+    #: label, since a position_group can otherwise appear under more than one
+    #: dataset (SECONDARY grades both under "coverage" and "defense").
+    PFF_UNIT_SPECS = (("Pass protection","OL","blocking"),("Pass rush","EDGE","pass_rush"),
+                      ("Interior rush","INTERIOR_DL","pass_rush"),("Coverage","SECONDARY","coverage"),
+                      ("Rushing","RB","rushing"),("Receiving","WR","receiving"))
+
     def pff_game_units(self, home_team_id: int, away_team_id: int, season: int=2025) -> list[dict[str,Any]]:
         self.initialize()
         with self._reader() as connection:
@@ -3221,16 +3228,36 @@ class CFBRepository:
               WHERE season=? AND cfbd_team_id IN (?,?) AND weighted_grade IS NOT NULL""",
               (season,home_team_id,away_team_id)).fetchall()]
         by_key={(row["cfbd_team_id"],row["position_group"],row["dataset"]):row for row in rows}
-        specs=(("Pass protection","OL","blocking"),("Pass rush","EDGE","pass_rush"),
-               ("Interior rush","INTERIOR_DL","pass_rush"),("Coverage","SECONDARY","coverage"),
-               ("Rushing","RB","rushing"),("Receiving","WR","receiving"))
         result=[]
-        for label,group,dataset in specs:
+        for label,group,dataset in self.PFF_UNIT_SPECS:
             home=by_key.get((home_team_id,group,dataset)); away=by_key.get((away_team_id,group,dataset))
             if home or away: result.append({"label":label,"position_group":group,"dataset":dataset,
                 "home_grade":home["weighted_grade"] if home else None,
                 "away_grade":away["weighted_grade"] if away else None,
                 "home_usage":home["usage_count"] if home else None,"away_usage":away["usage_count"] if away else None})
+        return result
+
+    def pff_team_units(self, team_id: int, season: int) -> list[dict[str, Any]]:
+        """One representative PFF grade per unit for a single team, ranked best-first.
+
+        Same (label, position_group, dataset) picks as `pff_game_units`, just
+        for one side instead of a home/away pair -- a team page's ranked bar
+        chart of "which units grade well" rather than a two-team comparison.
+        """
+        self.initialize()
+        with self._reader() as connection:
+            rows = [dict(row) for row in connection.execute(
+                """SELECT * FROM pff_position_groups
+                   WHERE season=? AND cfbd_team_id=? AND weighted_grade IS NOT NULL""",
+                (season, team_id)).fetchall()]
+        by_key = {(row["position_group"], row["dataset"]): row for row in rows}
+        result = []
+        for label, group, dataset in self.PFF_UNIT_SPECS:
+            row = by_key.get((group, dataset))
+            if row:
+                result.append({"label": label, "grade": row["weighted_grade"],
+                               "player_count": row["player_count"], "usage": row["usage_count"]})
+        result.sort(key=lambda item: -item["grade"])
         return result
 
     def pff_matchup_rows(self, team_ids: Iterable[int],

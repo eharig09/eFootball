@@ -380,6 +380,25 @@ def skill_player_trend_chart_data(rows: list[dict[str, Any]], position: str,
     return charts
 
 
+#: PFF college grades cluster in the 60s; a straight 0-100 scale would leave
+#: every bar looking short and nearly identical. Matches the floor/ceiling
+#: matchups.py already scores interest against, so "looks good here" and
+#: "scores well as a matchup" mean the same grade range everywhere.
+_UNIT_GRADE_FLOOR = 45.0
+_UNIT_GRADE_CEILING = 90.0
+
+
+def pff_unit_grade_bars(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ranked PFF unit grades for a team, with a display bar width attached."""
+    span = _UNIT_GRADE_CEILING - _UNIT_GRADE_FLOOR
+    bars = []
+    for unit in units:
+        grade = unit.get("grade")
+        pct = max(4.0, min(100.0, 100 * (float(grade) - _UNIT_GRADE_FLOOR) / span)) if grade is not None else 0.0
+        bars.append({**unit, "bar_pct": round(pct, 1)})
+    return bars
+
+
 def game_shape(away_team: str, home_team: str, away_pace: dict[str, Any] | None,
                home_pace: dict[str, Any] | None, away_drives: float | None,
                home_drives: float | None, away_advanced: dict[str, Any] | None,
