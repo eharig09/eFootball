@@ -36,6 +36,7 @@ from sports_aggregator.cfb.pff_flexible import (
     import_pff_directory_flexible,
     preflight_pff_directory,
 )
+from sports_aggregator.cfb.prospects import import_board, initialize as initialize_board
 from sports_aggregator.page_cache import cache
 
 
@@ -202,32 +203,78 @@ def cfbdepth_state(repository) -> dict[str, Any]:
             "rows": sum(entry["rows"] for entry in entries)}
 
 
+def board_state(repository, draft_year: int) -> dict[str, Any]:
+    """What the consensus big board holds for one draft year, source by source.
+
+    Multiple sources can coexist for the same draft year (draft_prospect_rankings
+    keys on draft_year+source+player), so this reports each one separately
+    rather than a single blended total -- a stale "Consensus" import sitting
+    next to a fresh "PFF Draft Guide" one should read as two different ages,
+    not get averaged into one.
+    """
+    initialize_board(repository)
+    with closing(sqlite3.connect(repository.path)) as connection:
+        connection.row_factory = sqlite3.Row
+        if not _table_exists(connection, "draft_prospect_rankings"):
+            return {"draft_year": draft_year, "sources": [], "rows": 0,
+                    "last_import": None, "relative": "never", "loaded": False}
+        rows = connection.execute(
+            """SELECT source, COUNT(*) rows, MAX(imported_at) imported_at,
+                      SUM(link_status='CONFIRMED') confirmed,
+                      SUM(link_status='UNRESOLVED') unresolved,
+                      SUM(link_status='SCHOOL_MISMATCH') school_mismatch
+               FROM draft_prospect_rankings WHERE draft_year=? GROUP BY source
+               ORDER BY imported_at DESC""",
+            (draft_year,)).fetchall()
+    sources = [{"source": row["source"], "rows": row["rows"],
+               "confirmed": row["confirmed"] or 0, "unresolved": row["unresolved"] or 0,
+               "school_mismatch": row["school_mismatch"] or 0,
+               "imported_at": row["imported_at"], "relative": _relative(row["imported_at"])}
+              for row in rows]
+    stamps = [entry["imported_at"] for entry in sources if entry["imported_at"]]
+    return {"draft_year": draft_year, "sources": sources,
+            "rows": sum(entry["rows"] for entry in sources),
+            "last_import": display_time(max(stamps)) if stamps else None,
+            "relative": _relative(max(stamps)) if stamps else "never",
+            "loaded": bool(stamps)}
+
+
 def _result(kind: str, ok: bool, headline: str, detail: str = "",
             rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     return {"kind": kind, "ok": ok, "headline": headline,
             "detail": detail, "rows": rows or []}
 
 
-def _page(*, season: int | None = None, result: dict[str, Any] | None = None):
+def _page(*, season: int | None = None, draft_year: int | None = None,
+          result: dict[str, Any] | None = None):
     repository = _repository()
     chosen = season or _default_season(repository)
     seasons = pff_seasons(repository)
+    # The board's own draft year is one ahead of the roster season it's
+    # projecting into (roster_season = chosen + 1), matching prospect_board's
+    # own default relationship between the two.
+    chosen_draft_year = draft_year or (chosen + 2)
     return render_template(
         "cfb_data_import.html",
         pff=pff_state(repository, chosen),
         cfbdepth=cfbdepth_state(repository),
+        board=board_state(repository, chosen_draft_year),
         season=chosen,
         roster_season=chosen + 1,
+        draft_year=chosen_draft_year,
         # The configured season is offered even when it holds nothing, because
         # importing a season for the first time is exactly when it is needed.
         seasons=sorted({*seasons, chosen, _configured_season()}, reverse=True),
+        draft_years=sorted({chosen_draft_year, chosen_draft_year - 1, chosen_draft_year + 1},
+                           reverse=True),
         result=result,
     )
 
 
 @data_import_pages.get("/college-football/data-import/")
 def data_import():
-    return _page(season=request.args.get("season", type=int))
+    return _page(season=request.args.get("season", type=int),
+                 draft_year=request.args.get("draft_year", type=int))
 
 
 def _saved_uploads(files, destination: Path) -> tuple[int, int]:
@@ -404,6 +451,71 @@ def import_cfbdepth():
         "cfbdepth", True,
         f"Replaced {_plural(len(rows), 'snapshot')}.",
         "; ".join(notes), rows))
+
+
+@data_import_pages.post("/college-football/data-import/board")
+def import_board_route():
+    """Upload an external consensus big board (Rank, Player, School, Position CSV).
+
+    Previously CLI-only (prospects_cli.py); this pairs the same import_board()
+    call with the upload/status pattern PFF and CFBDepth already have here,
+    so a draft-year refresh no longer needs shell access to the machine
+    running the app.
+    """
+    season = request.form.get("season", type=int) or _default_season(_repository())
+    draft_year = request.form.get("draft_year", type=int)
+    if not _authorized():
+        return _page(season=season, draft_year=draft_year, result=_result(
+            "board", False, "Authorization failed.",
+            "Nothing was read and nothing was changed.")), 401
+
+    if not draft_year:
+        return _page(season=season, result=_result(
+            "board", False, "Draft year is required.")), 400
+    roster_season = request.form.get("roster_season", type=int) or (season + 1)
+    source = (request.form.get("source") or "consensus").strip() or "consensus"
+
+    storage = request.files.get("file")
+    if not storage or not storage.filename:
+        return _page(season=season, draft_year=draft_year,
+                     result=_result("board", False, "No file selected.")), 400
+    name = Path(storage.filename).name
+    if not name.lower().endswith(".csv"):
+        return _page(season=season, draft_year=draft_year,
+                     result=_result("board", False, "File must be a CSV.")), 400
+    raw = storage.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        return _page(season=season, draft_year=draft_year, result=_result(
+            "board", False,
+            f"{name} is larger than the "
+            f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.")), 400
+
+    with TemporaryDirectory(prefix="cfb-board-upload-") as temp:
+        path = Path(temp) / name
+        path.write_bytes(raw)
+        try:
+            counts = import_board(_repository(), path, draft_year=draft_year,
+                                  source=source, roster_season=roster_season)
+        except Exception as exc:
+            return _page(season=season, draft_year=draft_year, result=_result(
+                "board", False,
+                "Import failed — existing data was not changed.", str(exc))), 400
+
+    if counts["rows"] == 0:
+        return _page(season=season, draft_year=draft_year, result=_result(
+            "board", False,
+            f"{name} had no readable rows.",
+            "Expected a CSV with Rank, Player, School, and Position columns.")), 400
+
+    cache.clear()
+    detail = (f"{counts['confirmed']} confirmed to a current roster player, "
+             f"{counts['school_mismatch']} school mismatch, "
+             f"{counts['unresolved']} unresolved "
+             f"({counts['unknown_school']} unrecognized school)")
+    return _page(season=season, draft_year=draft_year, result=_result(
+        "board", True,
+        f"Imported {_plural(counts['rows'], 'row')} into the {draft_year} \"{source}\" board.",
+        detail))
 
 
 @data_import_pages.get("/college-football/cfbdepth-import/")

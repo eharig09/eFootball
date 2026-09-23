@@ -9,11 +9,11 @@
     <div class="eyebrow">Private data admin</div>
     <h1>Import CSV data</h1>
     <p class="section-note">
-        PFF and CFBDepth are the two sources that arrive as files rather than
-        over an API. Every upload is validated before a single row is replaced,
-        so a batch that fails checks leaves what is already loaded untouched.
-        Files are parsed into the CFB database and are never written into the
-        repository.
+        PFF, CFBDepth, and an external consensus big board are the sources that
+        arrive as files rather than over an API. Every upload is validated
+        before a single row is replaced, so a batch that fails checks leaves
+        what is already loaded untouched. Files are parsed into the CFB
+        database and are never written into the repository.
     </p>
     <p class="section-note">
         Looking for the API-fed sources? Those live on the
@@ -160,6 +160,89 @@
             </label>
             {% endfor %}
             <button type="submit">Validate and import selected exports</button>
+        </form>
+    </article>
+
+    {# ------------------------------------------------------- Big board #}
+    <article class="import-source">
+        <header class="import-head">
+            <div>
+                <h2>Consensus big board</h2>
+                <div class="import-sub">
+                    {{ board.draft_year }} draft
+                    {%- if draft_years|length > 1 %}
+                    <form class="import-season" method="get" action="{{ url_for('cfb_data_import.data_import') }}">
+                        <input type="hidden" name="season" value="{{ season }}">
+                        <label for="draft-year-pick">Show</label>
+                        <select id="draft-year-pick" name="draft_year" onchange="this.form.submit()">
+                            {%- for option in draft_years %}
+                            <option value="{{ option }}"{{ ' selected' if option == board.draft_year }}>{{ option }}</option>
+                            {%- endfor %}
+                        </select>
+                        <noscript><button type="submit">Go</button></noscript>
+                    </form>
+                    {%- endif %}
+                </div>
+            </div>
+            <div class="import-freshness {{ 'stale' if not board.loaded }}">
+                <b>{{ board.relative }}</b>
+                <span>{{ board.last_import or 'no board imported' }}</span>
+            </div>
+        </header>
+
+        {% if board.sources %}
+        <div class="table-overflow">
+            <table class="import-table">
+                <thead>
+                    <tr><th>Source</th><th class="num">Rows</th><th class="num">Confirmed</th>
+                        <th class="num">Mismatch</th><th class="num">Unresolved</th><th>Imported</th></tr>
+                </thead>
+                <tbody>
+                    {% for entry in board.sources %}
+                    <tr>
+                        <td>{{ entry.source }}</td>
+                        <td class="num">{{ '{:,}'.format(entry.rows) }}</td>
+                        <td class="num">{{ entry.confirmed }}</td>
+                        <td class="num">{{ entry.school_mismatch }}</td>
+                        <td class="num">{{ entry.unresolved }}</td>
+                        <td>{{ entry.relative }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="import-note">No board is imported for {{ board.draft_year }} yet.</p>
+        {% endif %}
+
+        <form class="import-form" method="post" enctype="multipart/form-data"
+              action="{{ url_for('cfb_data_import.import_board_route') }}">
+            <p class="import-note">
+                A ranked CSV with Rank, Player, School, and Position columns.
+                Each prospect is resolved against the roster for the season
+                given below; a name that matches a different school than the
+                board lists is flagged rather than silently linked. Re-uploading
+                the same source replaces that source's rows for this draft year
+                -- other sources already loaded for the same year are untouched.
+            </p>
+            <div class="import-fields">
+                <label>Admin PIN or refresh token
+                    <input type="password" name="token" required autocomplete="current-password">
+                </label>
+                <label>Draft year
+                    <input type="number" name="draft_year" value="{{ board.draft_year }}" min="2000" max="2100" required>
+                </label>
+                <label>Roster season
+                    <input type="number" name="roster_season" value="{{ roster_season }}" min="2000" max="2100">
+                </label>
+                <label>Source name
+                    <input type="text" name="source" value="consensus" maxlength="60">
+                </label>
+            </div>
+            <label class="import-file">Big board CSV
+                <input type="file" name="file" accept=".csv,text/csv" required>
+            </label>
+            <button type="submit">Import board</button>
         </form>
     </article>
 </section>
