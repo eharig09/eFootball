@@ -39,7 +39,7 @@
     min-height: 54px; min-width: 0; border: 1px solid var(--line); color: var(--ink);
     font: inherit; cursor: help; background: var(--tint); border-radius: 4px;
     transition: transform .1s ease, box-shadow .1s ease; }
-.prod-zone:hover, .prod-zone:focus-visible { transform: scale(1.03); box-shadow: var(--shadow-soft); z-index: 2; }
+.prod-zone:hover, .prod-zone:focus-visible { box-shadow: var(--shadow-soft); z-index: 2; }
 .prod-zone b { font: 800 .78rem var(--display-font); font-variant-numeric: tabular-nums; }
 .prod-zone small { color: var(--muted); font-size: .5rem; }
 .prod-zone em { color: var(--muted); font-size: .5rem; font-style: normal; }
@@ -187,29 +187,6 @@
 .prod-unit-track { background: var(--cell-line); height: 8px; border-radius: 4px; overflow: hidden; }
 .prod-unit-fill { display: block; height: 100%; width: var(--value); background: var(--accent); border-radius: 4px; }
 .prod-unit-row b { text-align: right; font-variant-numeric: tabular-nums; }
-
-/* Unit-vs-unit matchup bars (attack on the left, defend on the right) */
-.prod-matchup-bars { margin-top: 12px; display: grid; gap: 10px; }
-.prod-matchup-row { padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px;
-    background: var(--paper); box-shadow: var(--shadow-soft); }
-.prod-matchup-head { display: flex; justify-content: space-between; align-items: baseline;
-    gap: 8px; margin-bottom: 8px; font-size: .68rem; }
-.prod-matchup-head strong { color: var(--ink); }
-.prod-matchup-head span { color: var(--muted); }
-.prod-matchup-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.prod-matchup-side { padding: 6px 8px; border-radius: 5px; }
-.prod-matchup-side.advantage { background: color-mix(in srgb, var(--edge) 10%, transparent); }
-.prod-matchup-team { display: block; font-size: .6rem; color: var(--muted); margin-bottom: 4px; }
-.prod-matchup-team small { text-transform: lowercase; }
-.prod-matchup-side.advantage .prod-matchup-team { color: var(--ink); font-weight: 700; }
-.prod-matchup-track { background: var(--cell-line); height: 7px; border-radius: 4px; overflow: hidden; }
-.prod-matchup-fill { display: block; height: 100%; width: var(--value); border-radius: 4px; }
-.prod-matchup-fill.attack { background: var(--accent); }
-.prod-matchup-fill.defend { background: var(--edge); }
-.prod-matchup-side b { display: block; margin-top: 4px; font-variant-numeric: tabular-nums; font-size: .72rem; }
-@media (max-width: 520px) {
-    .prod-matchup-sides { grid-template-columns: 1fr; }
-}
 
 /* Season-to-date drive outcome distribution */
 .prod-drive-outcomes { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px;

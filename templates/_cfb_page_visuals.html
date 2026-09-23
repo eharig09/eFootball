@@ -89,26 +89,6 @@
 </div>{% endif %}
 {% endmacro %}
 
-{% macro unit_matchup_bars_module(bars) %}
-{% if bars %}<div class="prod-matchup-bars">
-  {% for bar in bars %}<div class="prod-matchup-row">
-    <div class="prod-matchup-head"><strong>{{ bar.label }}</strong><span>{{ bar.headline }}</span></div>
-    <div class="prod-matchup-sides">
-      <div class="prod-matchup-side{{ ' advantage' if bar.advantage == bar.attack_team else '' }}">
-        <span class="prod-matchup-team">{{ bar.attack_team }} <small>{{ bar.attack_label }}</small></span>
-        <div class="prod-matchup-track" role="img" aria-label="{{ bar.attack_team }} {{ bar.attack_label }} grade {{ bar.attack_grade | cell('f1') }}"><span class="prod-matchup-fill attack" style="--value:{{ bar.attack_pct }}%"></span></div>
-        <b>{{ bar.attack_grade | cell('f1') }}</b>
-      </div>
-      <div class="prod-matchup-side{{ ' advantage' if bar.advantage == bar.defend_team else '' }}">
-        <span class="prod-matchup-team">{{ bar.defend_team }} <small>{{ bar.defend_label }}</small></span>
-        <div class="prod-matchup-track" role="img" aria-label="{{ bar.defend_team }} {{ bar.defend_label }} grade {{ bar.defend_grade | cell('f1') }}"><span class="prod-matchup-fill defend" style="--value:{{ bar.defend_pct }}%"></span></div>
-        <b>{{ bar.defend_grade | cell('f1') }}</b>
-      </div>
-    </div>
-  </div>{% endfor %}
-</div>{% endif %}
-{% endmacro %}
-
 {% macro drive_outcomes_module(data) %}
 {% if data and (data.away_segments or data.home_segments) %}<div class="prod-drive-outcomes">
   {% for team, segments, games in [(data.away_team, data.away_segments, data.away_games), (data.home_team, data.home_segments, data.home_games)] %}
@@ -258,7 +238,7 @@ document.querySelectorAll("[data-prod-trend]").forEach(function(shell){
   {% for depth, label in [('deep','Deep 20+'),('intermediate','Intermediate 10–19'),('short','Short 0–9'),('behind_line','Behind LOS')] %}<div class="prod-zone-row"><span>{{ label }}</span>
     {% for direction in ['left','middle','right'] %}{% set zone=profile.zones[(depth, direction)] %}
     <button type="button" class="prod-zone {{ 'positive' if zone.epa_per_attempt is not none and zone.epa_per_attempt > 0.15 else 'negative' if zone.epa_per_attempt is not none and zone.epa_per_attempt < -0.05 else 'neutral' }}"><b>{{ zone.epa_per_attempt | cell('signed2') if zone.epa_per_attempt is not none else '—' }}</b><small>{{ zone.completions }}/{{ zone.attempts }} att</small><em>{{ direction | title }}</em>
-      <span class="prod-zone-tip"><strong>{{ label }} {{ direction }}</strong><div class="prod-tooltip-players">{% for receiver in zone.receivers %}<span><i><b>{{ receiver.name }}</b></i><b>{{ receiver.receptions }} rec &middot; {{ receiver.yards }} yds &middot; {{ receiver.touchdowns }} TD</b></span>{% else %}<span>No named targets</span>{% endfor %}</div></span>
+      <div class="prod-zone-tip" role="tooltip"><strong>{{ label }} {{ direction }}</strong><div class="prod-tooltip-players">{% for receiver in zone.receivers %}<span><i><b>{{ receiver.name }}</b></i><b>{{ receiver.receptions }} rec &middot; {{ receiver.yards }} yds &middot; {{ receiver.touchdowns }} TD</b></span>{% else %}<span>No named targets</span>{% endfor %}</div></div>
     </button>{% endfor %}
   </div>{% endfor %}<div class="prod-los">LINE OF SCRIMMAGE</div>
 </div>{% endif %}

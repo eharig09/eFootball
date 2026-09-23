@@ -49,7 +49,7 @@ from sports_aggregator.cfb.page_visuals import (
     depth_formations, drive_outcome_bars, game_shape, model_probability_track,
     pff_unit_grade_bars, player_share_chart_series, player_trend_chart_data, recent_form_rows,
     skill_player_trend_chart_data, team_rank_trend_chart_data, team_scoring_chart_series,
-    team_trend_chart_data, unit_matchup_bars, upcoming_games_rows)
+    team_trend_chart_data, upcoming_games_rows)
 from sports_aggregator.cfb.team_game_drive_outcomes import season_summary as drive_outcome_summary
 from sports_aggregator.cfb.coordinator_pace import team_drives_per_game, team_pace
 from sports_aggregator.cfb.player_game_log import player_weekly_trend
@@ -1094,7 +1094,6 @@ def game_preview(game_id: int):
                            direction="out", limit=12), season,
             caption=f"{game['home_team']} portal departures", departed=True),
         matchup_report=matchup_report,
-        unit_matchup_bars_data=unit_matchup_bars(matchup_report),
         passing_field_panels=matchup_field(repository, game),
         passing_situational_panels=matchup_situational(repository, game),
         rushing_field_panels=matchup_rushing(repository, game),

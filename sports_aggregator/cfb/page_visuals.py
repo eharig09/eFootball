@@ -527,33 +527,6 @@ def pff_unit_grade_bars(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return bars
 
 
-def unit_matchup_bars(report: dict[str, Any]) -> list[dict[str, Any]]:
-    """Attack-vs-defend grade bars for every ranked unit matchup on a game page.
-
-    `report` is `matchups.game_matchup_report`'s output -- the same data the
-    "Matchups to watch" table already reads. Attacker is drawn on the left,
-    defender on the right, matching that table's own column order, with each
-    bar scaled on the shared PFF grade range so a reader can compare a bar's
-    length across rows, not just within one.
-    """
-    span = _UNIT_GRADE_CEILING - _UNIT_GRADE_FLOOR
-
-    def pct(grade: float | None) -> float:
-        return max(4.0, min(100.0, 100 * (float(grade) - _UNIT_GRADE_FLOOR) / span)) if grade is not None else 0.0
-
-    bars = []
-    for item in report.get("matchups") or []:
-        bars.append({
-            "label": item["label"], "headline": item["headline"],
-            "attack_team": item["attack_team"], "attack_label": item["attack_label"],
-            "attack_grade": item["attack_grade"], "attack_pct": round(pct(item["attack_grade"]), 1),
-            "defend_team": item["defend_team"], "defend_label": item["defend_label"],
-            "defend_grade": item["defend_grade"], "defend_pct": round(pct(item["defend_grade"]), 1),
-            "advantage": item["advantage"],
-        })
-    return bars
-
-
 #: (outcome keys to sum, display label, color). Turnovers-by-interception/
 #: fumble and turnovers-on-downs are both "gave the ball away" to a reader,
 #: and end-half drives are folded into "other" -- neither is common enough on
