@@ -36,6 +36,14 @@ SUPPLEMENTAL_SIGNATURES: dict[str, frozenset[str]] = {
     "receiving_scheme": frozenset({"player_id", "player", "team_name", "man_grades_pass_route", "zone_grades_pass_route"}),
     "returns": frozenset({"player_id", "player", "team_name", "grades_return", "total_attempts"}),
     "run_defense_detail": frozenset({"player_id", "player", "team_name", "grades_run_defense", "snap_counts_run"}),
+    "receiving_concept": frozenset({"player_id", "player", "team_name", "screen_grades_pass_route", "slot_grades_pass_route"}),
+    "receiving_depth": frozenset({"player_id", "player", "team_name", "behind_los_grades_pass_route", "deep_grades_pass_route"}),
+    # No grade column at all, so nothing here overlaps a grades_* field -- the
+    # coverage_snaps_per_target/per_reception pair is distinctive enough on
+    # its own (the primary "coverage"/"defense" signatures use
+    # snap_counts_coverage, a different column, so there's no collision).
+    "slot_coverage": frozenset({"player_id", "player", "team_name", "coverage_snaps",
+                                "coverage_snaps_per_target", "coverage_snaps_per_reception"}),
 }
 
 CANONICAL_PRIMARY = {dataset: filename for filename, (dataset, _grade, _usage) in DATASETS.items()}

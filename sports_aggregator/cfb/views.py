@@ -948,7 +948,26 @@ def _pff_detail(grade: dict[str, Any]) -> str | None:
     if dataset == "run_defense_detail":
         return " · ".join(filter(None, (
             f"{number('snap_counts_run')} run snaps" if number("snap_counts_run") else None,
-            f"{number('run_stop_percent', 1)}% stops" if number("run_stop_percent", 1) else None,
+            f"{number('stop_percent', 1)}% stops" if number("stop_percent", 1) else None,
+        ))) or None
+    if dataset == "receiving_concept":
+        return " · ".join(filter(None, (
+            f"screen {number('screen_routes')} routes / {number('screen_yards')} yd / {number('screen_grades_pass_route', 1)} grade"
+            if number("screen_routes") else None,
+            f"slot {number('slot_routes')} routes / {number('slot_yards')} yd / {number('slot_grades_pass_route', 1)} grade"
+            if number("slot_routes") else None,
+        ))) or None
+    if dataset == "receiving_depth":
+        return " · ".join(filter(None, (
+            f"deep {number('deep_routes')} routes / {number('deep_yprr', 2)} YPRR"
+            if number("deep_routes") else None,
+            f"medium {number('medium_routes')} routes / {number('medium_yprr', 2)} YPRR"
+            if number("medium_routes") else None,
+        ))) or None
+    if dataset == "slot_coverage":
+        return " · ".join(filter(None, (
+            f"{number('targets')} tgt / {number('receptions')} rec in the slot" if number("targets") else None,
+            f"{number('yards_per_coverage_snap', 2)} yd/snap" if number("yards_per_coverage_snap", 2) else None,
         ))) or None
     return None
 

@@ -44,6 +44,19 @@ SUPPLEMENTAL_DATASETS = {
         "returns", (("grades_return", "total_attempts"),)),
     "run_defense_summary (1).csv": (
         "run_defense_detail", (("grades_run_defense", "snap_counts_run"),)),
+    "receiving_concept.csv": (
+        "receiving_concept", (("screen_grades_pass_route", "screen_routes"),
+                              ("slot_grades_pass_route", "slot_routes"))),
+    "receiving_depth.csv": (
+        "receiving_depth", (("behind_los_grades_pass_route", "behind_los_routes"),
+                            ("short_grades_pass_route", "short_routes"),
+                            ("medium_grades_pass_route", "medium_routes"),
+                            ("deep_grades_pass_route", "deep_routes"))),
+    # PFF publishes this one with no grade column at all -- coverage snap and
+    # target counts specific to the slot, nothing evaluative. See
+    # _weighted_metric's None-grade_field handling.
+    "slot_coverage.csv": (
+        "slot_coverage", ((None, "coverage_snaps"),)),
 }
 
 DATASET_POSITION_GROUPS = {
@@ -134,17 +147,27 @@ def _primary_grade(row: dict[str, str], dataset: str, grade_field: str) -> float
 
 
 def _weighted_metric(
-    row: dict[str, str], fields: tuple[tuple[str, str], ...]
+    row: dict[str, str], fields: tuple[tuple[str | None, str], ...]
 ) -> tuple[float | None, float | None]:
-    """Usage-weight a grade across scheme/depth splits without inventing data."""
+    """Usage-weight a grade across scheme/depth splits without inventing data.
+
+    A pair's grade_field may be None for a dataset PFF publishes with no grade
+    column at all (slot_coverage is snap/target counts only) -- usage still
+    sums across whatever fields are given, it just never contributes a grade.
+    """
     values = []
+    usage_only = 0.0
     for grade_field, usage_field in fields:
-        grade = _number(row.get(grade_field))
         usage = _number(row.get(usage_field))
+        if grade_field is None:
+            if usage is not None:
+                usage_only += usage
+            continue
+        grade = _number(row.get(grade_field))
         if grade is not None and usage is not None and usage > 0:
             values.append((grade, usage))
     if not values:
-        return None, None
+        return None, (usage_only or None)
     usage = sum(weight for _, weight in values)
     return sum(grade * weight for grade, weight in values) / usage, usage
 

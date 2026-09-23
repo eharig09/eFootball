@@ -179,6 +179,21 @@ DATASET_SPECS: dict[str, dict[str, Any]] = {
             ("punt_touchdowns", "PR TD", "int", "Punt return touchdowns"),
         ],
     },
+    "slot_coverage": {
+        "label": "PFF slot coverage",
+        # PFF publishes no grade at all for this dataset; _dataset_table still
+        # renders the Grade column, it just reads "--" for every row here.
+        "snap_field": "coverage_snaps",
+        "columns": [
+            ("targets", "TGT", "int", "Targets allowed in the slot"),
+            ("receptions", "REC", "int", "Receptions allowed in the slot"),
+            ("yards", "YDS", "int", "Yards allowed in the slot"),
+            ("yards_per_coverage_snap", "Y/SNP", "f2", "Yards allowed per slot coverage snap"),
+            ("touchdowns", "TD", "int", "Touchdowns allowed in the slot"),
+            ("interceptions", "INT", "int", "Interceptions in the slot"),
+            ("qb_rating_against", "RTG", "f1", "Opposing quarterback rating targeting the slot"),
+        ],
+    },
 }
 
 #: Split-view datasets: PFF publishes each split (man/zone, depth of target)
@@ -228,6 +243,33 @@ SPLIT_DATASET_SPECS: dict[str, dict[str, Any]] = {
             ("big_time_throws", "BTT", "int", "Big-time throws"),
             ("turnover_worthy_plays", "TWP", "int", "Turnover-worthy plays"),
             ("grades_pass", "GRD", "f1", "PFF passing grade at this depth"),
+        ],
+    },
+    "receiving_concept": {
+        "label": "PFF receiving by concept",
+        "split_label": "Concept",
+        "splits": (("Screen", "screen"), ("Slot", "slot")),
+        "columns": [
+            ("routes", "RTE", "int", "Routes run"),
+            ("targets", "TGT", "int", "Targets"),
+            ("caught_percent", "CATCH%", "pct", "Catch rate"),
+            ("yards", "YDS", "int", "Receiving yards"),
+            ("yprr", "YPRR", "f2", "Yards per route run"),
+            ("grades_pass_route", "GRD", "f1", "PFF receiving grade on this concept"),
+        ],
+    },
+    "receiving_depth": {
+        "label": "PFF receiving by depth of target",
+        "split_label": "Depth",
+        "splits": (("Behind LOS", "behind_los"), ("Short", "short"),
+                   ("Medium", "medium"), ("Deep", "deep")),
+        "columns": [
+            ("routes", "RTE", "int", "Routes run"),
+            ("targets", "TGT", "int", "Targets"),
+            ("caught_percent", "CATCH%", "pct", "Catch rate"),
+            ("yards", "YDS", "int", "Receiving yards"),
+            ("yprr", "YPRR", "f2", "Yards per route run"),
+            ("grades_pass_route", "GRD", "f1", "PFF receiving grade at this depth"),
         ],
     },
 }

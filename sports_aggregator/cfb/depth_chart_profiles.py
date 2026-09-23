@@ -141,6 +141,7 @@ def _production_line(position: str | None, categories: dict[str, dict[str, Any]]
 _DATASET_LABELS = {
     "offense": "OFF", "passing": "PASS", "passing_depth": "DEPTH",
     "rushing": "RUN", "receiving": "REC", "receiving_scheme": "ROUTE",
+    "receiving_concept": "CONCEPT", "receiving_depth": "DEPTH",
     "blocking": "BLK", "blocking_history": "BLK", "defense": "DEF",
     "run_defense": "RUN D", "run_defense_detail": "RUN D",
     "pass_rush": "PRSH", "coverage": "COV", "coverage_scheme": "COV",
@@ -152,8 +153,8 @@ _POSITION_DATASETS = {
     "RB": ("rushing", "receiving", "offense"),
     "HB": ("rushing", "receiving", "offense"),
     "FB": ("rushing", "receiving", "blocking", "offense"),
-    "WR": ("receiving", "receiving_scheme", "offense"),
-    "TE": ("receiving", "blocking", "receiving_scheme", "offense"),
+    "WR": ("receiving", "receiving_scheme", "receiving_concept", "receiving_depth", "offense"),
+    "TE": ("receiving", "blocking", "receiving_scheme", "receiving_concept", "receiving_depth", "offense"),
     "OL": ("blocking", "blocking_history", "offense"),
     "IOL": ("blocking", "blocking_history", "offense"),
     "OT": ("blocking", "blocking_history", "offense"),
