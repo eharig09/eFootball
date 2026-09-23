@@ -19,7 +19,8 @@ from typing import Any
 
 from markupsafe import Markup
 
-from sports_aggregator.cfb.win_probability_v2 import game_win_probability_series
+from sports_aggregator.cfb.win_probability_v2 import (
+    game_win_probability_series, time_weighted_home_win_probability)
 
 #: A chart under this many charted plays reads as noise, not a shape.
 MIN_PLAYS = 10
@@ -55,42 +56,6 @@ def _score_line(row: dict[str, Any], home_team: str, away_team: str) -> str:
     home_score, away_score = (offense_score, defense_score) if row.get("offense") == row.get("home_team") \
         else (defense_score, offense_score)
     return f"{away_team} {int(away_score)} – {int(home_score)} {home_team}"
-
-
-def _play_seconds(row: dict[str, Any]) -> float | None:
-    """Elapsed regulation game-clock seconds at this play, or None outside
-    regulation -- CFB overtime has no running game clock (each team just gets
-    an untimed possession), so there's nothing to clock an OT play against."""
-    period = row.get("period")
-    minutes, seconds = row.get("clock_minutes"), row.get("clock_seconds")
-    if not period or int(period) > 4 or minutes is None or seconds is None:
-        return None
-    clock = int(minutes) * 60 + int(seconds)
-    return (int(period) - 1) * 900 + (900 - clock)
-
-
-#: Real-world duration credited to a play when it can't be clocked against
-#: regulation time (overtime, or a missing clock value) -- roughly one play's
-#: average length, so those plays still count for something in the average
-#: below rather than vanishing entirely.
-_NOMINAL_PLAY_SECONDS = 15.0
-
-
-def _time_weighted_home_average(series: list[dict[str, Any]]) -> float:
-    """Home win probability averaged over game TIME rather than play count --
-    a stretch of clock-killing runs should weigh more than a flurry of
-    incompletions that burned no time at all."""
-    elapsed = [_play_seconds(row) for row in series]
-    weights = []
-    for index, value in enumerate(elapsed):
-        following = elapsed[index + 1] if index + 1 < len(elapsed) else None
-        if value is not None and following is not None and following > value:
-            weights.append(following - value)
-        else:
-            weights.append(_NOMINAL_PLAY_SECONDS)
-    total = sum(weights) or 1.0
-    weighted = sum(w * float(row["home_win_probability"]) for w, row in zip(weights, series))
-    return weighted / total
 
 
 def _play_point(row: dict[str, Any], home_team: str, away_team: str) -> dict[str, Any]:
@@ -133,7 +98,7 @@ def render_win_probability(repository, game: dict[str, Any]) -> Markup:
     fill_points = f"0,{HEIGHT} " + points + f" {WIDTH},{HEIGHT}"
     start_wp = float(series[0]["home_win_probability"]) * 100
     final_wp = float(series[-1]["home_win_probability"]) * 100
-    average_wp = _time_weighted_home_average(series) * 100
+    average_wp = time_weighted_home_win_probability(series) * 100
 
     home_points, away_points = game.get("home_points"), game.get("away_points")
     away_won = (home_points is not None and away_points is not None

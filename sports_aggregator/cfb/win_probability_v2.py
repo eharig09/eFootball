@@ -370,6 +370,71 @@ def game_win_probability_series(repository, game_id: int, *,
     return [dict(row) for row in rows if row["home_win_probability"] is not None]
 
 
+def play_regulation_seconds(row: Any) -> float | None:
+    """Elapsed regulation game-clock seconds at this play, or None outside
+    regulation -- CFB overtime has no running game clock (each team just gets
+    an untimed possession), so there's nothing to clock an OT play against."""
+    period, minutes, seconds = row["period"], row["clock_minutes"], row["clock_seconds"]
+    if not period or int(period) > 4 or minutes is None or seconds is None:
+        return None
+    clock = int(minutes) * 60 + int(seconds)
+    return (int(period) - 1) * 900 + (900 - clock)
+
+
+#: Real-world duration credited to a play when it can't be clocked against
+#: regulation time (overtime, or a missing clock value) -- roughly one play's
+#: average length, so those plays still count for something in the average
+#: below rather than vanishing entirely.
+NOMINAL_PLAY_SECONDS = 15.0
+
+
+def time_weighted_home_win_probability(series: list[Any]) -> float:
+    """Home win probability averaged over game TIME rather than play count --
+    a stretch of clock-killing runs should weigh more than a flurry of
+    incompletions that burned no time at all.
+
+    `series` is chronological rows carrying period/clock_minutes/clock_seconds/
+    home_win_probability, e.g. game_win_probability_series()'s own output.
+    """
+    elapsed = [play_regulation_seconds(row) for row in series]
+    weights = []
+    for index, value in enumerate(elapsed):
+        following = elapsed[index + 1] if index + 1 < len(elapsed) else None
+        if value is not None and following is not None and following > value:
+            weights.append(following - value)
+        else:
+            weights.append(NOMINAL_PLAY_SECONDS)
+    total = sum(weights) or 1.0
+    weighted = sum(w * float(row["home_win_probability"]) for w, row in zip(weights, series))
+    return weighted / total
+
+
+def bulk_time_weighted_home_win_probability(
+    repository, *, from_season: int, to_season: int, model_version: str = MODEL_VERSION,
+) -> dict[int, float]:
+    """Every game's time-weighted average home win probability across a
+    season range, in one bulk query -- for research/backtest code that needs
+    this for thousands of games at once, where game_win_probability_series()'s
+    per-game round trip would be thousands of separate queries."""
+    initialize(repository)
+    with repository._reader() as connection:
+        rows = connection.execute(
+            """SELECT p.game_id, p.drive_number, p.play_number, p.period,
+                      p.clock_minutes, p.clock_seconds, w.home_win_probability
+               FROM cfb_plays p JOIN cfb_play_win_probability w
+                 ON w.play_id = p.play_id AND w.model_version = ?
+               WHERE p.season BETWEEN ? AND ? AND w.home_win_probability IS NOT NULL
+               ORDER BY p.game_id, p.drive_number, p.play_number""",
+            (model_version, int(from_season), int(to_season))).fetchall()
+    by_game: dict[int, list[Any]] = {}
+    for row in rows:
+        by_game.setdefault(int(row["game_id"]), []).append(row)
+    return {
+        game_id: time_weighted_home_win_probability(series)
+        for game_id, series in by_game.items()
+    }
+
+
 def team_win_probability_values(repository, game_id: int, team_id: int, *,
                                 model_version: str = MODEL_VERSION) -> list[float]:
     """One team's own win probability (0-100) through one game, home or away.
