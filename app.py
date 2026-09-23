@@ -46,6 +46,7 @@ from sports_aggregator.cfb.coordinator_display import install_coordinator_displa
 from sports_aggregator.cfb.cfbdepth_display import install_cfbdepth_display
 from sports_aggregator.cfb.cfbdepth_enhancements import install_cfbdepth_enhancements
 from sports_aggregator.cfb.passing_display import install_passing_display
+from sports_aggregator.cfb.win_probability_display import install_win_probability_display
 from sports_aggregator.cfb.player_game_log import player_game_log_table
 from sports_aggregator.cfb.player_career_context import player_career_context
 from sports_aggregator.catalog import list_leagues
@@ -173,6 +174,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     install_cfbdepth_display(app)
     install_cfbdepth_enhancements(app)
     install_passing_display(app)
+    install_win_probability_display(app)
 
     def require_refresh_auth() -> None:
         if session.get("cfb_admin") is True:

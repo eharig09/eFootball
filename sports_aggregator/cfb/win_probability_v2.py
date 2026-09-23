@@ -315,6 +315,54 @@ def fit_model(repository, *, from_season: int | None = None,
     }
 
 
+def game_win_probability_series(repository, game_id: int, *,
+                                model_version: str = MODEL_VERSION) -> list[dict[str, Any]]:
+    """One game's play-by-play home win probability, in chronological order.
+
+    Chronological is drive_number/play_number, not clock time -- overtime
+    periods run the clock backward from CFBD's own zero, so ordering by clock
+    would put OT before the fourth quarter ends.
+    """
+    initialize(repository)
+    with repository._reader() as connection:
+        rows = connection.execute(
+            """SELECT p.drive_number, p.play_number, p.period, p.clock_minutes,
+                      p.clock_seconds, p.offense_score, p.defense_score, p.offense,
+                      p.home_team, w.home_win_probability
+               FROM cfb_plays p JOIN cfb_play_win_probability w
+                 ON w.play_id = p.play_id AND w.model_version = ?
+               WHERE p.game_id = ?
+               ORDER BY p.drive_number, p.play_number""",
+            (model_version, int(game_id))).fetchall()
+    return [dict(row) for row in rows if row["home_win_probability"] is not None]
+
+
+def team_win_probability_values(repository, game_id: int, team_id: int, *,
+                                model_version: str = MODEL_VERSION) -> list[float]:
+    """One team's own win probability (0-100) through one game, home or away.
+
+    A team that was away needs its share flipped from the stored home
+    probability; which side that team was on for this specific game_id is
+    read straight from games rather than trusted from a caller's own
+    home/away framing, so a mismatched team_id/game_id pair fails loudly
+    (empty series) rather than silently reporting the wrong team's numbers.
+    """
+    initialize(repository)
+    with repository._reader() as connection:
+        game_row = connection.execute(
+            "SELECT home_team_id, away_team_id FROM games WHERE game_id=?",
+            (int(game_id),)).fetchone()
+    if game_row is None or int(team_id) not in (game_row["home_team_id"], game_row["away_team_id"]):
+        return []
+    team_is_home = game_row["home_team_id"] == int(team_id)
+    series = game_win_probability_series(repository, game_id, model_version=model_version)
+    return [
+        round((row["home_win_probability"] if team_is_home
+              else 1 - row["home_win_probability"]) * 100, 1)
+        for row in series
+    ]
+
+
 def _load_weights(repository, model_version: str) -> tuple[list[float] | None, str | None]:
     initialize(repository)
     with closing(repository._connect()) as connection:

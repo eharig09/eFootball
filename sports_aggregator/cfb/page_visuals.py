@@ -130,6 +130,25 @@ def upcoming_games_rows(schedule: list[dict[str, Any]], team_id: int, after_date
     return rows
 
 
+def win_prob_sparkline(values: list[float] | None, *,
+                       width: float = 96, height: float = 28) -> dict[str, Any] | None:
+    """SVG polyline geometry for a compact win-probability sparkline.
+
+    Fewer than two points has no line to draw (a single-play win-probability
+    "series" isn't a shape, it's a dot), so this returns None and the caller
+    skips the sparkline entirely rather than rendering a flat or broken one.
+    """
+    if not values or len(values) < 2:
+        return None
+    step = width / (len(values) - 1)
+    points = " ".join(
+        f"{round(index * step, 1)},{round(height - (value / 100) * height, 1)}"
+        for index, value in enumerate(values)
+    )
+    return {"points": points, "width": width, "height": height,
+            "midline_y": round(height / 2, 1), "final": values[-1], "start": values[0]}
+
+
 def recent_form_rows(games: list[dict[str, Any]], *,
                      upcoming: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Completed games leading into a matchup, with what's next after it.
@@ -138,6 +157,11 @@ def recent_form_rows(games: list[dict[str, Any]], *,
     recent form leads somewhere instead of just stopping -- the same context
     the old, separate season-journey timeline carried, without duplicating the
     schedule table with a second list of every game in the season.
+
+    A row whose source game already carries `win_prob_values` (this team's
+    own play-by-play win probability for that past game, attached by the
+    caller since it needs a repository lookup this function deliberately
+    doesn't take) gets a `win_prob_spark` sparkline built from it.
     """
     rows = []
     for game in games:
@@ -151,7 +175,8 @@ def recent_form_rows(games: list[dict[str, Any]], *,
                      "shape": ("Blowout" if margin is not None and abs(margin) >= 21
                                else "One score" if margin is not None and abs(margin) <= 8
                                else "Multi-score" if margin is not None else None),
-                     "opponent_elo": opponent_elo})
+                     "opponent_elo": opponent_elo,
+                     "win_prob_spark": win_prob_sparkline(game.get("win_prob_values"))})
     if upcoming:
         rows.extend(upcoming)
     return rows

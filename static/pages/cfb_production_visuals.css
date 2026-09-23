@@ -69,7 +69,7 @@
 /* Recent form */
 .prod-form h3 { margin: 0 0 8px; font: 800 .85rem var(--display-font); }
 .prod-form { min-width: 0; }
-.prod-form a { display: grid; grid-template-columns: 26px auto 1fr; gap: 3px 10px;
+.prod-form a { display: grid; grid-template-columns: 26px auto 1fr auto; gap: 3px 10px;
     align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 5px;
     margin-top: 6px; color: inherit; text-decoration: none; transition: background .12s ease, border-color .12s ease; }
 .prod-form a:first-of-type { margin-top: 0; }
@@ -78,6 +78,16 @@
 .prod-form a > strong { font: 800 .92rem var(--display-font); font-variant-numeric: tabular-nums; }
 .prod-form a span { color: var(--muted); font-size: .66rem; }
 .prod-form a small { grid-column: 2 / 4; color: var(--muted); font-size: .6rem; }
+/* This team's own win-probability shape for that past game, filling the
+   otherwise-empty width to the right of the score/detail text. */
+.prod-form-spark { grid-row: 1 / 3; grid-column: 4; width: 84px; height: 28px; flex-shrink: 0; }
+.prod-form-spark-mid { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 2 2; }
+.prod-form-spark-line { stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.prod-form-spark-line.positive { stroke: var(--green); }
+.prod-form-spark-line.negative { stroke: var(--red); }
+@media (max-width: 640px) {
+    .prod-form-spark { display: none; }
+}
 /* The upcoming game itself, appended after recent results so the card reads
    "recent form leading into this matchup" rather than stopping at the past. */
 .prod-form .next { display: grid; grid-template-columns: 26px auto 1fr; gap: 3px 10px;

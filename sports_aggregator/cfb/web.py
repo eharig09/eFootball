@@ -55,6 +55,7 @@ from sports_aggregator.cfb.coordinator_pace import team_drives_per_game, team_pa
 from sports_aggregator.cfb.player_game_log import player_weekly_trend
 from sports_aggregator.cfb.team_game_advanced import team_weekly_trend
 from sports_aggregator.cfb.team_game_pace import team_weekly_counting_stats
+from sports_aggregator.cfb.win_probability_v2 import team_win_probability_values
 from sports_aggregator.cfb.passing_plays import (
     matchup_field, matchup_situational, passer_career_field, passer_profile, passer_weekly_trend)
 from sports_aggregator.cfb.rushing_plays import matchup_rushing, matchup_rushing_situational
@@ -144,6 +145,22 @@ def _label_games(games: list[dict]) -> list[dict]:
         game["date_label"] = local.strftime("%a, %b %-d") if os.name != "nt" else local.strftime("%a, %b %d")
         game["time_label"] = local.strftime("%I:%M %p %Z").lstrip("0")
     return games
+
+
+def _with_win_prob(repository: CFBRepository, rows: list[dict]) -> list[dict]:
+    """Attach this team's own play-by-play win probability to each recent-form row.
+
+    Each row already carries the game_id and team_id it needs (from
+    history.matchup_history's per-team perspective), just not the win
+    probability itself -- that's a repository lookup recent_form_rows
+    deliberately doesn't make on its own.
+    """
+    result = []
+    for row in rows:
+        values = (team_win_probability_values(repository, row["game_id"], row["team_id"])
+                 if row.get("game_id") and row.get("team_id") else [])
+        result.append({**row, "win_prob_values": values})
+    return result
 
 
 def _merge_stories(*groups: tuple[str, list[dict]], limit: int = 20) -> list[dict]:
@@ -1156,12 +1173,16 @@ def game_preview(game_id: int):
         history=history,
         history_games_table=views.historical_games_table(
             history["recent"], caption=f"Recent meetings — {game['away_team']} perspective"),
-        away_recent_form=recent_form_rows(history["away_recent"], upcoming=upcoming_games_rows(
-            _label_games(repository.team_schedule(game["away_team_id"], season)),
-            game["away_team_id"], game["start_date"])),
-        home_recent_form=recent_form_rows(history["home_recent"], upcoming=upcoming_games_rows(
-            _label_games(repository.team_schedule(game["home_team_id"], season)),
-            game["home_team_id"], game["start_date"])),
+        away_recent_form=recent_form_rows(
+            _with_win_prob(repository, history["away_recent"]),
+            upcoming=upcoming_games_rows(
+                _label_games(repository.team_schedule(game["away_team_id"], season)),
+                game["away_team_id"], game["start_date"])),
+        home_recent_form=recent_form_rows(
+            _with_win_prob(repository, history["home_recent"]),
+            upcoming=upcoming_games_rows(
+                _label_games(repository.team_schedule(game["home_team_id"], season)),
+                game["home_team_id"], game["start_date"])),
         ats=matchup_ats(repository, game, total=market.get("consensus_total")),
         prior_player_games=prior_player_games,
         prior_player_games_table=views.opponent_performance_table(prior_player_games),

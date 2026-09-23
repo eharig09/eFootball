@@ -23,8 +23,10 @@
     yet is left out entirely rather than printed as a heading over nothing. -#}
 {%- set phases_html = game_phase_epa(game) %}
 {%- set passmap_html = passing_game_splits(game) %}
+{%- set wpflow_html = win_probability_flow(game) %}
 <nav class="report-jump" aria-label="Postgame report sections"><a href="#analysis">Overview</a><a href="#tendencies">Tendencies</a><a href="#qb-air">QB air yards</a><a href="#leverage">Leverage</a>{% if phases_html|trim %}<a href="#phases">By quarter</a>{% endif %}{% if passmap_html|trim %}<a href="#pass-map">Middle of field</a>{% endif %}<a href="#team-box">Team box</a><a href="#player-box">Players</a></nav>
 <div id="analysis" class="report-chapter"></div>
+{% if wpflow_html|trim %}<section class="report-chapter" id="win-probability"><div class="report-chapter-head"><h2>How the game moved</h2><p>Model win probability, play by play</p></div>{{ wpflow_html }}</section>{% endif %}
 {% if phases_html|trim %}<section class="section report-chapter" id="phases"><div class="report-chapter-head"><h2>By quarter and half</h2><p>When the game actually moved</p></div>{{ phases_html }}</section>{% endif %}
 {% if passmap_html|trim %}<section class="section report-chapter" id="pass-map"><div class="report-chapter-head"><h2>Middle of the field</h2><p>Where the ball went, and what it returned</p></div>{{ passmap_html }}</section>{% endif %}
 <section class="section report-team-stats report-chapter" id="team-box"><div class="report-chapter-head"><h2>Team box score</h2><p>Official statistical detail</p></div><div class="report-note">Cached locally from CFBD. Opening this report does not call the provider.</div>{{ data_table(team_box_table) }}</section>
