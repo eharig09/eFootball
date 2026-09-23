@@ -7,13 +7,15 @@ import os
 
 from dotenv import load_dotenv
 
-from sports_aggregator.cfb.expected_points_event import MODEL_VERSION, audit_game, fit_model, score_plays
+from sports_aggregator.cfb.expected_points_event import (
+    MODEL_VERSION, audit_game, fit_model, score_plays, validate_model,
+)
 from sports_aggregator.cfb.repository import CFBRepository
 
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Fit/score event-aligned ep-v2")
-    p.add_argument("command", choices=("fit", "score", "audit"))
+    p.add_argument("command", choices=("fit", "score", "validate", "audit"))
     p.add_argument("--from-year", type=int, default=None)
     p.add_argument("--to-year", type=int, default=None)
     p.add_argument("--game-id", type=int, default=None)
@@ -36,6 +38,13 @@ def main(argv: list[str] | None = None) -> int:
         )
     elif args.command == "score":
         output = score_plays(
+            repository,
+            from_season=args.from_year,
+            to_season=args.to_year,
+            model_version=args.model_version,
+        )
+    elif args.command == "validate":
+        output = validate_model(
             repository,
             from_season=args.from_year,
             to_season=args.to_year,

@@ -18,9 +18,10 @@ from sports_aggregator.cfb.epa_validation import validate_epa
 from sports_aggregator.cfb.expected_points import fit_model as fit_edp, score_plays as score_edp
 from sports_aggregator.cfb.expected_points_event import fit_model as fit_ep_v2
 from sports_aggregator.cfb.expected_points_event import score_plays as score_epa_v2
+from sports_aggregator.cfb.expected_points_event import validate_model as validate_ep_v2
 from sports_aggregator.cfb.expected_points_v2 import fit_model as fit_ep_v1
 from sports_aggregator.cfb.expected_points_v2 import score_plays as score_epa_v1
-from sports_aggregator.cfb.expected_points_v2 import validate_model as validate_ep
+from sports_aggregator.cfb.expected_points_v2 import validate_model as validate_ep_v1
 from sports_aggregator.cfb.model_validation import validate_edp, validate_wp
 from sports_aggregator.cfb.pace import game_pace_summary
 from sports_aggregator.cfb.play_by_play import replace_week_plays, derive_week
@@ -333,8 +334,9 @@ def main(argv: list[str] | None = None, *, client=None) -> int:
         return 0
     if args.command == "validate-ep":
         version = _model_version(args, "ep")
-        print(json.dumps(validate_ep(repository, from_season=first, to_season=last,
-                                    model_version=version), indent=2))
+        validate = validate_ep_v2 if version == "ep-v2" else validate_ep_v1
+        print(json.dumps(validate(repository, from_season=first, to_season=last,
+                                  model_version=version), indent=2))
         return 0
     if args.command == "validate-epa":
         version = _model_version(args, "ep")

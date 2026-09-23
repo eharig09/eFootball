@@ -9,7 +9,7 @@ later milestones and are deliberately out of scope here.
 
 The CFB subsystem (`sports_aggregator/cfb/`) already has a large in-house
 play-by-play analytics stack: `cfb_plays`/`cfb_play_metrics`/`cfb_drive_metrics`
-(derived by `play_by_play.py`, 2022+ only), fitted EPA (`expected_points_v2.py`,
+(derived by `play_by_play.py`, 2015+ locally), fitted EPA (`expected_points_v2.py`,
 `expected_points_event.py`) and win probability (`win_probability_v2.py`) models,
 a precomputed team-game efficiency table (`team_game_advanced.py` →
 `cfb_team_game_advanced`), betting lines (`lines.py` → `game_lines`), and
@@ -42,9 +42,10 @@ precomputed table (`cfb_team_game_advanced`, `cfb_drive_metrics`, etc.) is
 purely postgame and has no point-in-time contract beyond
 `pregame_snapshots.py`, which itself carries no pace/drive data yet.
 
-Historical coverage ceiling: PBP-derived tables only go back to **2022**
-(`games`/`team_stats` go back to 2015, but `cfb_plays` does not), so xDrives
-is bounded to 2022+ until/unless older PBP is backfilled.
+Historical coverage currently goes back to **2015**, the oldest season in the
+local `games` table. CFBD exposes older raw plays, but extending below 2015 also
+requires importing matching game/schedule history before those plays can pass
+the `cfb_plays.game_id -> games.game_id` foreign key.
 
 ## 2. Drive definitions
 

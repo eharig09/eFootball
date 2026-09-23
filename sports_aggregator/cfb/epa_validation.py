@@ -118,7 +118,8 @@ def validate_epa(repository, *, from_season: int | None = None,
             "note": "Provider PPA is an external benchmark only and is not used to fit or score EP/EPA.",
         },
         "evaluation_note": (
-            "EPA is offense-perspective and regulation-only in ep-v1. Possession-change EPA should usually "
+            f"EPA is offense-perspective and regulation-only in {model_version}. "
+            "Possession-change EPA should usually "
             "be negative on average; scoring-play EPA should usually be positive on average."
         ),
     }

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from contextlib import closing
 from datetime import datetime, timezone
+import math
 import re
 from typing import Any
 
@@ -22,7 +23,10 @@ from sports_aggregator.cfb.expected_points_v2 import initialize, state_key
 
 MODEL_VERSION = "ep-v2"
 WRITE_BATCH = 1000
-MIN_CELL = 30
+# Expanded-history temporal tuning (2015-2023 -> 2024, confirmed with
+# 2015-2024 -> 2025) favored lighter shrinkage than the original four-season
+# fit. See the event-aligned validate command for reproducible holdout checks.
+MIN_CELL = 10
 
 _ADMIN_PLAY_TYPES = ("kickoff", "extra point", "two point", "end period", "timeout")
 _ADMIN_TEXT = ("end period", "end of quarter", "end of half", "end of game", "end of regulation")
@@ -416,6 +420,70 @@ def score_plays(repository, *, from_season: int | None = None,
         "scored": scored,
         "event_scored": event_scored,
         "possession_changes": possession_changes,
+    }
+
+
+def validate_model(repository, *, from_season: int | None = None,
+                   to_season: int | None = None,
+                   model_version: str = MODEL_VERSION) -> dict[str, Any]:
+    """Evaluate event-aligned EP against realized next-score targets.
+
+    Use a separately named model fitted only on seasons before the requested
+    range when this is used as a temporal holdout.
+    """
+    initialize(repository)
+    table = _load_model(repository, model_version)
+    if not table:
+        return {"model_version": model_version, "plays": 0, "reason": "model_not_fitted"}
+
+    n = 0
+    sum_prediction = sum_target = absolute_error = squared_error = 0.0
+    by_field: dict[int, list[float]] = {}
+    for rows in _iter_games(repository, from_season, to_season):
+        targets = _targets_for_game(rows)
+        for row, target in zip(rows, targets):
+            if target is None:
+                continue
+            prediction = _lookup(table, state_key(row))
+            if prediction is None:
+                continue
+            error = float(prediction) - float(target)
+            n += 1
+            sum_prediction += float(prediction)
+            sum_target += float(target)
+            absolute_error += abs(error)
+            squared_error += error * error
+            field = state_key(row)[2]
+            acc = by_field.setdefault(field, [0.0, 0.0, 0.0])
+            acc[0] += float(prediction)
+            acc[1] += float(target)
+            acc[2] += 1.0
+
+    return {
+        "model_version": model_version,
+        "from_season": from_season,
+        "to_season": to_season,
+        "overall": {
+            "plays": n,
+            "mean_prediction": round(sum_prediction / n, 4) if n else None,
+            "mean_target": round(sum_target / n, 4) if n else None,
+            "mae": round(absolute_error / n, 5) if n else None,
+            "rmse": round(math.sqrt(squared_error / n), 5) if n else None,
+            "bias": round((sum_prediction - sum_target) / n, 5) if n else None,
+        },
+        "by_field_bucket": {
+            str(field): {
+                "plays": int(values[2]),
+                "mean_prediction": round(values[0] / values[2], 4),
+                "mean_target": round(values[1] / values[2], 4),
+                "bias": round((values[0] - values[1]) / values[2], 4),
+            }
+            for field, values in sorted(by_field.items()) if values[2]
+        },
+        "evaluation_note": (
+            "Targets use ep-v2's event-aligned next score within each half; "
+            "overtime and administrative states are excluded."
+        ),
     }
 
 

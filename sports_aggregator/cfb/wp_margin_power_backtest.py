@@ -30,9 +30,10 @@ from sports_aggregator.cfb import internal_power_lenses as ipl
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb.win_probability_v2 import bulk_time_weighted_home_win_probability
 
-#: wp-v2 has essentially full play-by-play coverage from this season on;
-#: seasons before it have none (see the 2015-2018 gap in cfb_play_win_probability).
-WP_COVERAGE_FROM_SEASON = 2019
+#: The local historical backfill now starts here. CFBD publishes older raw
+#: plays, but the repository's game/schedule history currently starts in 2015,
+#: so older provider plays cannot satisfy the cfb_plays -> games foreign key.
+WP_COVERAGE_FROM_SEASON = 2015
 
 #: 0.0 keeps Margin Power's real scoreboard margin untouched (the production
 #: baseline); 1.0 replaces it outright with the WP-derived margin. The values
@@ -159,7 +160,56 @@ def _forecast_summary(rows: list[dict[str, Any]], key: str) -> dict[str, Any]:
     }
 
 
-def report(repository: CFBRepository, *, from_season: int = 2020, to_season: int = 2025
+def _paired_direction_test(rows: list[dict[str, Any]], baseline_key: str,
+                           variant_key: str) -> dict[str, Any]:
+    """Exact two-sided McNemar test on common, non-push market directions."""
+    both_correct = baseline_only = variant_only = both_wrong = 0
+    for row in rows:
+        baseline = row.get(baseline_key)
+        variant = row.get(variant_key)
+        if baseline is None or variant is None:
+            continue
+        actual_edge = float(row["actual_home_margin"]) - float(row["market_home_margin"])
+        baseline_edge = float(baseline) - float(row["market_home_margin"])
+        variant_edge = float(variant) - float(row["market_home_margin"])
+        if actual_edge == 0 or baseline_edge == 0 or variant_edge == 0:
+            continue
+        baseline_correct = actual_edge * baseline_edge > 0
+        variant_correct = actual_edge * variant_edge > 0
+        if baseline_correct and variant_correct:
+            both_correct += 1
+        elif baseline_correct:
+            baseline_only += 1
+        elif variant_correct:
+            variant_only += 1
+        else:
+            both_wrong += 1
+
+    discordant = baseline_only + variant_only
+    if not discordant:
+        p_value = 1.0
+    else:
+        lower = min(baseline_only, variant_only)
+        log_terms = [
+            math.lgamma(discordant + 1) - math.lgamma(k + 1)
+            - math.lgamma(discordant - k + 1) - discordant * math.log(2.0)
+            for k in range(lower + 1)
+        ]
+        largest = max(log_terms)
+        log_tail = largest + math.log(sum(math.exp(value - largest) for value in log_terms))
+        p_value = min(1.0, 2.0 * math.exp(log_tail))
+    return {
+        "n": both_correct + baseline_only + variant_only + both_wrong,
+        "both_correct": both_correct,
+        "baseline_only_correct": baseline_only,
+        "variant_only_correct": variant_only,
+        "both_wrong": both_wrong,
+        "discordant": discordant,
+        "exact_two_sided_p": round(p_value, 6),
+    }
+
+
+def report(repository: CFBRepository, *, from_season: int = 2019, to_season: int = 2025
           ) -> dict[str, Any]:
     from_season, to_season = int(from_season), int(to_season)
     calib_from = max(WP_COVERAGE_FROM_SEASON, from_season - 5)
@@ -237,11 +287,16 @@ def report(repository: CFBRepository, *, from_season: int = 2020, to_season: int
         f"blend_{weight}": _forecast_summary(rows, f"blend_{weight}")
         for weight in BLEND_WEIGHTS
     }
+    paired_vs_baseline = {
+        f"blend_{weight}": _paired_direction_test(rows, "blend_0.0", f"blend_{weight}")
+        for weight in BLEND_WEIGHTS if weight != 0.0
+    }
     return {
         "version": "wp-margin-power-backtest-v1",
         "window": [from_season, to_season],
         "blend_weights": list(BLEND_WEIGHTS),
         "overall": overall,
+        "paired_vs_baseline": paired_vs_baseline,
         "by_season": per_season,
         "notes": [
             "blend_0.0 is the production Margin Power baseline: raw scoreboard "
@@ -256,7 +311,7 @@ def report(repository: CFBRepository, *, from_season: int = 2020, to_season: int
             "closing market line pointed the same way the actual outcome's edge "
             "over that line did -- the same metric internal_power_lenses.py "
             "already uses to judge margin_power_edge and its sibling lenses.",
-            "Games without wp-v2 play-by-play coverage (seasons before 2019, or "
+            "Games without wp-v2 play-by-play coverage (seasons before 2015, or "
             "any game missing charted plays) are excluded from every blend_* "
             "variant above 0.0, both as SRS training evidence and as test rows.",
         ],
