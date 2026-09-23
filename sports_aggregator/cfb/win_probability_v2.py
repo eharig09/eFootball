@@ -156,6 +156,38 @@ def _predict(weights: list[float], x: list[float]) -> float:
     return _sigmoid(sum(w * value for w, value in zip(weights, x)))
 
 
+#: How many game-seconds a hurried offense needs for one more scoring
+#: possession, and how many points a single possession can plausibly swing
+#: (a touchdown plus the extra point/two-point try). Used only to sharpen
+#: predictions once the trailing team is nearly out of realistic chances --
+#: not part of the trained feature set, since the fitted coefficients alone
+#: rarely saturate all the way to 0/1 even when a game is effectively over.
+_ENDGAME_SECONDS_PER_POSSESSION = 150.0
+_ENDGAME_POINTS_PER_SWING = 8.0
+
+
+def _endgame_certainty(probability: float, home_margin: float, remaining: float, period: int) -> float:
+    """Blend the raw model prediction toward the certain winner in the closing
+    minutes of a decided regulation game.
+
+    Skipped entirely in overtime: `_game_remaining` reports 0 seconds left for
+    every OT period since CFB overtime has no running game clock, but each
+    team still gets its own possession there, so an OT lead is never a
+    remaining-time certainty the way a regulation lead with 0:00 left is.
+    """
+    if period > 4 or home_margin == 0:
+        return probability
+    if remaining <= 0:
+        return 1.0 if home_margin > 0 else 0.0
+    possessions_left = remaining / _ENDGAME_SECONDS_PER_POSSESSION
+    swings_needed = abs(home_margin) / _ENDGAME_POINTS_PER_SWING
+    if possessions_left >= swings_needed:
+        return probability
+    certainty = 1.0 - possessions_left / swings_needed
+    target = 1.0 if home_margin > 0 else 0.0
+    return probability + certainty * (target - probability)
+
+
 def _training_sql(from_season: int | None, to_season: int | None) -> tuple[str, list[Any]]:
     clauses = ["g.completed=1", "g.home_points IS NOT NULL", "g.away_points IS NOT NULL"]
     params: list[Any] = []
@@ -328,7 +360,7 @@ def game_win_probability_series(repository, game_id: int, *,
         rows = connection.execute(
             """SELECT p.drive_number, p.play_number, p.period, p.clock_minutes,
                       p.clock_seconds, p.offense_score, p.defense_score, p.offense,
-                      p.home_team, p.down, p.distance, p.play_text, p.play_type,
+                      p.home_team, p.down, p.distance, p.play_text, p.play_type, p.scoring,
                       w.home_win_probability
                FROM cfb_plays p JOIN cfb_play_win_probability w
                  ON w.play_id = p.play_id AND w.model_version = ?
@@ -457,6 +489,9 @@ def score_plays(repository, *, from_season: int | None = None,
         for row in cursor:
             game_id = int(row["game_id"])
             probability = _predict(weights, features(row))
+            home_margin, _, _ = _home_state(row)
+            probability = _endgame_certainty(
+                probability, home_margin, _game_remaining(row), int(row["period"] or 0))
             total_rows += 1
             if _elo_diff(row)[1]:
                 elo_available += 1

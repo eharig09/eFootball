@@ -57,6 +57,42 @@ def _score_line(row: dict[str, Any], home_team: str, away_team: str) -> str:
     return f"{away_team} {int(away_score)} – {int(home_score)} {home_team}"
 
 
+def _play_seconds(row: dict[str, Any]) -> float | None:
+    """Elapsed regulation game-clock seconds at this play, or None outside
+    regulation -- CFB overtime has no running game clock (each team just gets
+    an untimed possession), so there's nothing to clock an OT play against."""
+    period = row.get("period")
+    minutes, seconds = row.get("clock_minutes"), row.get("clock_seconds")
+    if not period or int(period) > 4 or minutes is None or seconds is None:
+        return None
+    clock = int(minutes) * 60 + int(seconds)
+    return (int(period) - 1) * 900 + (900 - clock)
+
+
+#: Real-world duration credited to a play when it can't be clocked against
+#: regulation time (overtime, or a missing clock value) -- roughly one play's
+#: average length, so those plays still count for something in the average
+#: below rather than vanishing entirely.
+_NOMINAL_PLAY_SECONDS = 15.0
+
+
+def _time_weighted_home_average(series: list[dict[str, Any]]) -> float:
+    """Home win probability averaged over game TIME rather than play count --
+    a stretch of clock-killing runs should weigh more than a flurry of
+    incompletions that burned no time at all."""
+    elapsed = [_play_seconds(row) for row in series]
+    weights = []
+    for index, value in enumerate(elapsed):
+        following = elapsed[index + 1] if index + 1 < len(elapsed) else None
+        if value is not None and following is not None and following > value:
+            weights.append(following - value)
+        else:
+            weights.append(_NOMINAL_PLAY_SECONDS)
+    total = sum(weights) or 1.0
+    weighted = sum(w * float(row["home_win_probability"]) for w, row in zip(weights, series))
+    return weighted / total
+
+
 def _play_point(row: dict[str, Any], home_team: str, away_team: str) -> dict[str, Any]:
     """One play's tooltip content, as plain text -- rendered client-side via
     .textContent, never innerHTML, so nothing here is (or should be) HTML-escaped."""
@@ -97,22 +133,24 @@ def render_win_probability(repository, game: dict[str, Any]) -> Markup:
     fill_points = f"0,{HEIGHT} " + points + f" {WIDTH},{HEIGHT}"
     start_wp = float(series[0]["home_win_probability"]) * 100
     final_wp = float(series[-1]["home_win_probability"]) * 100
+    average_wp = _time_weighted_home_average(series) * 100
+
+    home_points, away_points = game.get("home_points"), game.get("away_points")
+    away_won = (home_points is not None and away_points is not None
+                and float(away_points) > float(home_points))
+    winner_class = "wp-flow-winner-away" if away_won else "wp-flow-winner-home"
 
     # Scoring plays get a permanent marker -- the moments a reader would
     # already look for on the scoreboard, tied to what the model thought at
     # that instant. Every other play is reachable too, via the hover track
     # below, just without cluttering the line with 150-plus dots at rest.
-    markers = []
-    prior_offense_score, prior_defense_score = series[0].get("offense_score"), series[0].get("defense_score")
-    for (x, y), row in zip(coords, series):
-        offense_score, defense_score = row.get("offense_score"), row.get("defense_score")
-        scored = (offense_score is not None and prior_offense_score is not None
-                 and offense_score > prior_offense_score) or (
-                 defense_score is not None and prior_defense_score is not None
-                 and defense_score > prior_defense_score)
-        if scored:
-            markers.append(f'<circle cx="{x}" cy="{y}" r="3.5" class="wp-flow-marker"></circle>')
-        prior_offense_score, prior_defense_score = offense_score, defense_score
+    # CFBD flags each play's own `scoring` column directly; reconstructing it
+    # from offense/defense score deltas is wrong across a change of
+    # possession, since "offense" and "defense" swap which team they mean.
+    markers = [
+        f'<circle cx="{x}" cy="{y}" r="3.5" class="wp-flow-marker"></circle>'
+        for (x, y), row in zip(coords, series) if row.get("scoring")
+    ]
 
     # One plain-text point per play, in the same left-to-right order the
     # x-coordinates already use, so the hover script can index straight into
@@ -127,7 +165,7 @@ def render_win_probability(repository, game: dict[str, Any]) -> Markup:
         f'{len(series):,} charted plays. Dots mark scoring plays; hover or drag along the line '
         'for any play.'
         '</div>'
-        '<div class="wp-flow-chart" data-wp-flow>'
+        f'<div class="wp-flow-chart {winner_class}" data-wp-flow>'
         f'<svg viewBox="0 0 {WIDTH} {HEIGHT}" preserveAspectRatio="none" role="img" '
         f'aria-label="{escape(home_team)} win probability opened at {start_wp:.0f} percent '
         f'and finished at {final_wp:.0f} percent" data-wp-flow-svg>'
@@ -150,6 +188,9 @@ def render_win_probability(repository, game: dict[str, Any]) -> Markup:
         f'<span class="wp-flow-home">{escape(home_team)} <b>{final_wp:.0f}%</b></span>'
         f'<span class="wp-flow-away">{escape(away_team)} <b>{100 - final_wp:.0f}%</b></span>'
         '</div>'
+        '<div class="wp-flow-summary">Time-weighted average across the game &middot; '
+        f'{escape(home_team)} <b>{average_wp:.0f}%</b> &middot; '
+        f'{escape(away_team)} <b>{100 - average_wp:.0f}%</b></div>'
         f'<script type="application/json" data-wp-flow-json>{payload_json}</script>'
         '</div>'
         '</section>'
@@ -183,10 +224,22 @@ def render_win_probability(repository, game: dict[str, Any]) -> Markup:
         'tipScore.textContent=play.score;'
         'tipWp.textContent=play.wp;'
         'tip.hidden=false;'
-        'var leftPct=(point.x/width)*100;'
-        'tip.style.left=leftPct+"%";'
-        'tip.classList.toggle("wp-flow-tooltip-right",leftPct>62);'
-        'tip.classList.toggle("wp-flow-tooltip-left",leftPct<=62);'
+        # Anchor the tooltip a fixed gap away from the exact point being
+        # hovered -- otherwise, since it tracks the cursor 1:1, it sits
+        # directly on top of the very mark a reader is trying to read.
+        'var rootBox=root.getBoundingClientRect();'
+        'var pxX=box.left-rootBox.left+(point.x/width)*box.width;'
+        'var pxY=box.top-rootBox.top+(point.y/height)*box.height;'
+        'var tipBox=tip.getBoundingClientRect();'
+        'var gap=12;'
+        'var below=(pxY-tipBox.height-gap)<0;'
+        'var alignLeft=(pxX-tipBox.width/2)<4;'
+        'var alignRight=!alignLeft&&(pxX+tipBox.width/2)>(rootBox.width-4);'
+        'tip.style.left=pxX+"px";'
+        'tip.style.top=(below?pxY+gap:pxY-gap)+"px";'
+        'tip.classList.toggle("wp-flow-tooltip-left",alignLeft);'
+        'tip.classList.toggle("wp-flow-tooltip-right",alignRight);'
+        'tip.classList.toggle("wp-flow-tooltip-below",below);'
         '}'
         'function hide(){guide.hidden=true;cursor.hidden=true;tip.hidden=true;}'
         'hit.addEventListener("pointermove",function(e){show(e.clientX);});'
