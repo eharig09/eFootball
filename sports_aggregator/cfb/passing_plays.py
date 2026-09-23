@@ -690,6 +690,38 @@ def passer_weekly_trend(repository: CFBRepository, player_id: str, season: int, 
     return output
 
 
+def team_weekly_completions(repository: CFBRepository, team: str, season: int) -> list[dict[str, Any]]:
+    """Team-wide weekly pass completions -- an honest denominator for a
+    receiver's reception share, since the team doesn't publish that count
+    anywhere else (cfb_team_game_pace's pass_plays is attempts, not
+    completions).
+
+    Same garbage-time exclusion passer_weekly_trend applies to one passer,
+    applied here across every attempt credited to the team's offense -- every
+    QB who threw for this team that week, not just whichever one has a
+    player page open.
+    """
+    initialize(repository)
+    with repository._reader() as connection:
+        rows = connection.execute(
+            """SELECT p.week, p.outcome
+               FROM cfbd_passing_plays p
+               LEFT JOIN cfb_play_metrics m ON m.play_id = p.play_id
+               WHERE p.season = ? AND p.offense = ?
+                 AND COALESCE(m.garbage_time, 0) = 0""",
+            (int(season), str(team))).fetchall()
+    weeks: dict[int, int] = {}
+    for row in rows:
+        week = row["week"]
+        if week is None:
+            continue
+        week = int(week)
+        weeks.setdefault(week, 0)
+        if row["outcome"] == "completion":
+            weeks[week] += 1
+    return [{"week": week, "completions": count} for week, count in sorted(weeks.items())]
+
+
 def season_passers(repository: CFBRepository, team: str, season: int,
                    *, minimum: int = 20) -> list[dict[str, Any]]:
     """Everyone who threw for a team, most attempts first."""

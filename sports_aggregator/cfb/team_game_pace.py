@@ -377,13 +377,17 @@ def team_weekly_trend(repository, team: str, season: int, *,
 def team_weekly_counting_stats(repository, team: str, season: int, *,
                                metric_version: str = METRIC_VERSION,
                                drive_metric_version: str | None = None) -> list[dict[str, Any]]:
-    """Raw weekly volume: plays, yards, and scoring-drive outcomes.
+    """Raw weekly volume: plays, yards, completions, and scoring-drive outcomes.
 
     Pulled from cfb_team_game_pace (plays/yards, always present once pace is
     built) left-joined to cfb_team_game_drive_outcomes (TD/FG/turnover/punt
     counts, a separate, optional build) so a week missing the drive-outcomes
     build still reports plays and yards rather than being dropped entirely.
+    Completions come from a second query (team_weekly_completions, over
+    cfbd_passing_plays -- a different table with its own week coverage) and
+    are merged in by week rather than joined in SQL for the same reason.
     """
+    from sports_aggregator.cfb.passing_plays import team_weekly_completions
     from sports_aggregator.cfb.team_game_drive_outcomes import (
         METRIC_VERSION as DEFAULT_DRIVE_METRIC_VERSION, initialize as initialize_drive_outcomes,
     )
@@ -402,4 +406,6 @@ def team_weekly_counting_stats(repository, team: str, season: int, *,
           WHERE p.team = ? AND g.season = ? AND p.metric_version = ?
           ORDER BY g.week
         """, (drive_version, str(team), int(season), metric_version)).fetchall()
-    return [dict(row) for row in rows]
+    completions_by_week = {row["week"]: row["completions"]
+                           for row in team_weekly_completions(repository, team, season)}
+    return [{**dict(row), "completions": completions_by_week.get(row["week"])} for row in rows]

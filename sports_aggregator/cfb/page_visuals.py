@@ -279,6 +279,7 @@ def _team_context_definitions(
         (counting, "scrimmage_plays", f"{label_prefix}Plays", "int", False),
         (counting, "pass_plays", f"{label_prefix}Pass Plays", "int", False),
         (counting, "rush_plays", f"{label_prefix}Rush Plays", "int", False),
+        (counting, "completions", f"{label_prefix}Completions", "int", False),
         (counting, "total_yards", f"{label_prefix}Total Yards", "big", False),
         (counting, "pass_yards", f"{label_prefix}Pass Yards", "big", False),
         (counting, "rush_yards", f"{label_prefix}Rush Yards", "big", False),
@@ -445,23 +446,28 @@ def team_scoring_chart_series(scoring_rows: list[dict[str, Any]] | None,
 
 
 #: (player_field, team_field, label) per position -- only pairs with an
-#: honest, unambiguous team-level denominator. Receptions and touchdowns are
-#: deliberately absent: the team total has no separate completions count
-#: (only pass attempts), and cfb_team_game_drive_outcomes doesn't split
-#: touchdowns by rush vs pass, so neither has a denominator that actually
-#: means what the label would imply.
+#: honest, unambiguous team-level denominator. Touchdowns are still absent:
+#: cfb_team_game_drive_outcomes counts every offensive touchdown without
+#: splitting rush vs pass, so a "share of team touchdowns" would silently mix
+#: a runner's and a receiver's scores under the same denominator. Receptions
+#: now has one (team_weekly_completions, garbage-time-excluded same as every
+#: player-side weekly stat here) since every completion is caught by exactly
+#: one receiver.
 SHARE_SPECS: dict[str, tuple[tuple[str, str, str], ...]] = {
     "QB": (
         ("attempts", "pass_plays", "Share of team pass attempts"),
+        ("completions", "completions", "Share of team completions"),
         ("yards", "pass_yards", "Share of team passing yards"),
     ),
     "RB": (
         ("rush_yards", "rush_yards", "Share of team rushing yards"),
         ("rush_attempts", "rush_plays", "Share of team rush attempts"),
         ("receiving_yards", "pass_yards", "Share of team passing yards (receiving)"),
+        ("receptions", "completions", "Share of team completions (receiving)"),
     ),
     "WR": (
         ("receiving_yards", "pass_yards", "Share of team passing yards"),
+        ("receptions", "completions", "Share of team completions"),
         ("rush_yards", "rush_yards", "Share of team rushing yards"),
     ),
 }
