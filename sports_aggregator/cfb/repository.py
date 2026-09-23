@@ -1895,6 +1895,21 @@ class CFBRepository:
                 (team_id, season, team_id, team_id)).fetchall()
         return [{"week": row["week"], "elo": row["elo"]} for row in rows if row["elo"] is not None]
 
+    def team_weekly_scoring(self, team_id: int, season: int) -> list[dict[str, Any]]:
+        """This team's own week-by-week points for/against and margin, completed games only."""
+        self.initialize()
+        with self._reader() as connection:
+            rows = connection.execute(
+                """SELECT week,
+                          CASE WHEN home_team_id=? THEN home_points ELSE away_points END points_for,
+                          CASE WHEN home_team_id=? THEN away_points ELSE home_points END points_against
+                   FROM games WHERE season=? AND completed=1 AND (home_team_id=? OR away_team_id=?)
+                   ORDER BY week""",
+                (team_id, team_id, season, team_id, team_id)).fetchall()
+        return [{"week": row["week"], "points_for": row["points_for"], "points_against": row["points_against"],
+                "margin": row["points_for"] - row["points_against"]}
+                for row in rows if row["points_for"] is not None and row["points_against"] is not None]
+
     def team_rank_history(self, team_id: int, season: int, poll: str = "AP Top 25") -> list[dict[str, Any]]:
         """This team's own week-by-week poll rank, in season order.
 

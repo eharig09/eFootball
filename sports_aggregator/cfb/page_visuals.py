@@ -258,12 +258,18 @@ def team_rank_trend_chart_data(elo_history: list[dict[str, Any]],
     }
 
 
-def team_trend_chart_data(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+def team_trend_chart_data(rows: list[dict[str, Any]],
+                          scoring_rows: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
     """Weekly offense/defense series, shaped for the generic `trend_chart` macro.
 
     Success and explosive rate are stored as 0-1 fractions (matching
     `team_advanced_stats`) and converted to percentages here, once, so the
     template and the chart never have to agree on that separately.
+
+    `scoring_rows` (team_weekly_scoring's output) adds Points For/Against and
+    Margin as two more metric tabs on the same week axis -- the counting-stat
+    outcome a reader actually cares about, next to the efficiency stats that
+    explain it.
     """
     if not rows:
         return None
@@ -272,23 +278,36 @@ def team_trend_chart_data(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     def series(key: str, *, pct: bool = False) -> list[float | None]:
         return _week_series(rows, key, pct=pct)
 
-    return {
-        "labels": labels,
-        "metrics": [
-            {"key": "epa", "label": "EPA / play", "series": [
-                {"key": "offense", "label": "Offense", "color": "#6ea8f0", "data": series("epa_per_play")},
-                {"key": "defense", "label": "Defense", "color": "#ef7a7a", "data": series("defense_epa_per_play")},
-            ]},
-            {"key": "success", "label": "Success rate", "series": [
-                {"key": "offense", "label": "Offense", "color": "#6ea8f0", "data": series("success_rate", pct=True)},
-                {"key": "defense", "label": "Defense", "color": "#ef7a7a", "data": series("defense_success_rate", pct=True)},
-            ]},
-            {"key": "explosive", "label": "Explosive rate", "series": [
-                {"key": "offense", "label": "Offense", "color": "#6ea8f0", "data": series("explosive_rate", pct=True)},
-                {"key": "defense", "label": "Defense", "color": "#ef7a7a", "data": series("defense_explosive_rate", pct=True)},
-            ]},
-        ],
-    }
+    metrics = [
+        {"key": "epa", "label": "EPA / play", "series": [
+            {"key": "offense", "label": "Offense", "color": "#6ea8f0", "data": series("epa_per_play")},
+            {"key": "defense", "label": "Defense", "color": "#ef7a7a", "data": series("defense_epa_per_play")},
+        ]},
+        {"key": "success", "label": "Success rate", "series": [
+            {"key": "offense", "label": "Offense", "color": "#6ea8f0", "data": series("success_rate", pct=True)},
+            {"key": "defense", "label": "Defense", "color": "#ef7a7a", "data": series("defense_success_rate", pct=True)},
+        ]},
+        {"key": "explosive", "label": "Explosive rate", "series": [
+            {"key": "offense", "label": "Offense", "color": "#6ea8f0", "data": series("explosive_rate", pct=True)},
+            {"key": "defense", "label": "Defense", "color": "#ef7a7a", "data": series("defense_explosive_rate", pct=True)},
+        ]},
+    ]
+    if scoring_rows:
+        scoring_by_week = {row["week"]: row for row in scoring_rows}
+        weeks = [row["week"] for row in rows]
+
+        def scoring_series(key: str) -> list[float | None]:
+            return [(scoring_by_week.get(week) or {}).get(key) for week in weeks]
+
+        metrics.append({"key": "scoring", "label": "Points for/against", "series": [
+            {"key": "points_for", "label": "Points For", "color": "#6ea8f0", "data": scoring_series("points_for")},
+            {"key": "points_against", "label": "Points Against", "color": "#ef7a7a",
+             "data": scoring_series("points_against")},
+        ]})
+        metrics.append({"key": "margin", "label": "Margin", "series": [
+            {"key": "margin", "label": "Margin", "color": "#78d69b", "data": scoring_series("margin")},
+        ]})
+    return {"labels": labels, "metrics": metrics}
 
 
 #: Same palette sports_aggregator.nfl.charts uses for its own dual-axis
@@ -332,6 +351,10 @@ def player_trend_chart_data(rows: list[dict[str, Any]],
         ("epa_per_attempt", "EPA / attempt", "signed2", False),
         ("completion_rate", "Completion rate", "pct", True),
         ("yards_per_attempt", "Yards / attempt", "f1", False),
+        ("attempts", "Attempts", "int", False),
+        ("completions", "Completions", "int", False),
+        ("yards", "Yards", "big", False),
+        ("interceptions", "Interceptions", "int", False),
     )
     charts = []
     for index, (key, label, value_format, pct) in enumerate(definitions):
@@ -343,17 +366,26 @@ def player_trend_chart_data(rows: list[dict[str, Any]],
 
 
 #: Which weekly box-score metrics read as "recent form" for a non-QB skill
-#: position -- rushers lead with scrimmage yards, receivers with receiving
-#: yards, since that is the number a reader already scans the box score for.
+#: position. Every field player_weekly_trend computes is offered regardless
+#: of position -- a WR occasionally getting jet-sweep carries is real
+#: production, not noise to hide.
 SKILL_TREND_METRICS = {
-    "RB": (("scrimmage_yards", "Scrimmage yds", "big"), ("yards_per_carry", "Yds / carry", "f1"),
-          ("rush_yards", "Rush yds", "big")),
-    "FB": (("scrimmage_yards", "Scrimmage yds", "big"), ("yards_per_carry", "Yds / carry", "f1"),
-          ("rush_yards", "Rush yds", "big")),
-    "WR": (("receiving_yards", "Receiving yds", "big"), ("yards_per_reception", "Yds / catch", "f1"),
-          ("receptions", "Receptions", "int")),
-    "TE": (("receiving_yards", "Receiving yds", "big"), ("yards_per_reception", "Yds / catch", "f1"),
-          ("receptions", "Receptions", "int")),
+    "RB": (("scrimmage_yards", "Scrimmage yds", "big"), ("rush_yards", "Rush yds", "big"),
+          ("rush_attempts", "Carries", "int"), ("yards_per_carry", "Yds / carry", "f1"),
+          ("rush_td", "Rush TD", "int"), ("receiving_yards", "Receiving yds", "big"),
+          ("receptions", "Receptions", "int"), ("receiving_td", "Rec TD", "int")),
+    "FB": (("scrimmage_yards", "Scrimmage yds", "big"), ("rush_yards", "Rush yds", "big"),
+          ("rush_attempts", "Carries", "int"), ("yards_per_carry", "Yds / carry", "f1"),
+          ("rush_td", "Rush TD", "int"), ("receiving_yards", "Receiving yds", "big"),
+          ("receptions", "Receptions", "int"), ("receiving_td", "Rec TD", "int")),
+    "WR": (("receiving_yards", "Receiving yds", "big"), ("receptions", "Receptions", "int"),
+          ("yards_per_reception", "Yds / catch", "f1"), ("receiving_td", "Rec TD", "int"),
+          ("rush_yards", "Rush yds", "big"), ("rush_attempts", "Carries", "int"),
+          ("rush_td", "Rush TD", "int")),
+    "TE": (("receiving_yards", "Receiving yds", "big"), ("receptions", "Receptions", "int"),
+          ("yards_per_reception", "Yds / catch", "f1"), ("receiving_td", "Rec TD", "int"),
+          ("rush_yards", "Rush yds", "big"), ("rush_attempts", "Carries", "int"),
+          ("rush_td", "Rush TD", "int")),
 }
 
 
@@ -375,6 +407,29 @@ def skill_player_trend_chart_data(rows: list[dict[str, Any]], position: str,
     for index, (key, label, value_format) in enumerate(metrics_spec):
         chart = _chart_series(combined, key, label, value_format=value_format,
                               color=CHART_COLORS[index % len(CHART_COLORS)])
+        if chart:
+            charts.append(chart)
+    return charts
+
+
+def team_scoring_chart_series(scoring_rows: list[dict[str, Any]], *,
+                              label_prefix: str = "Team ", color_offset: int = 0) -> list[dict[str, Any]]:
+    """Points for/against/margin as chart_workbench-shaped series.
+
+    Appending these onto a player's own weekly chart_workbench list connects
+    "how did this player do" to "how did the team do that week" -- checking
+    one of these alongside a player's own metric overlays team outcome on the
+    second axis rather than forcing them onto the same scale.
+    """
+    definitions = (
+        ("points_for", f"{label_prefix}Points For", "int"),
+        ("points_against", f"{label_prefix}Points Against", "int"),
+        ("margin", f"{label_prefix}Margin", "signed"),
+    )
+    charts = []
+    for index, (key, label, value_format) in enumerate(definitions):
+        chart = _chart_series(scoring_rows, key, label, value_format=value_format,
+                              color=CHART_COLORS[(color_offset + index) % len(CHART_COLORS)])
         if chart:
             charts.append(chart)
     return charts

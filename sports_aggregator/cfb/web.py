@@ -48,8 +48,8 @@ from sports_aggregator.cfb.player_matchups import player_matchups
 from sports_aggregator.cfb.page_visuals import (
     depth_formations, drive_outcome_bars, game_shape, model_probability_track,
     pff_unit_grade_bars, player_trend_chart_data, recent_form_rows,
-    skill_player_trend_chart_data, team_rank_trend_chart_data, team_trend_chart_data,
-    unit_matchup_bars, upcoming_games_rows)
+    skill_player_trend_chart_data, team_rank_trend_chart_data, team_scoring_chart_series,
+    team_trend_chart_data, unit_matchup_bars, upcoming_games_rows)
 from sports_aggregator.cfb.team_game_drive_outcomes import season_summary as drive_outcome_summary
 from sports_aggregator.cfb.coordinator_pace import team_drives_per_game, team_pace
 from sports_aggregator.cfb.player_game_log import player_weekly_trend
@@ -762,7 +762,8 @@ def _team_tables(packet: dict, season: int, *, schedule_year: int | None = None,
     projection = projected_depth(
         _repository(), packet["team"]["team_id"], season, production=packet["production"])
     team_trend = team_trend_chart_data(
-        team_weekly_trend(_repository(), packet["team"]["school"], stats_year))
+        team_weekly_trend(_repository(), packet["team"]["school"], stats_year),
+        _repository().team_weekly_scoring(packet["team"]["team_id"], stats_year))
     rank_trend = team_rank_trend_chart_data(
         _repository().team_elo_history(packet["team"]["team_id"], season),
         _repository().team_rank_history(packet["team"]["team_id"], season))
@@ -868,6 +869,13 @@ def player_preview(player_id: str):
         player_trend = skill_player_trend_chart_data(current_trend, position, previous_trend)
     else:
         player_trend = None
+    # Connects "how did this player do" to "how did the team do that week" --
+    # checking one of these alongside the player's own metric overlays team
+    # outcome on chart_workbench's second axis without forcing a shared scale.
+    if player_trend and player.get("team_id"):
+        player_trend = player_trend + team_scoring_chart_series(
+            repository.team_weekly_scoring(player["team_id"], season),
+            color_offset=len(player_trend))
     # Only meaningful for the season actually being viewed -- a career stat
     # line's older seasons aren't ranked against this season's peer pool.
     ppa_rank = (repository.player_ppa_rank(season, position).get(player_id)

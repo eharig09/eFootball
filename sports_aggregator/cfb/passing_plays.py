@@ -663,12 +663,14 @@ def passer_weekly_trend(repository: CFBRepository, player_id: str, season: int, 
         week = row["week"]
         if week is None:
             continue
-        bucket = weeks.setdefault(int(week), {"attempts": 0, "completions": 0,
+        bucket = weeks.setdefault(int(week), {"attempts": 0, "completions": 0, "interceptions": 0,
                                               "yards": 0.0, "epa": 0.0, "epa_plays": 0,
                                               "game_id": row["game_id"], "opponent": row["defense"]})
         bucket["attempts"] += 1
         if row["outcome"] == "completion":
             bucket["completions"] += 1
+        elif row["outcome"] == "interception":
+            bucket["interceptions"] += 1
         bucket["yards"] += float(row["total_yards"] or 0)
         if row["epa"] is not None:
             bucket["epa"] += float(row["epa"]); bucket["epa_plays"] += 1
@@ -678,6 +680,8 @@ def passer_weekly_trend(repository: CFBRepository, player_id: str, season: int, 
         attempts = bucket["attempts"]
         output.append({
             "week": week, "attempts": attempts,
+            "completions": bucket["completions"], "interceptions": bucket["interceptions"],
+            "yards": round(bucket["yards"], 0),
             "game_id": bucket["game_id"], "opponent": bucket["opponent"],
             "completion_rate": (bucket["completions"] / attempts) if attempts else None,
             "yards_per_attempt": (bucket["yards"] / attempts) if attempts else None,

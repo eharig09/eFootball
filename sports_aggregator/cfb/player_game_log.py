@@ -294,15 +294,17 @@ def player_weekly_trend(repository, player: dict[str, Any], season: int) -> list
             continue
         rush_att = stat(values, "rushing", "CAR", "ATT")
         rush_yards = stat(values, "rushing", "YDS")
+        rush_td = stat(values, "rushing", "TD")
         receptions = stat(values, "receiving", "REC")
         receiving_yards = stat(values, "receiving", "YDS")
+        receiving_td = stat(values, "receiving", "TD")
         total_yards = (rush_yards or 0.0) + (receiving_yards or 0.0)
         output.append({
             "week": int(week), "game_id": game_id, "opponent": opponents.get(game_id),
-            "rush_yards": rush_yards,
+            "rush_yards": rush_yards, "rush_attempts": rush_att, "rush_td": rush_td,
             "yards_per_carry": round(rush_yards / rush_att, 2) if rush_yards is not None and rush_att else None,
             "receptions": receptions,
-            "receiving_yards": receiving_yards,
+            "receiving_yards": receiving_yards, "receiving_td": receiving_td,
             "yards_per_reception": (round(receiving_yards / receptions, 2)
                                     if receiving_yards is not None and receptions else None),
             "scrimmage_yards": total_yards if (rush_yards is not None or receiving_yards is not None) else None,
