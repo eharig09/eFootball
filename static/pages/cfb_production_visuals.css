@@ -228,6 +228,21 @@
     .prod-drive-row { grid-template-columns: 1fr; gap: 4px; }
 }
 
+/* Position-relative percentile radar */
+.prod-radar { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--paper); box-shadow: var(--shadow-soft); display: grid;
+    grid-template-columns: minmax(0, 280px) 1fr; gap: 16px; align-items: center; }
+.prod-radar-canvas { position: relative; height: 240px; }
+.prod-radar-values { display: grid; gap: 8px; align-content: center; }
+.prod-radar-values span { display: flex; align-items: baseline; gap: 8px; font-size: .68rem; color: var(--muted); }
+.prod-radar-values b { display: inline-flex; align-items: baseline; gap: 2px; min-width: 40px;
+    color: var(--ink); font: 800 .95rem var(--display-font); }
+.prod-radar-values b small { font: 600 .55rem var(--body-font, inherit); color: var(--muted); }
+.prod-radar-values small { color: var(--muted); }
+@media (max-width: 640px) {
+    .prod-radar { grid-template-columns: 1fr; }
+}
+
 /* Weekly team/player trend (Chart.js-driven) */
 .prod-trend { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px;
     background: var(--paper); box-shadow: var(--shadow-soft); }

@@ -336,3 +336,122 @@ def pff_dataset_tables(player: dict[str, Any]) -> list[dict[str, Any]]:
             "table": _split_table(rows, spec, team_key="event_team"),
         })
     return groups
+
+
+#: Minimum usage_count (the same volume figure each dataset's own leaderboard
+#: uses -- dropbacks, attempts, or snaps) before a player enters the
+#: percentile pool. Without this a 2-dropback relief appearance could land at
+#: the 0th or 100th percentile on a single incomplete pass.
+RADAR_MIN_USAGE: dict[str, float] = {
+    "passing": 25, "rushing": 20, "receiving": 50,
+    "pass_rush": 50, "coverage": 100,
+}
+
+#: position -> (dataset, ((field, axis label, higher_is_better), ...)).
+#: Every axis is a rate/efficiency stat, never a raw count, so a
+#: low-and-high-usage player at the same position are still comparable.
+#: "Overall grade" is prepended to every position from the dataset's own
+#: primary_grade column, not listed here since it isn't a metrics_json field.
+RADAR_SPECS: dict[str, tuple[str, tuple[tuple[str, str, bool], ...]]] = {
+    "QB": ("passing", (
+        ("qb_rating", "QB Rating", True),
+        ("completion_percent", "Accuracy", True),
+        ("ypa", "Yards/Att", True),
+        ("btt_rate", "Big-Time Throws", True),
+        ("twp_rate", "Ball Security", False),
+    )),
+    "RB": ("rushing", (
+        ("elusive_rating", "Elusiveness", True),
+        ("yco_attempt", "YCO/Attempt", True),
+        ("breakaway_percent", "Breakaway %", True),
+    )),
+    "WR": ("receiving", (
+        ("yprr", "Yards/Route", True),
+        ("caught_percent", "Catch Rate", True),
+        ("contested_catch_rate", "Contested Catch", True),
+        ("drop_rate", "Hands", False),
+    )),
+    "EDGE": ("pass_rush", (
+        ("pass_rush_win_rate", "Pass Rush Win %", True),
+        ("prp", "Pass Rush Productivity", True),
+    )),
+    "CB": ("coverage", (
+        ("catch_rate", "Coverage (catch % allowed)", False),
+        ("forced_incompletion_rate", "Forced Incompletions", True),
+        ("yards_per_coverage_snap", "Yards/Snap Allowed", False),
+    )),
+}
+#: Position aliases sharing another position's spec verbatim.
+RADAR_SPECS["FB"] = RADAR_SPECS["RB"]
+RADAR_SPECS["TE"] = RADAR_SPECS["WR"]
+RADAR_SPECS["DE"] = RADAR_SPECS["EDGE"]
+RADAR_SPECS["S"] = RADAR_SPECS["CB"]
+RADAR_SPECS["DB"] = RADAR_SPECS["CB"]
+
+#: An axis needs at least this many qualifying axes to read as a shape rather
+#: than a couple of disconnected points.
+_RADAR_MIN_AXES = 3
+
+
+def _percentile(value: float | None, pool: list[float | None], higher_is_better: bool) -> float | None:
+    if value is None:
+        return None
+    sample = [item for item in pool if item is not None]
+    if not sample:
+        return None
+    beaten_or_tied = sum(1 for item in sample if (item <= value if higher_is_better else item >= value))
+    return round(100 * beaten_or_tied / len(sample), 1)
+
+
+def _numeric(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def player_percentile_radar(repository: Any, player: dict[str, Any], season: int) -> dict[str, Any] | None:
+    """This player's PFF rate stats, as a percentile among qualifying peers at
+    the same position in the same season -- only for the season being viewed,
+    since a percentile is only meaningful against that season's own pool.
+    """
+    if player.get("season") != season:
+        return None
+    position = str(player.get("position") or "").upper()
+    spec = RADAR_SPECS.get(position)
+    if spec is None:
+        return None
+    dataset, metric_specs = spec
+    own_row = next((row for row in player.get("pff") or []
+                    if row.get("dataset") == dataset and row.get("season") == season), None)
+    if own_row is None or not own_row.get("metrics_json"):
+        return None
+    own_metrics = _parse_metrics(own_row["metrics_json"])
+
+    min_usage = RADAR_MIN_USAGE.get(dataset, 0)
+    with repository._reader() as connection:
+        rows = connection.execute(
+            """SELECT primary_grade, metrics_json FROM pff_player_metrics
+               WHERE season=? AND dataset=? AND usage_count>=? AND primary_grade IS NOT NULL""",
+            (season, dataset, min_usage)).fetchall()
+    if not rows:
+        return None
+    grade_pool = [row["primary_grade"] for row in rows]
+    metrics_pool = [_parse_metrics(row["metrics_json"]) for row in rows]
+
+    axes: list[dict[str, Any]] = []
+    grade_pct = _percentile(own_row.get("primary_grade"), grade_pool, True)
+    if grade_pct is not None:
+        axes.append({"label": "Overall Grade", "value": own_row["primary_grade"], "percentile": grade_pct})
+    for field, label, higher_is_better in metric_specs:
+        own_value = _numeric(own_metrics.get(field))
+        pool_values = [_numeric(metrics.get(field)) for metrics in metrics_pool]
+        pct = _percentile(own_value, pool_values, higher_is_better)
+        if pct is not None:
+            axes.append({"label": label, "value": own_value, "percentile": pct})
+
+    if len(axes) < _RADAR_MIN_AXES:
+        return None
+    return {"position": position, "dataset": dataset, "sample_size": len(grade_pool), "axes": axes}

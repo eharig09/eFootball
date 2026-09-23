@@ -71,6 +71,7 @@ from sports_aggregator.cfb.two_engine_live import (
     team_ratings_display,
 )
 from sports_aggregator.cfb import views
+from sports_aggregator.cfb.pff_statlines import player_percentile_radar
 
 
 cfb_pages = Blueprint("cfb", __name__)
@@ -871,6 +872,7 @@ def player_preview(player_id: str):
     # line's older seasons aren't ranked against this season's peer pool.
     ppa_rank = (repository.player_ppa_rank(season, position).get(player_id)
                if player.get("season") == season else None)
+    percentile_radar = player_percentile_radar(repository, player, season)
     return render_template(
         "cfb_player.html", season=season, player=player,
         meta=page_meta_for.player_meta(
@@ -878,6 +880,7 @@ def player_preview(player_id: str):
         identity=team_identity(_repository().brand_for(player.get("team_id"))),
         stat_groups=views.player_stat_groups(player),
         ppa_rank=ppa_rank,
+        percentile_radar=percentile_radar,
         passer_profile=passer_profile(repository, player_id, season),
         career_passing_field=passer_career_field(repository, player_id),
         player_trend=player_trend,

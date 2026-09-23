@@ -123,6 +123,32 @@
 </div>{% endif %}
 {% endmacro %}
 
+{% macro percentile_radar_chart(data, chart_id) %}
+{% if data and data.axes %}<div class="prod-radar" data-prod-radar>
+  <div class="prod-radar-canvas"><canvas id="{{ chart_id }}" role="img" aria-label="Percentile radar among {{ data.sample_size }} qualifying {{ data.position }}s this season"></canvas></div>
+  <div class="prod-radar-values">{% for axis in data.axes %}<span><b>{{ axis.percentile | cell('int') }}<small>%ile</small></b>{{ axis.label }} <small>({{ axis.value | cell('f1') }})</small></span>{% endfor %}</div>
+  <script type="application/json" data-radar-json>{{ data | tojson }}</script>
+</div>{% endif %}
+{% endmacro %}
+
+{% macro radar_scripts() %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>(function(){"use strict";
+if(typeof Chart==="undefined")return;
+Chart.defaults.color="#93a1b3";Chart.defaults.borderColor="#2a3542";
+document.querySelectorAll("[data-prod-radar]").forEach(function(shell){
+  var canvas=shell.querySelector("canvas");
+  var payload=JSON.parse(shell.querySelector("[data-radar-json]").textContent);
+  new Chart(canvas.getContext("2d"),{type:"radar",data:{
+    labels:payload.axes.map(function(a){return a.label;}),
+    datasets:[{label:"Percentile",data:payload.axes.map(function(a){return a.percentile;}),
+      borderColor:"#6ea8f0",backgroundColor:"rgba(110,168,240,.25)",pointBackgroundColor:"#6ea8f0"}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{r:{min:0,max:100,ticks:{stepSize:25,backdropColor:"transparent"},
+        grid:{color:"#2a3542"},angleLines:{color:"#2a3542"}}}}});
+});
+}());</script>{% endmacro %}
+
 {% macro trend_chart(data, chart_id, key_label='Trend') %}
 {% if data %}<div class="prod-trend" data-prod-trend data-chart-id="{{ chart_id }}">
   <div class="prod-switch" role="group" aria-label="{{ key_label }} metric">{% for metric in data.metrics %}<button type="button" class="{{ 'active' if loop.first else '' }}" data-trend-metric="{{ metric.key }}">{{ metric.label }}</button>{% endfor %}</div>

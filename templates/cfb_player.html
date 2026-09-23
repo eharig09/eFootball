@@ -1,6 +1,6 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import data_table, story_list, tabbed_tables, tabs_script %}
-{% from "_cfb_page_visuals.html" import passer_profile_module %}
+{% from "_cfb_page_visuals.html" import passer_profile_module, percentile_radar_chart, radar_scripts %}
 {% from "_charts.html" import chart_workbench, chart_scripts %}
 
 {% block title %}{{ player.name }} | College Football Player{% endblock %}
@@ -63,6 +63,11 @@
             {% if pff_dataset_groups %}
             <div class="section-note">Full metric breakdown per dataset PFF published, not just the headline grade.</div>
             {{ tabbed_tables(pff_dataset_groups, 'player-pff-detail') }}
+            {% endif %}
+            {% if percentile_radar %}
+            <h3 class="subhead">{{ season }} percentile among {{ percentile_radar.position }}s</h3>
+            <div class="section-note">Percentile among {{ percentile_radar.sample_size }} qualifying {{ percentile_radar.position }}s this season (a minimum-usage floor keeps a token snap count from landing at the 0th or 100th percentile).</div>
+            {{ percentile_radar_chart(percentile_radar, 'player-percentile-radar') }}
             {% endif %}
         </section>
 
@@ -187,6 +192,7 @@
 {% block scripts %}
 {{ tabs_script() }}
 {% if player_trend %}{{ chart_scripts() }}{% endif %}
+{% if percentile_radar %}{{ radar_scripts() }}{% endif %}
 <script>
 (function () {
     "use strict";
