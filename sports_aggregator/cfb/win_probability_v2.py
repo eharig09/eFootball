@@ -328,7 +328,8 @@ def game_win_probability_series(repository, game_id: int, *,
         rows = connection.execute(
             """SELECT p.drive_number, p.play_number, p.period, p.clock_minutes,
                       p.clock_seconds, p.offense_score, p.defense_score, p.offense,
-                      p.home_team, w.home_win_probability
+                      p.home_team, p.down, p.distance, p.play_text, p.play_type,
+                      w.home_win_probability
                FROM cfb_plays p JOIN cfb_play_win_probability w
                  ON w.play_id = p.play_id AND w.model_version = ?
                WHERE p.game_id = ?
