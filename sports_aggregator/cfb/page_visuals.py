@@ -426,6 +426,48 @@ def unit_matchup_bars(report: dict[str, Any]) -> list[dict[str, Any]]:
     return bars
 
 
+#: (outcome keys to sum, display label, color). Turnovers-by-interception/
+#: fumble and turnovers-on-downs are both "gave the ball away" to a reader,
+#: and end-half drives are folded into "other" -- neither is common enough on
+#: its own to earn a segment, and a six-slice bar reads as noise.
+DRIVE_OUTCOME_SEGMENTS = (
+    (("touchdowns",), "TD", "#5fa87a"),
+    (("field_goals",), "FG", "#6ea8f0"),
+    (("turnovers", "turnovers_on_downs"), "Turnover", "#ef7a7a"),
+    (("punts",), "Punt", "#93a1b3"),
+    (("end_half_drives", "other_drives"), "Other", "#5d6b7d"),
+)
+
+
+def drive_outcome_bars(away_summary: dict[str, Any] | None, home_summary: dict[str, Any] | None,
+                       away_team: str, home_team: str) -> dict[str, Any] | None:
+    """Season-to-date drive outcome shares for both teams, for a stacked bar.
+
+    `away_summary`/`home_summary` come from
+    `team_game_drive_outcomes.season_summary()`. Segment width is passed as a
+    flex-grow proportion rather than a percentage width, so segments still
+    read correctly even when their shares don't sum to exactly 100 (a team
+    with an unresolved dataset gap here or there).
+    """
+    if not away_summary and not home_summary:
+        return None
+
+    def segments(summary: dict[str, Any] | None) -> list[dict[str, Any]]:
+        if not summary:
+            return []
+        shares = summary["shares"]
+        return [{"label": label, "color": color, "pct": round(sum(shares.get(key, 0) for key in keys), 1)}
+                for keys, label, color in DRIVE_OUTCOME_SEGMENTS]
+
+    return {
+        "away_team": away_team, "home_team": home_team,
+        "away_games": away_summary["games"] if away_summary else 0,
+        "home_games": home_summary["games"] if home_summary else 0,
+        "away_segments": segments(away_summary), "home_segments": segments(home_summary),
+        "legend": [{"label": label, "color": color} for _, label, color in DRIVE_OUTCOME_SEGMENTS],
+    }
+
+
 def game_shape(away_team: str, home_team: str, away_pace: dict[str, Any] | None,
                home_pace: dict[str, Any] | None, away_drives: float | None,
                home_drives: float | None, away_advanced: dict[str, Any] | None,

@@ -150,3 +150,32 @@ def game_summary(repository, game_id: int,
         return [dict(row) for row in connection.execute(
             "SELECT * FROM cfb_team_game_drive_outcomes WHERE game_id=? AND metric_version=? ORDER BY team",
             (int(game_id), metric_version))]
+
+
+#: Outcome counts summed by season_summary(), in the order a reader expects
+#: to see a drive resolve: score, then how it was given away or ended.
+_OUTCOME_COLUMNS = ("touchdowns", "field_goals", "turnovers", "punts",
+                    "turnovers_on_downs", "end_half_drives", "other_drives")
+
+
+def season_summary(repository, team: str, season: int, *,
+                   metric_version: str = METRIC_VERSION) -> dict[str, Any] | None:
+    """This team's drive outcomes summed across every game recorded this season."""
+    initialize(repository)
+    with repository._reader() as connection:
+        rows = connection.execute(
+            """SELECT o.* FROM cfb_team_game_drive_outcomes o
+               JOIN games g ON g.game_id = o.game_id
+               WHERE o.team=? AND g.season=? AND o.metric_version=?""",
+            (str(team), int(season), metric_version)).fetchall()
+    if not rows:
+        return None
+    totals = {"meaningful_drives": 0, **{key: 0 for key in _OUTCOME_COLUMNS}}
+    for row in rows:
+        totals["meaningful_drives"] += row["meaningful_drives"] or 0
+        for key in _OUTCOME_COLUMNS:
+            totals[key] += row[key] or 0
+    denominator = totals["meaningful_drives"] or 1
+    shares = {key: round(100 * totals[key] / denominator, 1) for key in _OUTCOME_COLUMNS}
+    return {"games": len(rows), "meaningful_drives": totals["meaningful_drives"],
+            "counts": {key: totals[key] for key in _OUTCOME_COLUMNS}, "shares": shares}

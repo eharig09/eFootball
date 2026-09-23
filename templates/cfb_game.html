@@ -1,6 +1,6 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import conference_mark, data_table, linked_piece_meta, story_list, tabbed_tables, tabs_script %}
-{% from "_cfb_page_visuals.html" import compact_passing_matchups, compact_rushing_matchups, game_shape_module, probability_track, recent_form, unit_matchup_bars_module, visual_scripts %}
+{% from "_cfb_page_visuals.html" import compact_passing_matchups, compact_rushing_matchups, drive_outcomes_module, game_shape_module, probability_track, recent_form, unit_matchup_bars_module, visual_scripts %}
 
 {% block title %}{{ game.away_team }} at {{ game.home_team }} | Game Preview{% endblock %}
 
@@ -767,6 +767,11 @@
     {{ game_shape_module(game_shape) }}
     {% if not (game_shape and game_shape.rows | selectattr('away') | list) %}
     <div class="empty">Not enough charted play-by-play to project this game's shape yet.</div>
+    {% endif %}
+    {% if drive_outcomes %}
+    <h3 class="subhead">Drive outcomes, {{ game.season }} season</h3>
+    <div class="section-note">Share of each team's own meaningful drives ending in each outcome, season to date.</div>
+    {{ drive_outcomes_module(drive_outcomes) }}
     {% endif %}
 </section>
 

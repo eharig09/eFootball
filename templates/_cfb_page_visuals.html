@@ -109,6 +109,20 @@
 </div>{% endif %}
 {% endmacro %}
 
+{% macro drive_outcomes_module(data) %}
+{% if data and (data.away_segments or data.home_segments) %}<div class="prod-drive-outcomes">
+  {% for team, segments, games in [(data.away_team, data.away_segments, data.away_games), (data.home_team, data.home_segments, data.home_games)] %}
+  <div class="prod-drive-row">
+    <span class="prod-drive-team">{{ team }} <small>{{ games }} game{{ '' if games == 1 else 's' }}</small></span>
+    <div class="prod-drive-stack" role="img" aria-label="{{ team }} drive outcomes: {% for seg in segments %}{{ seg.label }} {{ seg.pct }} percent{% if not loop.last %}, {% endif %}{% endfor %}">
+      {% for seg in segments %}<span style="flex-grow:{{ seg.pct }};background:{{ seg.color }}" title="{{ seg.label }} {{ seg.pct }}%"></span>{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  <div class="prod-drive-legend">{% for item in data.legend %}<span><i style="background:{{ item.color }}"></i>{{ item.label }}</span>{% endfor %}</div>
+</div>{% endif %}
+{% endmacro %}
+
 {% macro trend_chart(data, chart_id, key_label='Trend') %}
 {% if data %}<div class="prod-trend" data-prod-trend data-chart-id="{{ chart_id }}">
   <div class="prod-switch" role="group" aria-label="{{ key_label }} metric">{% for metric in data.metrics %}<button type="button" class="{{ 'active' if loop.first else '' }}" data-trend-metric="{{ metric.key }}">{{ metric.label }}</button>{% endfor %}</div>

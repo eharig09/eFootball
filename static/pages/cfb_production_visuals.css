@@ -211,6 +211,23 @@
     .prod-matchup-sides { grid-template-columns: 1fr; }
 }
 
+/* Season-to-date drive outcome distribution */
+.prod-drive-outcomes { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--paper); box-shadow: var(--shadow-soft); }
+.prod-drive-row { display: grid; grid-template-columns: 140px 1fr; gap: 10px; align-items: center;
+    min-height: 32px; border-top: 1px solid var(--cell-line); font-size: .68rem; }
+.prod-drive-row:first-child { border-top: 0; }
+.prod-drive-team small { display: block; color: var(--muted); font-size: .58rem; }
+.prod-drive-stack { display: flex; height: 16px; border-radius: 4px; overflow: hidden; background: var(--cell-line); }
+.prod-drive-stack span { display: block; height: 100%; flex-basis: 0; min-width: 2px; }
+.prod-drive-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; padding-top: 8px;
+    border-top: 1px solid var(--cell-line); color: var(--muted); font-size: .58rem; text-transform: uppercase; }
+.prod-drive-legend span { display: flex; align-items: center; gap: 5px; }
+.prod-drive-legend i { display: block; width: 9px; height: 9px; border-radius: 2px; }
+@media (max-width: 520px) {
+    .prod-drive-row { grid-template-columns: 1fr; gap: 4px; }
+}
+
 /* Weekly team/player trend (Chart.js-driven) */
 .prod-trend { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px;
     background: var(--paper); box-shadow: var(--shadow-soft); }
