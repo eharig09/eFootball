@@ -372,3 +372,34 @@ def team_weekly_trend(repository, team: str, season: int, *,
           ORDER BY g.week
         """, (str(team), int(season), metric_version)).fetchall()
     return [dict(row) for row in rows]
+
+
+def team_weekly_counting_stats(repository, team: str, season: int, *,
+                               metric_version: str = METRIC_VERSION,
+                               drive_metric_version: str | None = None) -> list[dict[str, Any]]:
+    """Raw weekly volume: plays, yards, and scoring-drive outcomes.
+
+    Pulled from cfb_team_game_pace (plays/yards, always present once pace is
+    built) left-joined to cfb_team_game_drive_outcomes (TD/FG/turnover/punt
+    counts, a separate, optional build) so a week missing the drive-outcomes
+    build still reports plays and yards rather than being dropped entirely.
+    """
+    from sports_aggregator.cfb.team_game_drive_outcomes import (
+        METRIC_VERSION as DEFAULT_DRIVE_METRIC_VERSION, initialize as initialize_drive_outcomes,
+    )
+    initialize(repository)
+    initialize_drive_outcomes(repository)
+    drive_version = drive_metric_version or DEFAULT_DRIVE_METRIC_VERSION
+    with repository._reader() as connection:
+        rows = connection.execute("""
+          SELECT g.week, p.scrimmage_plays, p.pass_plays, p.rush_plays,
+                 p.pass_yards, p.rush_yards, (p.pass_yards + p.rush_yards) total_yards,
+                 d.touchdowns, d.field_goals, d.turnovers, d.punts
+          FROM cfb_team_game_pace p
+          JOIN games g ON g.game_id = p.game_id
+          LEFT JOIN cfb_team_game_drive_outcomes d
+            ON d.game_id = p.game_id AND d.team = p.team AND d.metric_version = ?
+          WHERE p.team = ? AND g.season = ? AND p.metric_version = ?
+          ORDER BY g.week
+        """, (drive_version, str(team), int(season), metric_version)).fetchall()
+    return [dict(row) for row in rows]

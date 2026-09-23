@@ -1,6 +1,7 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import data_table, story_list, tabbed_tables, tabs_script %}
 {% from "_cfb_page_visuals.html" import depth_formation, pff_unit_bars_module, trend_chart, trend_scripts, visual_scripts %}
+{% from "_charts.html" import chart_workbench, chart_scripts %}
 
 {% block title %}{{ team.school }}{% if team.mascot %} {{ team.mascot }}{% endif %} | {{ season }} Team Intelligence{% endblock %}
 
@@ -105,8 +106,8 @@
             {{ data_table(team_stats_table) }}
             {% if team_trend %}
             <h3 class="subhead">Team trajectory</h3>
-            <div class="section-note">Weekly offense and defense, {{ stats_year }} season.</div>
-            {{ trend_chart(team_trend, 'team-trend-chart', 'Team trend') }}
+            <div class="section-note">Weekly offense, defense, scoring, and raw volume, {{ stats_year }} season.</div>
+            {{ chart_workbench(team_trend, 'team-trend-chart', '/college-football/games/') }}
             {% endif %}
             {% if rank_trend %}
             <h3 class="subhead">Elo &amp; AP rank trajectory</h3>
@@ -225,4 +226,4 @@
 </div>
 {% endblock %}
 
-{% block scripts %}{{ tabs_script() }}{{ visual_scripts() }}{% if team_trend %}{{ trend_scripts() }}{% endif %}{% endblock %}
+{% block scripts %}{{ tabs_script() }}{{ visual_scripts() }}{% if team_trend %}{{ chart_scripts() }}{% endif %}{% if rank_trend %}{{ trend_scripts() }}{% endif %}{% endblock %}

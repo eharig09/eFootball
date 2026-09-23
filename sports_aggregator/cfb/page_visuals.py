@@ -258,56 +258,73 @@ def team_rank_trend_chart_data(elo_history: list[dict[str, Any]],
     }
 
 
-def team_trend_chart_data(rows: list[dict[str, Any]],
-                          scoring_rows: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
-    """Weekly offense/defense series, shaped for the generic `trend_chart` macro.
+def _labeled_weeks(source: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    return [{**row, "week_label": f"W{row['week']}"} for row in (source or [])]
 
-    Success and explosive rate are stored as 0-1 fractions (matching
-    `team_advanced_stats`) and converted to percentages here, once, so the
-    template and the chart never have to agree on that separately.
 
-    `scoring_rows` (team_weekly_scoring's output) adds Points For/Against and
-    Margin as two more metric tabs on the same week axis -- the counting-stat
-    outcome a reader actually cares about, next to the efficiency stats that
-    explain it.
+def _team_context_definitions(
+    scoring_rows: list[dict[str, Any]] | None, counting_rows: list[dict[str, Any]] | None, *,
+    label_prefix: str = "",
+) -> tuple[tuple[list[dict[str, Any]], str, str, str, bool], ...]:
+    """(source, key, label, format, pct) for Points For/Against/Margin plus
+    raw plays/yards/scoring-drive counts -- shared between the team page's
+    own trend chart and the player page's team-context overlay so the two
+    never drift into describing the same numbers with different labels.
     """
-    if not rows:
-        return None
-    labels = [f"W{row['week']}" for row in rows]
+    scoring, counting = _labeled_weeks(scoring_rows), _labeled_weeks(counting_rows)
+    return (
+        (scoring, "points_for", f"{label_prefix}Points For", "int", False),
+        (scoring, "points_against", f"{label_prefix}Points Against", "int", False),
+        (scoring, "margin", f"{label_prefix}Margin", "signed", False),
+        (counting, "scrimmage_plays", f"{label_prefix}Plays", "int", False),
+        (counting, "pass_plays", f"{label_prefix}Pass Plays", "int", False),
+        (counting, "rush_plays", f"{label_prefix}Rush Plays", "int", False),
+        (counting, "total_yards", f"{label_prefix}Total Yards", "big", False),
+        (counting, "pass_yards", f"{label_prefix}Pass Yards", "big", False),
+        (counting, "rush_yards", f"{label_prefix}Rush Yards", "big", False),
+        (counting, "touchdowns", f"{label_prefix}Touchdowns", "int", False),
+        (counting, "field_goals", f"{label_prefix}Field Goals", "int", False),
+        (counting, "turnovers", f"{label_prefix}Turnovers", "int", False),
+        (counting, "punts", f"{label_prefix}Punts", "int", False),
+    )
 
-    def series(key: str, *, pct: bool = False) -> list[float | None]:
-        return _week_series(rows, key, pct=pct)
 
-    metrics = [
-        {"key": "epa", "label": "EPA / play", "series": [
-            {"key": "offense", "label": "Offense", "color": "#6ea8f0", "data": series("epa_per_play")},
-            {"key": "defense", "label": "Defense", "color": "#ef7a7a", "data": series("defense_epa_per_play")},
-        ]},
-        {"key": "success", "label": "Success rate", "series": [
-            {"key": "offense", "label": "Offense", "color": "#6ea8f0", "data": series("success_rate", pct=True)},
-            {"key": "defense", "label": "Defense", "color": "#ef7a7a", "data": series("defense_success_rate", pct=True)},
-        ]},
-        {"key": "explosive", "label": "Explosive rate", "series": [
-            {"key": "offense", "label": "Offense", "color": "#6ea8f0", "data": series("explosive_rate", pct=True)},
-            {"key": "defense", "label": "Defense", "color": "#ef7a7a", "data": series("defense_explosive_rate", pct=True)},
-        ]},
-    ]
-    if scoring_rows:
-        scoring_by_week = {row["week"]: row for row in scoring_rows}
-        weeks = [row["week"] for row in rows]
+def _build_charts(definitions: tuple[tuple[list[dict[str, Any]], str, str, str, bool], ...], *,
+                  color_offset: int = 0) -> list[dict[str, Any]]:
+    charts = []
+    for index, (source, key, label, value_format, pct) in enumerate(definitions):
+        chart = _chart_series(source, key, label, value_format=value_format, pct=pct,
+                              color=CHART_COLORS[(color_offset + index) % len(CHART_COLORS)])
+        if chart:
+            charts.append(chart)
+    return charts
 
-        def scoring_series(key: str) -> list[float | None]:
-            return [(scoring_by_week.get(week) or {}).get(key) for week in weeks]
 
-        metrics.append({"key": "scoring", "label": "Points for/against", "series": [
-            {"key": "points_for", "label": "Points For", "color": "#6ea8f0", "data": scoring_series("points_for")},
-            {"key": "points_against", "label": "Points Against", "color": "#ef7a7a",
-             "data": scoring_series("points_against")},
-        ]})
-        metrics.append({"key": "margin", "label": "Margin", "series": [
-            {"key": "margin", "label": "Margin", "color": "#78d69b", "data": scoring_series("margin")},
-        ]})
-    return {"labels": labels, "metrics": metrics}
+def team_trend_chart_data(rows: list[dict[str, Any]],
+                          scoring_rows: list[dict[str, Any]] | None = None,
+                          counting_rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Weekly team series, shaped for the shared dual-axis `chart_workbench`.
+
+    `rows` (team_game_advanced.team_weekly_trend) supplies offense/defense
+    EPA, success rate, and explosive rate -- stored as 0-1 fractions,
+    converted to percentages here so the chart never has to. `scoring_rows`
+    and `counting_rows` add Points For/Against/Margin and raw plays/yards/
+    scoring-drive counts via `_team_context_definitions`. Checking any two of
+    these overlays them on chart_workbench's dual axis -- e.g. Offense EPA
+    against Points For -- even though the three sources don't share one
+    week-indexed table; each metric carries its own week per point, the same
+    way the player page's stats-plus-team-context mix does.
+    """
+    advanced = _labeled_weeks(rows)
+    definitions = (
+        (advanced, "epa_per_play", "Offense EPA / play", "signed2", False),
+        (advanced, "defense_epa_per_play", "Defense EPA / play", "signed2", False),
+        (advanced, "success_rate", "Offense Success Rate", "pct", True),
+        (advanced, "defense_success_rate", "Defense Success Rate", "pct", True),
+        (advanced, "explosive_rate", "Offense Explosive Rate", "pct", True),
+        (advanced, "defense_explosive_rate", "Defense Explosive Rate", "pct", True),
+    ) + _team_context_definitions(scoring_rows, counting_rows)
+    return _build_charts(definitions)
 
 
 #: Same palette sports_aggregator.nfl.charts uses for its own dual-axis
@@ -412,27 +429,77 @@ def skill_player_trend_chart_data(rows: list[dict[str, Any]], position: str,
     return charts
 
 
-def team_scoring_chart_series(scoring_rows: list[dict[str, Any]], *,
+def team_scoring_chart_series(scoring_rows: list[dict[str, Any]] | None,
+                              counting_rows: list[dict[str, Any]] | None = None, *,
                               label_prefix: str = "Team ", color_offset: int = 0) -> list[dict[str, Any]]:
-    """Points for/against/margin as chart_workbench-shaped series.
+    """Points for/against/margin plus raw plays/yards/scoring-drive counts, as
+    chart_workbench-shaped series (see `_team_context_definitions`).
 
     Appending these onto a player's own weekly chart_workbench list connects
     "how did this player do" to "how did the team do that week" -- checking
     one of these alongside a player's own metric overlays team outcome on the
     second axis rather than forcing them onto the same scale.
     """
-    definitions = (
-        ("points_for", f"{label_prefix}Points For", "int"),
-        ("points_against", f"{label_prefix}Points Against", "int"),
-        ("margin", f"{label_prefix}Margin", "signed"),
+    definitions = _team_context_definitions(scoring_rows, counting_rows, label_prefix=label_prefix)
+    return _build_charts(definitions, color_offset=color_offset)
+
+
+#: (player_field, team_field, label) per position -- only pairs with an
+#: honest, unambiguous team-level denominator. Receptions and touchdowns are
+#: deliberately absent: the team total has no separate completions count
+#: (only pass attempts), and cfb_team_game_drive_outcomes doesn't split
+#: touchdowns by rush vs pass, so neither has a denominator that actually
+#: means what the label would imply.
+SHARE_SPECS: dict[str, tuple[tuple[str, str, str], ...]] = {
+    "QB": (
+        ("attempts", "pass_plays", "Share of team pass attempts"),
+        ("yards", "pass_yards", "Share of team passing yards"),
+    ),
+    "RB": (
+        ("rush_yards", "rush_yards", "Share of team rushing yards"),
+        ("rush_attempts", "rush_plays", "Share of team rush attempts"),
+        ("receiving_yards", "pass_yards", "Share of team passing yards (receiving)"),
+    ),
+    "WR": (
+        ("receiving_yards", "pass_yards", "Share of team passing yards"),
+        ("rush_yards", "rush_yards", "Share of team rushing yards"),
+    ),
+}
+SHARE_SPECS["FB"] = SHARE_SPECS["RB"]
+SHARE_SPECS["TE"] = SHARE_SPECS["WR"]
+
+
+def player_share_chart_series(player_rows: list[dict[str, Any]], counting_rows: list[dict[str, Any]],
+                              position: str, *, color_offset: int = 0) -> list[dict[str, Any]]:
+    """This player's week-by-week share of the team's matching counting
+    stat -- e.g. what fraction of the team's rushing yards this back
+    carried. Only computed for the (player stat, team stat) pairs in
+    SHARE_SPECS; a position with none configured, or a week missing either
+    side, simply contributes no data for that point rather than a guess.
+    """
+    specs = SHARE_SPECS.get(str(position or "").upper())
+    if not specs or not player_rows or not counting_rows:
+        return []
+    team_by_week = {row["week"]: row for row in counting_rows}
+    share_rows = []
+    for row in player_rows:
+        week = row.get("week")
+        team_row = team_by_week.get(week)
+        entry = {"week": week, "week_label": f"W{week}", "opponent": row.get("opponent"),
+                "game_id": row.get("game_id")}
+        for player_field, team_field, _label in specs:
+            player_value = row.get(player_field)
+            team_value = (team_row or {}).get(team_field)
+            entry[f"share_{player_field}"] = (
+                round(100 * player_value / team_value, 1)
+                if player_value is not None and team_value else None
+            )
+        share_rows.append(entry)
+    definitions = tuple(
+        (share_rows, f"share_{player_field}", label, "pct", False)
+        for player_field, _team_field, label in specs
     )
-    charts = []
-    for index, (key, label, value_format) in enumerate(definitions):
-        chart = _chart_series(scoring_rows, key, label, value_format=value_format,
-                              color=CHART_COLORS[(color_offset + index) % len(CHART_COLORS)])
-        if chart:
-            charts.append(chart)
-    return charts
+    return _build_charts(definitions, color_offset=color_offset)
 
 
 #: PFF college grades cluster in the 60s; a straight 0-100 scale would leave
