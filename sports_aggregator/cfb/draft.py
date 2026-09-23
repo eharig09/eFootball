@@ -163,7 +163,7 @@ def prospect_board(repository: CFBRepository, *, roster_season: int = 2026,
                 (code, text) for threshold, code, text in BANDS if percentile >= threshold)
             logos = json.loads(item.pop("logos_json") or "[]")
             reasons = [
-                f"2025 PFF interest {item['interest_score']:.1f}",
+                f"{pff_season} PFF interest {item['interest_score']:.1f}",
                 f"{percentile * 100:.0f}th percentile against {basis}",
                 f"class {item['class_year']} in {roster_season}",
             ]

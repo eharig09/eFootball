@@ -1035,7 +1035,8 @@ def _state_and_impact(state: str | None, impact_class: str | None) -> str | None
 
 def pff_players_table(players: Sequence[dict[str, Any]], season: int, *,
                       caption: str = "Players to know", dense: bool = False,
-                      impact: dict[str, dict[str, Any]] | None = None) -> Table:
+                      impact: dict[str, dict[str, Any]] | None = None,
+                      pff_season: int = 2025) -> Table:
     """Historical PFF players with their current roster status made explicit."""
     rows = []
     for player in players:
@@ -1064,7 +1065,7 @@ def pff_players_table(players: Sequence[dict[str, Any]], season: int, *,
         ],
         rows=rows,
         caption=caption,
-        note="2025 snapshot",
+        note=f"{pff_season} snapshot",
         empty="No linked historical PFF players.",
         dense=dense,
     )
@@ -1126,7 +1127,7 @@ def notable_arrivals_table(arrivals, season, *, caption="Arrived"):
 
 
 def pff_departures_table(players: Sequence[dict[str, Any]], season: int, *,
-                         caption: str = "Key departures") -> Table:
+                         caption: str = "Key departures", pff_season: int = 2025) -> Table:
     """Graded players who have left, with where each went.
 
     Departures and returners answer different questions -- who is gone, and who is
@@ -1151,11 +1152,11 @@ def pff_departures_table(players: Sequence[dict[str, Any]], season: int, *,
             Column(key="status", label="Left via", align="left"),
             Column(key="destination", label="To", align="left"),
             Column(key="interest_score", label="PFF", format="f1",
-                   title="2025 PFF interest score"),
+                   title=f"{pff_season} PFF interest score"),
         ],
         rows=rows,
         caption=caption,
-        note="2025 snapshot",
+        note=f"{pff_season} snapshot",
         empty="No graded departures identified.",
         dense=True,
     )
@@ -1205,7 +1206,7 @@ def unit_continuity_table(units: Sequence[dict[str, Any]], season: int) -> Table
     )
 
 
-def pff_position_groups_table(groups: Sequence[dict[str, Any]]) -> Table:
+def pff_position_groups_table(groups: Sequence[dict[str, Any]], *, pff_season: int = 2025) -> Table:
     """Usage-weighted position-group grades."""
     rows = [{
         "position_group": group_label(group.get("position_group")),
@@ -1223,7 +1224,7 @@ def pff_position_groups_table(groups: Sequence[dict[str, Any]]) -> Table:
         ],
         rows=rows,
         caption="Position groups",
-        note="2025 usage-weighted",
+        note=f"{pff_season} usage-weighted",
         empty="No qualifying position-group rollups.",
         dense=True,
     )
@@ -1302,7 +1303,8 @@ def _recruit_summary(player: dict[str, Any]) -> str | None:
 
 
 def depth_chart_tables(depth_chart: dict[str, Any], season: int,
-                       projection: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+                       projection: dict[str, dict[str, Any]] | None = None, *,
+                       pff_season: int = 2025) -> list[dict[str, Any]]:
     """Position groups as tables so class, size, and origin line up per player."""
     units = []
     for unit, groups in (depth_chart.get("units") or {}).items():
@@ -1361,7 +1363,7 @@ def depth_chart_tables(depth_chart: dict[str, Any], season: int,
                                      "was earned; sorted on the blended evidence the "
                                      "board is ordered by"),
                         Column(key="pff_interest", label="PFF", format="f1",
-                               title="2025 PFF interest score, and the school it "
+                               title=f"{pff_season} PFF interest score, and the school it "
                                      "was earned at when that differs"),
                     ],
                     rows=rows,
@@ -1549,7 +1551,7 @@ def matchup_metrics_table(game: dict[str, Any],
 
 
 def matchup_watch_table(report: dict[str, Any], brands_by_school: dict[str, dict[str, Any]] | None = None,
-                        limit: int | None = None) -> Table:
+                        limit: int | None = None, *, pff_season: int = 2025) -> Table:
     """Ranked unit matchups, most watchable first, with the reason attached."""
     rows = []
     for item in (report.get("matchups") or [])[:limit] if limit else report.get("matchups") or []:
@@ -1597,12 +1599,13 @@ def matchup_watch_table(report: dict[str, Any], brands_by_school: dict[str, dict
         ],
         rows=rows,
         caption="Matchups to watch",
-        note="2025 PFF grades",
+        note=f"{pff_season} PFF grades",
         empty="No qualifying graded unit comparison is available for these teams.",
     )
 
 
-def player_matchup_table(matchups: Sequence[dict[str, Any]], season: int) -> Table:
+def player_matchup_table(matchups: Sequence[dict[str, Any]], season: int, *,
+                         pff_season: int = 2025) -> Table:
     """Credible player pairings blended with player-vs-unit watches."""
     rows = []
     for matchup in matchups:
@@ -1648,7 +1651,7 @@ def player_matchup_table(matchups: Sequence[dict[str, Any]], season: int) -> Tab
         ],
         rows=rows,
         caption="Player and unit watches",
-        note="2025 PFF grades · unit rows list the leading graded members",
+        note=f"{pff_season} PFF grades · unit rows list the leading graded members",
         empty="No graded player or unit watch is available for these rosters.",
     )
 
@@ -1685,7 +1688,8 @@ def _share_percent(share: float | None) -> float | None:
     return None if share is None else round(share * 100, 1)
 
 
-def pff_units_table(units: Sequence[dict[str, Any]], away_team: str, home_team: str) -> Table:
+def pff_units_table(units: Sequence[dict[str, Any]], away_team: str, home_team: str, *,
+                    pff_season: int = 2025) -> Table:
     """Side-by-side unit grades for the two teams in a game."""
     rows = [{
         "label": unit.get("label"),
@@ -1710,7 +1714,7 @@ def pff_units_table(units: Sequence[dict[str, Any]], away_team: str, home_team: 
         ],
         rows=rows,
         caption="Unit grades",
-        note="2025 PFF usage-weighted, with the share of those snaps still on each roster",
+        note=f"{pff_season} PFF usage-weighted, with the share of those snaps still on each roster",
         empty="No unit grades are stored for these teams.",
     )
 
@@ -2152,7 +2156,7 @@ def prospect_table(board: dict[str, Any], season: int, *,
         Column(key="class_year", label="Cl", format="rank", align="right",
                title="Class year; draft eligibility is a class-based estimate"),
         Column(key="interest_score", label="PFF", format="f1",
-               title="2025 PFF interest score"),
+               title=f"{board.get('pff_season', 2025)} PFF interest score"),
         Column(key="percentile", label="vs drafted", format="pct",
                title="Percentile against players actually drafted at this position"),
     ])
@@ -2168,7 +2172,8 @@ def prospect_table(board: dict[str, Any], season: int, *,
 
 
 def draft_watch_table(entries: Sequence[dict[str, Any]], season: int, *,
-                      dense: bool = False, caption: str = "2027 draft watch") -> Table:
+                      dense: bool = False, caption: str = "2027 draft watch",
+                      pff_season: int = 2025) -> Table:
     """The consensus big board, supplemented by our own production profile.
 
     The board is the spine: its rank and its player are what a reader came for.
@@ -2218,7 +2223,7 @@ def draft_watch_table(entries: Sequence[dict[str, Any]], season: int, *,
                title="Draft position group"),
         Column(key="team", label="School", align="left"),
         Column(key="interest_score", label="PFF", format="f1",
-               title="2025 PFF interest score, where a profile is linked"),
+               title=f"{pff_season} PFF interest score, where a profile is linked"),
         Column(key="profile", label="vs drafted", format="pct",
                title="Percentile against players actually drafted at this position"),
         Column(key="next_game", label="Next", align="left",
@@ -2318,7 +2323,8 @@ def consensus_table(board: list[dict[str, Any]], season: int) -> Table:
 
 
 def divergence_table(entries: list[dict[str, Any]], season: int, *, caption: str,
-                     note: str, empty: str, ranked: bool = True) -> Table:
+                     note: str, empty: str, ranked: bool = True,
+                     pff_season: int = 2025) -> Table:
     """Where a consensus board and the production profile disagree."""
     rows = []
     for entry in entries:
@@ -2346,14 +2352,15 @@ def divergence_table(entries: list[dict[str, Any]], season: int, *, caption: str
         Column(key="position", label="Pos", align="left",
                title="Draft position group"),
         Column(key="team", label="School", align="left"),
-        Column(key="interest_score", label="PFF", format="f1", title="2025 PFF interest score"),
+        Column(key="interest_score", label="PFF", format="f1",
+               title=f"{pff_season} PFF interest score"),
         Column(key="profile", label="vs drafted", format="pct",
                title="Percentile against players actually drafted at this position"),
     ])
     return Table(columns=columns, rows=rows, caption=caption, note=note, empty=empty)
 
 
-def production_groups(production, season, *, interest=None):
+def production_groups(production, season, *, interest=None, pff_season: int = 2025):
     """Preseason production split into returning, arrived and departed.
 
     Each row carries a state class so departed and arrived production are
@@ -2403,7 +2410,7 @@ def production_groups(production, season, *, interest=None):
                     Column(key="state", label="Status", align="left"),
                     Column(key="position", label="Pos", align="left"),
                     Column(key="interest", label="PFF", format="f1",
-                           title="Application interest score from the 2025 PFF "
+                           title=f"Application interest score from the {pff_season} PFF "
                                  "snapshot; discounts small samples. Present "
                                  "only for players it graded."),
                     *category_columns(group["category"]),

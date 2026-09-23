@@ -556,7 +556,8 @@ def today():
         developments=_labelled_developments(_content_repository().top_developments(limit=16)),
         draft_table=views.draft_panel_table(
             board_with_profile(
-                repository, prospect_board(repository, roster_season=season, limit=500),
+                repository, prospect_board(repository, roster_season=season, limit=500,
+                                           pff_season=repository.latest_pff_season()),
                 limit=500),
             season),
         reference_tables=[
@@ -654,7 +655,7 @@ def conference_preview(slug: str):
         pff_table=views.pff_players_table(
             repository.conference_pff_players(
                 name, repository.latest_pff_season(), roster_season=season, limit=20
-            ), season, dense=True
+            ), season, dense=True, pff_season=repository.latest_pff_season()
         ),
         stories=_story_repository().list_stories(conference=name, limit=24),
     )
@@ -796,7 +797,8 @@ def _team_tables(packet: dict, season: int, *, schedule_year: int | None = None,
                       if row.get("interest_score") is not None
                       for key in (str(row.get("cfbd_player_id") or ""),
                                   row.get("normalized_name") or "")
-                      if key}),
+                      if key},
+            pff_season=_repository().latest_pff_season()),
         "departures_table": views.movements_table(
             movements["departures"][:20], season, arrivals=False
         ),
@@ -831,7 +833,8 @@ def _team_tables(packet: dict, season: int, *, schedule_year: int | None = None,
         "position_philosophy_season": history["latest_production_season"],
         "draft_table": views.prospect_table(
             prospect_board(_repository(), roster_season=season, limit=10,
-                           team_id=packet["team"]["team_id"]),
+                           team_id=packet["team"]["team_id"],
+                           pff_season=_repository().latest_pff_season()),
             season, include_team=False, dense=True),
         "identity": team_identity(_repository().brand_for(packet["team"]["team_id"])),
     }
@@ -1098,12 +1101,13 @@ def game_preview(game_id: int):
         passing_situational_panels=matchup_situational(repository, game),
         rushing_field_panels=matchup_rushing(repository, game),
         rushing_situational_panels=matchup_rushing_situational(repository, game),
-        matchup_table=views.matchup_watch_table(matchup_report, brands_by_school),
+        matchup_table=views.matchup_watch_table(matchup_report, brands_by_school,
+                                                pff_season=pff_season),
         player_matchup_table=views.player_matchup_table(
             player_matchups(repository, game["home_team_id"], game["away_team_id"]),
-            season),
+            season, pff_season=pff_season),
         pff_units_table=views.pff_units_table(
-            pff_game_units, game["away_team"], game["home_team"],
+            pff_game_units, game["away_team"], game["home_team"], pff_season=pff_season,
         ),
         game=game,
         metrics_table=views.matchup_metrics_table(
@@ -1121,17 +1125,19 @@ def game_preview(game_id: int):
         away_returning_table=views.pff_players_table(
             [row for row in away_pff["players"] if row.get("roster_status") == "RETURNING"],
             season, caption=f"{game['away_team']} returning", dense=True,
-            impact=away_impact),
+            impact=away_impact, pff_season=pff_season),
         away_departed_table=views.pff_departures_table(
             [row for row in away_pff["players"] if row.get("roster_status") not in
-             (None, "RETURNING")], season, caption=f"{game['away_team']} departed"),
+             (None, "RETURNING")], season, caption=f"{game['away_team']} departed",
+            pff_season=pff_season),
         home_returning_table=views.pff_players_table(
             [row for row in home_pff["players"] if row.get("roster_status") == "RETURNING"],
             season, caption=f"{game['home_team']} returning", dense=True,
-            impact=home_impact),
+            impact=home_impact, pff_season=pff_season),
         home_departed_table=views.pff_departures_table(
             [row for row in home_pff["players"] if row.get("roster_status") not in
-             (None, "RETURNING")], season, caption=f"{game['home_team']} departed"),
+             (None, "RETURNING")], season, caption=f"{game['home_team']} departed",
+            pff_season=pff_season),
         away_leader_groups=views.leader_groups(away_leaders, season, include_team=False, limit=3),
         home_leader_groups=views.leader_groups(home_leaders, season, include_team=False, limit=3),
         content_layers=_content_repository().for_game(
@@ -1366,12 +1372,13 @@ def draft_watch():
     season = _season()
     repository = _repository()
     conference = (request.args.get("conference") or "").strip() or None
+    pff_season = repository.latest_pff_season()
     # The filter used to reach only the position cards. Everything below is
     # built from `full_board`, so a conference pill changed a corner of the page
     # and left the 250-row board it sits above completely alone -- which reads
     # as a filter that does not work.
     full_board = prospect_board(repository, roster_season=season, limit=500,
-                                conference=conference)
+                                conference=conference, pff_season=pff_season)
     # `prospect_board` applies its limit only after querying, scoring and
     # sorting the whole eligible pool, so asking for 80 and then 500 did the
     # same work twice for a different final slice. The shorter board is that
@@ -1379,8 +1386,7 @@ def draft_watch():
     board = {**full_board, "prospects": (full_board.get("prospects") or [])[:80]}
     comparison = reconcile(repository, full_board, draft_year=2027)
     # Both boards want the same schedule and the same opponent grades.
-    context = board_context(repository, season=season,
-                            pff_season=repository.latest_pff_season())
+    context = board_context(repository, season=season, pff_season=pff_season)
     annotate_board(repository, board.get("prospects") or [], season=season,
                    context=context)
     watch_entries = annotate_board(
@@ -1395,23 +1401,23 @@ def draft_watch():
         conferences=_with_conference_identity(repository.conferences()),
         prospect_table=views.prospect_table(board, season, dense=True),
         draft_watch_table=views.draft_watch_table(
-            watch_entries, season,
+            watch_entries, season, pff_season=pff_season,
             caption=("2027 consensus board" if not conference
                      else f"2027 consensus board · {conference}")),
         consensus_table=views.consensus_table(
             consensus_board(repository, draft_year=2027, limit=100), season),
         agree_table=views.divergence_table(
             comparison["agree"], season, caption="Board and production agree",
-            note="ranked highly and grades out",
+            note="ranked highly and grades out", pff_season=pff_season,
             empty="No consensus prospect also clears the drafted-profile bar."),
         board_ahead_table=views.divergence_table(
             comparison["board_ahead"], season, caption="Board ahead of the profile",
-            note="the case rests on traits this system cannot see",
+            note="the case rests on traits this system cannot see", pff_season=pff_season,
             empty="No divergence of this kind."),
         profile_ahead_table=views.divergence_table(
             comparison["profile_ahead"], season, ranked=False,
             caption="Profile ahead of the board",
-            note="matches drafted profiles but is unranked",
+            note="matches drafted profiles but is unranked", pff_season=pff_season,
             empty="No unranked player clears the drafted-profile bar."),
         position_groups=position_targets(board),
     )
@@ -1429,18 +1435,21 @@ def draft_consensus_api():
 def draft_reconcile_api():
     season = _season()
     repository = _repository()
-    board = prospect_board(repository, roster_season=season, limit=500)
+    board = prospect_board(repository, roster_season=season, limit=500,
+                           pff_season=repository.latest_pff_season())
     return jsonify(reconcile(repository, board, draft_year=2027))
 
 
 @cfb_pages.get("/api/v1/cfb/draft/board")
 def draft_board_api():
     season = _season()
+    repository = _repository()
     limit = min(max(request.args.get("limit", 50, type=int) or 50, 1), 200)
     conference = (request.args.get("conference") or "").strip() or None
     team_id = request.args.get("team_id", type=int)
-    return jsonify(prospect_board(_repository(), roster_season=season, limit=limit,
-                                  conference=conference, team_id=team_id))
+    return jsonify(prospect_board(repository, roster_season=season, limit=limit,
+                                  conference=conference, team_id=team_id,
+                                  pff_season=repository.latest_pff_season()))
 
 
 @cfb_pages.get("/college-football/admin/links/")
