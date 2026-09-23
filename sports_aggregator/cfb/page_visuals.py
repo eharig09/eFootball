@@ -227,6 +227,37 @@ def _weeks_with_ghosts(current_rows: list[dict[str, Any]],
     return labeled, len(ghosts)
 
 
+def team_rank_trend_chart_data(elo_history: list[dict[str, Any]],
+                               rank_history: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Weekly Elo and AP rank, shaped for the generic `trend_chart` macro.
+
+    Elo and rank rarely share the same week set -- a team carries an Elo
+    rating every week it plays, but only appears in the poll while ranked --
+    so both series are reindexed onto the union of weeks either one reports,
+    leaving a null rather than guessing a value for a week one source lacks.
+    Rank's own metric is marked `reverse` since #1 is best; `trend_scripts()`
+    flips that axis so both series read "up is better" on screen.
+    """
+    weeks = sorted({row["week"] for row in elo_history} | {row["week"] for row in rank_history})
+    if not weeks:
+        return None
+    elo_by_week = {row["week"]: row["elo"] for row in elo_history}
+    rank_by_week = {row["week"]: row["rank"] for row in rank_history}
+    return {
+        "labels": [f"W{week}" for week in weeks],
+        "metrics": [
+            {"key": "elo", "label": "Elo", "series": [
+                {"key": "elo", "label": "Elo", "color": "#6ea8f0",
+                 "data": [elo_by_week.get(week) for week in weeks]},
+            ]},
+            {"key": "rank", "label": "AP rank", "reverse": True, "series": [
+                {"key": "rank", "label": "AP rank", "color": "#ef7a7a",
+                 "data": [rank_by_week.get(week) for week in weeks]},
+            ]},
+        ],
+    }
+
+
 def team_trend_chart_data(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Weekly offense/defense series, shaped for the generic `trend_chart` macro.
 

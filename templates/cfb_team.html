@@ -108,6 +108,11 @@
             <div class="section-note">Weekly offense and defense, {{ stats_year }} season.</div>
             {{ trend_chart(team_trend, 'team-trend-chart', 'Team trend') }}
             {% endif %}
+            {% if rank_trend %}
+            <h3 class="subhead">Elo &amp; AP rank trajectory</h3>
+            <div class="section-note">Weekly pregame Elo and AP Top 25 rank, {{ season }} season. AP rank is only plotted for weeks this team was ranked.</div>
+            {{ trend_chart(rank_trend, 'rank-trend-chart', 'Rank trend') }}
+            {% endif %}
         </section>
         <section class="section" data-mobile-tab-panel="stats">
             <h2>Position philosophy</h2>

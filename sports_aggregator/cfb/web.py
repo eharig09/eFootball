@@ -47,8 +47,8 @@ from sports_aggregator.cfb.matchups import game_matchup_report
 from sports_aggregator.cfb.player_matchups import player_matchups
 from sports_aggregator.cfb.page_visuals import (
     depth_formations, game_shape, model_probability_track, player_trend_chart_data,
-    recent_form_rows, skill_player_trend_chart_data, team_trend_chart_data,
-    upcoming_games_rows)
+    recent_form_rows, skill_player_trend_chart_data, team_rank_trend_chart_data,
+    team_trend_chart_data, upcoming_games_rows)
 from sports_aggregator.cfb.coordinator_pace import team_drives_per_game, team_pace
 from sports_aggregator.cfb.player_game_log import player_weekly_trend
 from sports_aggregator.cfb.team_game_advanced import team_weekly_trend
@@ -760,8 +760,12 @@ def _team_tables(packet: dict, season: int, *, schedule_year: int | None = None,
         _repository(), packet["team"]["team_id"], season, production=packet["production"])
     team_trend = team_trend_chart_data(
         team_weekly_trend(_repository(), packet["team"]["school"], stats_year))
+    rank_trend = team_rank_trend_chart_data(
+        _repository().team_elo_history(packet["team"]["team_id"], season),
+        _repository().team_rank_history(packet["team"]["team_id"], season))
     return {
         "team_trend": team_trend,
+        "rank_trend": rank_trend,
         "schedule_table": views.schedule_table(
             packet["schedule"], packet["team"]["team_id"], schedule_year,
             _repository().team_brands(), _repository().team_elo(schedule_year),

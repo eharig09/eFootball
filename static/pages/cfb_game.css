@@ -4,6 +4,9 @@
    different, and the isolation the inline block gave them is the point. */
 
 h1 b { color: var(--rust); }
+.momentum-arrow { font-size: 0.62em; margin-left: 3px; vertical-align: middle; }
+.momentum-arrow.up { color: var(--green); }
+.momentum-arrow.down { color: var(--rust); }
     .scoreboard {
         display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
         align-items: stretch; gap: 0; margin: 18px 0 8px; position: relative;

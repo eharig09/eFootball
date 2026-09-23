@@ -1883,6 +1883,32 @@ class CFBRepository:
             entry["elo_rank"] = rank
         return latest
 
+    def team_elo_history(self, team_id: int, season: int) -> list[dict[str, Any]]:
+        """This team's own week-by-week pregame Elo, in season order."""
+        self.initialize()
+        with self._reader() as connection:
+            rows = connection.execute(
+                """SELECT week,
+                          CASE WHEN home_team_id=? THEN home_pregame_elo ELSE away_pregame_elo END elo
+                   FROM games WHERE season=? AND (home_team_id=? OR away_team_id=?)
+                   ORDER BY week""",
+                (team_id, season, team_id, team_id)).fetchall()
+        return [{"week": row["week"], "elo": row["elo"]} for row in rows if row["elo"] is not None]
+
+    def team_rank_history(self, team_id: int, season: int, poll: str = "AP Top 25") -> list[dict[str, Any]]:
+        """This team's own week-by-week poll rank, in season order.
+
+        Unranked weeks are simply absent -- CFBD's rankings feed only carries a
+        row for a team while it holds a spot in the poll.
+        """
+        self.initialize()
+        with self._reader() as connection:
+            rows = connection.execute(
+                """SELECT week, rank FROM rankings
+                   WHERE season=? AND team_id=? AND poll=? ORDER BY week""",
+                (season, team_id, poll)).fetchall()
+        return [{"week": row["week"], "rank": row["rank"]} for row in rows]
+
     def elo_snapshot(self, season: int) -> dict[str, Any]:
         """A page-ready FBS Elo leaderboard with movement and league context.
 
@@ -3438,4 +3464,21 @@ class CFBRepository:
         game["advanced_metrics"] = {row["team"]: dict(row) for row in metric_rows}
         rankings = self.latest_rankings(game["season"])["teams"]
         game["rankings"] = {row["school"]: row["rank"] for row in rankings}
+        game["momentum"] = {
+            game["home_team"]: self._team_momentum(game["home_team_id"], season),
+            game["away_team"]: self._team_momentum(game["away_team_id"], season),
+        }
         return game
+
+    def _team_momentum(self, team_id: int, season: int) -> str | None:
+        """"up"/"down" if this team's Elo moved between its last two games this
+        season, else None (fewer than two rated games, or no net change)."""
+        history = self.team_elo_history(team_id, season)
+        if len(history) < 2:
+            return None
+        last, previous = history[-1]["elo"], history[-2]["elo"]
+        if last > previous:
+            return "up"
+        if last < previous:
+            return "down"
+        return None

@@ -113,11 +113,12 @@ document.querySelectorAll("[data-prod-trend]").forEach(function(shell){
     datasets:datasetsFor(current)},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},
     plugins:{legend:{display:false}},
-    scales:{y:{grid:{color:"#2a3542"}},x:{grid:{display:false}}}}});
+    scales:{y:{grid:{color:"#2a3542"},reverse:!!current.reverse},x:{grid:{display:false}}}}});
   buttons.forEach(function(button){button.addEventListener("click",function(){
     buttons.forEach(function(item){item.classList.toggle("active",item===button);});
     var data=metric(button.dataset.trendMetric);
     chart.data.datasets=datasetsFor(data);
+    chart.options.scales.y.reverse=!!data.reverse;
     chart.update();
   });});
 });

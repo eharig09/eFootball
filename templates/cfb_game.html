@@ -24,9 +24,9 @@
 {% set final = game.completed and game.home_points is not none and game.away_points is not none %}
 <div class="eyebrow">Week {{ game.week }} &middot; {{ 'Final' if final else 'Full preview' }}</div>
 <h1 class="matchup-title">
-    {% if game.rankings.get(game.away_team) %}<b>#{{ game.rankings.get(game.away_team) }}</b> {% endif %}{{ game.away_team }}
+    {% if game.rankings.get(game.away_team) %}<b>#{{ game.rankings.get(game.away_team) }}</b> {% endif %}{{ game.away_team }}{% if game.momentum.get(game.away_team) %}<span class="momentum-arrow {{ game.momentum.get(game.away_team) }}" title="Elo trending {{ game.momentum.get(game.away_team) }} over its last two games">{{ '▲' if game.momentum.get(game.away_team) == 'up' else '▼' }}</span>{% endif %}
     at
-    {% if game.rankings.get(game.home_team) %}<b>#{{ game.rankings.get(game.home_team) }}</b> {% endif %}{{ game.home_team }}
+    {% if game.rankings.get(game.home_team) %}<b>#{{ game.rankings.get(game.home_team) }}</b> {% endif %}{{ game.home_team }}{% if game.momentum.get(game.home_team) %}<span class="momentum-arrow {{ game.momentum.get(game.home_team) }}" title="Elo trending {{ game.momentum.get(game.home_team) }} over its last two games">{{ '▲' if game.momentum.get(game.home_team) == 'up' else '▼' }}</span>{% endif %}
 </h1>
 <div class="matchup-event-line" aria-label="{{ 'Game information' if final else 'Kickoff information' }}">
     <span><i></i>{{ game.start_label }}</span>
