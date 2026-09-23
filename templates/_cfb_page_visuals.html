@@ -89,6 +89,26 @@
 </div>{% endif %}
 {% endmacro %}
 
+{% macro unit_matchup_bars_module(bars) %}
+{% if bars %}<div class="prod-matchup-bars">
+  {% for bar in bars %}<div class="prod-matchup-row">
+    <div class="prod-matchup-head"><strong>{{ bar.label }}</strong><span>{{ bar.headline }}</span></div>
+    <div class="prod-matchup-sides">
+      <div class="prod-matchup-side{{ ' advantage' if bar.advantage == bar.attack_team else '' }}">
+        <span class="prod-matchup-team">{{ bar.attack_team }} <small>{{ bar.attack_label }}</small></span>
+        <div class="prod-matchup-track" role="img" aria-label="{{ bar.attack_team }} {{ bar.attack_label }} grade {{ bar.attack_grade | cell('f1') }}"><span class="prod-matchup-fill attack" style="--value:{{ bar.attack_pct }}%"></span></div>
+        <b>{{ bar.attack_grade | cell('f1') }}</b>
+      </div>
+      <div class="prod-matchup-side{{ ' advantage' if bar.advantage == bar.defend_team else '' }}">
+        <span class="prod-matchup-team">{{ bar.defend_team }} <small>{{ bar.defend_label }}</small></span>
+        <div class="prod-matchup-track" role="img" aria-label="{{ bar.defend_team }} {{ bar.defend_label }} grade {{ bar.defend_grade | cell('f1') }}"><span class="prod-matchup-fill defend" style="--value:{{ bar.defend_pct }}%"></span></div>
+        <b>{{ bar.defend_grade | cell('f1') }}</b>
+      </div>
+    </div>
+  </div>{% endfor %}
+</div>{% endif %}
+{% endmacro %}
+
 {% macro trend_chart(data, chart_id, key_label='Trend') %}
 {% if data %}<div class="prod-trend" data-prod-trend data-chart-id="{{ chart_id }}">
   <div class="prod-switch" role="group" aria-label="{{ key_label }} metric">{% for metric in data.metrics %}<button type="button" class="{{ 'active' if loop.first else '' }}" data-trend-metric="{{ metric.key }}">{{ metric.label }}</button>{% endfor %}</div>

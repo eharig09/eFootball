@@ -1,6 +1,6 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import conference_mark, data_table, linked_piece_meta, story_list, tabbed_tables, tabs_script %}
-{% from "_cfb_page_visuals.html" import compact_passing_matchups, compact_rushing_matchups, game_shape_module, probability_track, recent_form, visual_scripts %}
+{% from "_cfb_page_visuals.html" import compact_passing_matchups, compact_rushing_matchups, game_shape_module, probability_track, recent_form, unit_matchup_bars_module, visual_scripts %}
 
 {% block title %}{{ game.away_team }} at {{ game.home_team }} | Game Preview{% endblock %}
 
@@ -925,8 +925,7 @@
     <h2>Matchups to watch</h2>
     <div class="section-note">
         Ranked on whether the better unit is good, how far apart the two are, and
-        whether both are strong. 2025 PFF grades are historical, not a projected
-        {{ game.season }} grade.
+        whether both are strong. {{ pff_season }} PFF grades{{ ' are historical, not a projected ' ~ game.season ~ ' grade' if pff_season != game.season else ' are this season\'s own' }}.
     </div>
     {% if matchup_report.matchups %}
     <div class="matchup-summary">
@@ -935,6 +934,7 @@
         <span><b>{{ matchup_report.top_interest | cell('f1') }}</b> top watch score</span>
     </div>
     {% endif %}
+    {{ unit_matchup_bars_module(unit_matchup_bars_data) }}
     {{ data_table(matchup_table) }}
     {{ data_table(pff_units_table) }}
 </section>
