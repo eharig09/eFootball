@@ -144,31 +144,57 @@ def _matchup_flags(repository, away: str, home: str, season: int) -> Markup:
     rows = _matchup_updates(repository, away, home, season)
     if not rows:
         return Markup("")
-    flags = []
+    grouped: dict[str, list[str]] = {away: [], home: []}
     for row in rows:
         href = url_for("cfb.player_preview", player_id=row["player_id"])
         name = escape(str(row.get("player_name") or ""))
-        status = escape(str(row.get("status") or "Update"))
+        raw_status = str(row.get("status") or "Update")
+        status = escape(raw_status)
+        status_class = "".join(
+            char if char.isalnum() else "-" for char in raw_status.casefold()
+        ).strip("-")
         position = escape(str(row.get("display_position") or "—"))
-        team = escape(str(row.get("display_team") or ""))
+        team = str(row.get("display_team") or "")
         impact = _fmt(row.get("impact"), 1)
         description = str(row.get("update_text") or "").strip()
         last_update = str(row.get("last_update") or "").strip()
         tooltip_parts = [part for part in (description, f"Updated {last_update}" if last_update else "") if part]
         tooltip = escape(" — ".join(tooltip_parts), quote=True)
         title_attr = f' title="{tooltip}"' if tooltip else ""
-        flags.append(
-            f'<span class="cfbdepth-player-flag"{title_attr}>'
+        grouped.setdefault(team, []).append(
+            f'<article class="cfbdepth-availability-row status-{status_class}"{title_attr}>'
+            '<div class="identity">'
             f'<a href="{href}">{name}</a>'
-            f'<span class="status">{status}</span>'
+            f'<span>{position}</span>'
+            '</div>'
+            f'<strong class="status">{status}</strong>'
             f'<span class="impact">Impact {impact}</span>'
-            f'<span class="meta">{team} · {position}</span>'
-            '</span>'
+            '</article>'
+        )
+
+    team_cards = []
+    for team in (away, home):
+        team_rows = grouped.get(team, [])
+        count = len(team_rows)
+        team_cards.append(
+            '<section class="cfbdepth-availability-team">'
+            '<header>'
+            f'<h4>{escape(team)}</h4>'
+            f'<span>{count} flagged</span>'
+            '</header>'
+            '<div class="cfbdepth-availability-rows">'
+            + ("".join(team_rows) if team_rows else '<p class="cfbdepth-availability-empty">No player designations</p>')
+            + '</div></section>'
         )
     return Markup(
-        '<div class="cfbdepth-player-flags">'
-        '<div class="cfbdepth-player-flags-label">Player availability connections · private CFBDepth export · hover for update detail</div>'
-        + "".join(flags)
+        '<div class="cfbdepth-availability">'
+        '<header class="cfbdepth-availability-head">'
+        '<div><span>Roster availability</span><h3>Players carrying a designation</h3></div>'
+        f'<p>{len(rows)} linked update{"s" if len(rows) != 1 else ""} · private CFBDepth export · hover for report detail</p>'
+        '</header>'
+        '<div class="cfbdepth-availability-grid">'
+        + "".join(team_cards)
+        + '</div>'
         + '</div>'
     )
 

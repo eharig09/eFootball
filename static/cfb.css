@@ -509,29 +509,80 @@ table.data td.state-departed .sub { color: var(--red); }
     color: var(--muted); font-size: .58rem; text-transform: uppercase; letter-spacing: .055em;
 }
 
-/* Availability chips above the player-matchup table (cfbdepth_enhancements):
-   spaced fields so the status, impact and team/position read as separate
-   values rather than one run-on string. */
-.cfbdepth-player-flags { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 10px 0 14px; }
-.cfbdepth-player-flags-label {
-    width: 100%; color: var(--muted); font-size: .58rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: .06em;
+/* Availability board above the player-matchup table (cfbdepth_enhancements). */
+.cfbdepth-availability {
+    margin: 12px 0 16px; border: 1px solid var(--line); background: var(--paper);
 }
-.cfbdepth-player-flag {
-    display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 9px;
-    background: var(--paper); border: 1px solid var(--line); border-left: 3px solid var(--gold);
-    font-size: .7rem; cursor: help;
+.cfbdepth-availability-head,
+.player-watch-subhead {
+    display: flex; align-items: end; justify-content: space-between; gap: 20px;
+    padding: 10px 12px; border-bottom: 1px solid var(--line);
 }
-.cfbdepth-player-flag a { font-weight: 800; text-decoration: none; }
-.cfbdepth-player-flag a:hover { text-decoration: underline; }
-.cfbdepth-player-flag .status {
-    color: var(--gold); font-size: .56rem; font-weight: 900;
-    text-transform: uppercase; letter-spacing: .05em;
+.cfbdepth-availability-head > div > span,
+.player-watch-subhead > div > span {
+    display: block; margin-bottom: 2px; color: var(--muted); font-size: .55rem;
+    font-weight: 800; text-transform: uppercase; letter-spacing: .07em;
 }
-.cfbdepth-player-flag .impact {
-    color: var(--muted); font-size: .62rem; font-variant-numeric: tabular-nums; white-space: nowrap;
+.cfbdepth-availability-head h3,
+.player-watch-subhead h3 { margin: 0; color: var(--ink); font-size: .88rem; }
+.cfbdepth-availability-head p,
+.player-watch-subhead p {
+    max-width: 620px; margin: 0; color: var(--muted); font-size: .6rem; line-height: 1.4;
 }
-.cfbdepth-player-flag .meta { color: var(--muted); font-size: .62rem; }
+.cfbdepth-availability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cfbdepth-availability-team + .cfbdepth-availability-team { border-left: 1px solid var(--line); }
+.cfbdepth-availability-team > header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 7px 10px; border-bottom: 1px solid var(--line); background: var(--cream);
+}
+.cfbdepth-availability-team h4 { margin: 0; font-size: .7rem; }
+.cfbdepth-availability-team > header span {
+    color: var(--muted); font-size: .54rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .05em;
+}
+.cfbdepth-availability-rows { padding: 3px 9px 5px; }
+.cfbdepth-availability-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto 68px; align-items: center;
+    gap: 10px; min-height: 31px; padding: 4px 6px 4px 8px;
+    border-bottom: 1px solid var(--cell-line); border-left: 2px solid var(--gold); cursor: help;
+}
+.cfbdepth-availability-row:last-child { border-bottom: 0; }
+.cfbdepth-availability-row.status-out,
+.cfbdepth-availability-row.status-out-for-season { border-left-color: var(--red); }
+.cfbdepth-availability-row .identity { min-width: 0; }
+.cfbdepth-availability-row .identity a {
+    display: block; overflow: hidden; color: var(--ink); font-size: .68rem; font-weight: 800;
+    text-decoration: none; text-overflow: ellipsis; white-space: nowrap;
+}
+.cfbdepth-availability-row .identity a:hover { text-decoration: underline; }
+.cfbdepth-availability-row .identity span {
+    display: block; margin-top: 1px; color: var(--muted); font-size: .53rem;
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.cfbdepth-availability-row .status {
+    color: var(--gold); font-size: .54rem; font-weight: 900; text-align: right;
+    text-transform: uppercase; letter-spacing: .045em; white-space: nowrap;
+}
+.cfbdepth-availability-row.status-out .status,
+.cfbdepth-availability-row.status-out-for-season .status { color: var(--red); }
+.cfbdepth-availability-row .impact {
+    color: var(--muted); font-size: .58rem; font-variant-numeric: tabular-nums;
+    text-align: right; white-space: nowrap;
+}
+.cfbdepth-availability-empty {
+    margin: 0; padding: 12px 6px; color: var(--muted); font-size: .62rem; font-style: italic;
+}
+.player-watch-subhead { margin-top: 8px; padding-inline: 0; }
+
+@media (max-width: 760px) {
+    .cfbdepth-availability-head,
+    .player-watch-subhead { align-items: start; flex-direction: column; gap: 5px; }
+    .cfbdepth-availability-grid { grid-template-columns: minmax(0, 1fr); }
+    .cfbdepth-availability-team + .cfbdepth-availability-team {
+        border-top: 1px solid var(--line); border-left: 0;
+    }
+    .cfbdepth-availability-row { grid-template-columns: minmax(0, 1fr) auto 64px; gap: 7px; }
+}
 
 /* Roster-breakdown strip (cfbdepth_display): the compact sibling of the fact
    strip, rendered when the enhancement layer's card version is not substituted. */

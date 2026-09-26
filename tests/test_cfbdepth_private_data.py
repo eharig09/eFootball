@@ -50,11 +50,8 @@ Bama,Jorden Edmonds,Alabama,DB,Questionable,13.6,1.25695,,8/27/2026,Missing time
     assert updates[0]["update_text"] == "Missing time in camp."
 
 
-def test_matchup_flags_render_as_themed_chips(tmp_path):
-    """The availability strip on the game page used to ship unstyled -- its CSS
-    was spliced into a `<style>` block the CFB templates no longer carry, so the
-    name, status, impact and team/position ran together as one string. The rules
-    live in `static/cfb.css` now, next to the situation band they follow."""
+def test_matchup_flags_render_as_grouped_availability_board(tmp_path):
+    """Availability is grouped by team with aligned status and impact fields."""
     from app import create_app
     from sports_aggregator.cfb.cfbdepth_enhancements import _matchup_flags
 
@@ -70,14 +67,17 @@ GT,Jordan Allen,Georgia Tech,WR,Questionable,80.1,0.2,,8/27/2026,Tweaked an ankl
     with app.test_request_context():
         markup = str(_matchup_flags(repository, "Colorado", "Georgia Tech", 2026))
 
-    assert 'class="cfbdepth-player-flag"' in markup
-    assert '<span class="status">Questionable</span>' in markup
-    assert "Georgia Tech · WR" in markup
+    assert 'class="cfbdepth-availability-grid"' in markup
+    assert '<h4>Colorado</h4><span>0 flagged</span>' in markup
+    assert '<h4>Georgia Tech</h4><span>1 flagged</span>' in markup
+    assert 'class="cfbdepth-availability-row status-questionable"' in markup
+    assert '<strong class="status">Questionable</strong>' in markup
+    assert '<span>WR</span>' in markup
     assert 'title="Tweaked an ankle Tuesday. — Updated 8/27/2026"' in markup
 
     css = (Path(__file__).resolve().parent.parent / "static" / "cfb.css").read_text(encoding="utf-8")
-    flag = css.split(".cfbdepth-player-flag {", 1)[1].split("}", 1)[0]
-    assert "gap:" in flag, "the chip must space its fields so they do not run together"
+    row = css.split(".cfbdepth-availability-row {", 1)[1].split("}", 1)[0]
+    assert "grid-template-columns" in row, "availability fields must stay aligned"
 
 
 def test_the_template_insert_modules_no_longer_ship_dead_style_blocks():
@@ -91,7 +91,7 @@ def test_the_template_insert_modules_no_longer_ship_dead_style_blocks():
         assert "</style>" not in body, name
 
     css = (Path(__file__).resolve().parent.parent / "static" / "cfb.css").read_text(encoding="utf-8")
-    for selector in (".cfbdepth-player-flag", ".cfbdepth-update", ".cfbdepth-strip", ".team-facts"):
+    for selector in (".cfbdepth-availability-row", ".cfbdepth-update", ".cfbdepth-strip", ".team-facts"):
         assert selector in css, selector
 
 

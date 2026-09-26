@@ -1650,7 +1650,7 @@ def player_matchup_table(matchups: Sequence[dict[str, Any]], season: int, *,
                    title="Both players graded well; ranked draft prospects raise it further"),
         ],
         rows=rows,
-        caption="Player and unit watches",
+        caption="On-field matchups",
         note=f"{pff_season} PFF grades · unit rows list the leading graded members",
         empty="No graded player or unit watch is available for these rosters.",
     )

@@ -285,8 +285,7 @@
             <p class="lab-verdict-sub">{{ engine_a_route_plain or (a.route | replace('_', ' ')) }}</p>
             {% elif a.ready %}
             <h3 class="lab-verdict-headline lab-context">No Engine A pick</h3>
-            <p class="lab-verdict-sub">Every signal resolved, but this matchup doesn't match any of the five
-                frozen betting patterns.</p>
+            <p class="lab-verdict-sub">{{ a.reason or "Every signal resolved, but this matchup doesn't match any of the five frozen betting patterns." }}</p>
             {% else %}
             <h3 class="lab-verdict-headline lab-context">Engine A pending</h3>
             <p class="lab-verdict-sub">{{ a.reason or 'Waiting for required pregame inputs.' }}
@@ -947,11 +946,18 @@
 {{ compact_rushing_matchups(rushing_field_panels, rushing_situational_panels) }}
 
 <section class="section" data-mobile-tab-panel="matchups">
-    <h2>Player and unit watches</h2>
+    <h2>Personnel and matchup watches</h2>
     <div class="section-note">
-        Linemen are paired directly. Receivers only draw a corner matchup when that
-        defender has a substantial man-coverage sample; otherwise they face the coverage
-        unit. Receiving backs test linebackers, while tight ends test linebackers and safeties.
+        Availability is grouped by team first. On-field pairings follow; individual
+        receiver/corner matchups only appear when the defender has a substantial man-coverage sample.
+    </div>
+    {{ cfbdepth_matchup_player_flags(game.away_team, game.home_team, game.season) }}
+    <div class="player-watch-subhead">
+        <div>
+            <span>Graded matchup board</span>
+            <h3>On-field matchups</h3>
+        </div>
+        <p>Linemen pair directly. Receiving backs test linebackers; tight ends test linebackers and safeties.</p>
     </div>
     {{ data_table(player_matchup_table) }}
 </section>

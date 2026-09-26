@@ -580,6 +580,40 @@ def _spread_bucket(market_home_margin: float | None) -> str | None:
     return "14+"
 
 
+def _engine_a_no_pick_reason(
+    route_row: dict[str, Any], margin_threshold_met: bool,
+) -> str:
+    """Explain why complete Engine A inputs did not match a frozen route."""
+    bucket = str(route_row.get("spread_bucket") or "unknown")
+    agreement = route_row.get("agreement_count")
+    if not margin_threshold_met:
+        return (
+            "All signals resolved, but Margin Power does not clear the "
+            "required |z| ≥ 1.0 threshold."
+        )
+    if int(agreement or 0) == 4:
+        return (
+            f"All four signals agree, but that frozen route requires a spread "
+            f"below 14; this game is in the {bucket} bucket."
+        )
+    old_count = int(route_row.get("old_agreement_count") or 0)
+    hc_qb_confirms = bool(route_row.get("hc_qb_elo_confirms"))
+    if old_count == 2 and hc_qb_confirms:
+        return (
+            f"3/4 signals agree, but this signal pattern only has frozen routes "
+            f"at spreads below 7; this game is in the {bucket} bucket."
+        )
+    if old_count == 3 and not hc_qb_confirms:
+        return (
+            f"3/4 signals agree, but this signal pattern only has frozen routes "
+            f"below 3 or at 14+; this game is in the {bucket} bucket."
+        )
+    return (
+        f"All signals resolved, but this {agreement or 0}/4 combination in the "
+        f"{bucket} spread bucket does not match a frozen betting pattern."
+    )
+
+
 def _live_league_drives_this_season(
     repository: CFBRepository, *, season: int, before_date: str,
 ) -> float | None:
@@ -768,6 +802,10 @@ def _engine_a(
     return {
         "ready": ready,
         "qualified": route is not None,
+        "reason": (
+            None if route is not None or not ready
+            else _engine_a_no_pick_reason(route_row, margin_threshold_met)
+        ),
         "route": str(route["name"]) if route else None,
         "action": str(route["action"]) if route else None,
         "selected_side": routed_side if route else None,

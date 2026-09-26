@@ -1,5 +1,5 @@
 from sports_aggregator.cfb.two_engine_live import (
-    _efficiency_power_edge, _implication, _spread_bucket,
+    _efficiency_power_edge, _engine_a_no_pick_reason, _implication, _spread_bucket,
     engine_b_rules_plain_language, route_plain_language,
 )
 
@@ -10,6 +10,19 @@ def test_spread_bucket_boundaries():
     assert _spread_bucket(6.5) == "3-6.5"
     assert _spread_bucket(7.0) == "7-13.5"
     assert _spread_bucket(-14.0) == "14+"
+
+
+def test_engine_a_no_pick_reason_explains_three_of_four_spread_gap():
+    reason = _engine_a_no_pick_reason({
+        "agreement_count": 3,
+        "old_agreement_count": 2,
+        "hc_qb_elo_confirms": True,
+        "spread_bucket": "7-13.5",
+    }, margin_threshold_met=True)
+
+    assert "3/4 signals agree" in reason
+    assert "only has frozen routes at spreads below 7" in reason
+    assert "7-13.5 bucket" in reason
 
 
 def test_conflict_implication_does_not_force_a_side():
