@@ -181,8 +181,12 @@ def team_weekly_trend(repository, team: str, season: int, *,
     initialize(repository)
     with repository._reader() as connection:
         rows = connection.execute("""
-          SELECT g.week, a.epa_per_play, a.success_rate, a.explosive_rate,
+          SELECT g.week, g.game_id, a.opponent,
+                 a.epa_per_play, a.pass_epa_per_play, a.rush_epa_per_play,
+                 a.success_rate, a.explosive_rate,
                  d.epa_per_play AS defense_epa_per_play,
+                 d.pass_epa_per_play AS defense_pass_epa_per_play,
+                 d.rush_epa_per_play AS defense_rush_epa_per_play,
                  d.success_rate AS defense_success_rate,
                  d.explosive_rate AS defense_explosive_rate
           FROM cfb_team_game_advanced a

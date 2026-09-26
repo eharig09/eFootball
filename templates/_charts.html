@@ -5,7 +5,7 @@
     a click or a scatter dot navigates to. -#}
 {% macro chart_workbench(charts, chart_id, game_url_prefix='/nfl/games/') %}
 {% if charts %}<div class="chart-workbench" data-chart-workbench data-game-url="{{ game_url_prefix }}">
-    <header><div><h3>Weekly form</h3><p>Select up to two metrics; the second overlays on its own right-hand axis. Exact values remain available on hover, and each point links to its game.</p></div><div class="chart-toggles">{% for chart in charts %}<label style="--series:{{ chart.color }}"><input type="checkbox" data-metric="{{ chart.key }}"{{ ' checked' if loop.first }}><span></span>{{ chart.label }}</label>{% endfor %}</div></header>
+    <header><div><h3>Weekly form</h3><p>Select up to two metrics; the second overlays on its own right-hand axis. Exact values remain available on hover, and each point links to its game.</p></div><details class="chart-metric-picker"><summary><span data-chart-selection>Choose metrics</span><small>up to 2</small></summary><div class="chart-toggles">{% for chart in charts %}<label style="--series:{{ chart.color }}"><input type="checkbox" data-metric="{{ chart.key }}"{{ ' checked' if loop.first }}><span></span>{{ chart.label }}</label>{% endfor %}</div></details></header>
     <div class="chart-canvas-wrap"><canvas role="img" aria-label="Weekly performance trend"></canvas></div>
     <script type="application/json" data-chart-json>{{ charts|tojson }}</script>
 </div>{% endif %}

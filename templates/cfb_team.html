@@ -106,7 +106,7 @@
             {{ data_table(team_stats_table) }}
             {% if team_trend %}
             <h3 class="subhead">Team trajectory</h3>
-            <div class="section-note">Weekly offense, defense, scoring, and raw volume, {{ stats_year }} season.</div>
+            <div class="section-note">Weekly offense and defense, including pass/rush efficiency, attempts, targets, completions, yards, and scoring, {{ stats_year }} season.</div>
             {{ chart_workbench(team_trend, 'team-trend-chart', '/college-football/games/') }}
             {% endif %}
             {% if rank_trend %}

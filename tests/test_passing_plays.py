@@ -9,7 +9,7 @@ from sports_aggregator.cfb import passing_plays
 from sports_aggregator.cfb.models import Game, Team
 from sports_aggregator.cfb.passing_plays import (
     MIN_GAME_ATTEMPTS, coverage, game_splits, store_attempts, sync_season,
-    sync_week, team_season_splits, _receiver_position_rows,
+    sync_week, team_season_splits, team_weekly_passing_volume, _receiver_position_rows,
 )
 from sports_aggregator.cfb.rushing_plays import _rusher_position_rows
 from sports_aggregator.cfb.repository import CFBRepository, forget_initialized_schemas
@@ -81,9 +81,12 @@ class PassingStoreTests(unittest.TestCase):
         self.assertEqual((passing[0]["players"], passing[0]["receptions"],
                           passing[0]["targets"], passing[0]["yards"]), (2, 5, 7, 81))
         self.assertAlmostEqual(passing[0]["epa_per_attempt"], .3)
+        self.assertAlmostEqual(passing[0]["catch_rate"], 5 / 7)
+        self.assertAlmostEqual(passing[0]["yards_per_attempt"], 81 / 7)
         self.assertEqual((rushing[0]["players"], rushing[0]["attempts"],
                           rushing[0]["yards"]), (2, 10, 52))
         self.assertAlmostEqual(rushing[0]["epa_per_attempt"], .15)
+        self.assertAlmostEqual(rushing[0]["yards_per_attempt"], 5.2)
 
     def setUp(self):
         handle, self.path = tempfile.mkstemp(suffix=".sqlite3")
@@ -104,6 +107,20 @@ class PassingStoreTests(unittest.TestCase):
             attempt("1", "A", "B", "middle"), attempt("2", "A", "B", "left")])
         self.assertEqual(report["stored"], 2)
         self.assertEqual(report["classified"], 2)
+
+    def test_weekly_volume_keeps_targets_distinct_and_supports_defense(self):
+        untargeted = attempt("2", "A", "B", "right", outcome="incompletion")
+        untargeted["target"] = None
+        untargeted["targetId"] = None
+        store_attempts(self.repository, [
+            attempt("1", "A", "B", "middle"), untargeted,
+        ])
+        offense = team_weekly_passing_volume(self.repository, "A", 2025)
+        defense = team_weekly_passing_volume(self.repository, "B", 2025, role="defense")
+        expected = {"week": 9, "attempts": 2, "targets": 1,
+                    "completions": 1, "interceptions": 0}
+        self.assertEqual(offense, [expected])
+        self.assertEqual(defense, [expected])
 
     def test_an_unclassified_attempt_is_kept_but_not_counted_as_classified(self):
         """Coverage is partial, and a caller has to be able to see how partial."""

@@ -290,37 +290,50 @@ def _labeled_weeks(source: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
 def _team_context_definitions(
     scoring_rows: list[dict[str, Any]] | None, counting_rows: list[dict[str, Any]] | None, *,
     label_prefix: str = "",
-) -> tuple[tuple[list[dict[str, Any]], str, str, str, bool], ...]:
-    """(source, key, label, format, pct) for Points For/Against/Margin plus
+) -> tuple[tuple, ...]:
+    """(source, source key, label, format, pct, series key) definitions for
+    Points For/Against/Margin plus
     raw plays/yards/scoring-drive counts -- shared between the team page's
     own trend chart and the player page's team-context overlay so the two
     never drift into describing the same numbers with different labels.
     """
     scoring, counting = _labeled_weeks(scoring_rows), _labeled_weeks(counting_rows)
+    def definition(source, key, label, value_format):
+        # Player workbenches append team context to player series. Several
+        # honest source fields share names (completions, rush_yards), but the
+        # browser indexes series by key; without a namespace, the later team
+        # series silently replaced the player's checkbox and made it appear
+        # unresponsive. Team-only charts keep their concise historical keys.
+        series_key = f"team_{key}" if label_prefix else key
+        return (source, key, f"{label_prefix}{label}", value_format, False, series_key)
+
     return (
-        (scoring, "points_for", f"{label_prefix}Points For", "int", False),
-        (scoring, "points_against", f"{label_prefix}Points Against", "int", False),
-        (scoring, "margin", f"{label_prefix}Margin", "signed", False),
-        (counting, "scrimmage_plays", f"{label_prefix}Plays", "int", False),
-        (counting, "pass_plays", f"{label_prefix}Pass Plays", "int", False),
-        (counting, "rush_plays", f"{label_prefix}Rush Plays", "int", False),
-        (counting, "completions", f"{label_prefix}Completions", "int", False),
-        (counting, "total_yards", f"{label_prefix}Total Yards", "big", False),
-        (counting, "pass_yards", f"{label_prefix}Pass Yards", "big", False),
-        (counting, "rush_yards", f"{label_prefix}Rush Yards", "big", False),
-        (counting, "touchdowns", f"{label_prefix}Touchdowns", "int", False),
-        (counting, "field_goals", f"{label_prefix}Field Goals", "int", False),
-        (counting, "turnovers", f"{label_prefix}Turnovers", "int", False),
-        (counting, "punts", f"{label_prefix}Punts", "int", False),
+        definition(scoring, "points_for", "Points For", "int"),
+        definition(scoring, "points_against", "Points Against", "int"),
+        definition(scoring, "margin", "Margin", "signed"),
+        definition(counting, "scrimmage_plays", "Plays", "int"),
+        definition(counting, "pass_plays", "Pass Plays", "int"),
+        definition(counting, "rush_plays", "Rush Plays", "int"),
+        definition(counting, "completions", "Completions", "int"),
+        definition(counting, "total_yards", "Total Yards", "big"),
+        definition(counting, "pass_yards", "Pass Yards", "big"),
+        definition(counting, "rush_yards", "Rush Yards", "big"),
+        definition(counting, "touchdowns", "Touchdowns", "int"),
+        definition(counting, "field_goals", "Field Goals", "int"),
+        definition(counting, "turnovers", "Turnovers", "int"),
+        definition(counting, "punts", "Punts", "int"),
     )
 
 
-def _build_charts(definitions: tuple[tuple[list[dict[str, Any]], str, str, str, bool], ...], *,
+def _build_charts(definitions: tuple[tuple, ...], *,
                   color_offset: int = 0) -> list[dict[str, Any]]:
     charts = []
-    for index, (source, key, label, value_format, pct) in enumerate(definitions):
+    for index, definition in enumerate(definitions):
+        source, key, label, value_format, pct = definition[:5]
+        series_key = definition[5] if len(definition) > 5 else key
         chart = _chart_series(source, key, label, value_format=value_format, pct=pct,
-                              color=CHART_COLORS[(color_offset + index) % len(CHART_COLORS)])
+                              color=CHART_COLORS[(color_offset + index) % len(CHART_COLORS)],
+                              series_key=series_key)
         if chart:
             charts.append(chart)
     return charts
@@ -342,14 +355,41 @@ def team_trend_chart_data(rows: list[dict[str, Any]],
     way the player page's stats-plus-team-context mix does.
     """
     advanced = _labeled_weeks(rows)
+    counting = _labeled_weeks(counting_rows)
     definitions = (
         (advanced, "epa_per_play", "Offense EPA / play", "signed2", False),
         (advanced, "defense_epa_per_play", "Defense EPA / play", "signed2", False),
+        (advanced, "pass_epa_per_play", "Offense pass EPA / play", "signed2", False),
+        (advanced, "defense_pass_epa_per_play", "Defense pass EPA / play allowed", "signed2", False),
+        (advanced, "rush_epa_per_play", "Offense rush EPA / play", "signed2", False),
+        (advanced, "defense_rush_epa_per_play", "Defense rush EPA / play allowed", "signed2", False),
         (advanced, "success_rate", "Offense Success Rate", "pct", True),
         (advanced, "defense_success_rate", "Defense Success Rate", "pct", True),
         (advanced, "explosive_rate", "Offense Explosive Rate", "pct", True),
         (advanced, "defense_explosive_rate", "Defense Explosive Rate", "pct", True),
-    ) + _team_context_definitions(scoring_rows, counting_rows)
+        (counting, "pass_attempts", "Offense pass attempts", "int", False),
+        (counting, "defense_pass_attempts", "Defense pass attempts faced", "int", False),
+        (counting, "targets", "Offense targets", "int", False),
+        (counting, "targets_allowed", "Defense targets allowed", "int", False),
+        (counting, "completions", "Offense completions", "int", False),
+        (counting, "completions_allowed", "Defense completions allowed", "int", False),
+        (counting, "completion_rate", "Offense completion rate", "pct", True),
+        (counting, "completion_rate_allowed", "Defense completion rate allowed", "pct", True),
+        (counting, "pass_yards", "Offense pass yards", "big", False),
+        (counting, "defense_pass_yards", "Defense pass yards allowed", "big", False),
+        (counting, "yards_per_dropback", "Offense yards / dropback", "f1", False),
+        (counting, "defense_yards_per_dropback", "Defense yards / dropback allowed", "f1", False),
+        (counting, "rush_plays", "Offense rush attempts", "int", False),
+        (counting, "defense_rush_plays", "Defense rush attempts faced", "int", False),
+        (counting, "rush_yards", "Offense rush yards", "big", False),
+        (counting, "defense_rush_yards", "Defense rush yards allowed", "big", False),
+        (counting, "yards_per_rush", "Offense yards / rush", "f1", False),
+        (counting, "defense_yards_per_rush", "Defense yards / rush allowed", "f1", False),
+    )
+    paired_keys = {"rush_plays", "completions", "pass_yards", "rush_yards"}
+    context = tuple(definition for definition in _team_context_definitions(
+        scoring_rows, counting_rows) if definition[1] not in paired_keys)
+    definitions += context
     return _build_charts(definitions)
 
 
@@ -360,7 +400,8 @@ CHART_COLORS = ("#69c5ff", "#ffb45f", "#78d69b", "#d49cff", "#ff7f8a", "#e7dc68"
 
 
 def _chart_series(rows: list[dict[str, Any]], key: str, label: str, *, value_format: str = "f1",
-                  pct: bool = False, color: str | None = None) -> dict[str, Any] | None:
+                  pct: bool = False, color: str | None = None,
+                  series_key: str | None = None) -> dict[str, Any] | None:
     """One metric's weekly series, shaped for the shared chart_workbench macro
     (see templates/_charts.html) -- the exact same {key,label,format,color,
     values:[{week,week_label,opponent,game_id,value}]} shape
@@ -377,7 +418,8 @@ def _chart_series(rows: list[dict[str, Any]], key: str, label: str, *, value_for
                        "value": value})
     if not values:
         return None
-    return {"key": key, "label": label, "format": value_format, "color": color, "values": values}
+    return {"key": series_key or key, "label": label, "format": value_format,
+            "color": color, "values": values}
 
 
 def player_trend_chart_data(rows: list[dict[str, Any]],

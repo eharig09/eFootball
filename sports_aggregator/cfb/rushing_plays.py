@@ -153,6 +153,7 @@ def _rusher_position_rows(grouped: dict[str, dict[str, Any]]) -> list[dict[str, 
             "position": position, "players": len(values["players"]),
             "attempts": values["attempts"], "yards": values["yards"],
             "touchdowns": values["touchdowns"],
+            "yards_per_attempt": values["yards"] / values["attempts"] if values["attempts"] else None,
             "epa_per_attempt": values["epa"] / epa_plays if epa_plays else None,
         })
     return sorted(rows, key=lambda item: (-item["attempts"], item["position"]))
@@ -196,10 +197,13 @@ def team_season_rushing(repository: CFBRepository, team: str, season: int, *,
         if rusher:
             entry = zone["rushers"].setdefault(rusher, {
                 "name": rusher, "player_id": row["rusher_id"], "position": position,
-                "attempts": 0, "yards": 0, "touchdowns": 0})
+                "attempts": 0, "yards": 0, "touchdowns": 0,
+                "epa": 0.0, "epa_plays": 0})
             entry["attempts"] += 1
             entry["yards"] += round(float(row["rushing_yards"] or 0))
             entry["touchdowns"] += int(bool(row["is_touchdown"]))
+            if row["epa"] is not None:
+                entry["epa"] += float(row["epa"]); entry["epa_plays"] += 1
             if role == "defense":
                 group = zone["positions"].setdefault(position, {
                     "players": set(), "attempts": 0, "yards": 0,
@@ -215,6 +219,11 @@ def team_season_rushing(repository: CFBRepository, team: str, season: int, *,
     for direction, zone in zones.items():
         rushers = sorted(zone.pop("rushers").values(),
                          key=lambda item: (-item["attempts"], -item["yards"], item["name"]))
+        for rusher in rushers:
+            rusher["yards_per_attempt"] = (rusher["yards"] / rusher["attempts"]
+                                           if rusher["attempts"] else None)
+            rusher["epa_per_attempt"] = (rusher["epa"] / rusher["epa_plays"]
+                                         if rusher["epa_plays"] else None)
         positions = zone.pop("positions")
         allowed_by_position = (_rusher_position_rows(positions)
                                if role == "defense" else [])
@@ -278,10 +287,13 @@ def team_season_rushing_situational(repository: CFBRepository, team: str, season
         if rusher:
             entry = zone["rushers"].setdefault(rusher, {
                 "name": rusher, "player_id": row["rusher_id"], "position": position,
-                "attempts": 0, "yards": 0, "touchdowns": 0})
+                "attempts": 0, "yards": 0, "touchdowns": 0,
+                "epa": 0.0, "epa_plays": 0})
             entry["attempts"] += 1
             entry["yards"] += round(float(row["rushing_yards"] or 0))
             entry["touchdowns"] += int(bool(row["is_touchdown"]))
+            if row["epa"] is not None:
+                entry["epa"] += float(row["epa"]); entry["epa_plays"] += 1
             if role == "defense":
                 group = zone["positions"].setdefault(position, {
                     "players": set(), "attempts": 0, "yards": 0,
@@ -295,6 +307,11 @@ def team_season_rushing_situational(repository: CFBRepository, team: str, season
                     group["epa"] += float(row["epa"]); group["epa_plays"] += 1
     rushers = sorted(zone.pop("rushers").values(),
                      key=lambda item: (-item["attempts"], -item["yards"], item["name"]))
+    for rusher in rushers:
+        rusher["yards_per_attempt"] = (rusher["yards"] / rusher["attempts"]
+                                       if rusher["attempts"] else None)
+        rusher["epa_per_attempt"] = (rusher["epa"] / rusher["epa_plays"]
+                                     if rusher["epa_plays"] else None)
     positions = zone.pop("positions")
     allowed_by_position = (_rusher_position_rows(positions)
                            if role == "defense" else [])

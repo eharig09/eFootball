@@ -387,7 +387,7 @@ def team_weekly_counting_stats(repository, team: str, season: int, *,
     cfbd_passing_plays -- a different table with its own week coverage) and
     are merged in by week rather than joined in SQL for the same reason.
     """
-    from sports_aggregator.cfb.passing_plays import team_weekly_completions
+    from sports_aggregator.cfb.passing_plays import team_weekly_passing_volume
     from sports_aggregator.cfb.team_game_drive_outcomes import (
         METRIC_VERSION as DEFAULT_DRIVE_METRIC_VERSION, initialize as initialize_drive_outcomes,
     )
@@ -396,16 +396,48 @@ def team_weekly_counting_stats(repository, team: str, season: int, *,
     drive_version = drive_metric_version or DEFAULT_DRIVE_METRIC_VERSION
     with repository._reader() as connection:
         rows = connection.execute("""
-          SELECT g.week, p.scrimmage_plays, p.pass_plays, p.rush_plays,
+          SELECT g.week, g.game_id, p.opponent,
+                 p.scrimmage_plays, p.pass_plays, p.rush_plays,
                  p.pass_yards, p.rush_yards, (p.pass_yards + p.rush_yards) total_yards,
+                 p.yards_per_dropback, p.yards_per_rush,
+                 opp.scrimmage_plays AS defense_scrimmage_plays,
+                 opp.pass_plays AS defense_pass_plays, opp.rush_plays AS defense_rush_plays,
+                 opp.pass_yards AS defense_pass_yards, opp.rush_yards AS defense_rush_yards,
+                 opp.yards_per_dropback AS defense_yards_per_dropback,
+                 opp.yards_per_rush AS defense_yards_per_rush,
                  d.touchdowns, d.field_goals, d.turnovers, d.punts
           FROM cfb_team_game_pace p
           JOIN games g ON g.game_id = p.game_id
+          LEFT JOIN cfb_team_game_pace opp
+            ON opp.game_id = p.game_id AND opp.team = p.opponent
+           AND opp.metric_version = p.metric_version
           LEFT JOIN cfb_team_game_drive_outcomes d
             ON d.game_id = p.game_id AND d.team = p.team AND d.metric_version = ?
           WHERE p.team = ? AND g.season = ? AND p.metric_version = ?
           ORDER BY g.week
         """, (drive_version, str(team), int(season), metric_version)).fetchall()
-    completions_by_week = {row["week"]: row["completions"]
-                           for row in team_weekly_completions(repository, team, season)}
-    return [{**dict(row), "completions": completions_by_week.get(row["week"])} for row in rows]
+    offense_passing = {row["week"]: row for row in team_weekly_passing_volume(
+        repository, team, season, role="offense")}
+    defense_passing = {row["week"]: row for row in team_weekly_passing_volume(
+        repository, team, season, role="defense")}
+    output = []
+    for stored in rows:
+        row = dict(stored)
+        offense = offense_passing.get(row["week"], {})
+        defense = defense_passing.get(row["week"], {})
+        completions, attempts = offense.get("completions"), offense.get("attempts")
+        allowed, faced = defense.get("completions"), defense.get("attempts")
+        row.update({
+            "pass_attempts": attempts,
+            "targets": offense.get("targets"),
+            "completions": completions,
+            "completion_rate": completions / attempts if completions is not None and attempts else None,
+            "interceptions": offense.get("interceptions"),
+            "defense_pass_attempts": faced,
+            "targets_allowed": defense.get("targets"),
+            "completions_allowed": allowed,
+            "completion_rate_allowed": allowed / faced if allowed is not None and faced else None,
+            "interceptions_forced": defense.get("interceptions"),
+        })
+        output.append(row)
+    return output

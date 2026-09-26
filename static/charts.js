@@ -28,10 +28,36 @@
         return fn ? fn(value) : String(value);
     }
 
-    function buildDataset(chartData, axisId) {
+    function pointKey(point) {
+        // week_label already carries a prior-season prefix when a series is
+        // backfilled. Other CFB sources intentionally omit game_id/season,
+        // so including those here would split one real week into duplicate
+        // x-axis slots instead of aligning offense, defense and scoring.
+        return point.week_label || [point.season || "", point.week || ""].join("|");
+    }
+
+    function mergedSlots(series) {
+        var seen = {};
+        var slots = [];
+        series.forEach(function (chartData) {
+            chartData.values.forEach(function (point) {
+                var key = pointKey(point);
+                if (seen[key]) return;
+                seen[key] = true;
+                slots.push(point);
+            });
+        });
+        return slots;
+    }
+
+    function buildDataset(chartData, axisId, slots) {
+        var byPoint = {};
+        chartData.values.forEach(function (point) { byPoint[pointKey(point)] = point; });
+        var points = slots.map(function (slot) { return byPoint[pointKey(slot)] || null; });
         return {
             label: chartData.label,
-            data: chartData.values.map(function (point) { return point.value; }),
+            data: points.map(function (point) { return point ? point.value : null; }),
+            pointMeta: points,
             borderColor: chartData.color,
             backgroundColor: chartData.color,
             pointBackgroundColor: chartData.color,
@@ -66,7 +92,8 @@
                     var el = elements[0];
                     var input = order[el.datasetIndex];
                     var chartData = input && byKey[input.dataset.metric];
-                    var point = chartData && chartData.values[el.index];
+                    var dataset = chart.data.datasets[el.datasetIndex];
+                    var point = dataset && dataset.pointMeta[el.index];
                     if (point && point.game_id) {
                         window.location.href = gameUrlPrefix + point.game_id + "/";
                     }
@@ -77,9 +104,8 @@
                         callbacks: {
                             title: function (items) {
                                 if (!items.length) return "";
-                                var input = order[items[0].datasetIndex];
-                                var chartData = input && byKey[input.dataset.metric];
-                                var point = chartData && chartData.values[items[0].dataIndex];
+                                var dataset = chart.data.datasets[items[0].datasetIndex];
+                                var point = dataset && dataset.pointMeta[items[0].dataIndex];
                                 if (!point) return "";
                                 return "Week " + point.week + (point.opponent ? " vs " + point.opponent : "");
                             },
@@ -114,9 +140,11 @@
         function sync() {
             var primary = byKey[order[0].dataset.metric];
             var secondary = order[1] ? byKey[order[1].dataset.metric] : null;
-            chart.data.labels = primary.values.map(function (point) { return point.week_label; });
+            var selected = order.map(function (input) { return byKey[input.dataset.metric]; });
+            var slots = mergedSlots(selected);
+            chart.data.labels = slots.map(function (point) { return point.week_label; });
             chart.data.datasets = order.map(function (input, index) {
-                return buildDataset(byKey[input.dataset.metric], index === 0 ? "y" : "y1");
+                return buildDataset(byKey[input.dataset.metric], index === 0 ? "y" : "y1", slots);
             });
             var yScale = chart.options.scales.y;
             yScale.ticks.callback = function (v) { return format(v, primary.format); };
@@ -130,6 +158,12 @@
                 y1Scale.ticks.color = secondary.color;
                 y1Scale.title.text = secondary.label;
                 y1Scale.title.color = secondary.color;
+            }
+            var selection = root.querySelector("[data-chart-selection]");
+            if (selection) {
+                selection.textContent = order.map(function (input) {
+                    return byKey[input.dataset.metric].label;
+                }).join(" + ");
             }
             chart.update();
         }
@@ -154,6 +188,19 @@
         });
 
         sync();
+
+        // Team-page charts live inside a tab that starts at display:none.
+        // Chart.js cannot establish reliable pointer hitboxes at zero width,
+        // so resize once the tab becomes visible (and whenever its container
+        // changes size) before accepting hover/click interaction.
+        function refreshGeometry() {
+            if (!root.offsetParent) return;
+            window.requestAnimationFrame(function () { chart.resize(); chart.update("none"); });
+        }
+        document.addEventListener("cfb:tabschanged", refreshGeometry);
+        if (typeof ResizeObserver !== "undefined") {
+            new ResizeObserver(refreshGeometry).observe(root);
+        }
     });
 
     document.querySelectorAll("[data-scatter-chart]").forEach(function (root) {

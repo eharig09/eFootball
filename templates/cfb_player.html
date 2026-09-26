@@ -193,6 +193,7 @@
 {{ tabs_script() }}
 {% if player_trend %}{{ chart_scripts() }}{% endif %}
 {% if percentile_radar %}{{ radar_scripts() }}{% endif %}
+{% if career_passing_field and career_passing_field.attempts %}<script src="{{ url_for('static', filename='tooltips.js') }}"></script>{% endif %}
 <script>
 (function () {
     "use strict";

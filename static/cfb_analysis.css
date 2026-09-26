@@ -326,6 +326,10 @@
 .chart-workbench h3{margin:0;color:var(--on-strong);font-size:1rem}
 .chart-workbench p{margin:4px 0 0;color:var(--muted);font-size:.7rem}
 .chart-toggles{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}
+.chart-metric-picker{position:relative;min-width:min(100%,260px)}
+.chart-metric-picker>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;border:1px solid var(--line);border-radius:4px;color:var(--ink);font-size:.65rem;cursor:pointer;list-style:none}
+.chart-metric-picker>summary::-webkit-details-marker{display:none}.chart-metric-picker>summary small{color:var(--muted);font-size:.55rem;white-space:nowrap}
+.chart-metric-picker[open]>.chart-toggles{position:absolute;right:0;z-index:30;display:flex;width:min(560px,calc(100vw - 40px));max-height:260px;margin-top:5px;padding:9px;overflow:auto;border:1px solid var(--line-strong);border-radius:4px;background:var(--paper);box-shadow:var(--shadow-panel)}
 .chart-toggles label{display:flex;align-items:center;gap:5px;padding:5px 7px;border:1px solid var(--line);border-radius:3px;color:var(--ink);font-size:.65rem;cursor:pointer}
 .chart-toggles input{accent-color:var(--series)}
 .chart-toggles label>span{width:12px;height:3px;background:var(--series)}

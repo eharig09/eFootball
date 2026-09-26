@@ -258,6 +258,8 @@ def _receiver_position_rows(grouped: dict[str, dict[str, Any]]) -> list[dict[str
             "position": position, "players": len(values["players"]),
             "targets": values["targets"], "receptions": values["receptions"],
             "yards": values["yards"], "touchdowns": values["touchdowns"],
+            "catch_rate": values["receptions"] / values["targets"] if values["targets"] else None,
+            "yards_per_attempt": values["yards"] / values["targets"] if values["targets"] else None,
             "epa_per_attempt": values["epa"] / epa_plays if epa_plays else None,
         })
     return sorted(rows, key=lambda item: (-item["targets"], item["position"]))
@@ -309,8 +311,11 @@ def team_season_field(repository: CFBRepository, team: str, season: int, *,
         if target:
             receiver = zone["receivers"].setdefault(target, {
                 "name": target, "player_id": row["target_id"], "position": position,
-                "receptions": 0, "yards": 0, "touchdowns": 0, "targets": 0})
+                "receptions": 0, "yards": 0, "touchdowns": 0, "targets": 0,
+                "epa": 0.0, "epa_plays": 0})
             receiver["targets"] += 1
+            if row["epa"] is not None:
+                receiver["epa"] += float(row["epa"]); receiver["epa_plays"] += 1
             if complete:
                 receiver["receptions"] += 1
                 receiver["yards"] += round(float(row["total_yards"] or 0))
@@ -332,6 +337,13 @@ def team_season_field(repository: CFBRepository, team: str, season: int, *,
     for key, zone in zones.items():
         receivers = sorted(zone.pop("receivers").values(),
                            key=lambda item: (-item["receptions"], -item["yards"], item["name"]))
+        for receiver in receivers:
+            receiver["catch_rate"] = (receiver["receptions"] / receiver["targets"]
+                                      if receiver["targets"] else None)
+            receiver["yards_per_attempt"] = (receiver["yards"] / receiver["targets"]
+                                             if receiver["targets"] else None)
+            receiver["epa_per_attempt"] = (receiver["epa"] / receiver["epa_plays"]
+                                           if receiver["epa_plays"] else None)
         positions = zone.pop("positions")
         allowed_by_position = (_receiver_position_rows(positions)
                                if role == "defense" else [])
@@ -391,8 +403,11 @@ def team_season_situational(repository: CFBRepository, team: str, season: int, *
                 if target:
                     receiver = zone["receivers"].setdefault(target, {
                         "name": target, "player_id": row["target_id"], "position": position,
-                        "receptions": 0, "yards": 0, "touchdowns": 0, "targets": 0})
+                        "receptions": 0, "yards": 0, "touchdowns": 0, "targets": 0,
+                        "epa": 0.0, "epa_plays": 0})
                     receiver["targets"] += 1
+                    if row["epa"] is not None:
+                        receiver["epa"] += float(row["epa"]); receiver["epa_plays"] += 1
                     if complete:
                         receiver["receptions"] += 1
                         receiver["yards"] += round(float(row["total_yards"] or 0))
@@ -415,6 +430,13 @@ def team_season_situational(repository: CFBRepository, team: str, season: int, *
                             group["epa"] += float(row["epa"]); group["epa_plays"] += 1
             receivers = sorted(zone.pop("receivers").values(),
                               key=lambda item: (-item["receptions"], -item["yards"], item["name"]))
+            for receiver in receivers:
+                receiver["catch_rate"] = (receiver["receptions"] / receiver["targets"]
+                                          if receiver["targets"] else None)
+                receiver["yards_per_attempt"] = (receiver["yards"] / receiver["targets"]
+                                                 if receiver["targets"] else None)
+                receiver["epa_per_attempt"] = (receiver["epa"] / receiver["epa_plays"]
+                                               if receiver["epa_plays"] else None)
             positions = zone.pop("positions")
             allowed_by_position = (_receiver_position_rows(positions)
                                    if role == "defense" else [])
@@ -466,8 +488,11 @@ def passer_career_field(repository: CFBRepository, player_id: str, *,
         if target:
             receiver = zone["receivers"].setdefault(target, {
                 "name": target, "player_id": row["target_id"], "receptions": 0,
-                "yards": 0, "touchdowns": 0, "targets": 0})
+                "yards": 0, "touchdowns": 0, "targets": 0,
+                "epa": 0.0, "epa_plays": 0})
             receiver["targets"] += 1
+            if row["epa"] is not None:
+                receiver["epa"] += float(row["epa"]); receiver["epa_plays"] += 1
             if complete:
                 receiver["receptions"] += 1
                 receiver["yards"] += round(float(row["total_yards"] or 0))
@@ -477,6 +502,13 @@ def passer_career_field(repository: CFBRepository, player_id: str, *,
     for key, zone in zones.items():
         receivers = sorted(zone.pop("receivers").values(),
                            key=lambda item: (-item["receptions"], -item["yards"], item["name"]))
+        for receiver in receivers:
+            receiver["catch_rate"] = (receiver["receptions"] / receiver["targets"]
+                                      if receiver["targets"] else None)
+            receiver["yards_per_attempt"] = (receiver["yards"] / receiver["targets"]
+                                             if receiver["targets"] else None)
+            receiver["epa_per_attempt"] = (receiver["epa"] / receiver["epa_plays"]
+                                           if receiver["epa_plays"] else None)
         output[key] = {**zone,
                        "epa_per_attempt": zone["epa"] / zone["epa_plays"] if zone["epa_plays"] else None,
                        "receivers": receivers[:5]}
@@ -690,36 +722,49 @@ def passer_weekly_trend(repository: CFBRepository, player_id: str, season: int, 
     return output
 
 
-def team_weekly_completions(repository: CFBRepository, team: str, season: int) -> list[dict[str, Any]]:
-    """Team-wide weekly pass completions -- an honest denominator for a
-    receiver's reception share, since the team doesn't publish that count
-    anywhere else (cfb_team_game_pace's pass_plays is attempts, not
-    completions).
+def team_weekly_passing_volume(repository: CFBRepository, team: str, season: int, *,
+                               role: str = "offense") -> list[dict[str, Any]]:
+    """Weekly targeted-pass volume for a team's offense or defense.
 
-    Same garbage-time exclusion passer_weekly_trend applies to one passer,
-    applied here across every attempt credited to the team's offense -- every
-    QB who threw for this team that week, not just whichever one has a
-    player page open.
+    ``targets`` intentionally counts only attempts with an attributed target;
+    it is therefore kept separate from attempts/dropbacks instead of silently
+    treating sacks, throwaways, and unparseable targets as receiver chances.
+
+    The same garbage-time exclusion used by the field-zone charts applies so
+    the team trend and matchup detail describe the same sample.
     """
     initialize(repository)
+    column = "p.offense" if role == "offense" else "p.defense"
     with repository._reader() as connection:
         rows = connection.execute(
-            """SELECT p.week, p.outcome
+            f"""SELECT p.week, p.outcome, p.target
                FROM cfbd_passing_plays p
                LEFT JOIN cfb_play_metrics m ON m.play_id = p.play_id
-               WHERE p.season = ? AND p.offense = ?
+               WHERE p.season = ? AND {column} = ?
                  AND COALESCE(m.garbage_time, 0) = 0""",
             (int(season), str(team))).fetchall()
-    weeks: dict[int, int] = {}
+    weeks: dict[int, dict[str, int]] = {}
     for row in rows:
         week = row["week"]
         if week is None:
             continue
         week = int(week)
-        weeks.setdefault(week, 0)
+        bucket = weeks.setdefault(week, {
+            "attempts": 0, "targets": 0, "completions": 0, "interceptions": 0,
+        })
+        bucket["attempts"] += 1
+        bucket["targets"] += int(bool(str(row["target"] or "").strip()))
         if row["outcome"] == "completion":
-            weeks[week] += 1
-    return [{"week": week, "completions": count} for week, count in sorted(weeks.items())]
+            bucket["completions"] += 1
+        elif row["outcome"] == "interception":
+            bucket["interceptions"] += 1
+    return [{"week": week, **counts} for week, counts in sorted(weeks.items())]
+
+
+def team_weekly_completions(repository: CFBRepository, team: str, season: int) -> list[dict[str, Any]]:
+    """Backward-compatible completion denominator used by player share charts."""
+    return [{"week": row["week"], "completions": row["completions"]}
+            for row in team_weekly_passing_volume(repository, team, season)]
 
 
 def season_passers(repository: CFBRepository, team: str, season: int,
