@@ -100,7 +100,7 @@
     function clear(tooltip) {
         var style = tooltip.style;
         ["display", "position", "left", "top", "right", "bottom", "z-index",
-         "transform", "max-height", "overflow-y"].forEach(function (prop) {
+         "transform", "max-height", "overflow-y", "flex-direction"].forEach(function (prop) {
             style.removeProperty(prop);
         });
         var home = homes.get(tooltip);
@@ -130,6 +130,11 @@
         document.body.appendChild(tooltip);
         var display = tooltip.classList.contains("injury-tooltip") ? "flex" : "block";
         tooltip.style.setProperty("display", display, "important");
+        if (tooltip.classList.contains("injury-tooltip")) {
+            // Portaling breaks relationship-based hover selectors. Preserve
+            // the intended vertical injury-card layout after it moves to body.
+            tooltip.style.setProperty("flex-direction", "column", "important");
+        }
         active = { trigger: trigger, tooltip: tooltip };
         place(trigger, tooltip);
     }

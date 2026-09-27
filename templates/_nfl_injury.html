@@ -1,0 +1,20 @@
+{% macro injury_popover(injury, tooltip_id, include_long=false) -%}
+{% set raw_id = ('injury-' ~ injury.gsis_id) if injury.gsis_id else (('injury-espn-' ~ injury.espn_id) if injury.espn_id else tooltip_id) %}
+{% set safe_id = raw_id|replace(' ', '-')|replace('/', '-') %}
+<span class="injury-designation">
+  <span class="injury-badge {{ injury.designation_class }}" tabindex="0"
+        aria-describedby="{{ safe_id }}" aria-label="{{ injury.designation_label }} injury report details">{{ injury.designation }}</span>
+  <span class="injury-tooltip" id="{{ safe_id }}" role="tooltip">
+    <span class="injury-tooltip-head">
+      <strong>{{ injury.designation_label }}</strong>
+      {% if injury.detail_line %}<em>{{ injury.detail_line }}</em>{% endif %}
+    </span>
+    {% if injury.short_comment %}<span class="injury-tooltip-summary">{{ injury.short_comment }}</span>{% endif %}
+    {% if include_long and injury.long_comment and injury.long_comment != injury.short_comment %}<span class="injury-tooltip-detail">{{ injury.long_comment }}</span>{% endif %}
+    <span class="injury-tooltip-meta">
+      {% if injury.return_date %}<span><b>Listed return</b>{{ injury.return_date }}</span>{% endif %}
+      <span><b>Last updated</b>{{ injury.report_date or injury.fetched_at or 'Date unavailable' }}{% if injury.note_source %} · {{ injury.note_source }}{% endif %}</span>
+    </span>
+  </span>
+</span>
+{%- endmacro %}
