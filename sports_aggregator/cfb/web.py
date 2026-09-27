@@ -28,6 +28,12 @@ from sports_aggregator.cfb.history import (
     team_historical_stats, upcoming_player_opponent_history)
 from sports_aggregator.cfb.game_projection import narrative as projection_narrative
 from sports_aggregator.cfb.game_projection import project_matchup
+from sports_aggregator.cfb.engine_picks import (
+    available_weeks as engine_pick_weeks,
+    build_dashboard as build_engine_picks_dashboard,
+    default_week as default_engine_pick_week,
+    filter_dashboard as filter_engine_picks_dashboard,
+)
 from sports_aggregator.cfb.matchup_research import (
     matchup_research_packet, TOTALS_RESEARCH_OVERALL, TOTALS_TRACKED_OVERALL,
     TOTALS_TRACKED_MIN_WIN_RATE)
@@ -584,6 +590,41 @@ def today():
         ],
         reporting=_reporting(),
         cfbd_configured=bool(os.getenv("CFBD_API_KEY", "").strip()),
+    )
+
+
+@cfb_pages.get("/college-football/picks/")
+@cached_page
+def engine_picks():
+    season = _season()
+    repository = _repository()
+    weeks = engine_pick_weeks(repository, season)
+    selected_week = request.args.get("week", type=int)
+    if selected_week is None:
+        selected_week = default_engine_pick_week(repository, season)
+    if selected_week is None:
+        dashboard = None
+    else:
+        if selected_week not in weeks:
+            abort(400)
+        dashboard = build_engine_picks_dashboard(repository, season, selected_week)
+        dashboard = filter_engine_picks_dashboard(
+            dashboard,
+            query=request.args.get("q", ""),
+            status=request.args.get("status", "all"),
+        )
+        for key in ("engine_a", "engine_b", "totals", "audit"):
+            _label_games(dashboard[key])
+
+    return render_template(
+        "cfb_engine_picks.html",
+        season=season,
+        weeks=weeks,
+        selected_week=selected_week,
+        dashboard=dashboard,
+        selected_engine=request.args.get("engine", "all"),
+        selected_status=request.args.get("status", "all"),
+        query=request.args.get("q", ""),
     )
 
 

@@ -28,11 +28,12 @@ class SiteNavigationTests(unittest.TestCase):
 
     def test_every_page_offers_the_whole_site(self):
         for path in ("/college-football/", "/college-football/scoreboard/",
-                     "/college-football/elo/", "/college-football/draft/",
+                     "/college-football/picks/", "/college-football/elo/", "/college-football/draft/",
                      "/college-football/search/"):
             nav = self.nav(path)
             for destination in ("/college-football/", "/college-football/scoreboard/",
-                                "/college-football/elo/", "/college-football/draft/"):
+                                "/college-football/picks/", "/college-football/elo/",
+                                "/college-football/draft/"):
                 self.assertIn(f'href="{destination}"', nav, f"{path} cannot reach {destination}")
 
     def test_the_current_page_is_marked_once(self):

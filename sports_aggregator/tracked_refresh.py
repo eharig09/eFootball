@@ -190,6 +190,11 @@ def _segment_results(segment: str, season: int, *, root: Path, log, heartbeat) -
             log=log,
             heartbeat=heartbeat,
         )
+        # Betting lines land in core. Re-evaluate the weekly manifest after
+        # they do so a newly viable pick is surfaced on the next page load.
+        if heartbeat:
+            heartbeat()
+        results.append(_refresh_two_engine_manifest(season, root=root, log=log))
         return results
 
     if segment == "rosters":
@@ -238,7 +243,7 @@ def _segment_results(segment: str, season: int, *, root: Path, log, heartbeat) -
         return results
 
     if segment == "models":
-        return _run_low_memory_phase(
+        results = _run_low_memory_phase(
             "refresh",
             season,
             root=root,
@@ -247,6 +252,13 @@ def _segment_results(segment: str, season: int, *, root: Path, log, heartbeat) -
             log=log,
             heartbeat=heartbeat,
         )
+        # Engine B depends on narrative-shapes and both engines depend on the
+        # ratings rebuilt above. Running the manifest before this segment was
+        # the reason viable Engine B selections could remain invisible.
+        if heartbeat:
+            heartbeat()
+        results.append(_refresh_two_engine_manifest(season, root=root, log=log))
+        return results
 
     if segment == "analytics":
         # Each step carries its own budget -- 1,800 seconds for the play

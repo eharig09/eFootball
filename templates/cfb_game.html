@@ -275,7 +275,7 @@
                 {% if a.qualified %}
                 <span class="lab-badge {{ 'lab-badge-red' if a.action == 'fade' else 'lab-badge-good' }}">{{ a.action | capitalize }}{{ ' route' if a.action }}</span>
                 {% endif %}
-                {% if a.agreement_label %}<span class="lab-badge lab-badge-muted">{{ a.agreement_label }} signals agree</span>{% endif %}
+                {% if a.agreement_label %}<span class="lab-badge lab-badge-muted">{{ a.agreement_label }} directionally aligned</span>{% endif %}
                 {% if a.spread_bucket %}<span class="lab-badge lab-badge-muted">Spread {{ a.spread_bucket }}</span>{% endif %}
                 {% if a.qualified %}<span class="lab-badge lab-badge-muted">Qualified &amp; ready</span>{% endif %}
             </div>

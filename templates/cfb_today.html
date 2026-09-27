@@ -227,6 +227,7 @@
     <section class="panel weekly-picks-panel">
         <div class="panel-head">
             <strong>Picks of the Week</strong>
+            <a href="{{ url_for('cfb.engine_picks', season=season, week=nearest_week) }}">Full weekly audit &rarr;</a>
             <span>{% if nearest_week is not none %}Week {{ nearest_week }}{% endif %} · live portfolio, updates until kickoff</span>
         </div>
         <div class="picks-record-bar">

@@ -1061,6 +1061,10 @@ def classify_game(
         "implication": _implication(state, selected_team),
         "engine_a": engine_a,
         "engine_b": engine_b,
+        # Keep the tracked totals research state beside the spread engines.
+        # The weekly dashboard can then render the exact pregame total that
+        # was evaluated without recomputing a completed game with later data.
+        "totals": research.get("totals") or {},
         # The consensus spread this classification was computed against --
         # not re-derivable later once the market has moved (game_lines only
         # holds current + opening, no timeline), so a history snapshot needs
@@ -1197,6 +1201,19 @@ def _leg_signature(packet: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _packet_signature(packet: dict[str, Any]) -> str:
+    """Pregame state whose movement must refresh the current manifest."""
+    return json.dumps({
+        "state": packet.get("state"),
+        "selected_side": packet.get("selected_side"),
+        "selected_team": packet.get("selected_team"),
+        "market_spread": packet.get("market_spread"),
+        "engine_a": packet.get("engine_a") or {},
+        "engine_b": packet.get("engine_b") or {},
+        "totals": packet.get("totals") or {},
+    }, sort_keys=True, default=str)
+
+
 def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[str, Any]:
     """Recompute one week's pregame portfolio classifications.
 
@@ -1235,7 +1252,7 @@ def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[st
         game_id = int(game["game_id"])
         existing = frozen_manifest_for_game(repository, game_id)
         packet = classify_game(repository, game)
-        if existing is not None and _leg_signature(existing) == _leg_signature(packet):
+        if existing is not None and _packet_signature(existing) == _packet_signature(packet):
             unchanged.append(game_id)
             continue
 
@@ -1315,16 +1332,21 @@ def _season_grade_finish(bucket: dict[str, Any]) -> dict[str, Any]:
     return bucket
 
 
-def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
-    """Live-graded record of this season's CLOSING picks -- Engine A, Engine B,
-    and the Totals research lean -- against the closing line.
+def record_summary(
+    repository: CFBRepository,
+    season: int,
+    *,
+    week: int | None = None,
+) -> dict[str, Any]:
+    """Live-graded record of closing picks for a season or one week.
 
     "Closing" here means whatever cfb_two_engine_manifest holds by the time a
     game completes, which -- now that freeze_week() keeps recomputing a game
     right up to kickoff instead of locking on first resolution -- really is
     each pick's final pregame state. See season_record_first_appearance()
     for the same games graded against the line each pick had when it FIRST
-    qualified instead.
+    qualified instead. Totals are included only for manifest packets that
+    retained the exact pregame totals research state.
 
     This is a results tracker, not a classifier: it runs after the fact, over
     games the manifest already tracked pregame, and never feeds back into
@@ -1333,16 +1355,22 @@ def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
     an early-season read here is a small sample by construction, not a bug.
     """
     _initialize_manifest(repository)
+    week_sql = " AND m.week=?" if week is not None else ""
+    parameters: tuple[Any, ...] = (
+        (MANIFEST_VERSION, int(season), int(week))
+        if week is not None else (MANIFEST_VERSION, int(season))
+    )
     with repository._reader() as connection:
         rows = [
             dict(r) for r in connection.execute(
-                """SELECT m.game_id, m.packet_json, g.home_points, g.away_points
+                f"""SELECT m.game_id, m.packet_json, g.home_points, g.away_points
                    FROM cfb_two_engine_manifest m
                    JOIN games g ON g.game_id = m.game_id
                    WHERE m.manifest_version=? AND m.season=?
                      AND g.completed=1
-                     AND g.home_points IS NOT NULL AND g.away_points IS NOT NULL""",
-                (MANIFEST_VERSION, int(season)),
+                     AND g.home_points IS NOT NULL AND g.away_points IS NOT NULL
+                     {week_sql}""",
+                parameters,
             )
         ]
 
@@ -1364,20 +1392,10 @@ def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
                 side_spread = float(spread) if side == "home" else -float(spread)
                 _season_grade(bucket, margin + side_spread)
 
-        # Totals has no frozen action rule and so no stored pick to read back;
-        # it's recomputed the same way the live page shows it. The underlying
-        # calibration only ever fits on seasons before this one, so replaying
-        # it against a game that has since finished doesn't let that game's
-        # own result into the number.
-        game = repository.get_game(int(row["game_id"]))
-        if game is None:
-            continue
-        projection = project_matchup(
-            repository, game["home_team"], game["away_team"],
-            as_of_date=game.get("start_date"), game_id=game.get("game_id"),
-        )
-        research = matchup_research_packet(repository, game, projection, lines)
-        totals_signal = research.get("totals") or {}
+        # Totals are graded only when the exact pregame state was retained in
+        # the manifest. Rebuilding an old total during a web request is both
+        # slow and less auditable than reporting the tracked sample honestly.
+        totals_signal = packet.get("totals") or {}
         direction = totals_signal.get("model_direction")
         line_total = totals_signal.get("closing_total")
         regime = totals_signal.get("regime_benchmark")
@@ -1390,10 +1408,16 @@ def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
 
     return {
         "season": int(season),
+        "week": int(week) if week is not None else None,
         "engine_a": _season_grade_finish(engine_a),
         "engine_b": _season_grade_finish(engine_b),
         "totals": _season_grade_finish(totals),
     }
+
+
+def season_record(repository: CFBRepository, season: int) -> dict[str, Any]:
+    """Live-graded closing record for Engine A, Engine B, and tracked totals."""
+    return record_summary(repository, season)
 
 
 def season_record_first_appearance(repository: CFBRepository, season: int) -> dict[str, Any]:

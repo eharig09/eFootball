@@ -1,0 +1,57 @@
+{% extends "_layout.html" %}
+
+{% block title %}{{ season }} Week {{ selected_week or '—' }} Engine Picks | Sports News Aggregator{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_engine_picks.css') }}">{% endblock %}
+
+{% macro record_card(title, key) -%}
+{% set weekly = dashboard.week_record[key] %}{% set yearly = dashboard.season_record[key] %}
+<article class="pick-record"><span>{{ title }}</span>
+  <div><b>{{ weekly.record }}</b><small>Week · {{ (weekly.hit_rate * 100) | cell('f1') ~ '%' if weekly.hit_rate is not none else 'not graded' }}</small></div>
+  <div><b>{{ yearly.record }}</b><small>Season · {{ (yearly.hit_rate * 100) | cell('f1') ~ '%' if yearly.hit_rate is not none else 'not graded' }}</small></div>
+</article>
+{%- endmacro %}
+
+{% macro pick_table(rows, kind) -%}
+<div class="engine-table-wrap"><table class="engine-table">
+  <thead><tr><th>Game</th><th>Kickoff</th><th>Pick</th><th>Line</th>{% if kind == 'totals' %}<th>Projection</th><th>Edge</th>{% endif %}<th>Why it qualifies</th><th>Result</th></tr></thead>
+  <tbody>{% for row in rows %}<tr>
+    <td><a href="{{ url_for('cfb.game_preview', game_id=row.game_id) }}"><b>{{ row.away_team }}</b><span>@ {{ row.home_team }}</span></a></td>
+    <td>{{ row.date_label }}<span>{{ row.time_label or 'TBD' }}</span></td><td><strong>{{ row.pick }}</strong></td>
+    <td>{% if kind == 'totals' %}{{ row.line | cell('f1') }}{% else %}{{ row.line | cell('signed') }}{% endif %}</td>
+    {% if kind == 'totals' %}<td>{{ row.projected_total | cell('f1') }}</td><td>{{ row.edge | cell('signed') }}</td>{% endif %}
+    <td>{{ row.detail }}</td><td><span class="result result-{{ row.result | lower }}">{{ row.result }}</span></td>
+  </tr>{% else %}<tr><td colspan="8" class="empty-cell">No qualifying picks match these filters.</td></tr>{% endfor %}</tbody>
+</table></div>
+{%- endmacro %}
+
+{% block content %}
+<section class="picks-hero">
+  <div><div class="eyebrow">Full-slate model audit</div><h1>Engine Picks</h1><p class="dek">Every game in the selected week stays visible—including inputs pending and analyzed no-picks—while qualified selections update through kickoff.</p></div>
+  <form class="picks-filters" method="get">
+    <label>Season<input type="number" name="season" value="{{ season }}" min="1869" max="{{ season + 2 }}"></label>
+    <label>Week<select name="week">{% for week in weeks %}<option value="{{ week }}"{{ ' selected' if week == selected_week }}>{{ week }}</option>{% endfor %}</select></label>
+    <label>Engine<select name="engine"><option value="all">All engines</option>{% for value, label in [('a','Engine A'),('b','Engine B'),('totals','Totals')] %}<option value="{{ value }}"{{ ' selected' if value == selected_engine }}>{{ label }}</option>{% endfor %}</select></label>
+    <label>Status<select name="status">{% for value, label in [('all','All states'),('picks','Qualified picks'),('pending','Inputs pending'),('no_pick','Analyzed no-picks')] %}<option value="{{ value }}"{{ ' selected' if value == selected_status }}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="filter-search">Team<input type="search" name="q" value="{{ query }}" placeholder="Search team"></label><button type="submit">Apply</button>
+  </form>
+</section>
+
+{% if dashboard %}
+<section class="audit-summary" aria-label="Weekly analysis coverage">
+  <div><span>Slate</span><b>{{ dashboard.counts.games }}</b><small>games</small></div><div><span>Analyzed</span><b>{{ dashboard.counts.analyzed }}</b><small>latest manifest</small></div>
+  <div><span>Engine A</span><b>{{ dashboard.counts.engine_a }}</b><small>qualified</small></div><div><span>Engine B</span><b>{{ dashboard.counts.engine_b }}</b><small>qualified</small></div>
+  <div><span>Totals</span><b>{{ dashboard.counts.totals }}</b><small>tracked regimes</small></div><div><span>Pending</span><b>{{ dashboard.counts.pending }}</b><small>awaiting inputs</small></div>
+</section>
+<section class="record-board">{{ record_card('Engine A', 'engine_a') }}{{ record_card('Engine B', 'engine_b') }}{{ record_card('Totals', 'totals') }}</section>
+
+{% if selected_engine in ('all', 'a') %}<section class="engine-panel engine-a"><header><div><span>Quantitative convergence</span><h2>Engine A picks</h2></div><b>{{ dashboard.counts.engine_a }}</b></header>{{ pick_table(dashboard.engine_a, 'engine_a') }}</section>{% endif %}
+{% if selected_engine in ('all', 'b') %}<section class="engine-panel engine-b"><header><div><span>Narrative / QB overreaction</span><h2>Engine B picks</h2></div><b>{{ dashboard.counts.engine_b }}</b></header>{{ pick_table(dashboard.engine_b, 'engine_b') }}</section>{% endif %}
+{% if selected_engine in ('all', 'totals') %}<section class="engine-panel totals"><header><div><span>Historically tracked regimes</span><h2>Totals picks</h2></div><b>{{ dashboard.counts.totals }}</b></header><p class="panel-note">Tracked totals are research-regime selections, kept distinct from the frozen Engine A/B portfolio.</p>{{ pick_table(dashboard.totals, 'totals') }}</section>{% endif %}
+
+<section class="engine-panel audit-panel"><header><div><span>Nothing hidden</span><h2>Entire Week {{ selected_week }} audit</h2></div><b>{{ dashboard.audit | length }}</b></header>
+  <div class="engine-table-wrap"><table class="engine-table audit-table"><thead><tr><th>Game</th><th>Kickoff</th><th>State</th><th>Engine A</th><th>Engine B</th><th>Totals</th><th>Last analyzed</th></tr></thead><tbody>
+  {% for row in dashboard.audit %}<tr><td><a href="{{ url_for('cfb.game_preview', game_id=row.game_id) }}"><b>{{ row.away_team }}</b><span>@ {{ row.home_team }}</span></a></td><td>{{ row.date_label }}<span>{{ row.time_label }}</span></td><td><span class="state state-{{ row.state }}">{{ row.state_label }}</span></td><td title="{{ row.engine_a_reason }}">{{ row.engine_a_pick or '—' }}</td><td title="{{ row.engine_b_reason }}">{{ row.engine_b_pick or '—' }}</td><td>{{ row.totals_pick or '—' }}</td><td>{{ row.updated_at or 'Awaiting analysis' }}</td></tr>{% else %}<tr><td colspan="7" class="empty-cell">No games match these filters.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% else %}<div class="empty">No scheduled games are available for this season.</div>{% endif %}
+{% endblock %}

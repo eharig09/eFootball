@@ -119,6 +119,19 @@ class LegSignatureTests(unittest.TestCase):
         }
         self.assertNotEqual(tel._leg_signature(qualified), tel._leg_signature(unqualified))
 
+    def test_market_arrival_refreshes_packet_even_when_pick_is_unchanged(self):
+        old = {"state": "engine_b_only", "market_spread": None,
+               "engine_b": {"qualified": True, "selected_team": "Stanford"}}
+        new = {"state": "engine_b_only", "market_spread": 3.5,
+               "engine_b": {"qualified": True, "selected_team": "Stanford"}}
+        self.assertEqual(tel._leg_signature(old), tel._leg_signature(new))
+        self.assertNotEqual(tel._packet_signature(old), tel._packet_signature(new))
+
+    def test_totals_move_refreshes_packet_even_when_spread_legs_are_unchanged(self):
+        old = {"state": "none", "totals": {"closing_total": 48.5}}
+        new = {"state": "none", "totals": {"closing_total": 50.0}}
+        self.assertNotEqual(tel._packet_signature(old), tel._packet_signature(new))
+
 
 class ManifestHistoryForGameTests(ManifestHistoryFixture):
     def test_returns_ordered_timeline(self):
