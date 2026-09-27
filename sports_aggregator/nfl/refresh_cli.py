@@ -35,6 +35,7 @@ import json
 from pathlib import Path
 import sys
 import traceback
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -185,6 +186,69 @@ def _sync_weather(season: int, *, force: bool = False) -> None:
     print("nfl_weather: " + json.dumps(result, sort_keys=True))
 
 
+def availability_refresh_plan(games: list[dict], *, cache_modified_at: float | None,
+                              now: datetime | None = None) -> dict:
+    """Choose the injury cadence from the nearest not-yet-stale kickoff."""
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    eastern = ZoneInfo("America/New_York")
+    candidates = []
+    for game in games:
+        if game.get("completed"):
+            continue
+        game_date = str(game.get("game_date") or "").strip()
+        if not game_date:
+            continue
+        game_time = str(game.get("game_time") or "12:00").strip() or "12:00"
+        try:
+            kickoff = datetime.fromisoformat(f"{game_date}T{game_time}").replace(
+                tzinfo=eastern).astimezone(timezone.utc)
+        except ValueError:
+            continue
+        seconds = (kickoff - moment.astimezone(timezone.utc)).total_seconds()
+        if -30 * 60 <= seconds <= 48 * 60 * 60:
+            candidates.append((abs(seconds), seconds, kickoff, game))
+    if not candidates:
+        return {"due": False, "reason": "no game within 48 hours"}
+
+    _, seconds, kickoff, game = min(candidates, key=lambda item: item[0])
+    interval_seconds = 15 * 60 if seconds <= 4 * 60 * 60 else 60 * 60
+    cache_age = None if cache_modified_at is None else max(
+        0.0, moment.timestamp() - float(cache_modified_at))
+    due = cache_age is None or cache_age >= interval_seconds
+    return {
+        "due": due,
+        "reason": "due" if due else "injury snapshot is inside the target cadence",
+        "interval_minutes": interval_seconds // 60,
+        "cache_age_minutes": round(cache_age / 60, 1) if cache_age is not None else None,
+        "game_id": game.get("game_id"),
+        "matchup": f"{game.get('away_team')} @ {game.get('home_team')}",
+        "kickoff": kickoff.isoformat(),
+        "hours_to_kickoff": round(seconds / 3600, 2),
+    }
+
+
+def _sync_availability(season: int, *, now: datetime | None = None) -> dict:
+    from sports_aggregator.nfl.espn import sync_injuries
+
+    repository = _nfl_repository()
+    cache_root = _nflverse_cache_path()
+    cache_file = cache_root / "espn_injuries.json"
+    plan = availability_refresh_plan(
+        repository.schedule(season),
+        cache_modified_at=cache_file.stat().st_mtime if cache_file.exists() else None,
+        now=now,
+    )
+    if not plan["due"]:
+        print("nfl_availability: skipped " + json.dumps(plan, sort_keys=True))
+        return plan
+    count = sync_injuries(repository, cache_root, season, force=True)
+    result = {**plan, "status": "refreshed", "injuries": count}
+    print("nfl_availability: " + json.dumps(result, sort_keys=True))
+    return result
+
+
 #: See sync.py's CORE_FOUNDATION/CORE_STATS/CORE_DEPTH/CORE_PBP for what
 #: each group actually covers and why it's split this way.
 _CORE_SEGMENTS = ("core-foundation", "core-stats", "core-depth", "core-pbp")
@@ -204,7 +268,7 @@ def _append_history(record: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "segment", choices=("rosters", *_CORE_SEGMENTS, "content", "pff", "history", "weather")
+        "segment", choices=("rosters", *_CORE_SEGMENTS, "availability", "content", "pff", "history", "weather")
     )
     parser.add_argument("--season", type=int, required=True)
     args = parser.parse_args(argv)
@@ -221,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.segment == "rosters":
             _sync_rosters(args.season)
+        elif args.segment == "availability":
+            _sync_availability(args.season)
         elif args.segment in _CORE_SEGMENTS:
             from sports_aggregator.nfl import sync as sync_module
             group, include_pbp = {

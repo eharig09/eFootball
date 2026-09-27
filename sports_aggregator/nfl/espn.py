@@ -137,7 +137,16 @@ def sync_espn_context(repository: NFLRepository, cache_path: str | os.PathLike[s
     pressure_rate_count = repository.replace_team_pressure_rates(
         season, pressure_rate_rows(repository),
     )
-    injuries = injury_rows(client.load_injuries(force=force), season)
-    injury_count = repository.replace_injuries(season, injuries)
+    injury_count = sync_injuries(
+        repository, cache_path, season, force=force, client=client)
     return {"staff": staff_count, "scheme_rates": scheme_rate_count,
             "pressure_rates": pressure_rate_count, "injuries": injury_count}
+
+
+def sync_injuries(repository: NFLRepository, cache_path: str | os.PathLike[str],
+                  season: int, *, force: bool = False,
+                  client: ESPNNFLClient | None = None) -> int:
+    """Refresh only the lightweight league injury snapshot."""
+    client = client or ESPNNFLClient(cache_path)
+    injuries = injury_rows(client.load_injuries(force=force), season)
+    return repository.replace_injuries(season, injuries)

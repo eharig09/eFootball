@@ -278,7 +278,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         # "rosters" already refreshes injury/staff context alongside the
         # roster itself (sync-nfl-rosters calls sync_espn_context too).
         allowed_nfl_segments = {
-            "content", "rosters", "weather", "pff",
+            "availability", "content", "rosters", "weather", "pff",
             "core-foundation", "core-stats", "core-depth", "core-pbp",
         }
         if segment not in allowed_nfl_segments:

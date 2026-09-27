@@ -172,6 +172,26 @@ services:
         value: core-foundation
 
   - type: cron
+    name: nfl-availability-refresh-trigger
+    runtime: python
+    # The job checks every 15 minutes, but the web worker fetches ESPN only
+    # hourly inside 48 hours of kickoff and every 15 minutes inside four hours.
+    # Outside that window the existing three-hour foundation refresh remains
+    # the baseline and this lane exits without an external request.
+    schedule: "*/15 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m sports_aggregator.nfl.render_trigger
+    envVars:
+      - key: NFL_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_TOKEN
+        sync: false
+      - key: NFL_REFRESH_SEGMENT
+        value: availability
+
+  - type: cron
     name: nfl-core-stats-refresh-trigger
     runtime: python
     # Weekly player/team stats, NGS, snaps, and player identity crosswalks.

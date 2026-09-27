@@ -60,6 +60,7 @@
         <p class="section-note">Start one bounded NFL refresh segment without waiting for its scheduled cron. These use the same refresh token/admin authorization as the CFB audit controls.</p>
         <div class="attn-actions">
             {% for segment,label in [
+                ('availability','Injuries / availability'),
                 ('core-foundation','Games + rosters'),
                 ('core-stats','Weekly stats + NGS'),
                 ('core-depth','Depth charts'),

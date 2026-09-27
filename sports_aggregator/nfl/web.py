@@ -699,7 +699,8 @@ def _data_status_packet() -> dict:
             pass
     refresh_history.reverse()
 
-    segments = ("core-foundation", "core-stats", "core-depth", "core-pbp", "content", "weather", "pff")
+    segments = ("availability", "core-foundation", "core-stats", "core-depth",
+                "core-pbp", "content", "weather", "pff")
     segment_health = []
     for segment in segments:
         row = next((item for item in refresh_history if item.get("segment") == segment
