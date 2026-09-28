@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from sports_aggregator.nfl.live_projection import report as live_projection_report
+from sports_aggregator.nfl.perception_challenger import build_rows as perception_rows
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -27,7 +28,7 @@ def _spread_label(team: str, line: float) -> str:
     return f"{team} {'+' if line > 0 else ''}{line:g}" if line else f"{team} PK"
 
 
-def _confidence(edge: float | None, scale: float | None) -> tuple[str, float | None]:
+def _separation(edge: float | None, scale: float | None) -> tuple[str, float | None]:
     if edge is None or not scale:
         return "unrated", None
     strength = abs(float(edge)) / float(scale)
@@ -40,16 +41,24 @@ def _confidence(edge: float | None, scale: float | None) -> tuple[str, float | N
 
 def build_dashboard(repository: NFLRepository, season: int, week: int) -> dict[str, Any]:
     packet = live_projection_report(repository, season=int(season), week=int(week))
+    narratives = {}
+    if isinstance(repository, NFLRepository):
+        narratives = {
+            str(item["game_id"]): item.get("tags") or []
+            for item in perception_rows(repository, int(season), int(season))
+            if int(item["week"]) == int(week)
+        }
     games = []
     for raw in packet.get("games", []):
         row = dict(raw)
+        row["narrative_tags"] = narratives.get(str(row.get("game_id")), [])
         model = row.get("football_lab")
         market = row.get("market_anchor")
         disagreement = row.get("disagreement") or {}
         scale = row.get("historical_uncertainty_scale") or {}
         if not model:
             row.update({"straight_up_pick": None, "ats_pick": None, "total_pick": None,
-                        "ats_confidence": "unrated", "total_confidence": "unrated"})
+                        "ats_separation": "unrated", "total_separation": "unrated"})
             games.append(row)
             continue
 
@@ -63,16 +72,16 @@ def build_dashboard(repository: NFLRepository, season: int, week: int) -> dict[s
             ats_pick = _spread_label(ats_team, ats_line)
             total_edge = float(disagreement.get("total") or 0.0)
             total_pick = f"{'Over' if total_edge > 0 else 'Under'} {float(market['total']):g}"
-        ats_confidence, ats_strength = _confidence(
+        ats_separation, ats_strength = _separation(
             disagreement.get("margin"), scale.get("margin_residual_scale"))
-        total_confidence, total_strength = _confidence(
+        total_separation, total_strength = _separation(
             disagreement.get("total"), scale.get("total_residual_scale"))
         row.update({
             "straight_up_pick": winner,
             "ats_pick": ats_pick,
             "total_pick": total_pick,
-            "ats_confidence": ats_confidence,
-            "total_confidence": total_confidence,
+            "ats_separation": ats_separation,
+            "total_separation": total_separation,
             "ats_strength": ats_strength,
             "total_strength": total_strength,
         })
@@ -86,9 +95,14 @@ def build_dashboard(repository: NFLRepository, season: int, week: int) -> dict[s
             "games": len(games),
             "projected": sum(bool(game.get("football_lab")) for game in games),
             "lined": sum(bool(game.get("market_anchor")) for game in games),
-            "high_confidence": sum(
-                game.get("ats_confidence") == "high" or game.get("total_confidence") == "high"
+            "high_separation": sum(
+                game.get("ats_separation") == "high" or game.get("total_separation") == "high"
                 for game in games
             ),
+        },
+        "label_policy": {
+            "status": "experimental_forecast",
+            "separation_is_confidence": False,
+            "note": "Separation measures model-market distance, not a calibrated win probability or validated betting edge.",
         },
     }

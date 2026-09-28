@@ -38,8 +38,9 @@ def test_picks_orient_home_margin_to_selected_team_line(monkeypatch):
     assert game["straight_up_pick"] == "A"
     assert game["ats_pick"] == "A +3"
     assert game["total_pick"] == "Over 44"
-    assert game["ats_confidence"] == "medium"
-    assert game["total_confidence"] == "high"
+    assert game["ats_separation"] == "medium"
+    assert game["total_separation"] == "high"
+    assert dashboard["label_policy"]["separation_is_confidence"] is False
 
 
 def test_live_schedule_expires_before_larger_stat_assets(tmp_path):
@@ -88,3 +89,31 @@ def test_completed_game_coverage_exposes_missing_logs():
         assert covered["pbp_game_logs"] == 1
         assert covered["postgame_ready"] == 1
         assert covered["healthy"] is True
+
+
+def test_schedule_refresh_keeps_only_changed_market_snapshots(tmp_path):
+    repository = NFLRepository(tmp_path / "nfl.sqlite3")
+    repository.initialize()
+
+    def game(spread, total=44.0, completed=False):
+        return Game(
+            game_id="2026_04_A_B", season=2026, season_type="REG", week=4,
+            game_date="2026-10-04", game_time="13:00", away_team="A", home_team="B",
+            away_score=20 if completed else None, home_score=24 if completed else None,
+            overtime=False, division_game=False,
+            stadium=None, roof=None, surface=None, temperature=None, wind=None,
+            spread_line=spread, total_line=total,
+        )
+
+    repository.replace_games(2026, [game(2.5)])
+    repository.replace_games(2026, [game(2.5)])
+    repository.replace_games(2026, [game(3.0)])
+    repository.replace_games(2026, [game(3.0, completed=True)])
+
+    history = repository.market_line_history("2026_04_A_B")
+    assert [row["spread_line"] for row in history] == [2.5, 3.0, 3.0]
+    assert all(row["source"] == "nflverse" for row in history)
+    movement = repository.market_line_movement("2026_04_A_B")
+    assert movement["spread_change"] == .5
+    assert movement["total_change"] == 0.0
+    assert movement["is_closing_snapshot"] is True

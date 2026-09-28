@@ -40,6 +40,33 @@ CREATE TABLE IF NOT EXISTS games (
 CREATE INDEX IF NOT EXISTS idx_nfl_games_season_week ON games(season, week, game_date);
 CREATE INDEX IF NOT EXISTS idx_nfl_games_away ON games(away_team, season);
 CREATE INDEX IF NOT EXISTS idx_nfl_games_home ON games(home_team, season);
+CREATE TABLE IF NOT EXISTS market_line_snapshots (
+ snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+ game_id TEXT NOT NULL, season INTEGER NOT NULL, week INTEGER NOT NULL,
+ captured_at TEXT NOT NULL, source TEXT NOT NULL,
+ spread_line REAL, total_line REAL, away_moneyline REAL, home_moneyline REAL,
+ away_spread_odds REAL, home_spread_odds REAL, under_odds REAL, over_odds REAL,
+ completed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_market_snapshots_game
+ ON market_line_snapshots(game_id, snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_nfl_market_snapshots_season
+ ON market_line_snapshots(season, week, captured_at);
+CREATE TABLE IF NOT EXISTS nfl_engine_forecasts (
+ forecast_id INTEGER PRIMARY KEY AUTOINCREMENT,
+ game_id TEXT NOT NULL, season INTEGER NOT NULL, week INTEGER NOT NULL,
+ generated_at TEXT NOT NULL, model_version TEXT NOT NULL,
+ away_team TEXT NOT NULL, home_team TEXT NOT NULL,
+ away_points REAL NOT NULL, home_points REAL NOT NULL,
+ model_margin REAL NOT NULL, model_total REAL NOT NULL,
+ spread_at_issue REAL, total_at_issue REAL,
+ straight_up_pick TEXT, ats_pick_team TEXT, total_pick TEXT,
+ tags_json TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_engine_forecast_game
+ ON nfl_engine_forecasts(game_id, forecast_id);
+CREATE INDEX IF NOT EXISTS idx_nfl_engine_forecast_week
+ ON nfl_engine_forecasts(season, week, generated_at);
 CREATE TABLE IF NOT EXISTS players (
  season INTEGER NOT NULL, player_id TEXT NOT NULL, team TEXT NOT NULL,
  full_name TEXT NOT NULL, normalized_name TEXT NOT NULL, first_name TEXT NOT NULL,
@@ -518,8 +545,68 @@ class NFLRepository:
                   game.under_odds, game.over_odds, game.away_coach, game.home_coach,
                   game.weekday, now) for game in rows],
             )
+            # nflverse exposes one market state per schedule refresh. Preserve
+            # each changed state before the canonical row is replaced so the
+            # application can distinguish opening/current/closing movement in
+            # data collected from this point forward. Identical refreshes do
+            # not manufacture movement or grow the database.
+            market_fields = (
+                "spread_line", "total_line", "away_moneyline", "home_moneyline",
+                "away_spread_odds", "home_spread_odds", "under_odds", "over_odds",
+            )
+            for game in rows:
+                values = tuple(getattr(game, field) for field in market_fields)
+                if all(value is None for value in values):
+                    continue
+                previous = connection.execute(
+                    """SELECT spread_line,total_line,away_moneyline,home_moneyline,
+                              away_spread_odds,home_spread_odds,under_odds,over_odds,
+                              completed
+                       FROM market_line_snapshots
+                       WHERE game_id=? AND source='nflverse'
+                       ORDER BY snapshot_id DESC LIMIT 1""",
+                    (game.game_id,),
+                ).fetchone()
+                if previous is not None and tuple(previous) == (*values, int(game.completed)):
+                    continue
+                connection.execute(
+                    """INSERT INTO market_line_snapshots (
+                         game_id,season,week,captured_at,source,spread_line,total_line,
+                         away_moneyline,home_moneyline,away_spread_odds,home_spread_odds,
+                         under_odds,over_odds,completed
+                       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (game.game_id, game.season, game.week, now, "nflverse", *values,
+                     int(game.completed)),
+                )
             connection.commit()
         return len(rows)
+
+    def market_line_history(self, game_id: str) -> list[dict[str, Any]]:
+        """Return immutable observed market states in collection order."""
+        self.initialize()
+        with closing(self._connect()) as connection:
+            return [dict(row) for row in connection.execute(
+                """SELECT * FROM market_line_snapshots
+                   WHERE game_id=? ORDER BY snapshot_id""",
+                (str(game_id),),
+            )]
+
+    def market_line_movement(self, game_id: str) -> dict[str, Any]:
+        history = self.market_line_history(game_id)
+        if not history:
+            return {"available": False, "snapshots": 0}
+        first, latest = history[0], history[-1]
+        def change(field: str) -> float | None:
+            if first[field] is None or latest[field] is None:
+                return None
+            return round(float(latest[field]) - float(first[field]), 3)
+        return {
+            "available": True, "snapshots": len(history),
+            "first_observed": first, "latest": latest,
+            "spread_change": change("spread_line"),
+            "total_change": change("total_line"),
+            "is_closing_snapshot": bool(latest["completed"]),
+        }
 
     def replace_players(self, season: int, players: Iterable[Player]) -> int:
         rows = list(players)

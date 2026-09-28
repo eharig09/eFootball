@@ -15,7 +15,7 @@
     <section class="nfl-hero compact-hero">
         <p class="eyebrow">Independent model · {{ season }}</p>
         <h1>Football Lab picks</h1>
-        <p>Projected scores, straight-up picks, spread picks, and totals for every game with a stored line. Confidence measures model-to-market separation against historical residual scale; it is not a guarantee.</p>
+        <p>Experimental projected scores and model leans for every game with a stored line. Separation measures distance from the market, not confidence or a validated betting edge.</p>
     </section>
 
     <section class="section">
@@ -33,7 +33,7 @@
             <article><small>Games</small><b>{{ dashboard.counts.games }}</b></article>
             <article><small>Model ready</small><b>{{ dashboard.counts.projected }}</b></article>
             <article><small>Lines available</small><b>{{ dashboard.counts.lined }}</b></article>
-            <article><small>High-separation games</small><b>{{ dashboard.counts.high_confidence }}</b></article>
+            <article><small>High-separation games</small><b>{{ dashboard.counts.high_separation }}</b></article>
         </div>
         <div class="nfl-pick-grid">
         {% for game in dashboard.games %}
@@ -44,14 +44,15 @@
                 <div class="nfl-pick-score"><span><small>Football Lab</small><b>{{ game.away_team }} {{ game.football_lab.away_points|round(1) }} – {{ game.home_team }} {{ game.football_lab.home_points|round(1) }}</b></span>{% if game.market_anchor %}<span><small>Market implied</small><b>{{ game.away_team }} {{ game.market_anchor.away_points|round(1) }} – {{ game.home_team }} {{ game.market_anchor.home_points|round(1) }}</b></span>{% endif %}</div>
                 <div class="nfl-pick-legs">
                     <span><small>Straight up</small><b>{{ game.straight_up_pick }}</b></span>
-                    <span class="confidence-{{ game.ats_confidence }}"><small>Against spread · {{ game.ats_confidence }}</small><b>{{ game.ats_pick or 'Line pending' }}</b>{% if game.disagreement and game.disagreement.margin is not none %}<em>{{ game.disagreement.margin|round(1) }} model edge</em>{% endif %}</span>
-                    <span class="confidence-{{ game.total_confidence }}"><small>Total · {{ game.total_confidence }}</small><b>{{ game.total_pick or 'Line pending' }}</b>{% if game.disagreement and game.disagreement.total is not none %}<em>{{ game.disagreement.total|round(1) }} model edge</em>{% endif %}</span>
+                    <span class="confidence-{{ game.ats_separation }}"><small>Against spread · {{ game.ats_separation }} separation</small><b>{{ game.ats_pick or 'Line pending' }}</b>{% if game.disagreement and game.disagreement.margin is not none %}<em>{{ game.disagreement.margin|round(1) }} model-market gap</em>{% endif %}</span>
+                    <span class="confidence-{{ game.total_separation }}"><small>Total · {{ game.total_separation }} separation</small><b>{{ game.total_pick or 'Line pending' }}</b>{% if game.disagreement and game.disagreement.total is not none %}<em>{{ game.disagreement.total|round(1) }} model-market gap</em>{% endif %}</span>
                 </div>
+                {% if game.narrative_tags %}<div class="nfl-pick-tags">{% for tag in game.narrative_tags %}<span title="Research-only perception proxy">{{ tag.label }} · fade {{ tag.contrarian_fade }}</span>{% endfor %}</div>{% endif %}
                 {% else %}<p class="empty">The market line is stored, but Football Lab does not yet have enough pregame history for an independent pick.</p>{% endif %}
             </article>
         {% else %}<p class="empty">No games are stored for this week.</p>{% endfor %}
         </div>
-        <p class="section-note">Spread convention: the displayed number is attached to the selected team. Picks update when the canonical schedule, line, weekly stats, or PBP inputs refresh.</p>
+        <p class="section-note">Research status: experimental forecast, not a graded recommendation. Spread convention: the displayed number is attached to the selected team. Picks update when the canonical schedule, line, weekly stats, or PBP inputs refresh.</p>
         {% else %}<p class="empty">No NFL schedule is stored for {{ season }}.</p>{% endif %}
     </section>
 </main>

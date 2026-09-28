@@ -23,6 +23,9 @@ from sports_aggregator.nfl.market_disagreement import report as market_disagreem
 from sports_aggregator.nfl.market_anchor_leverage import report as market_anchor_report
 from sports_aggregator.nfl.market_leverage_ablation import report as market_leverage_ablation_report
 from sports_aggregator.nfl.live_projection import report as live_projection_report
+from sports_aggregator.nfl.perception_challenger import report as perception_report
+from sports_aggregator.nfl.engine_picks import build_dashboard as picks_dashboard
+from sports_aggregator.nfl.forecast_ledger import freeze_dashboard, grading_report
 from sports_aggregator.nfl.repository import NFLRepository
 
 
@@ -34,6 +37,17 @@ def main(argv: list[str] | None = None) -> int:
     live_projection = sub.add_parser("live-forecast")
     live_projection.add_argument("--season", type=int, required=True)
     live_projection.add_argument("--week", type=int, required=True)
+
+    perception = sub.add_parser("perception-challenger")
+    perception.add_argument("--from-year", type=int, default=2010)
+    perception.add_argument("--to-year", type=int, default=2026)
+
+    freeze = sub.add_parser("freeze-live-forecast")
+    freeze.add_argument("--season", type=int, required=True)
+    freeze.add_argument("--week", type=int, required=True)
+
+    grades = sub.add_parser("forecast-grades")
+    grades.add_argument("--season", type=int)
 
     market_leverage = sub.add_parser("market-leverage-ablation")
     market_leverage.add_argument("--from-year", type=int, default=2010)
@@ -113,6 +127,30 @@ def main(argv: list[str] | None = None) -> int:
             week=int(args.week),
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "perception-challenger":
+        payload = perception_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "freeze-live-forecast":
+        dashboard = picks_dashboard(repository, int(args.season), int(args.week))
+        stored = freeze_dashboard(repository, dashboard)
+        print(json.dumps({
+            "season": int(args.season), "week": int(args.week),
+            "games": len(dashboard.get("games", [])), "forecasts_stored": stored,
+            "model_version": dashboard.get("version"),
+        }, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "forecast-grades":
+        print(json.dumps(grading_report(repository, season=args.season),
+                         indent=2, sort_keys=True))
         return 0
 
     if args.command == "market-leverage-ablation":
