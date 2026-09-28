@@ -1733,6 +1733,46 @@ class NFLRepository:
                 parameters,
             )]
 
+    def position_group_game_stats(self, season: int, *,
+                                  before_week: int | None = None) -> list[dict[str, Any]]:
+        """Wide player-game rows used to measure production allowed by position.
+
+        The query intentionally retains zero-valued weekly rows.  They establish
+        that a player dressed for a game even when he recorded no opportunity,
+        which keeps group game counts and observed depth roles honest.
+        """
+        metrics = (
+            "targets", "receptions", "receiving_yards", "receiving_tds",
+            "receiving_first_downs", "receiving_air_yards", "receiving_epa",
+            "carries", "rushing_yards", "rushing_tds", "rushing_first_downs",
+            "rushing_epa",
+        )
+        positions = ("WR", "TE", "RB", "FB", "HB")
+        metric_marks = ",".join("?" for _ in metrics)
+        position_marks = ",".join("?" for _ in positions)
+        week_filter = " AND week<?" if before_week is not None else ""
+        parameters: list[Any] = [*metrics, season, *positions, *metrics]
+        if before_week is not None:
+            parameters.append(before_week)
+        columns = ",".join(
+            f"SUM(CASE WHEN metric=? THEN value ELSE 0 END) AS {metric}"
+            for metric in metrics
+        )
+        self.initialize()
+        with closing(self._connect()) as connection:
+            return [dict(row) for row in connection.execute(
+                f"""SELECT season,week,season_type,game_id,player_id,
+                            MAX(player_name) player_name,MAX(team) team,
+                            MAX(opponent_team) opponent_team,MAX(position) position,
+                            {columns}
+                     FROM player_weekly_stats
+                     WHERE season=? AND position IN ({position_marks})
+                       AND metric IN ({metric_marks}){week_filter}
+                     GROUP BY season,week,season_type,game_id,player_id
+                     ORDER BY week,game_id,team,position,player_name""",
+                parameters,
+            )]
+
     def latest_stat_week(self, season: int) -> int | None:
         self.initialize()
         with closing(self._connect()) as connection:

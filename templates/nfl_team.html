@@ -3,6 +3,7 @@
 {% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
 {% from '_nfl_charts.html' import chart_workbench, nfl_chart_scripts %}
 {% from '_nfl_injury.html' import injury_popover %}
+{% from '_nfl_position_groups.html' import position_group_profile %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -77,7 +78,7 @@
 
     <section class="section" id="performance" data-nfl-panel="performance">
         <div class="section-head"><div><p class="eyebrow">{{ team_context.performance_season }} team quality{% if team_context.performance_season != season %} &middot; prior-season baseline{% endif %}</p><h2>Performance dashboard</h2></div></div>
-        <nav class="team-panel-jumps" aria-label="Analytics sections"><a href="#performance">Dashboard</a>{% if defense_profile.has_data %}<a href="#defense-profile">Defense</a>{% endif %}{% if form_charts %}<a href="#form">Weekly form</a>{% endif %}<a href="#pff">PFF grades</a></nav>
+        <nav class="team-panel-jumps" aria-label="Analytics sections"><a href="#performance">Dashboard</a>{% if defense_profile.has_data %}<a href="#defense-profile">Defense</a>{% endif %}{% if position_allowed.has_data %}<a href="#position-allowed">Vs positions</a>{% endif %}{% if form_charts %}<a href="#form">Weekly form</a>{% endif %}<a href="#pff">PFF grades</a></nav>
         <p class="section-note">One comparison window throughout this view. Efficiency is play-by-play based; production uses {{ team_context.production_season }} team totals; tracking rates are volume weighted.</p>
         {% if efficiency %}<div class="team-kpi-grid">
             {% for label, key, fmt in [('EPA / play','epa_per_play','signed2'),('Success rate','success_rate','rate'),('Dropback EPA','pass_epa_per_play','signed2'),('Rush EPA','rush_epa_per_play','signed2'),('EPA allowed','defensive_epa_allowed','signed2'),('Net EPA','net_epa','signed2')] %}
@@ -111,6 +112,14 @@
             </article>{% endfor %}
         </div>
         <p class="section-note">Sample: {{ defense_profile.games or '—' }} completed games{% if defense_profile.pff_season %}; PFF grades use the {{ defense_profile.pff_season }} linked snapshot{% endif %}.</p>
+    </section>
+    {% endif %}
+
+    {% if position_allowed.has_data %}
+    <section class="section" id="position-allowed" data-nfl-panel="performance">
+        <div class="section-head"><div><p class="eyebrow">Opponent production &middot; {{ team_context.performance_season }}</p><h2>Production surrendered by position and role</h2></div></div>
+        <p class="section-note">Group totals include every opponent at that position. Sub-rows assign WR1&ndash;WR4, TE1&ndash;TE3, and RB1&ndash;RB3 by observed season workload. All production is per defense game. Index 100 is league average; opponent quality uses each opponent's production in its other games, and adjusted allowed compares the result with that expectation.</p>
+        {{ position_group_profile(position_allowed) }}
     </section>
     {% endif %}
 

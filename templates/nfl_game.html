@@ -3,6 +3,7 @@
 {% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
 {% from '_nfl_passing.html' import pass_matchup_grid, pass_zone_grid %}
 {% from '_nfl_rushing.html' import run_matchup_grid %}
+{% from '_nfl_position_groups.html' import position_group_profile %}
 {% from '_nfl_injury.html' import injury_popover %}
 <!DOCTYPE html>
 <html lang="en">
@@ -119,6 +120,14 @@
         {% else %}
         <div class="empty football-lab-empty">Football Lab does not yet have enough pregame history to build this matchup projection.{% if football_lab_status and football_lab_status.error %} <small>{{ football_lab_status.error }}</small>{% endif %}</div>
         {% endif %}
+    </section>
+    {% endif %}
+
+    {% if position_group_matchups|selectattr('profile.has_data')|list %}
+    <section class="section" id="position-groups" data-nfl-panel="matchups">
+        <div class="section-head"><div><p class="eyebrow">Observed roles against adjusted allowance</p><h2>Position-group matchup ledger</h2></div></div>
+        <p class="section-note">The player name under each role is the upcoming offense's observed workload leader at that slot before this game. Allowed production and opponent-quality baselines use only games before kickoff; 100 is league average or opponent-adjusted expectation.</p>
+        {% for card in position_group_matchups %}<div class="position-matchup-block"><h3>{{ card.offense }} offense vs {{ card.defense }} defense</h3>{{ position_group_profile(card.profile, card.offense) }}</div>{% endfor %}
     </section>
     {% endif %}
 

@@ -1,0 +1,19 @@
+{% macro position_group_profile(profile, matchup_offense='') %}
+{% if profile and profile.has_data %}
+<div class="position-allowed-groups">
+{% for group in profile.groups %}<article class="position-allowed-card">
+    <header><div><small>Allowed by {{ profile.team }}</small><h3>{{ group.label }}</h3></div><span>{{ profile.games }} games &middot; {{ group.primary_metric|replace('_', ' ') }} index</span></header>
+    <div class="position-allowed-scroll"><table>
+        <thead><tr><th>Role</th><th>Tgt</th><th>Rec</th><th>Rec yd</th><th>Car</th><th>Rush yd</th><th>Scrim</th><th>TD</th><th title="Production allowed relative to the NFL average. 100 is average; lower is better for the defense.">vs NFL</th><th title="What these opponents usually produced in their other games relative to league average.">Opp qual.</th><th title="Actual production allowed divided by opponent-adjusted expectation. 100 is expected; lower is better for the defense.">Adj.</th></tr></thead>
+        <tbody>{% for row in group.rows %}<tr class="{{ 'position-total' if row.is_total else 'position-role' }}">
+            <th><span>{{ row.role }}</span>{% if row.player %}<small>{{ row.player.player_name }} &middot; {{ row.player.per_game_opportunities|cell('f1') }} opp/g</small>{% endif %}</th>
+            <td>{{ row.per_game.targets|cell('f1') }}</td><td>{{ row.per_game.receptions|cell('f1') }}</td><td>{{ row.per_game.receiving_yards|cell('f1') }}</td><td>{{ row.per_game.carries|cell('f1') }}</td><td>{{ row.per_game.rushing_yards|cell('f1') }}</td><td>{{ row.per_game.scrimmage_yards|cell('f1') }}</td><td>{{ row.per_game.total_tds|cell('f1') }}</td>
+            <td><b class="index-value {{ 'index-bad' if row.league_index and row.league_index > 110 else ('index-good' if row.league_index and row.league_index < 90 else '') }}">{{ row.league_index|cell('f1') }}</b></td>
+            <td>{{ row.opponent_quality_index|cell('f1') }}</td>
+            <td><b class="index-value {{ 'index-bad' if row.adjusted_allowed_index and row.adjusted_allowed_index > 110 else ('index-good' if row.adjusted_allowed_index and row.adjusted_allowed_index < 90 else '') }}">{{ row.adjusted_allowed_index|cell('f1') }}</b></td>
+        </tr>{% endfor %}</tbody>
+    </table></div>
+</article>{% endfor %}
+</div>
+{% endif %}
+{% endmacro %}

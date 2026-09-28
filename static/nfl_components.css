@@ -443,3 +443,16 @@ main{padding:24px 24px 64px}
 .nfl-team-page .data-disclosure>summary{color:#8fc6e8}
 @media(max-width:980px){.team-overview-layout{grid-template-columns:1fr}.team-unit-identity{grid-template-columns:1fr}.team-kpi-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:680px){.nfl-team-page main{padding-inline:8px}.nfl-team-page .team-hero{min-height:auto;padding:20px 16px}.nfl-team-page .team-hero .hero-logo{width:68px;height:68px}.nfl-team-page .section[data-nfl-panel]{padding:20px 14px}.team-analysis-rows{grid-template-columns:repeat(2,1fr)}.team-kpi-grid{grid-template-columns:repeat(2,1fr)}.team-performance-columns{grid-template-columns:1fr}.team-leadership-panel>footer{grid-template-columns:1fr 1fr 1fr}}
+
+/* Position-group allowance: totals and observed depth roles share one ledger. */
+.position-allowed-groups{display:grid;gap:14px}
+.position-allowed-card{overflow:hidden;border:1px solid #30434f;border-radius:7px;background:#101a21}
+.position-allowed-card>header{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid #30434f;background:#14222b}
+.position-allowed-card>header h3{margin:2px 0 0;color:#f2f6f8;font-size:.88rem}.position-allowed-card>header small,.position-allowed-card>header span{color:#8297a2;font-size:.55rem;text-transform:uppercase;letter-spacing:.05em}
+.position-allowed-scroll{overflow-x:auto}.position-allowed-card table{width:100%;min-width:880px;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.position-allowed-card th,.position-allowed-card td{padding:8px 10px;border-bottom:1px solid #253741;text-align:right;font-size:.65rem;white-space:nowrap}
+.position-allowed-card thead th{color:#78909d;background:#0c151b;font-size:.51rem;text-transform:uppercase;letter-spacing:.045em}
+.position-allowed-card th:first-child{text-align:left}.position-allowed-card tbody th{color:#dbe7ed}.position-allowed-card tbody th span,.position-allowed-card tbody th small{display:block}.position-allowed-card tbody th small{margin-top:3px;color:#708691;font-size:.51rem;font-weight:500}
+.position-allowed-card .position-total{background:#15252e}.position-allowed-card .position-total th,.position-allowed-card .position-total td{font-weight:800}.position-allowed-card .position-role th{padding-left:24px}
+.index-value{display:inline-flex;min-width:32px;justify-content:center;padding:3px 5px;border-radius:3px;background:#263943;color:#dce8ed}.index-good{background:#153d31;color:#8ee4bb}.index-bad{background:#4a2528;color:#ffb0b5}
+.position-matchup-block+.position-matchup-block{margin-top:26px;padding-top:22px;border-top:1px solid #2b3e49}.position-matchup-block>h3{margin:0 0 10px;color:#dbe7ed;font-size:.82rem}
