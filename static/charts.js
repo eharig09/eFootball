@@ -70,6 +70,14 @@
         };
     }
 
+    function axisFor(chartData) {
+        return chartData.axis || {
+            key: "metric:" + chartData.key,
+            label: chartData.label,
+            format: chartData.format,
+        };
+    }
+
     document.querySelectorAll("[data-chart-workbench]").forEach(function (root) {
         var canvas = root.querySelector("canvas");
         var payload = JSON.parse(root.querySelector("[data-chart-json]").textContent);
@@ -138,44 +146,54 @@
         });
 
         function sync() {
-            var primary = byKey[order[0].dataset.metric];
-            var secondary = order[1] ? byKey[order[1].dataset.metric] : null;
             var selected = order.map(function (input) { return byKey[input.dataset.metric]; });
+            var axes = [];
+            selected.forEach(function (chartData) {
+                var axis = axisFor(chartData);
+                if (!axes.some(function (item) { return item.key === axis.key; })) axes.push(axis);
+            });
+            var primary = axes[0];
+            var secondary = axes[1] || null;
             var slots = mergedSlots(selected);
             chart.data.labels = slots.map(function (point) { return point.week_label; });
-            chart.data.datasets = order.map(function (input, index) {
-                return buildDataset(byKey[input.dataset.metric], index === 0 ? "y" : "y1", slots);
+            chart.data.datasets = order.map(function (input) {
+                var chartData = byKey[input.dataset.metric];
+                return buildDataset(chartData, axisFor(chartData).key === primary.key ? "y" : "y1", slots);
             });
             var yScale = chart.options.scales.y;
             yScale.ticks.callback = function (v) { return format(v, primary.format); };
-            yScale.ticks.color = primary.color;
             yScale.title.text = primary.label;
-            yScale.title.color = primary.color;
             var y1Scale = chart.options.scales.y1;
             y1Scale.display = !!secondary;
             if (secondary) {
                 y1Scale.ticks.callback = function (v) { return format(v, secondary.format); };
-                y1Scale.ticks.color = secondary.color;
                 y1Scale.title.text = secondary.label;
-                y1Scale.title.color = secondary.color;
             }
             var selection = root.querySelector("[data-chart-selection]");
             if (selection) {
-                selection.textContent = order.map(function (input) {
-                    return byKey[input.dataset.metric].label;
-                }).join(" + ");
+                selection.textContent = selected.length === 1 ? selected[0].label :
+                    selected.length + " metrics / " + axes.length + (axes.length === 1 ? " axis" : " axes");
             }
+            inputs.forEach(function (input) {
+                var selectedAxes = axes.map(function (axis) { return axis.key; });
+                var candidateAxis = axisFor(byKey[input.dataset.metric]).key;
+                input.disabled = !input.checked && selectedAxes.length >= 2 &&
+                    selectedAxes.indexOf(candidateAxis) === -1;
+                input.closest("label").classList.toggle("is-unavailable", input.disabled);
+            });
             chart.update();
         }
 
         inputs.forEach(function (input) {
             input.addEventListener("change", function () {
                 if (input.checked) {
-                    order.push(input);
-                    if (order.length > 2) {
-                        var dropped = order.shift();
-                        dropped.checked = false;
-                    }
+                    var selectedAxes = order.map(function (item) {
+                        return axisFor(byKey[item.dataset.metric]).key;
+                    });
+                    var candidateAxis = axisFor(byKey[input.dataset.metric]).key;
+                    if (selectedAxes.indexOf(candidateAxis) === -1 && new Set(selectedAxes).size >= 2) {
+                        input.checked = false;
+                    } else order.push(input);
                 } else {
                     order = order.filter(function (item) { return item !== input; });
                     if (!order.length) {

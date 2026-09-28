@@ -462,6 +462,61 @@ class NFLPFFService:
                 "coverage_snaps": total, "man_rate": man / total if total else None,
                 "zone_rate": zone / total if total else None}
 
+    def league_unit_grades(self, season: int) -> list[dict[str, Any]]:
+        """Snap/usage-weighted PFF unit grades for team and matchup views.
+
+        These are roster-unit summaries, not official PFF team grades. Each
+        grade is weighted by its matching opportunity field so a reserve's
+        small sample cannot carry the same influence as a starter's season.
+        """
+        specifications = {
+            "pass_block_grade": ("offense_blocking", "grades_pass_block", "snap_counts_pass_block"),
+            "run_block_grade": ("offense_blocking", "grades_run_block", "snap_counts_run_block"),
+            "route_grade": ("receiving_summary", "grades_pass_route", "routes"),
+            "rushing_grade": ("rushing_summary", "grades_run", "attempts"),
+            "pass_rush_grade": ("pass_rush_summary", "grades_pass_rush_defense", "snap_counts_pass_rush"),
+            "run_defense_grade": ("defense_summary", "grades_run_defense", "snap_counts_run_defense"),
+        }
+        wanted = {metric for _family, grade, weight in specifications.values()
+                  for metric in (grade, weight)}
+        wanted.update({"man_grades_coverage_defense", "man_snap_counts_coverage",
+                       "zone_grades_coverage_defense", "zone_snap_counts_coverage"})
+        placeholders = ",".join("?" for _ in wanted)
+        with closing(self.repository._connect()) as connection:
+            rows = connection.execute(
+                f"""SELECT family,pff_id,team,metric,value FROM nfl_pff_player_metrics
+                    WHERE season=? AND week=0 AND metric IN ({placeholders})""",
+                (season, *sorted(wanted)),
+            )
+            players: dict[tuple[str, str, str], dict[str, float]] = {}
+            for row in rows:
+                players.setdefault((row["family"], row["pff_id"], row["team"]), {})[
+                    row["metric"]] = row["value"]
+        teams: dict[str, dict[str, Any]] = {}
+        weighted: dict[tuple[str, str], list[float]] = {}
+        for (family, _player, team), values in players.items():
+            teams.setdefault(team, {"team": team, "season": season})
+            for output_key, (wanted_family, grade_key, weight_key) in specifications.items():
+                grade = values.get(grade_key); weight = values.get(weight_key)
+                if family == wanted_family and grade is not None and weight and weight > 0:
+                    pair = weighted.setdefault((team, output_key), [0.0, 0.0])
+                    pair[0] += grade * weight; pair[1] += weight
+            if family == "defense_coverage_scheme":
+                for prefix in ("man", "zone"):
+                    grade = values.get(f"{prefix}_grades_coverage_defense")
+                    weight = values.get(f"{prefix}_snap_counts_coverage")
+                    if grade is not None and weight and weight > 0:
+                        pair = weighted.setdefault((team, "coverage_grade"), [0.0, 0.0])
+                        pair[0] += grade * weight; pair[1] += weight
+        for (team, key), (numerator, denominator) in weighted.items():
+            teams[team][key] = numerator / denominator if denominator else None
+            teams[team][f"{key}_sample"] = denominator
+        return sorted(teams.values(), key=lambda row: row["team"])
+
+    def team_unit_grades(self, season: int, team: str) -> dict[str, Any]:
+        return next((row for row in self.league_unit_grades(season)
+                     if row["team"] == canon_team(team)), {"team": canon_team(team), "season": season})
+
     def available(self, season: int) -> dict[str, list[dict[str, str]]]:
         with closing(self.repository._connect()) as connection:
             present = {row[0] for row in connection.execute(

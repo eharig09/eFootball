@@ -172,14 +172,16 @@
     </section>
 
     <section class="section" id="matchups" data-nfl-panel="matchups">
-        <div class="section-head"><div><p class="eyebrow">Strength against resistance</p><h2>Unit matchups</h2></div></div>
-        <p class="section-note">{{ baseline_season }} offensive production against what the opposing defense allowed{% if baseline_season != game.season %}; the prior-season baseline is used until both teams have a {{ game.season }} pregame sample{% endif %}. Ranks are descriptive, not a projection.</p>
-        <div class="unit-matchup-grid">
-            {% for card in unit_cards %}{% set attack_identity = away_identity if card.offense == game.away_team else home_identity %}{% set resist_identity = away_identity if card.defense == game.away_team else home_identity %}
-            <article class="unit-matchup-card" style="--attack:{{ attack_identity.color or '#5b8db8' }};--resist:{{ resist_identity.color or '#b85858' }}">
+        <div class="section-head"><div><p class="eyebrow">Strength against resistance</p><h2>Offense versus defense</h2></div></div>
+        <p class="section-note">{{ baseline_season }} offensive results are set directly against what the opposing defense allowed{% if baseline_season != game.season %}; the prior-season baseline is used until both teams have a {{ game.season }} pregame sample{% endif %}. Traditional, efficiency, Next Gen, and available PFF evidence remain source-labeled. An advantage requires at least a five-rank separation and is descriptive, not a projection.</p>
+        <div class="expanded-matchup-grid">
+            {% for card in defense_matchups %}{% set attack_identity = away_identity if card.offense == game.away_team else home_identity %}{% set resist_identity = away_identity if card.defense == game.away_team else home_identity %}
+            <article class="unit-matchup-card expanded-matchup-card" style="--attack:{{ attack_identity.color or '#5b8db8' }};--resist:{{ resist_identity.color or '#b85858' }}">
                 <header><div><small>{{ card.offense }} offense</small><b>Attack</b></div><span>vs</span><div><small>{{ card.defense }} defense</small><b>Resistance</b></div></header>
                 <div class="unit-columns" aria-hidden="true"><span>Value / rank</span><span>Read</span><span>Value / rank</span></div>
-                {% for row in card.rows %}<div class="unit-row edge-{{ row.strength }} lean-{{ 'attack' if row.lean == card.offense else 'resist' if row.lean == card.defense else 'even' }}"><strong>{{ row.offense_value|cell(row.format) }} <small>#{{ row.offense_rank or '&mdash;' }}</small></strong><span><b>{{ row.label }}</b><small>{{ (row.lean ~ ' lean') if row.lean and row.lean != 'Even' else (row.lean or 'Awaiting data') }}{% if row.separation %} · {{ row.separation }} ranks{% endif %}</small></span><strong>{{ row.defense_value|cell(row.format) }} <small>#{{ row.defense_rank or '&mdash;' }}</small></strong></div>{% endfor %}
+                {% for group in card.sections %}<section class="matchup-stat-group"><header><b>{{ group.label }}</b><small>{{ group.source }}</small></header>
+                {% for row in group.rows %}<div class="unit-row edge-{{ row.strength }} lean-{{ 'attack' if row.lean == card.offense else 'resist' if row.lean == card.defense else 'even' }}"><strong>{{ row.offense_value|cell(row.format) }} <small>#{{ row.offense_rank or '&mdash;' }}</small></strong><span><b>{{ row.label }}</b><small>{{ (row.lean ~ ' advantage') if row.lean and row.lean != 'Even' else (row.lean or 'Awaiting data') }}{% if row.separation %} &middot; {{ row.separation }} ranks{% endif %}</small></span><strong>{{ row.defense_value|cell(row.format) }} <small>#{{ row.defense_rank or '&mdash;' }}</small></strong></div>{% endfor %}
+                </section>{% endfor %}
             </article>{% endfor %}
         </div>
     </section>

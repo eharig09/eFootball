@@ -2167,6 +2167,8 @@ class NFLRepository:
         wanted = (
             "passing_yards", "rushing_yards", "passing_tds", "rushing_tds",
             "passing_interceptions", "fumbles_lost_total", "sacks_suffered",
+            "attempts", "completions", "carries", "passing_first_downs",
+            "rushing_first_downs",
         )
         placeholders = ",".join("?" for _ in wanted)
         week_filter = " AND week<?" if before_week is not None else ""
@@ -2205,6 +2207,16 @@ class NFLRepository:
                 (totals.get("passing_interceptions", 0) + totals.get("fumbles_lost_total", 0)) / games
                 if games else None
             ),
+            "completion_rate": (totals.get("completions", 0) / totals.get("attempts", 0)
+                                if totals.get("attempts") else None),
+            "pass_yards_per_attempt": (totals.get("passing_yards", 0) / totals.get("attempts", 0)
+                                       if totals.get("attempts") else None),
+            "rush_yards_per_carry": (totals.get("rushing_yards", 0) / totals.get("carries", 0)
+                                     if totals.get("carries") else None),
+            "first_downs_per_game": (
+                (totals.get("passing_first_downs", 0) + totals.get("rushing_first_downs", 0)) / games
+                if games else None
+            ),
         }
 
     def league_team_summary(self, season: int, *,
@@ -2214,6 +2226,8 @@ class NFLRepository:
         wanted = (
             "passing_yards", "rushing_yards", "passing_tds", "rushing_tds",
             "passing_interceptions", "fumbles_lost_total", "sacks_suffered",
+            "attempts", "completions", "carries", "passing_first_downs",
+            "rushing_first_downs",
         )
         placeholders = ",".join("?" for _ in wanted)
         week_filter = " AND week<?" if before_week is not None else ""
@@ -2259,6 +2273,137 @@ class NFLRepository:
                     (team_totals.get("passing_interceptions", 0) + team_totals.get("fumbles_lost_total", 0))
                     / count if count else None
                 ),
+                "completion_rate": (team_totals.get("completions", 0) / team_totals.get("attempts", 0)
+                                    if team_totals.get("attempts") else None),
+                "pass_yards_per_attempt": (team_totals.get("passing_yards", 0) / team_totals.get("attempts", 0)
+                                           if team_totals.get("attempts") else None),
+                "rush_yards_per_carry": (team_totals.get("rushing_yards", 0) / team_totals.get("carries", 0)
+                                         if team_totals.get("carries") else None),
+                "first_downs_per_game": (
+                    (team_totals.get("passing_first_downs", 0) + team_totals.get("rushing_first_downs", 0))
+                    / count if count else None
+                ),
+            })
+        return output
+
+    def league_defensive_summary(self, season: int, *,
+                                 before_week: int | None = None) -> list[dict[str, Any]]:
+        """Traditional defense production, derived from opponent box scores.
+
+        Opponent offensive totals supply yards, touchdowns and giveaways;
+        the defending team's own row supplies credited sacks, hits and TFLs.
+        This keeps allowed stats symmetric with ``league_team_summary``.
+        """
+        self.initialize()
+        opponent_metrics = (
+            "passing_yards", "rushing_yards", "passing_tds", "rushing_tds",
+            "passing_interceptions", "fumbles_lost_total", "attempts", "completions", "carries",
+            "passing_first_downs", "rushing_first_downs",
+        )
+        defense_metrics = ("def_sacks", "def_qb_hits", "def_tackles_for_loss", "def_pass_defended")
+        wanted = opponent_metrics + defense_metrics
+        placeholders = ",".join("?" for _ in wanted)
+        week_filter = " AND week<?" if before_week is not None else ""
+        parameters: tuple[Any, ...] = ((season, *wanted, before_week)
+                                       if before_week is not None else (season, *wanted))
+        with closing(self._connect()) as connection:
+            opponent_totals: dict[str, dict[str, float]] = {}
+            own_totals: dict[str, dict[str, float]] = {}
+            rows = connection.execute(
+                f"""SELECT team,opponent_team,metric,SUM(value) value FROM team_weekly_stats
+                    WHERE season=? AND metric IN ({placeholders}) {week_filter}
+                    GROUP BY team,opponent_team,metric""", parameters,
+            )
+            for row in rows:
+                if row["metric"] in opponent_metrics:
+                    opponent_totals.setdefault(row["opponent_team"], {}).setdefault(row["metric"], 0.0)
+                    opponent_totals[row["opponent_team"]][row["metric"]] += row["value"]
+                if row["metric"] in defense_metrics:
+                    own_totals.setdefault(row["team"], {}).setdefault(row["metric"], 0.0)
+                    own_totals[row["team"]][row["metric"]] += row["value"]
+            game_filter = " AND week<?" if before_week is not None else ""
+            game_params = (season, before_week) if before_week is not None else (season,)
+            scores = list(connection.execute(
+                "SELECT away_team,home_team,away_score,home_score FROM games "
+                "WHERE season=? AND completed=1" + game_filter, game_params,
+            ))
+        games: dict[str, int] = {}; points_allowed: dict[str, float] = {}
+        for row in scores:
+            for defense, conceded in ((row["away_team"], row["home_score"]),
+                                      (row["home_team"], row["away_score"])):
+                games[defense] = games.get(defense, 0) + 1
+                points_allowed[defense] = points_allowed.get(defense, 0) + (conceded or 0)
+        output = []
+        for team, count in games.items():
+            allowed = opponent_totals.get(team, {}); made = own_totals.get(team, {})
+            per_game = lambda values, key: values.get(key, 0) / count if count else None
+            attempts = allowed.get("attempts", 0); carries = allowed.get("carries", 0)
+            output.append({
+                "team": team, "games": count,
+                "points_allowed_per_game": points_allowed.get(team, 0) / count,
+                "pass_yards_allowed_per_game": per_game(allowed, "passing_yards"),
+                "rush_yards_allowed_per_game": per_game(allowed, "rushing_yards"),
+                "completion_rate_allowed": allowed.get("completions", 0) / attempts if attempts else None,
+                "pass_yards_per_attempt_allowed": allowed.get("passing_yards", 0) / attempts if attempts else None,
+                "rush_yards_per_carry_allowed": allowed.get("rushing_yards", 0) / carries if carries else None,
+                "pass_tds_allowed_per_game": per_game(allowed, "passing_tds"),
+                "rush_tds_allowed_per_game": per_game(allowed, "rushing_tds"),
+                "first_downs_allowed_per_game": (
+                    (allowed.get("passing_first_downs", 0) + allowed.get("rushing_first_downs", 0)) / count
+                ),
+                "takeaways_per_game": (
+                    (allowed.get("passing_interceptions", 0) + allowed.get("fumbles_lost_total", 0)) / count
+                ),
+                "sacks_per_game": per_game(made, "def_sacks"),
+                "qb_hits_per_game": per_game(made, "def_qb_hits"),
+                "tackles_for_loss_per_game": per_game(made, "def_tackles_for_loss"),
+                "passes_defended_per_game": per_game(made, "def_pass_defended"),
+            })
+        return output
+
+    def league_ngs_summary(self, season: int, *, before_week: int | None = None,
+                           defense: bool = False) -> list[dict[str, Any]]:
+        """Volume-weighted team NGS, optionally grouped by defense faced."""
+        metrics = (
+            "attempts", "completions", "targets", "carries", "receptions",
+            "ngs_pass_cpoe_wtd", "ngs_pass_time_to_throw_wtd", "ngs_pass_aggressiveness_wtd",
+            "ngs_pass_intended_air_yards_wtd", "ngs_rec_separation_wtd", "ngs_rec_cushion_wtd",
+            "ngs_rush_efficiency_wtd", "ngs_rush_stacked_box_pct_wtd",
+            "ngs_rush_yards_over_expected", "ngs_rec_yac_above_expectation",
+        )
+        placeholders = ",".join("?" for _ in metrics)
+        week_filter = " AND week<?" if before_week is not None else ""
+        params: tuple[Any, ...] = ((season, *metrics, before_week)
+                                   if before_week is not None else (season, *metrics))
+        group = "opponent_team" if defense else "team"
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                f"""SELECT {group} team,metric,SUM(value) value FROM player_weekly_stats
+                    WHERE season=? AND metric IN ({placeholders}) {week_filter}
+                      AND {group} IS NOT NULL AND {group}!=''
+                    GROUP BY {group},metric""", params,
+            )
+            totals: dict[str, dict[str, float]] = {}
+            for row in rows:
+                totals.setdefault(row["team"], {})[row["metric"]] = row["value"]
+        def rate(values: dict[str, float], key: str, weight: str) -> float | None:
+            return values.get(key, 0) / values.get(weight, 0) if values.get(weight) else None
+        output = []
+        for team, values in totals.items():
+            output.append({
+                "team": team,
+                "pass_cpoe": rate(values, "ngs_pass_cpoe_wtd", "attempts"),
+                "pass_time_to_throw": rate(values, "ngs_pass_time_to_throw_wtd", "attempts"),
+                "pass_aggressiveness": rate(values, "ngs_pass_aggressiveness_wtd", "attempts"),
+                "pass_intended_air_yards": rate(values, "ngs_pass_intended_air_yards_wtd", "attempts"),
+                "rec_separation": rate(values, "ngs_rec_separation_wtd", "targets"),
+                "rec_cushion": rate(values, "ngs_rec_cushion_wtd", "targets"),
+                "rush_efficiency": rate(values, "ngs_rush_efficiency_wtd", "carries"),
+                "rush_stacked_box_pct": rate(values, "ngs_rush_stacked_box_pct_wtd", "carries"),
+                "rush_yards_over_expected_per_carry": rate(
+                    values, "ngs_rush_yards_over_expected", "carries"),
+                "rec_yac_over_expected_per_reception": rate(
+                    values, "ngs_rec_yac_above_expectation", "receptions"),
             })
         return output
 

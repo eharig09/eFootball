@@ -15,6 +15,7 @@ from sports_aggregator.nfl.alignments import (
 from sports_aggregator.nfl.availability import availability_packet
 from sports_aggregator.nfl.content import NFLContentRepository
 from sports_aggregator.nfl.data_health import season_coverage
+from sports_aggregator.nfl.defense import defensive_profile, matchup_defense_cards
 from sports_aggregator.nfl.engine_picks import (
     available_weeks as engine_pick_weeks,
     build_dashboard as build_engine_picks_dashboard,
@@ -901,6 +902,10 @@ def team_page(abbreviation: str):
     )
     scheme_rate = (_repository().team_scheme_rate(season, code)
                    or _repository().team_scheme_rate(season - 1, code))
+    defense = defensive_profile(
+        _repository(), _pff(), context["performance_season"], code,
+        pff_season=pff_season,
+    )
     return render_template(
         "nfl_team.html", league=get_league("nfl"), season=season, team=team,
         scheme_rate=scheme_rate,
@@ -918,7 +923,7 @@ def team_page(abbreviation: str):
         pff=_team_pff(code, season),
         position_rooms=rooms, availability=availability,
         staff=staff_packet["staff"], staff_packet=staff_packet,
-        efficiency=context["efficiency"], team_context=context,
+        efficiency=context["efficiency"], team_context=context, defense_profile=defense,
         form_charts=team_charts(form_rows),
         record=_repository().team_record(season, code),
         sources=_sources(team=team["name"]),
@@ -945,6 +950,10 @@ def team_api(abbreviation: str):
         _repository(), _pff(), season, code, pff_season, context["efficiency"],
         context["efficiency_ranks"],
     )
+    defense = defensive_profile(
+        _repository(), _pff(), context["performance_season"], code,
+        pff_season=pff_season,
+    )
     return jsonify({
         "season": season, "team": team,
         "schedule": schedule_table(
@@ -959,6 +968,7 @@ def team_api(abbreviation: str):
             caption=f"{context['usage']['season']} opportunity leaders",
         ).as_dict(),
         "efficiency": context["efficiency"], "team_context": context,
+        "defense_profile": defense,
         "form_charts": team_charts(form_rows),
         "scheme_rate": (_repository().team_scheme_rate(season, code)
                         or _repository().team_scheme_rate(season - 1, code)),
@@ -1108,6 +1118,11 @@ def _game_packet(game_id: str) -> dict:
             "defense_identity": identities.get(defense, {}),
         })
     pff_season = _pff_season(game["season"]) or profile_season
+    defense_matchups = matchup_defense_cards(
+        repository, _pff(), game["season"], game["week"],
+        game["away_team"], game["home_team"],
+        baseline_season=context["baseline_season"], pff_season=pff_season,
+    )
     player_matchups = alignment_matchups(
         repository, _pff(), game, game["season"], pff_season, defense_profiles,
     )
@@ -1181,6 +1196,7 @@ def _game_packet(game_id: str) -> dict:
             "run_direction_comparisons": run_direction_comparisons,
             "player_matchups": player_matchups, "player_watches": player_watches,
             "pff_season": pff_season,
+            "defense_matchups": defense_matchups,
             "run_matchups": run_matchups,
             "passer_ngs": passer_ngs,
             "trenches": trenches,
@@ -1229,6 +1245,7 @@ def game_api(game_id: str):
                             for item in packet["player_matchups"]],
         "player_watches": packet["player_watches"],
         "pff_season": packet["pff_season"],
+        "defense_matchups": packet["defense_matchups"],
         "run_matchups": packet["run_matchups"],
         "trenches": packet["trenches"],
         "availability": packet["availability"],

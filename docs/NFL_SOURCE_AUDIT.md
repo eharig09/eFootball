@@ -70,3 +70,38 @@ requests.
 Avoid scraping X timelines, paywalled article bodies, or sites whose robots or
 access controls reject the collector. Links and permitted feed summaries are
 sufficient for discovery and provenance.
+
+## Durable expansion plan
+
+Source expansion is paused after this audit. Resume it from this ordered
+backlog rather than adding feeds opportunistically.
+
+| Phase | Avenue | Deliverable | Admission gate | Operating rule |
+|---|---|---|---|---|
+| 1 | Local beat and native publisher RSS | Two independent reporting feeds per team, recorded in the source directory with team scope | Feed resolves; at least 5 of the latest 10 items are original, NFL-relevant reporting; canonical article URLs survive parsing | Refresh with the normal RSS cycle. Review teams with fewer than two producing sources monthly. |
+| 2 | Publisher/Substack analysis feeds | National film, scheme, analytics, and cap coverage that fills a documented topic gap | Same 5-of-10 relevance gate; named author/outlet; no duplicate canonical URLs against active feeds | Add only when the source increases team or topic coverage. Quarterly yield review. |
+| 3 | Google News RSS fallback | A discovery feed only for a team whose local publisher exposes no usable native feed | Query is team-specific; original publisher and canonical URL are retained; duplicates are suppressed | Rank below native feeds. Replace it when a first-party feed becomes available. |
+| 4 | Podcast and YouTube discovery | Episode/upload metadata plus transcript text when legally and technically available | Stable publisher identity; descriptions or transcripts contain enough text for entity linking; no title-only analysis records | Store episodes as a distinct content type. Do not let them satisfy the two-reporting-source target. |
+| 5 | Credentialed Reddit API | Cached community-sentiment input, separate from reporting | OAuth credentials, rate-limit handling, subreddit allowlist, and provenance fields are in place | Never block the reporting refresh. Label as community discussion and expire sentiment features quickly. |
+| 6 | Bluesky discovery refresh | Candidates found through actor search and reporter/outlet cross-checking | Resolvable identity plus 5 original eligible posts in the latest 10 | Audit quarterly. Disable after 30 consecutive failed runs or a 30-run window with no eligible originals. |
+
+The structured injury, transaction, roster, schedule, and stat collectors stay
+outside this content-source backlog. ESPN/nflverse remain the primary data
+feeds; reporting sources can explain those facts but do not overwrite them.
+
+### Resume checklist and measures
+
+1. Snapshot active, producing, failing, and team-scoped source counts before a
+   phase starts.
+2. Add candidates to the override manifest with discovery URL, scope, role,
+   and admission evidence; never add an unreviewed URL directly to runtime
+   configuration.
+3. Run a sampled fetch, parser test, duplicate check, and entity-linking check
+   before activation.
+4. Observe three scheduled refreshes before considering a source established.
+5. Track weekly eligible items, unique canonical URLs, team/topic coverage,
+   error rate, and duplicate rate. A source is retained for coverage quality,
+   not raw volume.
+6. Stop a phase when its coverage target is met or when ten consecutive
+   candidates fail the admission gate; record the gap and move to the next
+   avenue instead of relaxing the gate.

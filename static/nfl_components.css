@@ -156,7 +156,7 @@ main{padding:24px 24px 64px}
 .chart-workbench{margin-bottom:13px;padding:16px;border:1px solid #344956;border-radius:5px;background:#0c151b}
 .chart-workbench>header{display:flex;align-items:flex-start;justify-content:space-between;gap:22px}
 .chart-workbench h3{margin:0;color:#f4f8fb;font-size:1rem}.chart-workbench p{margin:4px 0 0;color:#889ba8;font-size:.7rem}
-.chart-toggles{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.chart-toggles label{display:flex;align-items:center;gap:5px;padding:5px 7px;border:1px solid #334651;border-radius:3px;color:#b8c6ce;font-size:.65rem;cursor:pointer}.chart-toggles input{accent-color:var(--series)}.chart-toggles label>span{width:12px;height:3px;background:var(--series)}
+.chart-toggles{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.chart-toggles label{display:grid;grid-template-columns:auto 12px auto;align-items:center;column-gap:5px;padding:5px 7px;border:1px solid #334651;border-radius:3px;color:#b8c6ce;font-size:.65rem;cursor:pointer}.chart-toggles label>b{font-weight:500}.chart-toggles label>small{grid-column:3;color:#708591;font-size:.53rem}.chart-toggles label.is-unavailable{cursor:not-allowed;opacity:.42}.chart-toggles input{accent-color:var(--series)}.chart-toggles label>span{width:12px;height:3px;background:var(--series)}
 .chart-metric-picker{position:relative;min-width:min(100%,260px)}.chart-metric-picker>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;border:1px solid #334651;border-radius:4px;color:#dce7ed;font-size:.65rem;cursor:pointer;list-style:none}.chart-metric-picker>summary::-webkit-details-marker{display:none}.chart-metric-picker>summary small{color:#889ba8;font-size:.55rem;white-space:nowrap}.chart-metric-picker[open]>.chart-toggles{position:absolute;right:0;z-index:30;display:flex;width:min(560px,calc(100vw - 40px));max-height:260px;margin-top:5px;padding:9px;overflow:auto;border:1px solid #344956;border-radius:4px;background:#0c151b;box-shadow:0 14px 35px #000b}
 .chart-canvas-wrap{position:relative;width:100%;height:280px;margin-top:10px}
 
@@ -350,3 +350,96 @@ main{padding:24px 24px 64px}
   .football-lab-component-table header,.football-lab-component-table>div{min-width:520px}
   .nfl-pick-grid{grid-template-columns:1fr}.nfl-pick-score{grid-template-columns:1fr}.nfl-pick-legs{grid-template-columns:1fr}.nfl-pick-legs>span{min-height:62px}
 }
+
+/* Expanded defense intelligence shared by team and matchup pages. */
+.expanded-matchup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.matchup-stat-group>header{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-top:1px solid #3b5262;border-bottom:1px solid #273845;background:#15232d}
+.matchup-stat-group>header b{color:#dce8ef;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em}
+.matchup-stat-group>header small{color:#7790a1;font-size:.58rem}
+.defense-profile-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.defense-profile-card{overflow:hidden;border:1px solid #304654;border-radius:11px;background:#101920}
+.defense-profile-card>header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#162530}
+.defense-profile-card h3{margin:0;color:#fff;font-size:.84rem}
+.defense-profile-card>header small{color:#7e9aae;font-size:.59rem}
+.defense-profile-card>div{display:grid;grid-template-columns:minmax(0,1fr) auto 62px;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid #263a47}
+.defense-profile-card>div span{color:#b8c7d0;font-size:.69rem}
+.defense-profile-card>div b{color:#fff;font-size:.82rem;font-variant-numeric:tabular-nums}
+.defense-profile-card>div small{color:#78b9e9;font-size:.61rem;text-align:right}
+@media(max-width:900px){.expanded-matchup-grid,.defense-profile-groups{grid-template-columns:1fr}}
+
+/* Team workspace: one visual system for overview, analytics and detail. */
+.nfl-team-page main{max-width:1320px;padding-top:20px}
+.nfl-team-page .team-hero{min-height:190px;padding:28px 32px;border-top:4px solid var(--team-primary);background:linear-gradient(115deg,color-mix(in srgb,var(--team-primary) 22%,#121d25),#101820 68%)}
+.nfl-team-page .team-hero .hero-logo{width:112px;height:112px}
+.nfl-team-page .team-hero h1{margin:4px 0 10px;font-size:clamp(2.6rem,5vw,4.6rem)}
+.nfl-team-page .team-hero p:last-child{margin:0;color:#91a4b0;font-size:.84rem}
+.nfl-team-page .team-facts{margin:0;border:0;border-bottom:1px solid #334650;background:#2a3b46}
+.nfl-team-page .team-facts article{min-height:82px;justify-content:center;padding:14px 16px;border-right:1px solid #2a3b46;background:#0f181f}
+.nfl-team-page .team-facts b{font-size:1.35rem}
+.nfl-team-page .team-facts span{font-size:.58rem}
+.nfl-team-page .nfl-page-tabs{margin:0;border:0;border-bottom:1px solid #334650;background:#0b1218}
+.nfl-team-page .nfl-page-tabs button{min-height:52px;padding:0 22px;border-bottom-width:3px;color:#8498a5;font-size:.68rem}
+.nfl-team-page .nfl-page-tabs button[aria-selected=true]{color:#fff;background:color-mix(in srgb,var(--team-primary) 12%,#111b22)}
+.nfl-team-page .section[data-nfl-panel]{padding:28px 30px;border:0;border-bottom:1px solid #293b46;background:#0f171d}
+.nfl-team-page .section-head{align-items:flex-start;margin-bottom:22px}
+.nfl-team-page .section-head:after{display:none}
+.nfl-team-page .section-head h2{margin:0;font-size:1.75rem;line-height:1.08}
+.nfl-team-page .section-head .eyebrow{margin-bottom:7px;font-size:.62rem}
+.nfl-team-page .section-note{max-width:920px;margin:-8px 0 20px;color:#879aa6;font-size:.74rem}
+.team-block-title{margin:0 0 10px;color:#8298a6;font-size:.62rem;text-transform:uppercase;letter-spacing:.1em}
+.team-overview-layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,.72fr);gap:18px;align-items:stretch}
+.team-overview-main{min-width:0}
+.nfl-team-page .team-game-window{gap:10px;background:transparent}
+.nfl-team-page .team-game-card{min-height:124px;padding:14px 16px;border:1px solid #30434f;border-top:3px solid var(--opponent-color,#4d687a);border-radius:7px;background:#111c23}
+.nfl-team-page .team-game-card>div{grid-template-columns:42px minmax(0,1fr) auto;margin-top:12px}
+.nfl-team-page .team-game-card img{width:40px;height:40px}
+.nfl-team-page .record-split-grid{gap:1px;margin-top:10px;border:1px solid #2d404b;background:#2d404b}
+.nfl-team-page .record-split-grid article{border:0;border-radius:0;background:#111b22}
+.team-leadership-panel{overflow:hidden;border:1px solid #30434f;border-radius:7px;background:#101a21}
+.team-leadership-panel>header,.team-analysis-card>header,.team-data-card>header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border-bottom:1px solid #30434f;background:#14222b}
+.team-leadership-panel>header span,.team-analysis-card header small{color:#86bddd;font-size:.59rem;font-weight:850;text-transform:uppercase;letter-spacing:.08em}
+.team-leadership-panel>header small,.team-analysis-card header>span,.team-data-card header small{color:#758995;font-size:.57rem}
+.team-leadership-panel>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 14px;border-bottom:1px solid #263944}
+.team-leadership-panel>div>span{display:flex;min-width:0;flex-direction:column;gap:3px}
+.team-leadership-panel>div small{color:#718691;font-size:.54rem;text-transform:uppercase}
+.team-leadership-panel>div b{overflow:hidden;color:#edf3f6;font-size:.74rem;text-overflow:ellipsis;white-space:nowrap}
+.team-leadership-panel>div em{padding:3px 5px;border:1px solid color-mix(in srgb,var(--team-primary) 70%,#425967);color:#bfe6fa;font-size:.49rem;font-style:normal;text-transform:uppercase}
+.team-leadership-panel>footer{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:auto;background:#2c3f4a}
+.team-leadership-panel>footer span{display:flex;min-width:0;flex-direction:column;gap:4px;padding:11px;background:#0d171d}
+.team-leadership-panel>footer small{color:#718691;font-size:.49rem;text-transform:uppercase}
+.team-leadership-panel>footer b{color:#fff;font-size:.8rem}
+.team-unit-identity{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
+.team-analysis-card,.team-data-card{overflow:hidden;border:1px solid #30434f;border-radius:7px;background:#101a21}
+.team-analysis-card>header{border-top:3px solid var(--team-primary)}
+.team-analysis-card.defense-card>header{border-top-color:var(--team-secondary)}
+.team-analysis-card header h3,.team-data-card header h3{margin:3px 0 0;color:#f1f6f8;font-size:.85rem}
+.team-analysis-rows{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:#2b3e49}
+.team-analysis-rows>div{display:flex;min-height:76px;min-width:0;flex-direction:column;justify-content:center;gap:5px;padding:10px 12px;background:#0e181f}
+.team-analysis-rows span,.team-data-card p span{color:#7f939f;font-size:.55rem;text-transform:uppercase;letter-spacing:.045em}
+.team-analysis-rows b,.team-data-card p b{color:#f4f8fa;font-size:.78rem;font-variant-numeric:tabular-nums}
+.team-analysis-rows small{color:#6f8490;font-size:.52rem}
+.team-kpi-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;border:1px solid #30434f;background:#30434f}
+.team-panel-jumps{display:flex;flex-wrap:wrap;gap:6px;margin:-8px 0 22px}.team-panel-jumps a{padding:6px 9px;border:1px solid #30434f;border-radius:999px;color:#8fc6e8;font-size:.58rem;font-weight:800;text-decoration:none;text-transform:uppercase;letter-spacing:.055em}.team-panel-jumps a:hover,.team-panel-jumps a:focus-visible{border-color:var(--team-primary);background:color-mix(in srgb,var(--team-primary) 15%,#111b22);color:#fff}
+.team-kpi-grid article{display:flex;min-height:92px;min-width:0;flex-direction:column;justify-content:center;gap:6px;padding:13px;background:#111b22}
+.team-kpi-grid span{color:#7f939f;font-size:.56rem;text-transform:uppercase;letter-spacing:.05em}
+.team-kpi-grid b{color:#fff;font:850 1.18rem/1 "Arial Narrow",sans-serif}
+.team-kpi-grid small{color:#78b9e9;font-size:.56rem}
+.team-performance-columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px;margin-top:18px}
+.team-data-card>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:#2b3e49}
+.team-data-card p{display:flex;min-height:58px;flex-direction:column;justify-content:center;gap:5px;margin:0;padding:9px 12px;background:#0e181f}
+.nfl-team-page .subsection-title{margin:26px 0 10px;padding-top:18px;border-top:1px solid #293b46;color:#dbe5ea;font-size:.86rem}
+.nfl-team-page .team-leader-row{border:1px solid #30414c}
+.nfl-team-page .team-leader-row>a{min-height:82px;padding:12px 14px;background:#101a21}
+.nfl-team-page .defense-profile-groups{grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.nfl-team-page .defense-profile-card,.nfl-team-page .pff-team-grid>article,.nfl-team-page .movement-highlight-grid>article,.nfl-team-page .usage-leader-grid>article{border:1px solid #30434f;border-radius:7px;background:#101a21}
+.nfl-team-page .defense-profile-card>header{background:#14222b}
+.nfl-team-page .chart-workbench{border:1px solid #30434f;border-radius:7px;background:#101a21}
+.nfl-team-page .position-room-grid{gap:6px;border:0;background:transparent}
+.nfl-team-page .position-room{border:1px solid #30434f;border-radius:6px}
+.nfl-team-page .position-room summary{border:0;border-left:3px solid var(--team-primary);border-radius:5px;background:#14222b}
+.nfl-team-page .depth-unit{border:0}
+.nfl-team-page .depth-unit>header{border:0;border-bottom:1px solid #30434f;background:transparent}
+.nfl-team-page .data-disclosure{margin-top:14px;border-top:1px solid #293b46;padding-top:10px}
+.nfl-team-page .data-disclosure>summary{color:#8fc6e8}
+@media(max-width:980px){.team-overview-layout{grid-template-columns:1fr}.team-unit-identity{grid-template-columns:1fr}.team-kpi-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:680px){.nfl-team-page main{padding-inline:8px}.nfl-team-page .team-hero{min-height:auto;padding:20px 16px}.nfl-team-page .team-hero .hero-logo{width:68px;height:68px}.nfl-team-page .section[data-nfl-panel]{padding:20px 14px}.team-analysis-rows{grid-template-columns:repeat(2,1fr)}.team-kpi-grid{grid-template-columns:repeat(2,1fr)}.team-performance-columns{grid-template-columns:1fr}.team-leadership-panel>footer{grid-template-columns:1fr 1fr 1fr}}

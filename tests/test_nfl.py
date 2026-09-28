@@ -122,6 +122,18 @@ class NFLNamingTests(unittest.TestCase):
         self.assertAlmostEqual(charts["defensive_epa_allowed"]["values"][0]["value"], -.08)
         self.assertIn("defensive_explosive_allowed", charts)
 
+    def test_team_chart_axes_group_compatible_metrics(self):
+        rows = [{"week": 1, "season": 2026, "points": 24, "points_allowed": 17,
+                 "point_margin": 7, "epa_per_play": .1, "pass_epa_per_play": .2,
+                 "success_rate": .45, "explosive_rate": .12}]
+        charts = {chart["key"]: chart for chart in team_charts(rows)}
+        self.assertEqual(charts["points"]["axis"]["key"], "points")
+        self.assertEqual(charts["point_margin"]["axis"]["key"], "points")
+        self.assertEqual(charts["epa_per_play"]["axis"]["key"], "epa_play")
+        self.assertEqual(charts["pass_epa_per_play"]["axis"]["key"], "epa_play")
+        self.assertEqual(charts["success_rate"]["axis"]["key"], "rate")
+        self.assertEqual(charts["explosive_rate"]["axis"]["key"], "rate")
+
     def test_player_charts_expanded_per_position(self):
         qb_row = {"week": 1, "season": 2026, "game_id": "g1", "opponent_team": "SEA",
                   "passing_yards": 280, "passing_epa": 5.2, "passing_air_yards": 190,
@@ -139,6 +151,22 @@ class NFLNamingTests(unittest.TestCase):
         dl_charts = {chart["key"] for chart in player_charts([dl_row], "EDGE")}
         self.assertIn("def_pass_defended", dl_charts)
         self.assertIn("def_fumbles_forced", dl_charts)
+
+    def test_player_chart_axes_separate_workload_from_scoring_events(self):
+        row = {"week": 1, "season": 2026, "passing_yards": 280,
+               "rushing_yards": 20, "attempts": 34, "completions": 22,
+               "passing_tds": 2, "passing_interceptions": 1,
+               "passing_epa": 5.2, "rushing_epa": .3,
+               "ngs_pass_cpoe": 4.1, "ngs_pass_aggressiveness": 13.2}
+        charts = {chart["key"]: chart for chart in player_charts([row], "QB")}
+        self.assertEqual(charts["passing_yards"]["axis"]["key"], "yards")
+        self.assertEqual(charts["rushing_yards"]["axis"]["key"], "yards")
+        self.assertEqual(charts["attempts"]["axis"]["key"], "workload")
+        self.assertEqual(charts["passing_tds"]["axis"]["key"], "scoring_events")
+        self.assertEqual(charts["passing_epa"]["axis"]["key"], "epa_total")
+        self.assertEqual(charts["rushing_epa"]["axis"]["key"], "epa_total")
+        self.assertEqual(charts["ngs_pass_cpoe"]["axis"]["key"], "percentage")
+        self.assertEqual(charts["ngs_pass_aggressiveness"]["axis"]["key"], "percentage")
 
     def test_scatter_plot_emits_chartjs_points_not_pixel_geometry(self):
         rows = [{"player_id": "1", "player_name": "A", "team": "SEA", "position": "QB",
@@ -529,6 +557,12 @@ class NFLCanonicalSyncTests(unittest.TestCase):
             self.assertEqual(league_summary["GNB"]["passing_yards_per_game"],
                              summary["passing_yards_per_game"])
             self.assertEqual(league_summary["GNB"]["points_per_game"], summary["points_per_game"])
+            defense_summary = {row["team"]: row for row in repository.league_defensive_summary(2025)}
+            self.assertEqual(defense_summary["CHI"]["pass_yards_allowed_per_game"], 250)
+            self.assertEqual(defense_summary["CHI"]["points_allowed_per_game"], 24)
+            ngs_allowed = {row["team"]: row for row in
+                           repository.league_ngs_summary(2025, defense=True)}
+            self.assertAlmostEqual(ngs_allowed["CHI"]["pass_cpoe"], 3.5)
             league_playcalling = {row["team"]: row for row in repository.league_playcalling_profile(2025)}
             self.assertEqual(league_playcalling["GNB"]["pass_rate"], playcalling["pass_rate"])
             situational = repository.team_situational_profile(2025, "GNB")
