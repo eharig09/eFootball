@@ -1,6 +1,7 @@
 """Repository-backed NFL dashboard, team pages, and structured APIs."""
 
 from __future__ import annotations
+from contextlib import closing
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -13,6 +14,12 @@ from sports_aggregator.nfl.alignments import (
 )
 from sports_aggregator.nfl.availability import availability_packet
 from sports_aggregator.nfl.content import NFLContentRepository
+from sports_aggregator.nfl.data_health import season_coverage
+from sports_aggregator.nfl.engine_picks import (
+    available_weeks as engine_pick_weeks,
+    build_dashboard as build_engine_picks_dashboard,
+    default_week as default_engine_pick_week,
+)
 from sports_aggregator.nfl.explorer import (
     METRICS, METRIC_CATEGORIES, METRIC_LABELS, SUM_METRICS,
     player_stat_table, scatter_plot, with_rates,
@@ -34,6 +41,7 @@ from sports_aggregator.nfl.postgame import postgame_packet
 from sports_aggregator.nfl.ranking import rank_lookup
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.search import search_entities
+from sports_aggregator.nfl.storage_audit import storage_status
 from sports_aggregator.nfl.staff import staff_tendencies
 from sports_aggregator.nfl.teams import team_context
 from sports_aggregator.nfl.trenches import trench_matchups
@@ -68,7 +76,28 @@ def _production_seed_status() -> dict:
     path = Path(current_app.config["NFL_DATABASE_PATH"]).parent / "nfl_production_seed.json"
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else {}
+        if not isinstance(value, dict):
+            return {}
+        stages = []
+        for item in value.get("stages") or []:
+            if not isinstance(item, dict):
+                continue
+            stages.append({key: item.get(key) for key in (
+                "stage", "status", "started_at", "finished_at", "tables", "rows"
+            ) if item.get(key) is not None})
+        counts = value.get("counts") if isinstance(value.get("counts"), dict) else {}
+        return {
+            "status": value.get("status"),
+            "season": value.get("season"),
+            "deploy": str(value.get("deploy") or "")[:16],
+            "started_at": value.get("started_at"),
+            "finished_at": value.get("finished_at"),
+            "stages": stages,
+            "counts": {str(key): number for key, number in counts.items()
+                       if isinstance(number, (int, float)) and not isinstance(number, bool)},
+            "error": ("Production seed failed; inspect authenticated logs."
+                      if value.get("status") == "failed" else None),
+        }
     except (OSError, json.JSONDecodeError):
         return {}
 
@@ -515,6 +544,36 @@ def scoreboard():
     )
 
 
+@nfl_pages.get("/nfl/picks/")
+@cached_page
+def engine_picks():
+    season = _season()
+    repository = _repository()
+    weeks = engine_pick_weeks(repository, season)
+    selected_week = request.args.get("week", type=int)
+    if selected_week not in weeks:
+        selected_week = default_engine_pick_week(repository, season)
+    dashboard = (build_engine_picks_dashboard(repository, season, selected_week)
+                 if selected_week is not None else None)
+    return render_template(
+        "nfl_engine_picks.html", league=get_league("nfl"), season=season,
+        weeks=weeks, selected_week=selected_week, dashboard=dashboard,
+    )
+
+
+@nfl_pages.get("/api/v1/nfl/picks")
+def engine_picks_api():
+    season = _season()
+    repository = _repository()
+    weeks = engine_pick_weeks(repository, season)
+    selected_week = request.args.get("week", type=int)
+    if selected_week not in weeks:
+        selected_week = default_engine_pick_week(repository, season)
+    if selected_week is None:
+        return jsonify({"season": season, "week": None, "games": [], "counts": {}})
+    return jsonify(build_engine_picks_dashboard(repository, season, selected_week))
+
+
 @nfl_pages.get("/api/v1/nfl")
 def dashboard_api():
     packet = _dashboard_packet(_season(), request.args.get("week", type=int))
@@ -692,7 +751,15 @@ def _data_status_packet() -> dict:
                     continue
                 if isinstance(row, dict):
                     refresh_history.append({
-                        **row,
+                        # Public-safe whitelist. Stored operator records also
+                        # carry host paths, PIDs, commands, and tracebacks.
+                        "segment": row.get("segment"),
+                        "season": row.get("season"),
+                        "status": row.get("status"),
+                        "started_at": row.get("started_at"),
+                        "finished_at": row.get("finished_at"),
+                        "seconds": row.get("seconds"),
+                        "error_type": row.get("error_type"),
                         "relative": _relative_time(row.get("finished_at") or row.get("started_at")),
                     })
         except OSError:
@@ -710,21 +777,30 @@ def _data_status_packet() -> dict:
             "status": row.get("status") if row else "unknown",
             "relative": row.get("relative") if row else None,
             "seconds": row.get("seconds") if row else None,
-            "error": row.get("error") if row else None,
+            "error": ("Refresh failed; inspect authenticated logs."
+                      if row and row.get("status") == "failed" else None),
         })
 
     upload_root = Path(current_app.config["NFL_PFF_UPLOAD_ROOT"])
-    source_root = Path(current_app.config["NFL_PFF_SOURCE_ROOT"])
     pff_upload_files = list(upload_root.rglob("*.csv")) if upload_root.exists() else []
     blob_count = 0
     try:
         repository.initialize()
-        with repository._connect() as connection:
+        with closing(repository._connect()) as connection:
             blob_count = connection.execute("SELECT COUNT(*) FROM nfl_pff_upload_blobs").fetchone()[0]
     except Exception:
         blob_count = 0
 
-    latest_ingestion = content.latest_ingestion_run()
+    raw_ingestion = content.latest_ingestion_run()
+    latest_ingestion = ({key: raw_ingestion.get(key) for key in (
+        "platform", "season", "started_at", "finished_at", "attempted",
+        "succeeded", "seen", "stored",
+    )} if raw_ingestion else None)
+    storage = storage_status(
+        current_app.config["NFL_DATABASE_PATH"],
+        max_bytes=current_app.config.get("NFL_DATABASE_MAX_BYTES", 0),
+    )
+    data_coverage = season_coverage(repository, season)
     issues = []
     if seed.get("status") == "failed":
         issues.append({"label": "Production seed failed",
@@ -737,6 +813,21 @@ def _data_status_packet() -> dict:
                        "detail": f"{counts.get('teams') or 0}/32 teams stored for {season}."})
     if not counts.get("games"):
         issues.append({"label": "No schedule stored", "detail": f"0 games stored for {season}."})
+    if data_coverage["missing_stats"]:
+        issues.append({
+            "label": f"{len(data_coverage['missing_stats'])} final game(s) await player stats",
+            "detail": "The scoreboard result is stored, but those game logs are not yet available.",
+        })
+    if data_coverage["missing_pbp"]:
+        issues.append({
+            "label": f"{len(data_coverage['missing_pbp'])} final game(s) await play-by-play",
+            "detail": "Postgame efficiency analysis will appear after the PBP refresh catches up.",
+        })
+    if data_coverage["orphan_stat_games"]:
+        issues.append({
+            "label": f"{data_coverage['orphan_stat_games']} orphan stat game log(s)",
+            "detail": "Weekly statistics reference game IDs not present in the canonical schedule.",
+        })
     if coverage["errors"]:
         issues.append({"label": f"{coverage['errors']} configured source(s) erroring",
                        "detail": "See the source audit page for which accounts and their last error."})
@@ -746,6 +837,12 @@ def _data_status_packet() -> dict:
     if not pff_counts.get("metrics"):
         issues.append({"label": "No PFF metrics loaded",
                        "detail": f"{len(pff_upload_files)} CSV file(s) on disk · {blob_count} SQLite backup file(s)."})
+    if storage["status"] == "over-budget":
+        issues.append({"label": "NFL database exceeds its storage budget",
+                       "detail": "Reduce or archive historical detail before the next large refresh."})
+    elif storage["status"] == "warning":
+        issues.append({"label": "NFL database is nearing its storage budget",
+                       "detail": "Capacity is above 85%; plan compaction before the next backfill."})
     return {
         "season": season, "pff_season": pff_season, "seed": seed,
         "counts": counts, "pff_counts": pff_counts,
@@ -759,12 +856,13 @@ def _data_status_packet() -> dict:
         "latest_ingestion": latest_ingestion,
         "refresh_history": refresh_history,
         "segment_health": segment_health,
+        "storage": storage,
+        "data_coverage": data_coverage,
         "pff_storage": {
-            "upload_root": str(upload_root),
             "upload_files": len(pff_upload_files),
             "blob_backups": blob_count,
-            "source_root": str(source_root),
-            "database_path": str(current_app.config["NFL_DATABASE_PATH"]),
+            "upload_configured": bool(current_app.config.get("NFL_PFF_UPLOAD_ROOT")),
+            "source_configured": bool(current_app.config.get("NFL_PFF_SOURCE_ROOT")),
         },
     }
 

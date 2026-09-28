@@ -118,6 +118,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         NFL_DATABASE_PATH=os.getenv(
             "NFL_DATABASE_PATH", os.path.join(app.instance_path, "nfl.sqlite3")
         ),
+        # Zero leaves the budget informationally unconfigured. Production sets
+        # a ceiling below the persistent-disk size to leave migration/WAL room.
+        NFL_DATABASE_MAX_BYTES=max(0, int(os.getenv("NFL_DATABASE_MAX_BYTES", "0"))),
         NFLVERSE_RAW_CACHE_PATH=os.getenv(
             "NFLVERSE_RAW_CACHE_PATH", os.path.join(app.instance_path, "nflverse_raw")
         ),

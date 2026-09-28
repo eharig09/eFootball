@@ -14,6 +14,7 @@
         <nav class="primary-nav" aria-label="NFL navigation">
             <a class="{{ 'active' if active == 'dashboard' }}" href="{{ url_for('nfl.dashboard', season=season) }}">Dashboard</a>
             <a class="{{ 'active' if active == 'scoreboard' }}" href="{{ url_for('nfl.scoreboard', season=season) }}">Scoreboard</a>
+            <a class="{{ 'active' if active == 'picks' }}" href="{{ url_for('nfl.engine_picks', season=season) }}">Picks</a>
             <a href="{{ url_for('nfl.dashboard', season=season, _anchor='standings') }}">Standings</a>
             <a href="{{ url_for('nfl.dashboard', season=season, _anchor='teams') }}">Teams</a>
             <a class="{{ 'active' if active == 'explorer' }}" href="{{ url_for('nfl.stat_explorer', season=season) }}">Explorer</a>

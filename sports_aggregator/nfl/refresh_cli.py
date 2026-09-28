@@ -104,6 +104,10 @@ def _sync_core(season: int, *, include_pbp: bool, only: "frozenset[str] | None" 
         if DEFAULT_PATH.exists():
             sources = import_directory(_source_registry(), DEFAULT_PATH)
             print(f"nfl_sources: success ({sources})")
+    from sports_aggregator.nfl.data_health import season_coverage
+    print("nfl_game_coverage: " + json.dumps(
+        season_coverage(repository, season), sort_keys=True
+    ))
     return report.succeeded
 
 

@@ -85,6 +85,9 @@ services:
         value: /var/data/cfbd_raw
       - key: NFL_DATABASE_PATH
         value: /var/data/nfl.sqlite3
+      # Leave room on the 5 GB disk for WAL growth, caches, and migrations.
+      - key: NFL_DATABASE_MAX_BYTES
+        value: "4000000000"
       - key: NFLVERSE_RAW_CACHE_PATH
         value: /var/data/nflverse_raw
       # The disk is unavailable during Render build/pre-deploy commands. The
@@ -157,8 +160,8 @@ services:
     name: nfl-core-foundation-refresh-trigger
     runtime: python
     # Schedule/scores/teams/rosters/Elo. This is the lightest core group and
-    # the one that makes upcoming/completed games current.
-    schedule: "5 */3 * * *"
+    # the one that makes upcoming/completed games current, so run it hourly.
+    schedule: "5 * * * *"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m sports_aggregator.nfl.render_trigger
     envVars:
@@ -195,7 +198,9 @@ services:
     name: nfl-core-stats-refresh-trigger
     runtime: python
     # Weekly player/team stats, NGS, snaps, and player identity crosswalks.
-    schedule: "35 */6 * * *"
+    # Three-hour cadence closes the Sunday postgame gap without repeatedly
+    # downloading the release assets inside their two-hour cache window.
+    schedule: "35 */3 * * *"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m sports_aggregator.nfl.render_trigger
     envVars:
@@ -229,7 +234,8 @@ services:
     name: nfl-core-pbp-refresh-trigger
     runtime: python
     # Rebuild EPA/situational/profile tables after nflverse publishes new PBP.
-    schedule: "55 */6 * * *"
+    # This matches the stats cadence so postgame packets do not lag a full day.
+    schedule: "55 */3 * * *"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m sports_aggregator.nfl.render_trigger
     envVars:

@@ -1,0 +1,59 @@
+{% from '_nfl_nav.html' import nfl_nav with context %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>{{ season }} NFL Football Lab picks{% if selected_week %} · Week {{ selected_week }}{% endif %}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+</head>
+<body class="nfl-picks-page">
+{{ nfl_nav('picks', season, 'Football Lab') }}
+<main>
+    <section class="nfl-hero compact-hero">
+        <p class="eyebrow">Independent model · {{ season }}</p>
+        <h1>Football Lab picks</h1>
+        <p>Projected scores, straight-up picks, spread picks, and totals for every game with a stored line. Confidence measures model-to-market separation against historical residual scale; it is not a guarantee.</p>
+    </section>
+
+    <section class="section">
+        <div class="section-head">
+            <div><p class="eyebrow">Full slate</p><h2>{{ 'Week ' ~ selected_week if selected_week else 'No schedule yet' }}</h2></div>
+            {% if weeks %}<form class="nfl-pick-filters" method="get">
+                <input type="hidden" name="season" value="{{ season }}">
+                <label for="pick-week">Week</label><select id="pick-week" name="week" onchange="this.form.submit()">
+                    {% for week in weeks %}<option value="{{ week }}"{{ ' selected' if week == selected_week }}>Week {{ week }}</option>{% endfor %}
+                </select><noscript><button type="submit">Go</button></noscript>
+            </form>{% endif %}
+        </div>
+        {% if dashboard %}
+        <div class="game-shape-grid nfl-pick-summary">
+            <article><small>Games</small><b>{{ dashboard.counts.games }}</b></article>
+            <article><small>Model ready</small><b>{{ dashboard.counts.projected }}</b></article>
+            <article><small>Lines available</small><b>{{ dashboard.counts.lined }}</b></article>
+            <article><small>High-separation games</small><b>{{ dashboard.counts.high_confidence }}</b></article>
+        </div>
+        <div class="nfl-pick-grid">
+        {% for game in dashboard.games %}
+            <article class="nfl-pick-card">
+                <header><span>Week {{ game.week }} · {{ game.game_date }}</span>{% if game.thin_sample %}<em>Early sample</em>{% endif %}</header>
+                <a class="nfl-pick-matchup" href="{{ url_for('nfl.game_page', game_id=game.game_id) }}#tab-overview"><b>{{ game.away_team }}</b><i>at</i><b>{{ game.home_team }}</b></a>
+                {% if game.football_lab %}
+                <div class="nfl-pick-score"><span><small>Football Lab</small><b>{{ game.away_team }} {{ game.football_lab.away_points|round(1) }} – {{ game.home_team }} {{ game.football_lab.home_points|round(1) }}</b></span>{% if game.market_anchor %}<span><small>Market implied</small><b>{{ game.away_team }} {{ game.market_anchor.away_points|round(1) }} – {{ game.home_team }} {{ game.market_anchor.home_points|round(1) }}</b></span>{% endif %}</div>
+                <div class="nfl-pick-legs">
+                    <span><small>Straight up</small><b>{{ game.straight_up_pick }}</b></span>
+                    <span class="confidence-{{ game.ats_confidence }}"><small>Against spread · {{ game.ats_confidence }}</small><b>{{ game.ats_pick or 'Line pending' }}</b>{% if game.disagreement and game.disagreement.margin is not none %}<em>{{ game.disagreement.margin|round(1) }} model edge</em>{% endif %}</span>
+                    <span class="confidence-{{ game.total_confidence }}"><small>Total · {{ game.total_confidence }}</small><b>{{ game.total_pick or 'Line pending' }}</b>{% if game.disagreement and game.disagreement.total is not none %}<em>{{ game.disagreement.total|round(1) }} model edge</em>{% endif %}</span>
+                </div>
+                {% else %}<p class="empty">The market line is stored, but Football Lab does not yet have enough pregame history for an independent pick.</p>{% endif %}
+            </article>
+        {% else %}<p class="empty">No games are stored for this week.</p>{% endfor %}
+        </div>
+        <p class="section-note">Spread convention: the displayed number is attached to the selected team. Picks update when the canonical schedule, line, weekly stats, or PBP inputs refresh.</p>
+        {% else %}<p class="empty">No NFL schedule is stored for {{ season }}.</p>{% endif %}
+    </section>
+</main>
+</body>
+</html>

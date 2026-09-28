@@ -1,0 +1,50 @@
+name: NFL CI
+
+on:
+  pull_request:
+    paths:
+      - "app.py"
+      - "requirements*.txt"
+      - "sports_aggregator/nfl/**"
+      - "templates/nfl*.html"
+      - "templates/_nfl*.html"
+      - "static/nfl*"
+      - "tests/test_nfl*.py"
+      - "tests/test_live_projection.py"
+      - "tests/test_uncertainty_calibration.py"
+      - "tests/test_web.py"
+      - ".github/workflows/nfl-ci.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REGISTER_LEGACY_DASHBOARDS: "0"
+      NFL_AUTO_SEED: "0"
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Run NFL test suite
+        run: >-
+          python -m pytest -q
+          tests/test_nfl.py
+          tests/test_nfl_storage_audit.py
+          tests/test_live_projection.py
+          tests/test_uncertainty_calibration.py
+          tests/test_web.py

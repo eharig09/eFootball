@@ -19,7 +19,7 @@
         <p class="eyebrow">Sync + ingestion &middot; {{ season }}</p>
         <h1>NFL data status</h1>
         <p>Pipeline health, freshness, manual refresh controls, PFF persistence, and reporting/social ingestion in one place.</p>
-        <div class="audit-subnav"><a href="#segment-health">Segment health</a><a href="#manual-refresh">Manual refresh</a><a href="#pff-storage">PFF storage</a><a href="#refresh-history">Refresh history</a><a href="#ingestion-runs">Content ingestion</a><a href="{{ url_for('nfl.source_audit', season=season) }}">Source audit</a></div>
+        <div class="audit-subnav"><a href="#game-coverage">Game coverage</a><a href="#segment-health">Segment health</a><a href="#manual-refresh">Manual refresh</a><a href="#pff-storage">PFF storage</a><a href="#refresh-history">Refresh history</a><a href="#ingestion-runs">Content ingestion</a><a href="{{ url_for('nfl.source_audit', season=season) }}">Source audit</a></div>
         <div class="metrics">
             <span><b>{{ counts.teams }}</b><small>Teams</small></span>
             <span><b>{{ counts.games }}</b><small>Games</small></span>
@@ -41,6 +41,17 @@
         <p class="section-note">Production seed status, team/game coverage, and configured-source error counts all look healthy.</p>
     </section>
     {% endif %}
+
+    <section class="section" id="game-coverage">
+        <div class="section-head"><div><p class="eyebrow">Schedule → logs → analysis</p><h2>Completed-game coverage</h2></div></div>
+        <div class="game-shape-grid">
+            <article><small>Final games</small><b>{{ data_coverage.completed_games }}</b></article>
+            <article><small>Player game logs</small><b>{{ data_coverage.stat_game_logs }}/{{ data_coverage.completed_games }}</b></article>
+            <article><small>PBP game logs</small><b>{{ data_coverage.pbp_game_logs }}/{{ data_coverage.completed_games }}</b></article>
+            <article><small>Postgame ready</small><b>{{ data_coverage.postgame_ready }}/{{ data_coverage.completed_games }}</b></article>
+        </div>
+        <p class="section-note">Latest final week {{ data_coverage.latest_completed_week or '—' }} · player stats through week {{ data_coverage.latest_stat_week or '—' }} · PBP through week {{ data_coverage.latest_pbp_week or '—' }}. Postgame analysis is generated from stored game data whenever both logs are ready.</p>
+    </section>
 
     <section class="section" id="segment-health">
         <div class="section-head"><div><p class="eyebrow">Recurring NFL maintenance</p><h2>Segment health</h2></div></div>
@@ -83,8 +94,18 @@
             <article><small>SQLite file backups</small><b>{{ pff_storage.blob_backups }}</b></article>
             <article><small>PFF season</small><b>{{ pff_season }}</b></article>
         </div>
-        <p class="section-note"><b>Database:</b> {{ pff_storage.database_path }}<br><b>Upload root:</b> {{ pff_storage.upload_root }}<br><b>Source root:</b> {{ pff_storage.source_root }}</p>
+        <p class="section-note">Upload storage: {{ 'configured' if pff_storage.upload_configured else 'not configured' }} &middot; Read-only source: {{ 'configured' if pff_storage.source_configured else 'not configured' }}. Filesystem locations are available only through authenticated operator tooling.</p>
         {% if pff_storage.upload_files == 0 and pff_storage.blob_backups == 0 %}<div class="status-issue-list"><article><b>No durable PFF source files</b><span>Upload the PFF batch once after the SQLite-backup change deploys. Future missing sidecar files can then be reconstructed from the database.</span></article></div>{% endif %}
+    </section>
+
+    <section class="section" id="storage-capacity">
+        <div class="section-head"><div><p class="eyebrow">{{ storage.status|replace('-', ' ')|title }}</p><h2>Storage capacity</h2></div></div>
+        <div class="game-shape-grid">
+            <article><small>SQLite database</small><b>{{ (storage.database_bytes / 1073741824)|round(2) }} GB</b></article>
+            <article><small>WAL + sidecars</small><b>{{ ((storage.wal_bytes + storage.shm_bytes) / 1048576)|round(1) }} MB</b></article>
+            <article><small>Configured budget</small><b>{{ ((storage.max_bytes / 1073741824)|round(2)) if storage.max_bytes else 'Not set' }}</b></article>
+            <article><small>Reclaimable pages</small><b>{{ (storage.reclaimable_bytes / 1048576)|round(1) }} MB</b></article>
+        </div>
     </section>
 
     <section class="section">

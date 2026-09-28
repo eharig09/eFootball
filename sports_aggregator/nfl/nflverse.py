@@ -18,6 +18,19 @@ import requests
 
 RELEASE_BASE = "https://github.com/nflverse/nflverse-data/releases/download"
 CURRENT_SEASON_TTL = 6 * 3600
+CURRENT_ASSET_TTLS = {
+    # Scores and lines are tiny and time-sensitive. The larger analytical
+    # releases update less often, but should still be rechecked during the
+    # same football afternoon instead of waiting six hours.
+    "schedules": 15 * 60,
+    "weekly": 2 * 3600,
+    "team_weekly": 2 * 3600,
+    "snap_counts": 2 * 3600,
+    "pbp": 2 * 3600,
+    "ngs_passing": 2 * 3600,
+    "ngs_rushing": 2 * 3600,
+    "ngs_receiving": 2 * 3600,
+}
 
 # asset -> (release tag, filename template). A template without {season} is a
 # live, league-wide file and therefore always uses the current-data TTL.
@@ -84,12 +97,14 @@ class NflverseClient:
         *,
         session: requests.Session | None = None,
         ttl_seconds: int = CURRENT_SEASON_TTL,
+        asset_ttls: dict[str, int] | None = None,
         clock=time.time,
         today=None,
     ) -> None:
         self.cache_path = Path(cache_path)
         self.session = session or requests.Session()
         self.ttl_seconds = max(0, int(ttl_seconds))
+        self.asset_ttls = dict(CURRENT_ASSET_TTLS if asset_ttls is None else asset_ttls)
         self.clock = clock
         self.today = today
 
@@ -102,7 +117,8 @@ class NflverseClient:
             return False
         if season is not None and season < current_season(self.today) and asset != "schedules":
             return True
-        return self.clock() - path.stat().st_mtime < self.ttl_seconds
+        ttl = max(0, int(self.asset_ttls.get(asset, self.ttl_seconds)))
+        return self.clock() - path.stat().st_mtime < ttl
 
     def frame(self, asset: str, season: int | None = None, *, force: bool = False,
               columns: Iterable[str] | None = None):

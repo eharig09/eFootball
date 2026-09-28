@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+import json
 import os
+from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -110,11 +112,21 @@ class WebTests(unittest.TestCase):
         self.assertIn(b'class="data-pill', page.data)
         self.assertIn(b'href="/nfl/data-status/', page.data)
 
+        Path(self.temp_dir.name, "nfl_production_seed.json").write_text(json.dumps({
+            "status": "failed",
+            "season": 2026,
+            "error": f"could not open {self.temp_dir.name}",
+            "database_path": os.path.join(self.temp_dir.name, "nfl.sqlite3"),
+            "traceback": f"private traceback from {self.temp_dir.name}",
+            "stages": [{"stage": "history", "status": "failed",
+                        "command": "private command", "finished_at": "2026-09-26T00:00:00Z"}],
+        }), encoding="utf-8")
+
         status = self.client.get("/nfl/data-status/")
         self.assertEqual(status.status_code, 200)
         self.assertIn(b"NFL data status", status.data)
         self.assertIn(b"Production seed", status.data)
-        self.assertIn(b"Ingestion runs", status.data)
+        self.assertIn(b"Content ingestion runs", status.data)
         # Regression check: `content_counts.items` in a Jinja template calls
         # dict.items() (a real attribute) instead of the "items" key --
         # bracket access is required. An empty database with zero stored
@@ -127,6 +139,12 @@ class WebTests(unittest.TestCase):
         self.assertIn("counts", payload)
         self.assertIn("runs_table", payload)
         self.assertIsInstance(payload["runs_table"]["rows"], list)
+        self.assertIn("storage", payload)
+        serialized = status.data + api.data
+        self.assertNotIn(self.temp_dir.name.encode(), serialized)
+        self.assertNotIn(b"database_path", api.data)
+        self.assertNotIn(b"traceback", api.data)
+        self.assertNotIn(b"private command", serialized)
 
     def test_nfl_surface_loads_explicit_dark_theme(self):
         page = self.client.get("/nfl/")
