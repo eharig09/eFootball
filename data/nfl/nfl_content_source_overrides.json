@@ -1,0 +1,46 @@
+{
+  "disabled_bluesky": [
+    {"handle": "matchquarters.bsky.social", "reason": "HTTP 400 in 30 consecutive ingestion runs; replaced by publisher RSS"},
+    {"handle": "diannarussini.bsky.social", "reason": "HTTP 400 in 30 consecutive ingestion runs"},
+    {"handle": "johnshipley.bsky.social", "reason": "HTTP 400 in 30 consecutive ingestion runs"},
+    {"handle": "mspears96.bsky.social", "reason": "HTTP 400 in 30 consecutive ingestion runs"},
+    {"handle": "panthersbluesky.bsky.social", "reason": "HTTP 400 in 30 consecutive ingestion runs"},
+    {"handle": "steelcurtainpost.substack.com", "reason": "HTTP 400 in 30 consecutive ingestion runs"},
+    {"handle": "bradyhenderson.bsky.social", "reason": "No feed items and no stored items during the audit window"},
+    {"handle": "jeff-mclane.bsky.social", "reason": "No eligible original posts and no stored items during the audit window"},
+    {"handle": "playerprofiler.bsky.social", "reason": "No eligible original posts and no stored items during the audit window"},
+    {"handle": "bigblueview.bsky.social", "reason": "No eligible original posts and no stored items during the audit window"},
+    {"handle": "dnvr-broncos.bsky.social", "reason": "No feed items and no stored items during the audit window"},
+    {"handle": "losangelesrams.bsky.social", "reason": "No feed items and no stored items during the audit window"}
+  ],
+  "supplemental_bluesky": [
+    {
+      "name": "Hawk Blogger",
+      "handle": "hawkblogger.com",
+      "scope": "Team",
+      "conference": "NFC",
+      "division": "NFC West",
+      "team": "Seattle Seahawks",
+      "account_type": "Outlet",
+      "coverage_tags": "Reporting; Team Coverage; Analysis",
+      "specialty_tags": "Film/Analytics",
+      "priority": 2,
+      "recommended_lists": "NFC Beats; NFL Film + Analytics",
+      "notes": "Credentialed Seahawks reporting and film analysis; live feed verified 2026-09-28",
+      "verification": "Public profile and ten original posts verified"
+    }
+  ],
+  "disabled_rss": [
+    {"url": "https://www.fantasysp.com/rss/nfl/headlines/", "reason": "HTTP 404"},
+    {"url": "https://www.fantasysp.com/rss/nfl/allplayer/", "reason": "HTTP 404"},
+    {"url": "https://www.rotoviz.com/feed/", "reason": "HTTP 403"}
+  ],
+  "supplemental_rss": [
+    {"name": "Yahoo Sports NFL", "url": "https://sports.yahoo.com/nfl/rss.xml", "source_type": "news", "reliability": 4},
+    {"name": "MatchQuarters", "url": "https://matchquarters.substack.com/feed", "source_type": "analysis", "reliability": 4},
+    {"name": "Unexpected Points", "url": "https://unexpectedpoints.substack.com/feed", "source_type": "analysis", "reliability": 4},
+    {"name": "Sports Info Solutions", "url": "https://www.sportsinfosolutions.com/feed/", "source_type": "analysis", "reliability": 4},
+    {"name": "Sharp Football Analysis", "url": "https://www.sharpfootballanalysis.com/feed/", "source_type": "analysis", "reliability": 3},
+    {"name": "Over the Cap", "url": "https://overthecap.com/feed", "source_type": "news", "reliability": 4}
+  ]
+}

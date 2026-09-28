@@ -136,6 +136,53 @@ class SourceRegistry:
             db.commit()
         return len(items)
 
+    def replace_league(self, league: str, profiles: Iterable[LeagueSourceProfile]) -> int:
+        """Reconcile one league's curated directory, retiring removed rows.
+
+        The underlying source stays active when another league or legacy team /
+        conference mapping still uses it. This prevents an NFL audit from
+        disabling a shared CFB reporter.
+        """
+        items = tuple(profiles)
+        if any(item.league != league for item in items):
+            raise ValueError(f"replace_league({league!r}) received a different league")
+        count = self.seed_league(items)
+        handles = {item.source.handle for item in items}
+        with closing(self._connect()) as db:
+            active_ids = {
+                row[0] for row in db.execute(
+                    f"SELECT source_id FROM sources WHERE handle IN ({','.join('?' for _ in handles)})",
+                    tuple(handles),
+                )
+            } if handles else set()
+            stale = [row[0] for row in db.execute(
+                """SELECT s.source_id FROM sources s
+                   JOIN source_league_scopes ls USING(source_id)
+                   WHERE ls.league=?""", (league,)
+            ) if row[0] not in active_ids]
+            if stale:
+                placeholders = ",".join("?" for _ in stale)
+                db.execute(
+                    f"DELETE FROM source_league_tags WHERE league=? AND source_id IN ({placeholders})",
+                    (league, *stale),
+                )
+                db.execute(
+                    f"DELETE FROM source_league_scopes WHERE league=? AND source_id IN ({placeholders})",
+                    (league, *stale),
+                )
+                db.execute(
+                    f"""UPDATE sources SET active=0 WHERE source_id IN ({placeholders})
+                        AND NOT EXISTS (SELECT 1 FROM source_league_scopes ls
+                                        WHERE ls.source_id=sources.source_id)
+                        AND NOT EXISTS (SELECT 1 FROM source_teams st
+                                        WHERE st.source_id=sources.source_id)
+                        AND NOT EXISTS (SELECT 1 FROM source_conferences sc
+                                        WHERE sc.source_id=sources.source_id)""",
+                    tuple(stale),
+                )
+            db.commit()
+        return count
+
     def list_league_sources(
         self, league: str, *, section: str | None = None,
         team: str | None = None, limit: int | None = None,

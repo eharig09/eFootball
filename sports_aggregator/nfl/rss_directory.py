@@ -11,11 +11,14 @@ what actually fetches and stores the resulting articles.
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from typing import Iterator
 
 from sports_aggregator.models import FeedConfig
 from sports_aggregator.nfl.naming import canon_team
-from sports_aggregator.nfl.source_directory import NFLSourceDirectoryError, _sheet_rows
+from sports_aggregator.nfl.source_directory import (
+    DEFAULT_OVERRIDES_PATH, NFLSourceDirectoryError, _sheet_rows,
+)
 
 
 DEFAULT_PATH = Path("data/nfl/NFL_RSS_and_Community_Directory.xlsx")
@@ -67,6 +70,28 @@ def national_feeds(path: str | Path = DEFAULT_PATH) -> tuple[FeedConfig, ...]:
         feed = _feed(row["Community"].strip(), row["RSS URL"].strip(), source_type="reddit",
                     reliability=2, key_prefix="nfl-community")
         feeds.setdefault(feed.url, feed)
+    override_path = Path(DEFAULT_OVERRIDES_PATH)
+    if override_path.exists():
+        try:
+            overrides = json.loads(override_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise NFLRSSDirectoryError(f"cannot read NFL source overrides: {exc}") from exc
+        disabled = {
+            str(item.get("url") or "").strip()
+            for item in overrides.get("disabled_rss", [])
+        }
+        feeds = {url: feed for url, feed in feeds.items() if url not in disabled}
+        for item in overrides.get("supplemental_rss", []):
+            name = str(item.get("name") or "").strip()
+            url = str(item.get("url") or "").strip()
+            if not name or not url:
+                raise NFLRSSDirectoryError("supplemental RSS rows require name and url")
+            feed = _feed(
+                name, url, source_type=str(item.get("source_type") or "news"),
+                reliability=int(item.get("reliability") or 3),
+                key_prefix="nfl-supplemental-rss",
+            )
+            feeds.setdefault(feed.url, feed)
     return tuple(feeds.values())
 
 

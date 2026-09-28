@@ -961,8 +961,9 @@ class NFLSourceDirectoryTests(unittest.TestCase):
 
     def test_real_workbook_has_complete_team_and_section_coverage(self):
         profiles = load_directory("data/nfl/NFL_Bluesky_Directory.xlsx")
-        self.assertEqual(len(profiles), 158)
-        self.assertEqual(len({profile.source.handle for profile in profiles}), 158)
+        self.assertEqual(len(profiles), 147)
+        self.assertEqual(len({profile.source.handle for profile in profiles}), 147)
+        self.assertIn("hawkblogger.com", {profile.source.handle for profile in profiles})
         self.assertEqual(len({profile.team for profile in profiles if profile.team}), 32)
         self.assertEqual(
             {tag[2] for profile in profiles for tag in profile.tags},
@@ -971,11 +972,13 @@ class NFLSourceDirectoryTests(unittest.TestCase):
 
     def test_real_rss_directory_covers_every_team_and_national_feed(self):
         national = national_feeds()
-        # 15 National RSS rows + 9 Other Communities rows, minus 2 URLs
-        # (r/nfl, r/NFL_Draft) listed in both sheets.
-        self.assertEqual(len(national), 22)
-        self.assertEqual(len({feed.url for feed in national}), 22)
+        # 22 unique workbook feeds, minus 3 permanently broken feeds, plus
+        # 6 live-validated supplemental reporting/analysis feeds.
+        self.assertEqual(len(national), 25)
+        self.assertEqual(len({feed.url for feed in national}), 25)
         self.assertIn("ESPN NFL Headlines", {feed.name for feed in national})
+        self.assertIn("Unexpected Points", {feed.name for feed in national})
+        self.assertIn("Over the Cap", {feed.name for feed in national})
 
         teams = team_feeds()
         self.assertEqual(len(teams), 32)
@@ -1027,7 +1030,7 @@ class NFLSourceDirectoryTests(unittest.TestCase):
             ),))
             self.assertEqual(import_directory(
                 registry, "data/nfl/NFL_Bluesky_Directory.xlsx"
-            ), 158)
+            ), 147)
 
             analysis = registry.list_league_sources("nfl", section="analysis")
             self.assertIn("aaronschatz.com", {row["handle"] for row in analysis})
@@ -1047,6 +1050,18 @@ class NFLSourceDirectoryTests(unittest.TestCase):
             self.assertEqual(specialties, {"college_football", "analysis"})
             self.assertEqual(teams, {"Sample University"})
             self.assertEqual(identity, ("Existing name", "Existing org"))
+
+    def test_league_directory_reconciliation_retires_removed_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = SourceRegistry(Path(directory) / "shared.sqlite3")
+            profiles = load_directory("data/nfl/NFL_Bluesky_Directory.xlsx")[:2]
+            self.assertEqual(registry.replace_league("nfl", profiles), 2)
+            self.assertEqual(len(registry.list_league_sources("nfl")), 2)
+
+            self.assertEqual(registry.replace_league("nfl", profiles[:1]), 1)
+            remaining = registry.list_league_sources("nfl")
+            self.assertEqual([row["handle"] for row in remaining],
+                             [profiles[0].source.handle])
 
 
 class _FakeAlignmentRepository:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import re
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
@@ -12,6 +13,7 @@ from sports_aggregator.social.models import LeagueSourceProfile, SourceProfile
 
 
 DEFAULT_PATH = Path("data/nfl/NFL_Bluesky_Directory.xlsx")
+DEFAULT_OVERRIDES_PATH = Path("data/nfl/nfl_content_source_overrides.json")
 NS = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 _REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
@@ -169,7 +171,19 @@ def _profile(row: dict[str, str]) -> LeagueSourceProfile:
     )
 
 
-def load_directory(path: str | Path = DEFAULT_PATH) -> tuple[LeagueSourceProfile, ...]:
+def _overrides(path: str | Path = DEFAULT_OVERRIDES_PATH) -> dict:
+    override_path = Path(path)
+    if not override_path.exists():
+        return {}
+    try:
+        payload = json.loads(override_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise NFLSourceDirectoryError(f"cannot read NFL source overrides: {exc}") from exc
+    return payload
+
+
+def load_directory(path: str | Path = DEFAULT_PATH, *,
+                   overrides_path: str | Path = DEFAULT_OVERRIDES_PATH) -> tuple[LeagueSourceProfile, ...]:
     rows = _sheet_rows(path)
     header_index = next((index for index, row in enumerate(rows) if "Handle" in row), None)
     if header_index is None:
@@ -179,6 +193,12 @@ def load_directory(path: str | Path = DEFAULT_PATH) -> tuple[LeagueSourceProfile
     if missing:
         raise NFLSourceDirectoryError(f"Directory sheet missing columns {sorted(missing)}")
     profiles: list[LeagueSourceProfile] = []
+    overrides = _overrides(overrides_path)
+    disabled = {
+        str(item.get("handle") or "").strip().casefold()
+        for item in overrides.get("disabled_bluesky", [])
+        if str(item.get("handle") or "").strip()
+    }
     seen: set[str] = set()
     for values in rows[header_index + 1:]:
         row = {header: values[index] if index < len(values) else ""
@@ -186,12 +206,38 @@ def load_directory(path: str | Path = DEFAULT_PATH) -> tuple[LeagueSourceProfile
         if not row.get("Handle", "").strip():
             continue
         profile = _profile(row)
+        if profile.source.handle in disabled:
+            continue
         if profile.source.handle in seen:
             raise NFLSourceDirectoryError(f"duplicate handle {profile.source.handle}")
+        seen.add(profile.source.handle)
+        profiles.append(profile)
+    for item in overrides.get("supplemental_bluesky", []):
+        row = {
+            "Name": str(item.get("name") or ""),
+            "Handle": str(item.get("handle") or ""),
+            "Scope": str(item.get("scope") or "National"),
+            "Conference": str(item.get("conference") or ""),
+            "Division": str(item.get("division") or ""),
+            "Team": str(item.get("team") or ""),
+            "Account Type": str(item.get("account_type") or "Outlet"),
+            "Coverage Tags": str(item.get("coverage_tags") or "Reporting"),
+            "Specialty Tags": str(item.get("specialty_tags") or ""),
+            "Priority": str(item.get("priority") or 3),
+            "Recommended Lists": str(item.get("recommended_lists") or "NFL Wire"),
+            "Notes": str(item.get("notes") or ""),
+            "Verification": str(item.get("verification") or ""),
+            "Profile URL": str(item.get("profile_url") or ""),
+        }
+        profile = _profile(row)
+        if profile.source.handle in seen:
+            raise NFLSourceDirectoryError(f"duplicate supplemental handle {profile.source.handle}")
         seen.add(profile.source.handle)
         profiles.append(profile)
     return tuple(profiles)
 
 
 def import_directory(registry, path: str | Path = DEFAULT_PATH) -> int:
-    return registry.seed_league(load_directory(path))
+    profiles = load_directory(path)
+    replace = getattr(registry, "replace_league", None)
+    return replace("nfl", profiles) if replace else registry.seed_league(profiles)

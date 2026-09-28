@@ -151,7 +151,7 @@ def _sync_content(season: int) -> None:
         for error in directory["errors"][:20]:
             print(f"  {error['feed']}: {error['error']}")
 
-    sources = _source_registry().list_league_sources("nfl", limit=158)
+    sources = _source_registry().list_league_sources("nfl")
     social = content.ingest_bluesky(sources, season, posts_per_source=4)
     print(f"nfl_bluesky: stored ({social['stored']}) from {social['sources']} sources")
     if social["errors"]:
