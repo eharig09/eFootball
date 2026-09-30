@@ -9,11 +9,15 @@ over this table, so no page recomputes from raw parquet.
 
 from __future__ import annotations
 
+import functools
 import math
 import re
 from typing import Any, Iterable, Mapping
 
-from sports_aggregator.nfl.naming import canon_team
+from sports_aggregator.nfl.naming import canon_team as _canon_team
+
+# A few dozen distinct values repeat a million times across a season of plays.
+canon_team = functools.lru_cache(maxsize=512)(_canon_team)
 
 _COUNT = re.compile(r"(\d+)\s+([A-Z]+)")
 _BACKS = {"RB", "FB", "HB"}
@@ -25,6 +29,11 @@ _ONE_HIGH = {"COVER_1", "COVER_3", "COVER_0", "COVER_9"}
 
 
 def _number(value: Any) -> float | None:
+    kind = type(value)
+    if kind is float:
+        return None if value != value else value          # NaN is the only float not equal to itself
+    if kind is int:
+        return float(value)
     if value is None:
         return None
     try:
@@ -40,6 +49,9 @@ def _int(value: Any) -> int | None:
 
 
 def _text(value: Any) -> str | None:
+    if type(value) is str:
+        text = value.strip()
+        return text or None
     if value is None:
         return None
     if isinstance(value, float) and math.isnan(value):
@@ -50,7 +62,12 @@ def _text(value: Any) -> str | None:
 
 def _flag(value: Any) -> int | None:
     """nflverse booleans arrive as 0/1 floats, True/False, or blanks."""
-    if value is None or (isinstance(value, float) and math.isnan(value)):
+    kind = type(value)
+    if kind is float:
+        return None if value != value else (1 if value else 0)
+    if kind is bool or kind is int:
+        return 1 if value else 0
+    if value is None:
         return None
     if isinstance(value, str):
         lowered = value.strip().lower()
@@ -58,6 +75,8 @@ def _flag(value: Any) -> int | None:
             return 1
         if lowered in {"false", "0", "0.0", "no"}:
             return 0
+        return None
+    if isinstance(value, float) and math.isnan(value):
         return None
     return 1 if bool(value) else 0
 
@@ -69,6 +88,7 @@ def _counts(personnel: str | None) -> dict[str, int]:
     return counts
 
 
+@functools.lru_cache(maxsize=4096)
 def offense_personnel_group(personnel: str | None) -> str | None:
     """'1 C, 2 G, 1 QB, 1 RB, 2 T, 1 TE, 3 WR' -> '11' (backs then tight ends).
 
@@ -86,6 +106,7 @@ def offense_personnel_group(personnel: str | None) -> str | None:
     return f"{backs}{tight_ends}"
 
 
+@functools.lru_cache(maxsize=4096)
 def defense_package(personnel: str | None) -> str | None:
     """Base (<=4 defensive backs), Nickel (5), Dime (6+)."""
     counts = _counts(personnel)
@@ -256,35 +277,59 @@ def package_snap_rows(rows: Iterable[tuple]) -> list[tuple]:
     `rows` are tuples from build_play_rows. A play counts once for every player in the participation
     lists, under the offense's personnel group (or the defense's package for defenders) and the field
     zone it was run from. Plays without participation data contribute nothing.
+
+    Identical 11-man lineups repeat, so plays are first grouped by lineup and only each distinct lineup
+    is expanded into players.
     """
     index = {column: position for position, column in enumerate(PLAY_COLUMNS)}
-    totals: dict[tuple, list[float]] = {}
-    for row in rows:
-        zone = row[index["zone"]]
-        if not zone:
-            continue
-        pass_play = int(row[index["is_pass"]] or 0)
-        rush_play = int(row[index["is_rush"]] or 0)
-        epa = row[index["epa"]] or 0.0
-        season = row[index["season"]]
+    zone_at, pass_at, rush_at, epa_at, season_at = (index[name] for name in ("zone", "is_pass", "is_rush", "epa", "season"))
+    sides = tuple(
+        (side, index[team_key], index[group_key], index[players_key], index[positions_key])
         for side, team_key, group_key, players_key, positions_key in (
             ("off", "posteam", "offense_group", "offense_players", "offense_positions"),
             ("def", "defteam", "defense_package", "defense_players", "defense_positions"),
-        ):
-            package = row[index[group_key]]
-            players = (row[index[players_key]] or "").split(";")
-            positions = (row[index[positions_key]] or "").split(";")
-            if not package or len(players) < 2:
+        )
+    )
+    lineups: dict[tuple, list[float]] = {}
+    for row in rows:
+        zone = row[zone_at]
+        if not zone:
+            continue
+        pass_play = int(row[pass_at] or 0)
+        rush_play = int(row[rush_at] or 0)
+        epa = row[epa_at] or 0.0
+        season = row[season_at]
+        for side, team_at, group_at, players_at, positions_at in sides:
+            package = row[group_at]
+            players = row[players_at]
+            if not package or not players:
                 continue
-            team = row[index[team_key]]
-            for position_index, player in enumerate(players):
-                if not player:
-                    continue
-                position = positions[position_index] if position_index < len(positions) else None
-                key = (season, team, player, position or "", side, package, zone)
-                cell = totals.setdefault(key, [0, 0, 0, 0.0])
+            key = (season, row[team_at], side, package, zone, players, row[positions_at] or "")
+            cell = lineups.get(key)
+            if cell is None:
+                lineups[key] = [1, pass_play, rush_play, epa]
+            else:
                 cell[0] += 1
                 cell[1] += pass_play
                 cell[2] += rush_play
+                cell[3] += epa
+    totals: dict[tuple, list[float]] = {}
+    for (season, team, side, package, zone, players, positions), (n, passes, rushes, epa) in lineups.items():
+        names = players.split(";")
+        if len(names) < 2:
+            continue
+        spots = positions.split(";")
+        for position_index, player in enumerate(names):
+            if not player:
+                continue
+            position = spots[position_index] if position_index < len(spots) else ""
+            key = (season, team, player, position, side, package, zone)
+            cell = totals.get(key)
+            if cell is None:
+                totals[key] = [n, passes, rushes, epa]
+            else:
+                cell[0] += n
+                cell[1] += passes
+                cell[2] += rushes
                 cell[3] += epa
     return [(*key, int(cell[0]), int(cell[1]), int(cell[2]), cell[3]) for key, cell in totals.items()]

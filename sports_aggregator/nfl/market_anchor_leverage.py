@@ -15,6 +15,8 @@ raw model-market disagreement is itself a signal.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 import math
 from typing import Any
 
@@ -53,7 +55,7 @@ TOTAL_STRUCTURAL = (
 
 def _market_map(repository: NFLRepository, start_season: int, end_season: int):
     repository.initialize()
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         rows = connection.execute(
             """SELECT game_id,spread_line,total_line
                FROM games

@@ -10,6 +10,8 @@ get PFF data in at all.
 
 from __future__ import annotations
 
+from contextlib import closing
+
 from pathlib import Path
 from datetime import datetime, timezone
 import hashlib
@@ -143,7 +145,7 @@ def import_pff():
         (destination / name).write_bytes(raw)
         digest = hashlib.sha256(raw).hexdigest()
         _repository().initialize()
-        with _repository()._connect() as connection:
+        with closing(_repository()._connect()) as connection:
             connection.execute(
                 """INSERT OR REPLACE INTO nfl_pff_upload_blobs
                    (filename,content,size_bytes,sha256,uploaded_at)

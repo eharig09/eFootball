@@ -8,18 +8,24 @@ import os
 from dotenv import load_dotenv
 
 from sports_aggregator.cfb.expected_points_event import (
-    MODEL_VERSION, audit_game, fit_model, score_plays, validate_model,
+    DEFAULT_MODEL_ARTIFACT, MIN_CELL, MODEL_VERSION, audit_game,
+    export_model_artifact, fit_model, install_model_artifact, score_plays,
+    validate_model,
 )
 from sports_aggregator.cfb.repository import CFBRepository
 
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Fit/score event-aligned ep-v2")
-    p.add_argument("command", choices=("fit", "score", "validate", "audit"))
+    p.add_argument("command", choices=(
+        "fit", "score", "validate", "audit", "export-model", "install-model",
+    ))
     p.add_argument("--from-year", type=int, default=None)
     p.add_argument("--to-year", type=int, default=None)
     p.add_argument("--game-id", type=int, default=None)
     p.add_argument("--model-version", default=MODEL_VERSION)
+    p.add_argument("--artifact", default=str(DEFAULT_MODEL_ARTIFACT))
+    p.add_argument("--min-cell", type=int, default=MIN_CELL)
     p.add_argument("--database", default=None)
     return p
 
@@ -49,6 +55,21 @@ def main(argv: list[str] | None = None) -> int:
             from_season=args.from_year,
             to_season=args.to_year,
             model_version=args.model_version,
+        )
+    elif args.command == "export-model":
+        output = export_model_artifact(
+            repository,
+            args.artifact,
+            model_version=args.model_version,
+            from_season=args.from_year,
+            to_season=args.to_year,
+            min_cell=args.min_cell,
+        )
+    elif args.command == "install-model":
+        output = install_model_artifact(
+            repository,
+            args.artifact,
+            expected_model_version=args.model_version,
         )
     else:
         if args.game_id is None:

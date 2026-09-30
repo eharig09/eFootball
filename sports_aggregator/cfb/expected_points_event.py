@@ -15,8 +15,12 @@ from __future__ import annotations
 
 from contextlib import closing
 from datetime import datetime, timezone
+import hashlib
+import json
 import math
+from pathlib import Path
 import re
+import tempfile
 from typing import Any
 
 from sports_aggregator.cfb.expected_points_v2 import initialize, state_key
@@ -27,6 +31,10 @@ WRITE_BATCH = 1000
 # 2015-2024 -> 2025) favored lighter shrinkage than the original four-season
 # fit. See the event-aligned validate command for reproducible holdout checks.
 MIN_CELL = 10
+MODEL_ARTIFACT_SCHEMA = 1
+DEFAULT_MODEL_ARTIFACT = (
+    Path(__file__).resolve().parents[2] / "data" / "cfb" / "models" / "ep-v2.json"
+)
 
 _ADMIN_PLAY_TYPES = ("kickoff", "extra point", "two point", "end period", "timeout")
 _ADMIN_TEXT = ("end period", "end of quarter", "end of half", "end of game", "end of regulation")
@@ -420,6 +428,132 @@ def score_plays(repository, *, from_season: int | None = None,
         "scored": scored,
         "event_scored": event_scored,
         "possession_changes": possession_changes,
+    }
+
+
+def _artifact_digest(rows: list[dict[str, Any]]) -> str:
+    payload = json.dumps(rows, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def export_model_artifact(repository, destination: str | Path, *,
+                          model_version: str = MODEL_VERSION,
+                          from_season: int | None = None,
+                          to_season: int | None = None,
+                          min_cell: int = MIN_CELL) -> dict[str, Any]:
+    """Write fitted EP state values as a small deployable, checksummed artifact."""
+    initialize(repository)
+    with closing(repository._connect()) as connection:
+        stored = connection.execute("""
+          SELECT down_bucket,distance_bucket,field_bucket,time_bucket,samples,
+                 expected_points,fitted_at
+          FROM cfb_expected_points_state WHERE model_version=?
+          ORDER BY down_bucket,distance_bucket,field_bucket,time_bucket
+        """, (model_version,)).fetchall()
+    if not stored:
+        raise ValueError(f"no fitted state rows found for {model_version!r}")
+
+    rows = [{
+        "down": int(row[0]), "distance": int(row[1]), "field": int(row[2]),
+        "time": int(row[3]), "samples": int(row[4]),
+        "expected_points": float(row[5]),
+    } for row in stored]
+    artifact = {
+        "schema_version": MODEL_ARTIFACT_SCHEMA,
+        "model_family": "event-aligned-expected-points",
+        "model_version": model_version,
+        "training": {
+            "from_season": from_season,
+            "to_season": to_season,
+            "min_cell": int(min_cell),
+            "samples": sum(row["samples"] for row in rows),
+        },
+        "fitted_at": max(str(row[6]) for row in stored),
+        "cells": len(rows),
+        "rows_sha256": _artifact_digest(rows),
+        "rows": rows,
+    }
+    target = Path(destination)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=target.parent, delete=False, suffix=".tmp"
+        ) as handle:
+            json.dump(artifact, handle, indent=2, ensure_ascii=True)
+            handle.write("\n")
+            temporary = handle.name
+        Path(temporary).replace(target)
+    finally:
+        if temporary and Path(temporary).exists():
+            Path(temporary).unlink()
+    return {
+        "artifact": str(target), "model_version": model_version,
+        "cells": len(rows), "rows_sha256": artifact["rows_sha256"],
+        "training": artifact["training"],
+    }
+
+
+def install_model_artifact(repository, artifact_path: str | Path = DEFAULT_MODEL_ARTIFACT,
+                           *, expected_model_version: str = MODEL_VERSION) -> dict[str, Any]:
+    """Atomically replace model state only; stored PBP and EPA are untouched."""
+    initialize(repository)
+    path = Path(artifact_path)
+    artifact = json.loads(path.read_text(encoding="utf-8"))
+    if artifact.get("schema_version") != MODEL_ARTIFACT_SCHEMA:
+        raise ValueError("unsupported EP model artifact schema")
+    if artifact.get("model_family") != "event-aligned-expected-points":
+        raise ValueError("artifact is not an event-aligned expected-points model")
+    model_version = str(artifact.get("model_version") or "")
+    if model_version != expected_model_version:
+        raise ValueError(
+            f"artifact model version {model_version!r} does not match "
+            f"expected {expected_model_version!r}"
+        )
+    raw_rows = artifact.get("rows")
+    if not isinstance(raw_rows, list) or not raw_rows:
+        raise ValueError("artifact has no model state rows")
+    if int(artifact.get("cells") or 0) != len(raw_rows):
+        raise ValueError("artifact cell count does not match its rows")
+    if artifact.get("rows_sha256") != _artifact_digest(raw_rows):
+        raise ValueError("artifact row checksum does not match")
+
+    fitted_at = str(artifact.get("fitted_at") or datetime.now(timezone.utc).isoformat())
+    output: list[tuple[Any, ...]] = []
+    keys: set[tuple[int, int, int, int]] = set()
+    for row in raw_rows:
+        try:
+            key = (int(row["down"]), int(row["distance"]),
+                   int(row["field"]), int(row["time"]))
+            samples = int(row["samples"])
+            expected_points = float(row["expected_points"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("artifact contains an invalid model state row") from exc
+        if not (1 <= key[0] <= 4 and 1 <= key[1] <= 5
+                and 1 <= key[2] <= 6 and 1 <= key[3] <= 5):
+            raise ValueError(f"artifact contains an out-of-range state key: {key}")
+        if key in keys:
+            raise ValueError(f"artifact contains a duplicate state key: {key}")
+        if samples <= 0 or not math.isfinite(expected_points):
+            raise ValueError(f"artifact contains invalid values for state key: {key}")
+        keys.add(key)
+        output.append((model_version, *key, samples, expected_points, fitted_at))
+
+    with closing(repository._connect()) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute(
+            "DELETE FROM cfb_expected_points_state WHERE model_version=?", (model_version,))
+        connection.executemany("""
+          INSERT INTO cfb_expected_points_state
+          (model_version,down_bucket,distance_bucket,field_bucket,time_bucket,
+           samples,expected_points,fitted_at)
+          VALUES(?,?,?,?,?,?,?,?)
+        """, output)
+        connection.commit()
+    return {
+        "artifact": str(path), "model_version": model_version,
+        "cells": len(output), "rows_sha256": artifact["rows_sha256"],
+        "training": artifact.get("training") or {},
     }
 
 

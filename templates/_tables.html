@@ -94,6 +94,12 @@
                 </tr>
             </thead>
             <tbody>
+                {#- Hot path: the rows render in Python (sports_aggregator/table_render.py) when the app
+                    registered `fast_rows`; it returns none for a table that needs conference marks, and
+                    environments without the global keep the loop below. -#}
+                {%- set fast = fast_rows(table) if fast_rows is defined else none %}
+                {%- if fast is not none %}{{ fast }}
+                {%- else %}
                 {%- for row in table.rows %}
                 <tr{% if row.get('_row_class') %} class="{{ row.get('_row_class') }}"{% endif %}>
                     {%- for column in table.columns %}
@@ -144,6 +150,7 @@
                     {%- endfor %}
                 </tr>
                 {%- endfor %}
+                {%- endif %}
             </tbody>
             {%- if table.total_row %}
             <tfoot>

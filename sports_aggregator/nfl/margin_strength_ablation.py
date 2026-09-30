@@ -8,6 +8,8 @@ No market/odds inputs are used.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 from collections import defaultdict
 import math
 from typing import Any
@@ -74,7 +76,7 @@ def _summary(rows: list[dict[str, Any]], key: str):
 
 
 def _elo_map(repository: NFLRepository, start_season: int, end_season: int):
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         rows = connection.execute(
             """SELECT game_id,home_pre,away_pre
                FROM nfl_elo_games
@@ -88,7 +90,7 @@ def _elo_map(repository: NFLRepository, start_season: int, end_season: int):
 
 
 def _recent_margin_map(repository: NFLRepository, start_season: int, end_season: int):
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         games = [dict(r) for r in connection.execute(
             """SELECT game_id,season,week,home_team,away_team,home_score,away_score
                FROM games
@@ -144,7 +146,7 @@ def report(repository: NFLRepository, *, start_season=2010, end_season=2025):
         gid = str(r["game_id"])
         r["elo_diff"] = elo.get(gid)
         # recover teams from raw game rows
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         team_rows = {
             str(x["game_id"]): (str(x["home_team"]), str(x["away_team"]))
             for x in connection.execute(

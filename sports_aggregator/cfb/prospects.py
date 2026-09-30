@@ -93,7 +93,11 @@ def initialize(repository: CFBRepository) -> None:
 
 
 def read_board(path: str | Path) -> list[dict[str, Any]]:
-    """Read a ranked board CSV with Rank, Player, School, Position columns."""
+    """Read a ranked board CSV with Rank, Player, School, Position columns.
+
+    `College` is accepted in place of `School` -- boards from different sites
+    use either header for the same column, and neither ever supplies both.
+    """
     entries = []
     with open(path, encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
@@ -108,7 +112,7 @@ def read_board(path: str | Path) -> list[dict[str, Any]]:
                 "rank": rank,
                 "player_name": name,
                 "normalized_name": normalize_alias(name),
-                "school": (row.get("School") or "").strip(),
+                "school": (row.get("School") or row.get("College") or "").strip(),
                 "position": (row.get("Position") or "").strip(),
             })
     return entries

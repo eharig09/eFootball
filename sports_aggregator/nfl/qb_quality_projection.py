@@ -7,6 +7,8 @@ EPA/play beyond the recency-weighted team/opponent efficiency model.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 from collections import defaultdict
 import math
 from typing import Any
@@ -34,7 +36,7 @@ QB_MODEL_FEATURES = PASS_FEATURES + QB_FEATURES
 
 def _qb_games(repository: NFLRepository, start_season: int, end_season: int) -> list[dict[str, Any]]:
     repository.initialize()
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         rows = [dict(r) for r in connection.execute(
             """SELECT season,week,game_id,offense_team,defense_team,
                       passer_player_id,passer_name,

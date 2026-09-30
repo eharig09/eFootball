@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from contextlib import closing
+import copy
 from datetime import datetime, timezone
+import functools
+import hashlib
+import inspect
 import json
+import os
+import pickle
 from pathlib import Path
 import sqlite3
-from typing import Any, Iterable, Mapping
+import struct
+import threading
+from typing import Any, Callable, Iterable, Mapping
 
 from sports_aggregator.nfl.models import (
     Game, Player, SyncReport, Team, optional_float, optional_int, optional_text,
@@ -88,6 +96,11 @@ CREATE TABLE IF NOT EXISTS player_weekly_stats (
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_weekly_player ON player_weekly_stats(player_id, season, week);
 CREATE INDEX IF NOT EXISTS idx_nfl_weekly_team ON player_weekly_stats(team, season, week, metric);
+-- metric FIRST on purpose: (season, metric, week) let SQLite satisfy `season=? GROUP BY metric` from this index
+-- and scan every row of the season for per-player queries (12.9 s instead of 3 ms). With metric leading, only
+-- queries that pin a metric can use it.
+CREATE INDEX IF NOT EXISTS idx_nfl_weekly_by_metric ON player_weekly_stats(metric, season, week);
+CREATE TABLE IF NOT EXISTS stat_versions (season INTEGER PRIMARY KEY, version INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_nfl_weekly_opponent_player
  ON player_weekly_stats(opponent_team,player_id,game_id);
 CREATE INDEX IF NOT EXISTS idx_nfl_weekly_game ON player_weekly_stats(game_id,player_id,metric);
@@ -507,12 +520,154 @@ def _external_id(value: Any) -> str | None:
     return text
 
 
+# ---- process-wide performance helpers -------------------------------------------------------------
+#
+# Databases this process has already created/migrated. `initialize()` used to rerun the whole schema
+# script, several PRAGMAs and a venue upsert (a WRITE) on every call, and pages call it dozens of times,
+# so a read-only page view took write locks and touched the WAL file on every request.
+_INITIALIZED: set[tuple[str, int]] = set()
+
+MEMO_LIMIT = 128
+_MEMO: "OrderedDict[tuple, Any]" = OrderedDict()
+_MEMO_LOCK = threading.Lock()
+_MISSING = object()
+
+
+def _file_identity(path: str) -> tuple[str, int] | None:
+    try:
+        return (os.path.abspath(path), os.stat(path).st_ino)
+    except OSError:
+        return None
+
+
+def _file_stamp(path: str) -> tuple[int, int]:
+    try:
+        status = os.stat(path)
+    except OSError:
+        return (0, 0)
+    return (status.st_mtime_ns, status.st_size)
+
+
+def database_stamp(path: str) -> tuple:
+    """A value that changes whenever any connection commits a write to the database.
+
+    mtime and size of the database and its WAL, plus the header's file change counter (which rollback-journal
+    databases bump on every commit even when the file size does not change). Reads never change it.
+    """
+    counter = 0
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(24)
+            raw = handle.read(4)
+        if len(raw) == 4:
+            counter = struct.unpack(">I", raw)[0]
+    except OSError:
+        pass
+    return (counter, *_file_stamp(path), *_file_stamp(path + "-wal"))
+
+
+_ATOMIC = frozenset({str, int, float, bool, bytes, type(None)})
+
+
+def clone(value: Any) -> Any:
+    """Copy plain query results (nested dicts, lists and tuples of scalars) several times faster than deepcopy.
+
+    Anything else falls back to copy.deepcopy, so this is safe for any value, just fastest for result rows.
+    """
+    kind = type(value)
+    if kind in _ATOMIC:
+        return value
+    if kind is dict:
+        return {key: (item if type(item) in _ATOMIC else clone(item)) for key, item in value.items()}
+    if kind is list:
+        return [item if type(item) in _ATOMIC else clone(item) for item in value]
+    if kind is tuple:
+        return tuple(item if type(item) in _ATOMIC else clone(item) for item in value)
+    return copy.deepcopy(value)
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze(item) for item in value)
+    if isinstance(value, dict):
+        return tuple(sorted((key, _freeze(item)) for key, item in value.items()))
+    return value
+
+
+def memoized(method):
+    """Cache a read-only repository method per (database state, arguments).
+
+    The key carries `database_stamp`, so any write -- from this process or a refresh job -- retires every
+    entry on the next read. Callers get a private copy, because several of them annotate the rows they are
+    handed. Use only on methods that read the database and nothing else (no clock, no files).
+    """
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            key = (method.__name__, _freeze(args), _freeze(kwargs))
+            hash(key)
+        except TypeError:
+            return method(self, *args, **kwargs)
+        return self.memo(key, lambda: method(self, *args, **kwargs))
+    return wrapper
+
+
 # Indexes on columns that an existing database only gains by migration must be created after the ALTERs.
 PLAY_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_nfl_plays_passer ON nfl_plays(season, passer_id);
 CREATE INDEX IF NOT EXISTS idx_nfl_plays_receiver ON nfl_plays(season, receiver_id);
 CREATE INDEX IF NOT EXISTS idx_nfl_plays_rusher ON nfl_plays(season, rusher_id);
 """
+
+
+def _bump_stat_versions(connection: sqlite3.Connection, seasons: Iterable[int]) -> None:
+    """Advance the write counter of every season whose weekly stats just changed.
+
+    `player_season_stats` results are cached on disk per season and counter, so a refresh that rewrites 2026
+    leaves the (much larger, unchanged) 2025 scans cached."""
+    for season in seasons:
+        connection.execute(
+            "INSERT INTO stat_versions(season, version) VALUES (?, 1) "
+            "ON CONFLICT(season) DO UPDATE SET version=version+1", (int(season),))
+
+
+_STAT_CACHE_LOCK = threading.Lock()
+
+
+def stat_disk_cached(method):
+    """Persist a read of one season of `player_weekly_stats` across restarts and database writes to other seasons.
+
+    The key is the method, its arguments and that season's `stat_versions` counter (bumped by every write path
+    of the table), so a refresh that rewrites 2026 leaves 2025's results valid. Use only on methods whose result
+    is a function of `player_weekly_stats` rows of the `season` argument and the other arguments -- nothing else.
+    """
+    signature = inspect.signature(method)
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            bound = signature.bind(self, *args, **kwargs)
+            bound.apply_defaults()
+            arguments = dict(bound.arguments)
+            arguments.pop("self")
+            season = int(arguments["season"])
+            key = _freeze(arguments)
+            hash(key)
+        except Exception:
+            return method(self, *args, **kwargs)
+        self.initialize()
+        version = self._stat_version(season)
+        if version is None:
+            return method(self, *args, **kwargs)
+        hit = self._stat_cache_read(method.__name__, season, version, key)
+        if hit is not _MISSING:
+            return hit
+        value = method(self, *args, **kwargs)
+        self._stat_cache_write(method.__name__, season, version, key, value)
+        return value
+    return wrapper
 
 
 class NFLRepository:
@@ -526,6 +681,36 @@ class NFLRepository:
         return connection
 
     def initialize(self) -> None:
+        """Create or migrate the schema, once per process per database file."""
+        identity = _file_identity(self.path)
+        if identity is not None and identity in _INITIALIZED:
+            return
+        self._initialize_schema()
+        identity = _file_identity(self.path)
+        if identity is not None:
+            _INITIALIZED.add(identity)
+
+    def data_stamp(self) -> tuple:
+        return database_stamp(self.path)
+
+    def memo(self, key: tuple, compute: Callable[[], Any]) -> Any:
+        """Process-wide memo keyed by database state; returns a private copy of the cached value."""
+        full = (os.path.abspath(self.path), self.data_stamp(), *key)
+        with _MEMO_LOCK:
+            hit = _MEMO.get(full, _MISSING)
+            if hit is not _MISSING:
+                _MEMO.move_to_end(full)
+        if hit is _MISSING:
+            value = compute()
+            with _MEMO_LOCK:
+                _MEMO[full] = value
+                _MEMO.move_to_end(full)
+                while len(_MEMO) > MEMO_LIMIT:
+                    _MEMO.popitem(last=False)
+            hit = value
+        return clone(hit)
+
+    def _initialize_schema(self) -> None:
         with closing(self._connect()) as connection:
             connection.executescript(SCHEMA)
             columns = {row[1] for row in connection.execute("PRAGMA table_info(nfl_content_items)")}
@@ -557,6 +742,7 @@ class NFLRepository:
                     except sqlite3.OperationalError:
                         pass  # SQLite older than 3.35: the column stays, unused
             connection.executescript(PLAY_INDEXES)
+            connection.execute("DROP INDEX IF EXISTS idx_nfl_weekly_metric")     # superseded by idx_nfl_weekly_by_metric
             game_columns = {row[1] for row in connection.execute("PRAGMA table_info(games)")}
             game_migrations = {
                 "away_rest": "INTEGER", "home_rest": "INTEGER",
@@ -569,7 +755,22 @@ class NFLRepository:
                 if name not in game_columns:
                     connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
             connection.commit()
+            self._ensure_statistics(connection)
         self.seed_team_venues()
+
+    @staticmethod
+    def _ensure_statistics(connection: sqlite3.Connection) -> None:
+        """Give the query planner table statistics once.
+
+        Without sqlite_stat1 the planner guesses selectivity, and on the 36-million-row weekly table it guesses
+        wrong often enough to matter. A sampled ANALYZE (analysis_limit) takes a second or two even there.
+        """
+        has_table = connection.execute("SELECT 1 FROM sqlite_master WHERE name='sqlite_stat1'").fetchone()
+        if has_table and connection.execute("SELECT 1 FROM sqlite_stat1 LIMIT 1").fetchone():
+            return
+        connection.execute("PRAGMA analysis_limit=1000")
+        connection.execute("ANALYZE")
+        connection.commit()
 
     def replace_teams(self, teams: Iterable[Team]) -> int:
         now = datetime.now(timezone.utc).isoformat()
@@ -733,6 +934,7 @@ class NFLRepository:
             connection.executemany(
                 "INSERT INTO player_weekly_stats VALUES (?,?,?,?,?,?,?,?,?,?,?)", values,
             )
+            _bump_stat_versions(connection, {int(season)})
             connection.commit()
         return len(values)
 
@@ -748,6 +950,7 @@ class NFLRepository:
             connection.executemany(
                 "INSERT OR REPLACE INTO player_weekly_stats VALUES (?,?,?,?,?,?,?,?,?,?,?)", values,
             )
+            _bump_stat_versions(connection, {int(value[0]) for value in values})
             connection.commit()
         return len(values)
 
@@ -1597,6 +1800,7 @@ class NFLRepository:
             )
             connection.commit()
 
+    @memoized
     def counts(self, season: int) -> dict[str, int]:
         with closing(self._connect()) as connection:
             return {
@@ -1676,7 +1880,13 @@ class NFLRepository:
         independent of replace_teams()'s full nflverse-driven replace so a
         routine sync can never wipe it."""
         from sports_aggregator.nfl.venues import TEAM_VENUES
+        wanted = {team: (venue_name, latitude, longitude, elevation, int(dome))
+                  for team, (venue_name, latitude, longitude, elevation, dome) in TEAM_VENUES.items()}
         with closing(self._connect()) as connection:
+            existing = {row[0]: tuple(row[1:]) for row in connection.execute(
+                "SELECT team,venue_name,latitude,longitude,elevation_meters,dome FROM team_venues")}
+            if all(existing.get(team) == values for team, values in wanted.items()):
+                return   # already current: no write, so no WAL churn and no page-cache invalidation
             connection.executemany(
                 """INSERT INTO team_venues VALUES (?,?,?,?,?,?)
                    ON CONFLICT(team) DO UPDATE SET
@@ -1788,6 +1998,8 @@ class NFLRepository:
                 player[row["metric"]] = row["value"]
         return list(players.values())
 
+    @memoized
+    @stat_disk_cached
     def player_leaders(self, season: int, metric: str, *, team: str | None = None,
                        before_week: int | None = None, week: int | None = None,
                        limit: int = 10) -> list[dict[str, Any]]:
@@ -1814,6 +2026,7 @@ class NFLRepository:
                 parameters,
             )]
 
+    @stat_disk_cached
     def player_leaders_for_metrics(self, season: int, metrics: Iterable[str], *,
                                    team: str, before_week: int | None = None) -> list[dict[str, Any]]:
         """Aggregate several leader categories in one team-season table scan."""
@@ -1838,6 +2051,8 @@ class NFLRepository:
                 parameters,
             )]
 
+    @memoized
+    @stat_disk_cached
     def position_group_game_stats(self, season: int, *,
                                   before_week: int | None = None) -> list[dict[str, Any]]:
         """Wide player-game rows used to measure production allowed by position.
@@ -1878,6 +2093,7 @@ class NFLRepository:
                 parameters,
             )]
 
+    @memoized
     def latest_stat_week(self, season: int) -> int | None:
         self.initialize()
         with closing(self._connect()) as connection:
@@ -1886,6 +2102,22 @@ class NFLRepository:
             ).fetchone()
         return int(row[0]) if row and row[0] is not None else None
 
+    @memoized
+    def stat_positions(self, season: int) -> list[str]:
+        """Every position a synced player carries this season (each player counted by his highest position).
+
+        The explorer's position dropdown used to build this from a full per-player pivot of the season just to
+        read one column; this reads the column directly.
+        """
+        self.initialize()
+        with closing(self._connect()) as connection:
+            return sorted(row[0] for row in connection.execute(
+                """SELECT DISTINCT p FROM (SELECT MAX(position) p FROM player_weekly_stats
+                                           WHERE season=? GROUP BY player_id) WHERE p IS NOT NULL AND p<>''""",
+                (season,)))
+
+    @memoized
+    @stat_disk_cached
     def player_season_stats(self, season: int, metrics: Iterable[str], *,
                             team: str | None = None, position: str | None = None,
                             week_from: int | None = None, week_to: int | None = None,
@@ -1918,6 +2150,9 @@ class NFLRepository:
         case_columns = ",".join(
             f'SUM(CASE WHEN metric=? THEN value END) "{metric}"' for metric in wanted
         )
+        # A single pass over the season. A two-pass form (count games over all rows, sum only the requested
+        # metrics through the metric index) was tried and measured slower at every metric count once caches were
+        # warm: the season scan is sequential, while the index turns it into random row lookups.
         parameters: list[Any] = [*wanted, *where_params, max(1, int(minimum_games))]
         with closing(self._connect()) as connection:
             return [dict(row) for row in connection.execute(
@@ -1930,6 +2165,46 @@ class NFLRepository:
                 parameters,
             )]
 
+    # -- persistent cache for season-scoped reads of player_weekly_stats ---------------------------------------
+    # A league-wide season scan reads ~2.4M rows (1-5 s, and a game page runs dozens of them), while the answer
+    # only changes when that season's stats are rewritten. The process memo is discarded by ANY database write
+    # (the page cache needs that), so these results are also kept on disk keyed by the season's write counter.
+
+    def _stat_version(self, season: int) -> int | None:
+        try:
+            with closing(self._connect()) as connection:
+                row = connection.execute("SELECT version FROM stat_versions WHERE season=?", (int(season),)).fetchone()
+        except sqlite3.Error:
+            return None
+        return int(row[0]) if row else 0
+
+    def _stat_cache_path(self, name: str, season: int, version: int, key: Any) -> Path:
+        digest = hashlib.sha1(repr((name, key)).encode()).hexdigest()[:16]
+        return Path(self.path).resolve().parent / "stat_cache" / f"{int(season)}-v{version}-{name}-{digest}.pkl"
+
+    def _stat_cache_read(self, name: str, season: int, version: int, key: Any) -> Any:
+        try:
+            with self._stat_cache_path(name, season, version, key).open("rb") as handle:
+                return pickle.load(handle)
+        except Exception:
+            return _MISSING
+
+    def _stat_cache_write(self, name: str, season: int, version: int, key: Any, value: Any) -> None:
+        path = self._stat_cache_path(name, season, version, key)
+        try:
+            with _STAT_CACHE_LOCK:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_name(path.name + f".{os.getpid()}.part")
+                with temporary.open("wb") as handle:
+                    pickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                os.replace(temporary, path)
+                for stale in path.parent.glob(f"{int(season)}-v*.pkl"):      # older counters of this season
+                    if not stale.name.startswith(f"{int(season)}-v{version}-"):
+                        stale.unlink(missing_ok=True)
+        except Exception:
+            pass   # an unwritable cache is just a miss next time
+
+    @stat_disk_cached
     def team_player_usage(self, season: int, team: str, *,
                           before_week: int | None = None) -> list[dict[str, Any]]:
         """Aggregate touch and target workload into one row per player."""
@@ -2109,6 +2384,7 @@ class NFLRepository:
                                       output["clocked_plays"] if output.get("clocked_plays") else None)
         return output
 
+    @memoized
     def league_situational_profile(self, season: int, *,
                                    before_week: int | None = None) -> list[dict[str, Any]]:
         """team_situational_profile for every team at once, for leaguewide ranking."""
@@ -2171,6 +2447,7 @@ class NFLRepository:
                             if output.get(denominator) else None)
         return output
 
+    @memoized
     def league_playcalling_profile(self, season: int, *,
                                    before_week: int | None = None) -> list[dict[str, Any]]:
         """team_playcalling_profile for every team at once, for leaguewide ranking."""
@@ -2364,6 +2641,7 @@ class NFLRepository:
             ),
         }
 
+    @memoized
     def league_team_summary(self, season: int, *,
                             before_week: int | None = None) -> list[dict[str, Any]]:
         """team_season_summary for every team at once, for leaguewide ranking."""
@@ -2431,6 +2709,7 @@ class NFLRepository:
             })
         return output
 
+    @memoized
     def league_defensive_summary(self, season: int, *,
                                  before_week: int | None = None) -> list[dict[str, Any]]:
         """Traditional defense production, derived from opponent box scores.
@@ -2506,6 +2785,8 @@ class NFLRepository:
             })
         return output
 
+    @memoized
+    @stat_disk_cached
     def league_ngs_summary(self, season: int, *, before_week: int | None = None,
                            defense: bool = False) -> list[dict[str, Any]]:
         """Volume-weighted team NGS, optionally grouped by defense faced."""
@@ -2791,6 +3072,7 @@ class NFLRepository:
         row["explosive_rate"] = row["explosive_plays"] / row["plays"] if row["plays"] else None
         return row
 
+    @memoized
     def league_efficiency(self, season: int, *, before_week: int | None = None) -> list[dict[str, Any]]:
         self.initialize()
         week_filter = " AND week<?" if before_week is not None else ""
@@ -2831,6 +3113,7 @@ class NFLRepository:
     def team_efficiency(self, season: int, team: str) -> dict[str, Any] | None:
         return next((row for row in self.league_efficiency(season) if row["team"] == team), None)
 
+    @memoized
     def elo_ratings(self) -> list[dict[str, Any]]:
         self.initialize()
         with closing(self._connect()) as connection:

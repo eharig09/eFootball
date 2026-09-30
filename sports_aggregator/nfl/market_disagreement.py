@@ -12,6 +12,8 @@ against the closing total.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 from collections import defaultdict
 from typing import Any
 
@@ -44,7 +46,7 @@ POINT_BUCKETS = (
 
 def _market_map(repository: NFLRepository, start_season: int, end_season: int):
     repository.initialize()
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         rows = connection.execute(
             """SELECT game_id,spread_line,total_line
                FROM games

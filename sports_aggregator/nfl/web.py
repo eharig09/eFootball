@@ -691,9 +691,7 @@ def _explorer_packet() -> dict:
     # Any single real metric works here -- this only reads the position
     # column across every player synced this season, unfiltered, to build
     # the filter dropdown's option list.
-    positions = sorted({row["position"] for row in
-                        repository.player_season_stats(season, ("attempts",), minimum_games=1)
-                        if row.get("position")})
+    positions = repository.stat_positions(season)
     team_colors = {row["abbreviation"]: (row.get("color") or "#8296a4",
                                          row.get("alternate_color") or row.get("color") or "#0b1319")
                   for row in teams}

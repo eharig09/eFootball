@@ -59,6 +59,7 @@ from sports_aggregator.social.stories import StoryRepository
 from sports_aggregator.cfb.repository import _logo_pair
 from sports_aggregator.cfb.views import height_label
 from sports_aggregator.social.roles import role_label
+from sports_aggregator.table_render import render_rows
 from sports_aggregator.tables import format_value
 from sports_aggregator.client_cache import install_client_caching
 from sports_aggregator.compression import install_compression
@@ -425,6 +426,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         })
 
     app.jinja_env.filters["cell"] = format_value
+    app.jinja_env.globals["fast_rows"] = render_rows
     app.jinja_env.filters["height"] = height_label
     app.jinja_env.filters["role"] = role_label
     app.jinja_env.filters["logo_pair"] = _logo_pair

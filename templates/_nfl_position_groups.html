@@ -17,3 +17,22 @@
 </div>
 {% endif %}
 {% endmacro %}
+
+{# Game-page variant: every group for one matchup in a single compact table (group totals are the band rows, empty depth slots dropped). #}
+{% macro position_group_compact(profile) %}
+{% if profile and profile.has_data %}
+{% macro _idx(value) %}{% if value is not none %}<b class="ui-idx {{ 'is-bad' if value > 110 else ('is-good' if value < 90 else '') }}">{{ value|cell('f1') }}</b>{% else %}&mdash;{% endif %}{% endmacro %}
+<table class="ui-mini ui-pos">
+    <thead><tr><th>Role</th><th class="num">Tgt</th><th class="num">Rec</th><th class="num">Rec yd</th><th class="num">Car</th><th class="num">Rush yd</th><th class="num">TD</th><th class="num" title="Production allowed relative to the NFL average. 100 is average; lower is better for the defense.">vs NFL</th><th class="num" title="Actual production allowed divided by opponent-adjusted expectation. 100 is expected; lower is better for the defense.">Adj.</th></tr></thead>
+    {% for group in profile.groups %}<tbody>
+        {% for row in group.rows %}{% if row.is_total or row.per_game.scrimmage_yards or row.per_game.targets or row.per_game.carries %}
+        <tr class="{{ 'ui-pos-total' if row.is_total else 'ui-pos-role' }}">
+            <th scope="row">{% if row.is_total %}{{ group.label }}{% else %}{{ row.role }}{% if row.player %}<small>{{ row.player.player_name }}</small>{% endif %}{% endif %}</th>
+            <td class="num">{{ row.per_game.targets|cell('f1') }}</td><td class="num">{{ row.per_game.receptions|cell('f1') }}</td><td class="num">{{ row.per_game.receiving_yards|cell('f1') }}</td><td class="num">{{ row.per_game.carries|cell('f1') }}</td><td class="num">{{ row.per_game.rushing_yards|cell('f1') }}</td><td class="num">{{ row.per_game.total_tds|cell('f1') }}</td>
+            <td class="num">{{ _idx(row.league_index) }}</td>
+            <td class="num" title="Opponent quality {{ row.opponent_quality_index|cell('f1') }}">{{ _idx(row.adjusted_allowed_index) }}</td>
+        </tr>{% endif %}{% endfor %}
+    </tbody>{% endfor %}
+</table>
+{% endif %}
+{% endmacro %}

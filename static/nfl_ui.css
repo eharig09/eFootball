@@ -338,4 +338,66 @@ a.ui-chip{text-decoration:none}
 @media(max-width:1100px){.ui-deep-grid{grid-template-columns:1fr}.ui-team-header{grid-template-columns:auto minmax(0,1fr)}.ui-header-links{grid-column:1/-1;justify-content:flex-start}}
 @media(max-width:620px){.ui-team-header{padding:16px 14px;gap:14px}.ui-team-logo{width:60px;height:60px}.ui-team-logo img{width:44px;height:44px}
 .ui-pctl-cols,.ui-pctl-row{grid-template-columns:minmax(0,1.4fr) 54px minmax(56px,1fr) 38px}.ui-pctl-cols span:nth-child(5),.ui-rk{display:none}
-.ui-gap-row{grid-template-columns:82px minmax(0,1fr) 84px;gap:8px}.ui-gap-scale{margin-left:90px}.ui-filterbar{padding:10px 12px}.ui-panel{padding:14px 12px}}
+.ui-gap-row{grid-template-columns:104px minmax(0,1fr) 68px;gap:8px}.ui-gap-scale{margin-left:112px}.ui-filterbar{padding:10px 12px}.ui-panel{padding:14px 12px}}
+
+/* Matchup tab reworks: compact position ledger, trench panels, run-game bands, coach comparison, gap labels. */
+.ui-gap-row{grid-template-columns:168px minmax(0,1fr) 62px}
+.ui-gap-row .ui-lbl{font-size:.74rem;line-height:1.15;white-space:normal;text-overflow:clip}
+.ui-gap-scale{margin-left:176px}
+.ui-pos{table-layout:auto}
+.ui-pos th,.ui-pos td{padding:4px 7px}
+.ui-pos tbody+tbody{border-top:1px solid var(--ui-line)}
+.ui-pos .ui-pos-total th,.ui-pos .ui-pos-total td{background:#17181c;font-weight:800;color:var(--ink)}
+.ui-pos .ui-pos-role th{padding-left:18px;font-weight:600}
+.ui-pos .ui-pos-role th small{color:var(--muted)}
+.ui-idx{display:inline-block;min-width:38px;padding:1px 6px;border-radius:5px;background:#22252b;text-align:center}
+.ui-idx.is-bad{background:#4a2129;color:#ffb3bd}.ui-idx.is-good{background:#173a2a;color:#8de6b3}
+.ui-trench .ui-trench-stats{margin-bottom:10px;table-layout:fixed}.ui-trench-stats th,.ui-trench-stats td{text-align:center!important;font-size:.9rem}.ui-trench-stats thead th{font-size:.56rem}.ui-trench-stats td{font-weight:800}
+.ui-trench .ui-side-by-side{gap:14px}
+.ui-trench .ui-mini thead th:first-child{letter-spacing:.06em}
+.ui-run{max-width:1000px}.ui-run th:first-child{width:200px}
+.ui-group-row th{padding-bottom:0;border-bottom:0;color:var(--ink);font-size:.6rem;letter-spacing:.16em}
+.ui-group-row th.num{text-align:center;border-bottom:1px solid var(--ui-line)}
+.ui-run .ui-band-row th{padding:7px 8px;background:#17181c;color:var(--ink);font-size:.7rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.ui-run .ui-band-row th span{float:right;color:var(--muted);font-size:.64rem;font-weight:600;letter-spacing:0;text-transform:none}
+.ui-run tbody+tbody{border-top:1px solid var(--ui-line)}
+.ui-coach td small{display:block;margin:1px 0 0;font-size:.62rem}
+.ui-coach td.side,.ui-coach td.home{line-height:1.25}
+.ui-coach td.side small,.ui-coach td.home small{margin-left:0}
+.ui-coach td span{color:var(--muted);margin-left:4px}
+.ui-coach thead th small{display:inline;margin-left:4px}
+.ui-coach td.home{text-align:left}
+
+.ui-inline-logo{width:22px;height:22px;margin-right:8px;vertical-align:middle;object-fit:contain}
+.matchup-availability .ui-panel-head h3{color:var(--ink)}
+.ui-leaders th small{display:block;margin:1px 0 0;font-weight:500}
+.ui-leaders td{white-space:nowrap}
+.ui-leaders td b{margin-left:6px}
+.ui-leaders td:nth-child(n+2){width:38%}
+
+/* Phone layout (<=620px): nothing may widen the page; wide content scrolls inside its own container. */
+@media(max-width:620px){
+  html,body{overflow-x:hidden}
+  .nfl-team-page main,.nfl-player-page main,.nfl-matchup-page main{padding-inline:10px}
+  .ui-filterbar{gap:8px 14px}
+  .ui-filter-group{flex:1 0 100%;min-width:0;flex-wrap:nowrap}
+  .ui-filter-group>label,.ui-filter-group>span:first-child:not(.ui-pills){flex:0 0 auto}
+  .ui-pills{max-width:100%;min-width:0;overflow-x:auto;scrollbar-width:none}
+  .ui-pills::-webkit-scrollbar{display:none}
+  .ui-pill{flex:0 0 auto;min-height:38px;display:inline-flex;align-items:center;padding:8px 13px;font-size:.8rem;white-space:nowrap}
+  /* readable floor: nothing under ~10.5px on a phone */
+  .data td,.ui-mini td,.ui-matrix td{font-size:max(.74rem,11.5px)}
+  .data th,.ui-mini th,.ui-matrix th,.ui-matrix small,.ui-mini .tag{font-size:max(.68rem,10.5px)}
+  .nfl-team-page small,.nfl-player-page small,.nfl-matchup-page small,.eyebrow,.article-grade{font-size:max(.68rem,10.5px)}
+  .ui-pctl-row,.ui-gap-row{font-size:max(.8rem,12px)}
+  /* long stat names wrap instead of truncating */
+  .ui-lbl{white-space:normal;line-height:1.15;text-overflow:clip}
+  .ui-gap-row{min-height:40px}
+}
+/* Game tab strip: the buttons row scrolls sideways at tablet/phone widths (they overlapped when squeezed). */
+@media(max-width:900px){
+  .nfl-matchup-page .matchup-workspace-tabs{display:block;overflow:hidden}
+  .nfl-matchup-page .nfl-tab-buttons{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .nfl-matchup-page .nfl-tab-buttons::-webkit-scrollbar{display:none}
+  .nfl-matchup-page .nfl-tab-buttons button{flex:0 0 auto;white-space:nowrap;min-width:0;padding:0 16px}
+}

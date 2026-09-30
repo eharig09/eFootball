@@ -9,6 +9,8 @@ the scoring layer from training on in-sample first-stage predictions.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 import math
 from typing import Any
 
@@ -31,6 +33,7 @@ from sports_aggregator.nfl.efficiency_projection import (
     _predict as _predict_efficiency,
 )
 from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.nfl.model_cache import history_cached
 
 MODEL_VERSION = "nfl-scoring-bridge-v1"
 RIDGE_ALPHA = 8.0
@@ -49,7 +52,7 @@ SCORING_FEATURES = (
 
 def _score_map(repository: NFLRepository, start_season: int, end_season: int) -> dict[tuple[str, str], float]:
     repository.initialize()
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         rows = connection.execute(
             """SELECT game_id,home_team,away_team,home_score,away_score
                FROM games
@@ -148,6 +151,7 @@ def _game_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+@history_cached("core_oof")
 def _core_oof_rows(repository: NFLRepository, start_season: int, end_season: int) -> list[dict[str, Any]]:
     rows = build_rows(repository, start_season=start_season, end_season=end_season)
     score_map = _score_map(repository, start_season, end_season)

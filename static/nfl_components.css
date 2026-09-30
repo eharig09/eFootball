@@ -464,3 +464,12 @@ main{padding:24px 24px 64px}
 .position-allowed-card .position-total{background:#15252e}.position-allowed-card .position-total th,.position-allowed-card .position-total td{font-weight:800}.position-allowed-card .position-role th{padding-left:24px}
 .index-value{display:inline-flex;min-width:32px;justify-content:center;padding:3px 5px;border-radius:3px;background:#263943;color:#dce8ed}.index-good{background:#153d31;color:#8ee4bb}.index-bad{background:#4a2528;color:#ffb0b5}
 .position-matchup-block+.position-matchup-block{margin-top:26px;padding-top:22px;border-top:1px solid #2b3e49}.position-matchup-block>h3{margin:0 0 10px;color:#dbe7ed;font-size:.82rem}
+
+/* Phone nav: one swipeable row under the brand instead of wrapping or widening the page; 40px tap targets. */
+@media(max-width:620px){
+  html,body{overflow-x:hidden}
+  .nfl-nav-shell{gap:6px}
+  .nfl-nav-shell .primary-nav{order:3;flex:1 0 100%;margin-left:0;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:2px}
+  .nfl-nav-shell .primary-nav::-webkit-scrollbar{display:none}
+  .primary-nav a{flex:0 0 auto;min-height:40px;display:inline-flex;align-items:center;padding:8px 11px;font-size:.72rem}
+}

@@ -11,7 +11,7 @@ from sports_aggregator.nfl.repository import NFLRepository
 GROUPS = (
     ("WR", "Wide receivers", 4, "receiving_yards"),
     ("TE", "Tight ends", 3, "receiving_yards"),
-    ("RB", "Running backs", 3, "scrimmage_yards"),
+    ("RB", "Backfield (RB + QB rush)", 3, "scrimmage_yards"),
 )
 COUNTING_METRICS = (
     "targets", "receptions", "receiving_yards", "receiving_tds",
@@ -22,7 +22,12 @@ COUNTING_METRICS = (
 
 def _group(position: str | None) -> str | None:
     value = (position or "").upper()
-    return "RB" if value in {"RB", "FB", "HB"} else value if value in {"WR", "TE"} else None
+    return "RB" if value in {"RB", "FB", "HB", "QB"} else value if value in {"WR", "TE"} else None
+
+
+def _roles(group: str, limit: int) -> tuple[str, ...]:
+    depth = tuple(f"{group}{index}" for index in range(1, limit + 1))
+    return ("QB rush", *depth) if group == "RB" else depth
 
 
 def _add(target: dict[str, float], row: dict[str, Any]) -> None:
@@ -49,13 +54,21 @@ def _prepared(rows: Iterable[dict[str, Any]]) -> tuple[list[dict[str, Any]], dic
             continue
         row = dict(source)
         row["group"] = group
+        if (row.get("position") or "").upper() == "QB":
+            # Quarterbacks join this model only as rushers. Exclude rare pass
+            # receptions so the backfield receiving columns remain RB usage.
+            for metric in ("targets", "receptions", "receiving_yards", "receiving_tds",
+                           "receiving_first_downs", "receiving_air_yards", "receiving_epa"):
+                row[metric] = 0.0
         row["scrimmage_yards"] = float(row.get("receiving_yards") or 0) + float(row.get("rushing_yards") or 0)
         row["total_tds"] = float(row.get("receiving_tds") or 0) + float(row.get("rushing_tds") or 0)
         data.append(row)
         key = (str(row.get("team") or ""), group, str(row.get("player_id") or ""))
         player = players.setdefault(key, {
             "player_id": row.get("player_id"), "player_name": row.get("player_name"),
-            "team": row.get("team"), "group": group, "targets": 0.0, "carries": 0.0,
+            "team": row.get("team"), "group": group,
+            "position": (row.get("position") or "").upper(),
+            "targets": 0.0, "carries": 0.0,
             "receptions": 0.0, "scrimmage_yards": 0.0, "games": set(),
         })
         for metric in ("targets", "carries", "receptions", "scrimmage_yards"):
@@ -73,13 +86,24 @@ def _prepared(rows: Iterable[dict[str, Any]]) -> tuple[list[dict[str, Any]], dic
         room.sort(key=lambda item: (
             -item["opportunities"], -item["scrimmage_yards"], str(item["player_name"]),
         ))
-        for index, player in enumerate(room, 1):
+        backs = [player for player in room if player["position"] != "QB"]
+        quarterbacks = [player for player in room if player["position"] == "QB"]
+        selected = quarterbacks[:1] if group == "RB" else []
+        ranked = backs if group == "RB" else room
+        for index, player in enumerate(ranked, 1):
             player["role"] = f"{group}{index}"
             player["per_game_opportunities"] = player["opportunities"] / player["games"] if player["games"] else 0
             player["per_game_scrimmage_yards"] = player["scrimmage_yards"] / player["games"] if player["games"] else 0
             if index <= limits[group]:
                 role_by_player[(team, group, str(player["player_id"]))] = player["role"]
-        role_players[(team, group)] = room[:limits[group]]
+                selected.append(player)
+        if group == "RB":
+            for player in quarterbacks:
+                player["role"] = "QB rush"
+                player["per_game_opportunities"] = player["opportunities"] / player["games"] if player["games"] else 0
+                player["per_game_scrimmage_yards"] = player["scrimmage_yards"] / player["games"] if player["games"] else 0
+                role_by_player[(team, group, str(player["player_id"]))] = "QB rush"
+        role_players[(team, group)] = selected if group == "RB" else room[:limits[group]]
     for row in data:
         row["role"] = role_by_player.get((row["team"], row["group"], str(row["player_id"])))
     return data, role_players
@@ -106,8 +130,8 @@ def _aggregate(data: list[dict[str, Any]]) -> tuple[dict, dict, dict]:
     for team, game_id in offense_games:
         for group, _label, limit, _primary in GROUPS:
             games.setdefault((team, game_id, group, None), {})
-            for index in range(1, limit + 1):
-                games.setdefault((team, game_id, group, f"{group}{index}"), {})
+            for role in _roles(group, limit):
+                games.setdefault((team, game_id, group, role), {})
 
     offense_totals: dict[tuple[str, str, str | None], dict[str, Any]] = {}
     for (team, game_id, group, role), values in games.items():
@@ -158,7 +182,7 @@ def _profile_from_rows(rows: Iterable[dict[str, Any]], defense: str, *, offense:
     groups = []
     for group, label, limit, primary in GROUPS:
         rows_out = []
-        for role in (None, *(f"{group}{index}" for index in range(1, limit + 1))):
+        for role in (None, *_roles(group, limit)):
             key = (group, role)
             observations = len(actual_games[key])
             if role is not None and not observations:

@@ -5,6 +5,8 @@ projection research. Schema existence is not treated as data availability.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 from typing import Any
 
 from sports_aggregator.nfl.repository import NFLRepository
@@ -40,7 +42,7 @@ def audit(repository: NFLRepository, *, from_season: int = 2010,
           to_season: int = 2026) -> dict[str, Any]:
     repository.initialize()
     seasons = list(range(int(from_season), int(to_season) + 1))
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         existing = {name: _exists(connection, table) for name, (table, _) in TABLES.items()}
         by_season = []
         for season in seasons:

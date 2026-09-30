@@ -15,7 +15,6 @@ player, one team, or the whole league for a season. Three families:
 
 from __future__ import annotations
 
-import time
 from collections import defaultdict
 from contextlib import closing
 from typing import Any, Callable, Iterable
@@ -25,25 +24,17 @@ from sports_aggregator.nfl.plays import ZONES
 MIN_COVERAGE = 500
 #: A field:boundary ratio from fewer charted plays than this is noise, so it is withheld.
 MIN_RATIO_SAMPLE = 20
-CACHE_SECONDS = 1800
-_CACHE: dict[tuple, tuple[float, Any]] = {}
 
 
 def clear_cache() -> None:
-    """Forget cached league-level aggregates (called after a play ingest)."""
-    _CACHE.clear()
+    """Kept for callers that ran an ingest: results are memoized per database state (see
+    NFLRepository.memo), so a write already retires them and there is nothing to clear."""
 
 
 def _cached(repository, key: tuple, compute: Callable[[], Any]) -> Any:
-    """League-wide aggregates scan a whole season, so compute them once per process per half hour."""
-    full = (repository.path, *key)
-    now = time.monotonic()
-    hit = _CACHE.get(full)
-    if hit and now - hit[0] < CACHE_SECONDS:
-        return hit[1]
-    value = compute()
-    _CACHE[full] = (now, value)
-    return value
+    """League-wide aggregates scan a whole season, so compute them once per database state."""
+    return repository.memo(("route_analytics", *key), compute)
+
 
 ROUTE_LABELS = {
     "HITCH/CURL": "Hitch / Curl", "IN/DIG": "In / Dig", "QUICK OUT": "Quick out", "DEEP OUT": "Deep out",
@@ -419,7 +410,7 @@ def hash_profile(repository, season: int, scope: str | None, scope_id: str | Non
 
 def league_hash_profile(repository, season: int) -> dict[str, Any]:
     """The league-wide hash/side profile, cached; the baseline every player and team is shown against."""
-    return _cached(repository, ("league_hash", season), lambda: hash_profile(repository, season, None))
+    return _cached(repository, ("league_hash", season, MIN_RATIO_SAMPLE), lambda: hash_profile(repository, season, None))
 
 
 # ---------------------------------------------------------------- packages by field zone

@@ -2360,6 +2360,38 @@ def divergence_table(entries: list[dict[str, Any]], season: int, *, caption: str
     return Table(columns=columns, rows=rows, caption=caption, note=note, empty=empty)
 
 
+def draft_outcomes_table(summary: list[dict[str, Any]]) -> Table:
+    """How drafted players at each position have actually turned out, by draft day."""
+    rows = []
+    for entry in summary:
+        rows.append({
+            "position": entry.get("position"),
+            "round_bucket": entry.get("round_bucket"),
+            "n": entry.get("n"),
+            "starter_rate": (entry.get("starter_rate") or 0) * 100,
+            "pro_bowl_rate": (entry.get("pro_bowl_rate") or 0) * 100,
+            "median_career_av": entry.get("median_career_av"),
+        })
+    return Table(
+        columns=[
+            Column(key="position", label="Position", align="left", emphasis=True),
+            Column(key="round_bucket", label="Draft day", align="left"),
+            Column(key="n", label="Picks", format="int",
+                   title="2010-2025 picks in this position/round-window bucket"),
+            Column(key="starter_rate", label="Started", format="pct",
+                   title="Share who started at least one season"),
+            Column(key="pro_bowl_rate", label="Pro Bowl", format="pct",
+                   title="Share who made at least one Pro Bowl"),
+            Column(key="median_career_av", label="Median AV", format="int",
+                   title="Median career Approximate Value"),
+        ],
+        rows=rows,
+        caption="Draft outcomes, 2010-2025",
+        note="Realized rates for players already drafted -- not a projection for a current prospect.",
+        empty="No historical draft outcome data has been imported.",
+    )
+
+
 def production_groups(production, season, *, interest=None, pff_season: int = 2025):
     """Preseason production split into returning, arrived and departed.
 
@@ -2659,52 +2691,6 @@ def market_table(lines, game):
         caption="Market",
         note="quotes per book, never averaged into one number",
         empty="No betting lines are stored for this game.",
-    )
-
-
-def games_to_watch_compact(games: Sequence[dict[str, Any]],
-                           brands: dict[int, dict[str, Any]] | None = None) -> Table:
-    """The slate with both teams named, sized to fit without sideways scrolling.
-
-    An earlier version dropped the home team into a small sub-line to save width.
-    That broke the rule the rest of the tables follow -- every entity gets its own
-    labeled column at full weight -- so the columns that carry no decision (venue,
-    broadcast) are dropped instead, and both teams keep a real column.
-    """
-    rows = []
-    for game in games:
-        entry = {
-            "week": game.get("week"),
-            "week_sub": game.get("date_label"),
-            "away_team": game["away_team"],
-            "away_team_sub": f"#{game['away_rank']}" if game.get("away_rank") else None,
-            "away_team_url": url_for("cfb.game_preview", game_id=game["game_id"]),
-            "home_team": game["home_team"],
-            "home_team_sub": f"#{game['home_rank']}" if game.get("home_rank") else None,
-            "home_team_url": url_for("cfb.game_preview", game_id=game["game_id"]),
-            "matchup_edge": game.get("matchup_edge_team") or "Even",
-            "matchup_edge_sub": game.get("matchup_edge_unit"),
-            "spread": (game.get("market") or {}).get("spread"),
-            "attention_score": game.get("attention_score"),
-        }
-        brand_cell(entry, "away_team", (brands or {}).get(game.get("away_team_id")))
-        brand_cell(entry, "home_team", (brands or {}).get(game.get("home_team_id")))
-        rows.append(entry)
-    return Table(
-        columns=[
-            Column(key="week", label="Wk", format="rank", align="right"),
-            Column(key="away_team", label="Away", align="left", emphasis=True),
-            Column(key="home_team", label="Home", align="left", emphasis=True),
-            Column(key="matchup_edge", label="Edge", align="left",
-                   title="Which team holds the biggest graded unit advantage, and where"),
-            Column(key="spread", label="Line", format="f1",
-                   title="Consensus spread across books, from the home side"),
-            Column(key="attention_score", label="Att", format="int",
-                   title="Provisional attention score out of 100"),
-        ],
-        rows=rows,
-        caption=None,
-        empty="No upcoming games are stored for this season.",
     )
 
 

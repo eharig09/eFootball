@@ -97,7 +97,6 @@
     <section class="panel">
         <div class="panel-head"><strong>Games to Watch</strong><span>Attention &amp; matchup edge</span></div>
         <div class="panel-body">
-            <div class="games-table-display">{{ data_table(games_table) }}</div>
             <div class="watch-cards">
                 {% for game in watch_games %}
                 {% set away = watch_brands.get(game.away_team_id, {}) %}

@@ -943,7 +943,7 @@ table.data tbody tr:hover td.box-group { background: var(--head-bg); }
     }
     .mobile-page-tabs::-webkit-scrollbar { display: none; }
     .mobile-page-tabs button {
-        min-height: 42px; padding: 7px 8px; border: 0; border-right: 1px solid var(--on-strong-divider);
+        min-height: 44px; padding: 7px 8px; border: 0; border-right: 1px solid var(--on-strong-divider);
         background: transparent; color: var(--on-strong-muted); font: 800 .66rem/1.15 var(--display-font);
         text-transform: uppercase; letter-spacing: .045em; white-space: nowrap;
     }
@@ -993,7 +993,7 @@ table.data tbody tr:hover td.box-group { background: var(--head-bg); }
     }
     .mobile-page-tabs::-webkit-scrollbar { display: none; }
     .mobile-page-tabs button {
-        min-height: 42px; padding: 7px 8px; border: 0; border-right: 1px solid var(--on-strong-divider);
+        min-height: 44px; padding: 7px 8px; border: 0; border-right: 1px solid var(--on-strong-divider);
         background: transparent; color: var(--on-strong-muted); font: 800 .66rem/1.15 var(--display-font);
         text-transform: uppercase; letter-spacing: .045em; white-space: nowrap;
     }

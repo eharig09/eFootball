@@ -15,9 +15,28 @@ def test_event_cli_exposes_event_aligned_validation():
     assert args.model_version == "candidate"
 
 
+def test_event_cli_exposes_model_artifact_commands():
+    export = event_parser().parse_args(["export-model", "--artifact", "model.json"])
+    install = event_parser().parse_args(["install-model", "--artifact", "model.json"])
+
+    assert export.command == "export-model"
+    assert install.command == "install-model"
+    assert export.artifact == install.artifact == "model.json"
+
+
 def test_rebuild_defaults_to_expanded_history_and_tuned_shrinkage():
     args = rebuild_parser().parse_args([])
 
     assert args.fit_from_year == 2015
     assert args.score_from_year == 2015
     assert args.min_cell == MIN_CELL == 10
+    assert args.skip_fit is False
+
+
+def test_rebuild_can_install_artifact_without_refitting():
+    args = rebuild_parser().parse_args([
+        "--skip-fit", "--model-artifact", "model.json",
+    ])
+
+    assert args.skip_fit is True
+    assert args.model_artifact == "model.json"

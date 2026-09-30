@@ -46,7 +46,6 @@
         .briefing > .panel:nth-child(3) .panel-body { max-height: 22rem; }
     }
     .panel .table-wrap { border: 0; margin: 0; }
-    .games-table-display { display: none; }
     .watch-cards { display: grid; gap: 10px; padding: 10px; }
     .watch-card {
         display: block; min-width: 0; overflow: hidden; color: var(--ink);

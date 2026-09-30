@@ -1444,3 +1444,50 @@ PFF seed stage can run.
   gains a Tendencies tab (package tables for offense and defense, field/boundary for offense and what
   opponents do against it, route trees and the most frequent quarterback-target pairs).
 
+## 2026-09-30 performance pass
+
+Measured cold page renders (fresh process, empty page cache) on the local 12 GB database, CPU seconds, old code vs new:
+scoreboard 0.23 -> 0.16, team 7.8 -> 5.6, completed game 13.4 -> 5.1, upcoming game 17.3 -> 12.3, dashboard
+10.6 -> 4.4, picks 6.1 -> 0.7 (and picks no longer recomputes on every repeat), explorer 31 -> 20 s (34 s repeat -> 1 s,
+28 -> 15.5 MB of HTML). Numbers taken on a machine running a video encode were 2-5x worse; compare CPU time, not wall.
+
+- **Read paths no longer write.** `NFLRepository.initialize()` reran the schema script and upserted team venues
+  (a write) on every call, and pages call it dozens of times. That touched the `-wal` file on every request, and the
+  page cache key includes the database's modified time, so pages that looked cached were invalidated by their own
+  reads (picks recomputed in ~5 s on every repeat) and readers took write locks that could collide with refresh jobs.
+  It now runs once per process per database file, and venue seeding writes only when a row differs.
+- **State-keyed memo** (`@memoized`, `repository.memo`, key = `database_stamp`: header change counter + mtime/size of
+  the database and WAL). League-wide aggregates (`league_*`, `counts`, `player_leaders`, `player_season_stats`,
+  `position_group_game_stats`, ...) compute once per database state and hand each caller a private `clone`. A write from
+  any process retires them. `route_analytics` uses the same memo.
+- **Model cache** (`model_cache.history_cached`): the walk-forward Football Lab inputs (`build_rows`, out-of-fold rows,
+  game rows, calibrated residuals) take minutes and used to be rebuilt, several times over, per dashboard render.
+  They are cached in memory and on disk (`<db dir>/model_cache`), keyed by a fingerprint of the three source tables
+  for seasons <= end_season plus a hash of the model modules (infrastructure modules such as repository.py are
+  excluded so unrelated edits do not force a rebuild). The `core-pbp` refresh segment warms it (`model_cache.warm`).
+  `live_projection.report` also dropped a fully computed but unused `_core_oof_rows` call.
+- **Indexes and statistics.** `idx_nfl_weekly_by_metric (metric, season, week)` serves "leaders for one metric"
+  (5.3 s -> 0.35 s). Metric must lead: `(season, metric, week)` let SQLite satisfy `season=? GROUP BY metric` from that
+  index and scan the whole season for per-player queries (12.9 s vs 3 ms), which is what the first attempt did.
+  `initialize()` also runs a sampled `ANALYZE` once so the planner has statistics. A test pins both.
+- **Table rendering.** `table_render.render_rows` renders `<tbody>` rows in Python (~0.4 ms/cell in the Jinja macro
+  before); the macro falls back to its own loop for conference marks and in environments without the `fast_rows`
+  global. `tests/test_table_render.py` renders 300 randomized decorated tables both ways and compares them.
+- **Ingest.** Fast paths in the nflverse value converters, cached classifiers, and lineup-grouped package
+  aggregation: `build_play_rows` 5.0 -> 2.8 s and `package_snap_rows` 2.4 -> 1.8 s per season, output identical
+  (EPA sums differ only in the last float digits).
+- **Connection leaks.** Eleven modules used `with repository._connect() as connection`, which commits but does not
+  close; they now use `closing(...)`.
+
+Tried and rejected after measuring: a two-pass `player_season_stats` (slower than the single pass at every metric count
+once caches were warm) and a shared per-season pivot (building it costs more than the repeated scans it replaces).
+
+
+### Per-season stat cache
+
+`player_season_stats`, `player_leaders`, `player_leaders_for_metrics`, `position_group_game_stats`, `team_player_usage`
+and `league_ngs_summary` are wrapped in `stat_disk_cached`: results are pickled under `<database dir>/stat_cache/`, keyed by
+method, arguments and the season's counter in `stat_versions`. `replace_weekly_stats` and `upsert_weekly_stats` bump that
+counter, so a weekly refresh of the current season leaves earlier seasons' league-wide scans cached (a cold game page went
+from ~25 s to ~3 s). Any new writer of `player_weekly_stats` must call `_bump_stat_versions`, and any new method wrapped
+this way must read only `player_weekly_stats` rows of its `season` argument.

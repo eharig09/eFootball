@@ -8,14 +8,15 @@ from sports_aggregator.nfl.position_groups import (
 from sports_aggregator.nfl.repository import NFLRepository
 
 
-def _row(game, week, team, defense, player, yards, *, targets=10, position="WR"):
+def _row(game, week, team, defense, player, yards, *, targets=10, position="WR",
+         carries=0, rushing_yards=0, rushing_tds=0):
     return {
         "season": 2026, "week": week, "season_type": "REG", "game_id": game,
         "player_id": player.lower(), "player_name": player, "team": team,
         "opponent_team": defense, "position": position, "targets": targets,
         "receptions": targets / 2, "receiving_yards": yards,
         "receiving_tds": 0, "receiving_first_downs": 0,
-        "carries": 0, "rushing_yards": 0, "rushing_tds": 0,
+        "carries": carries, "rushing_yards": rushing_yards, "rushing_tds": rushing_tds,
         "rushing_first_downs": 0,
     }
 
@@ -67,6 +68,26 @@ class PositionGroupDefenseTests(unittest.TestCase):
         )
         self.assertEqual(self.repository.calls[-1], (2026, None))
 
+    def test_qb_rushing_joins_backfield_total_but_not_rb_depth_roles(self):
+        repository = _Repository([
+            _row("g1", 1, "AAA", "D1", "Lead Back", 20, position="RB",
+                 targets=2, carries=12, rushing_yards=55),
+            _row("g1", 1, "AAA", "D1", "Mobile QB", 15, position="QB",
+                 targets=1, carries=6, rushing_yards=35, rushing_tds=1),
+            _row("g2", 2, "AAA", "D2", "Lead Back", 10, position="RB",
+                 targets=1, carries=10, rushing_yards=45),
+            _row("g2", 2, "AAA", "D2", "Mobile QB", 0, position="QB",
+                 carries=4, rushing_yards=20),
+        ])
+        profile = position_group_defense(repository, 2026, "D1")
+        backfield = next(group for group in profile["groups"] if group["key"] == "RB")
+        by_role = {row["role"]: row for row in backfield["rows"]}
+        self.assertEqual(by_role["RB total"]["per_game"]["rushing_yards"], 90)
+        self.assertEqual(by_role["QB rush"]["per_game"]["rushing_yards"], 35)
+        self.assertEqual(by_role["QB rush"]["per_game"]["receiving_yards"], 0)
+        self.assertEqual(by_role["RB1"]["per_game"]["rushing_yards"], 55)
+        self.assertNotEqual((by_role["RB1"].get("player") or {}).get("player_name"), "Mobile QB")
+
 
 class PositionGroupRepositoryTests(unittest.TestCase):
     def test_player_game_pivot_filters_positions_and_honors_pregame_cutoff(self):
@@ -87,10 +108,11 @@ class PositionGroupRepositoryTests(unittest.TestCase):
                  "receptions": 4, "receiving_yards": 55},
             ])
             rows = repository.position_group_game_stats(2026, before_week=2)
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["player_name"], "Wide One")
-            self.assertEqual(rows[0]["targets"], 8)
-            self.assertEqual(rows[0]["receiving_yards"], 70)
+            self.assertEqual(len(rows), 2)
+            by_player = {row["player_name"]: row for row in rows}
+            self.assertEqual(by_player["Wide One"]["targets"], 8)
+            self.assertEqual(by_player["Wide One"]["receiving_yards"], 70)
+            self.assertEqual(by_player["Quarter Back"]["rushing_yards"], 20)
 
 
 if __name__ == "__main__":

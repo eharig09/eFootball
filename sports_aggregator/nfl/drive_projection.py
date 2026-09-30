@@ -8,6 +8,8 @@ no game in a week can inform another game in that same week.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 from collections import defaultdict
 from dataclasses import dataclass
 import math
@@ -16,6 +18,7 @@ from typing import Any
 import numpy as np
 
 from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.nfl.model_cache import history_cached
 
 MODEL_VERSION = "nfl-drive-v2"
 MIN_PRIOR_GAMES = 3
@@ -146,7 +149,7 @@ class TeamHistory:
 
 def _raw_games(repository: NFLRepository, start_season: int, end_season: int) -> list[dict[str, Any]]:
     repository.initialize()
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         rows = connection.execute(
             """SELECT g.game_id,g.season,g.week,g.game_date,g.away_team,g.home_team,
                       g.completed,g.division_game,g.spread_line,g.total_line,
@@ -325,6 +328,7 @@ def _feature_row(
     }
 
 
+@history_cached("drive_rows")
 def build_rows(repository: NFLRepository, *, start_season: int = 2016,
                end_season: int = 2025,
                season_decay: float = STATE_SEASON_DECAY) -> list[dict[str, Any]]:

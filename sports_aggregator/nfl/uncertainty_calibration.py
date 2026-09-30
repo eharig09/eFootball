@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 
 from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.nfl.model_cache import history_cached
 from sports_aggregator.nfl.score_calibration import (
     _game_rows,
     TOTAL_FEATURES,
@@ -145,6 +146,7 @@ def _week_regime_summary(rows: list[dict[str, Any]], kind: str, method: str, lev
     }
 
 
+@history_cached("calibrated_oof")
 def _calibrated_oof(repository: NFLRepository, start_season: int, end_season: int):
     games = _game_rows(repository, start_season=start_season, end_season=end_season)
     seasons = sorted({int(r["season"]) for r in games})

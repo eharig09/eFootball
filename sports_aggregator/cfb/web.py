@@ -15,6 +15,7 @@ from sports_aggregator.social.roles import role_label
 from sports_aggregator.cfb.insights import games_to_watch
 from sports_aggregator.cfb.ats import matchup_ats
 from sports_aggregator.cfb.draft import position_targets, prospect_board
+from sports_aggregator.cfb.draft_outcomes import outcome_summary
 from sports_aggregator.cfb.draft_matchups import annotate_board, board_context
 from sports_aggregator.cfb.prospects import (
     board_with_profile, consensus_board, reconcile)
@@ -564,7 +565,6 @@ def today():
         season=season,
         status=repository.status(season),
         rankings=rankings,
-        games_table=views.games_to_watch_compact(slate, brands),
         watch_games=slate,
         watch_brands=brands,
         weekly_engine_picks=weekly_engine_picks,
@@ -1482,6 +1482,7 @@ def draft_watch():
             note="matches drafted profiles but is unranked", pff_season=pff_season,
             empty="No unranked player clears the drafted-profile bar."),
         position_groups=position_targets(board),
+        outcomes_table=views.draft_outcomes_table(outcome_summary(repository)),
     )
 
 

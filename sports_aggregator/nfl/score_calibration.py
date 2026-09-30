@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 
 from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.nfl.model_cache import history_cached
 from sports_aggregator.nfl.scoring_bridge import (
     _core_oof_rows,
     _fit_score,
@@ -82,6 +83,7 @@ def _pair_summary(values: list[tuple[float, float]]) -> dict[str, Any]:
     }
 
 
+@history_cached("game_rows")
 def _game_rows(repository: NFLRepository, *, start_season: int, end_season: int) -> list[dict[str, Any]]:
     oof = _core_oof_rows(repository, start_season, end_season)
     seasons = sorted({int(r["season"]) for r in oof})

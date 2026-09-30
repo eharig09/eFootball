@@ -1,0 +1,4680 @@
+{
+  "schema_version": 1,
+  "model_family": "event-aligned-expected-points",
+  "model_version": "ep-v2",
+  "training": {
+    "from_season": 2015,
+    "to_season": 2025,
+    "min_cell": 10,
+    "samples": 1452493
+  },
+  "fitted_at": "2026-09-23T12:52:49.944770+00:00",
+  "cells": 583,
+  "rows_sha256": "a9734d953d102b9d53226f7ae6a392a46f7a4d2313fa81a5da5cb7875664b5d7",
+  "rows": [
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 1,
+      "time": 1,
+      "samples": 1157,
+      "expected_points": 5.4587187892362925
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 1,
+      "time": 2,
+      "samples": 833,
+      "expected_points": 6.056138584862103
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 1,
+      "time": 3,
+      "samples": 1425,
+      "expected_points": 6.265731586786587
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 1,
+      "time": 4,
+      "samples": 1751,
+      "expected_points": 6.154074291333761
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 1,
+      "time": 5,
+      "samples": 3738,
+      "expected_points": 6.258624553638941
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 2,
+      "time": 1,
+      "samples": 7,
+      "expected_points": 2.07793100227961
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 2,
+      "time": 2,
+      "samples": 8,
+      "expected_points": 2.4069348354862985
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 2,
+      "time": 3,
+      "samples": 8,
+      "expected_points": 2.6291570577085204
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 2,
+      "time": 4,
+      "samples": 6,
+      "expected_points": 3.2703016899220856
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 2,
+      "time": 5,
+      "samples": 14,
+      "expected_points": 4.013534459948057
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 3,
+      "time": 1,
+      "samples": 6,
+      "expected_points": 2.7078016899220856
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 3,
+      "time": 3,
+      "samples": 3,
+      "expected_points": 3.0249866952887206
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 3,
+      "time": 4,
+      "samples": 10,
+      "expected_points": 2.3662413519376684
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 3,
+      "time": 5,
+      "samples": 9,
+      "expected_points": 2.8592014230922826
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 4,
+      "time": 2,
+      "samples": 2,
+      "expected_points": 2.027068919896114
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 4,
+      "time": 3,
+      "samples": 2,
+      "expected_points": 1.4437355865627808
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 4,
+      "time": 4,
+      "samples": 2,
+      "expected_points": 2.277068919896114
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 4,
+      "time": 5,
+      "samples": 4,
+      "expected_points": 1.2374876456252408
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 5,
+      "time": 1,
+      "samples": 23,
+      "expected_points": -1.0507628170074736
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 5,
+      "time": 2,
+      "samples": 22,
+      "expected_points": -0.7085991550389572
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 5,
+      "time": 3,
+      "samples": 31,
+      "expected_points": -2.3335408039328445
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 5,
+      "time": 4,
+      "samples": 35,
+      "expected_points": -3.170559399138814
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 5,
+      "time": 5,
+      "samples": 112,
+      "expected_points": -3.603894860338088
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 6,
+      "time": 1,
+      "samples": 10,
+      "expected_points": 0.8662413519376685
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 6,
+      "time": 2,
+      "samples": 5,
+      "expected_points": 1.2216551359168915
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 6,
+      "time": 3,
+      "samples": 7,
+      "expected_points": -0.21618664477921357
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 6,
+      "time": 4,
+      "samples": 8,
+      "expected_points": 0.962490391041854
+    },
+    {
+      "down": 1,
+      "distance": 1,
+      "field": 6,
+      "time": 5,
+      "samples": 23,
+      "expected_points": 4.1007523345076775
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 1,
+      "time": 1,
+      "samples": 1162,
+      "expected_points": 5.148741319998936
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 1,
+      "time": 2,
+      "samples": 937,
+      "expected_points": 5.537829806799106
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 1,
+      "time": 3,
+      "samples": 1677,
+      "expected_points": 5.770791243057945
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 1,
+      "time": 4,
+      "samples": 2068,
+      "expected_points": 5.887548039960902
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 1,
+      "time": 5,
+      "samples": 4547,
+      "expected_points": 5.950038364502689
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 2,
+      "time": 1,
+      "samples": 40,
+      "expected_points": 3.0264965407750672
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 2,
+      "time": 2,
+      "samples": 26,
+      "expected_points": 5.120134084409816
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 2,
+      "time": 3,
+      "samples": 50,
+      "expected_points": 4.322080450645889
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 2,
+      "time": 4,
+      "samples": 41,
+      "expected_points": 4.555388765465753
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 2,
+      "time": 5,
+      "samples": 124,
+      "expected_points": 5.211379306259354
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 3,
+      "time": 1,
+      "samples": 62,
+      "expected_points": 2.893400375538241
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 3,
+      "time": 2,
+      "samples": 37,
+      "expected_points": 4.432443128484114
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 3,
+      "time": 3,
+      "samples": 88,
+      "expected_points": 4.19719211264034
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 3,
+      "time": 4,
+      "samples": 121,
+      "expected_points": 4.262021580448499
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 3,
+      "time": 5,
+      "samples": 312,
+      "expected_points": 3.93579138831911
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 4,
+      "time": 1,
+      "samples": 74,
+      "expected_points": 1.3967241314137306
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 4,
+      "time": 2,
+      "samples": 59,
+      "expected_points": 2.1206496672283097
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 4,
+      "time": 3,
+      "samples": 117,
+      "expected_points": 2.3962584806201055
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 4,
+      "time": 4,
+      "samples": 120,
+      "expected_points": 2.5486525156827184
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 4,
+      "time": 5,
+      "samples": 421,
+      "expected_points": 2.6202432181873627
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 5,
+      "time": 1,
+      "samples": 39,
+      "expected_points": 0.8025474905868035
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 5,
+      "time": 2,
+      "samples": 48,
+      "expected_points": 1.31594529377161
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 5,
+      "time": 3,
+      "samples": 87,
+      "expected_points": 1.7043796601933336
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 5,
+      "time": 4,
+      "samples": 124,
+      "expected_points": 1.8009315450653236
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 5,
+      "time": 5,
+      "samples": 371,
+      "expected_points": 1.5179129318602451
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 6,
+      "time": 1,
+      "samples": 16,
+      "expected_points": 1.397108732259745
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 6,
+      "time": 2,
+      "samples": 21,
+      "expected_points": 1.5266073238307538
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 6,
+      "time": 3,
+      "samples": 39,
+      "expected_points": 1.3331597354847626
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 6,
+      "time": 4,
+      "samples": 27,
+      "expected_points": 2.279049379425767
+    },
+    {
+      "down": 1,
+      "distance": 2,
+      "field": 6,
+      "time": 5,
+      "samples": 82,
+      "expected_points": 0.2535307286821019
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 1,
+      "time": 1,
+      "samples": 1838,
+      "expected_points": 4.448768845800191
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 1,
+      "time": 2,
+      "samples": 1593,
+      "expected_points": 5.125592530903776
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 1,
+      "time": 3,
+      "samples": 2851,
+      "expected_points": 5.270298786102326
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 1,
+      "time": 4,
+      "samples": 3839,
+      "expected_points": 5.180131157973176
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 1,
+      "time": 5,
+      "samples": 7985,
+      "expected_points": 5.352260766358818
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 2,
+      "time": 1,
+      "samples": 4022,
+      "expected_points": 3.780338498769532
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 2,
+      "time": 2,
+      "samples": 3612,
+      "expected_points": 4.480763342639082
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 2,
+      "time": 3,
+      "samples": 6200,
+      "expected_points": 4.76301527005455
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 2,
+      "time": 4,
+      "samples": 8315,
+      "expected_points": 4.850489468713364
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 2,
+      "time": 5,
+      "samples": 17517,
+      "expected_points": 4.968067828324228
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 3,
+      "time": 1,
+      "samples": 10232,
+      "expected_points": 2.6557630176761133
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 3,
+      "time": 2,
+      "samples": 9418,
+      "expected_points": 3.3884519332879455
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 3,
+      "time": 3,
+      "samples": 15443,
+      "expected_points": 3.8113845096122927
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 3,
+      "time": 4,
+      "samples": 19704,
+      "expected_points": 3.8404851794176094
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 3,
+      "time": 5,
+      "samples": 45337,
+      "expected_points": 3.9513380119310813
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 4,
+      "time": 1,
+      "samples": 12731,
+      "expected_points": 1.5070500609872657
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 4,
+      "time": 2,
+      "samples": 12721,
+      "expected_points": 2.253658379313389
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 4,
+      "time": 3,
+      "samples": 20709,
+      "expected_points": 2.4649512441256216
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 4,
+      "time": 4,
+      "samples": 25031,
+      "expected_points": 2.5757886996141828
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 4,
+      "time": 5,
+      "samples": 64540,
+      "expected_points": 2.6124450011934743
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 5,
+      "time": 1,
+      "samples": 17730,
+      "expected_points": 0.6479889981419816
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 5,
+      "time": 2,
+      "samples": 17620,
+      "expected_points": 1.1031381070356638
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 5,
+      "time": 3,
+      "samples": 29141,
+      "expected_points": 1.0960284321991958
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 5,
+      "time": 4,
+      "samples": 33822,
+      "expected_points": 1.0953335548308925
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 5,
+      "time": 5,
+      "samples": 103677,
+      "expected_points": 1.0551498724723325
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 6,
+      "time": 1,
+      "samples": 4605,
+      "expected_points": 0.16041708061511453
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 6,
+      "time": 2,
+      "samples": 4632,
+      "expected_points": 0.3697382221108904
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 6,
+      "time": 3,
+      "samples": 7667,
+      "expected_points": 0.3430148270208094
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 6,
+      "time": 4,
+      "samples": 8626,
+      "expected_points": 0.3612001884018936
+    },
+    {
+      "down": 1,
+      "distance": 3,
+      "field": 6,
+      "time": 5,
+      "samples": 23936,
+      "expected_points": 0.30816523958234165
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 1,
+      "time": 3,
+      "samples": 1,
+      "expected_points": 2.1204388217048518
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 1,
+      "time": 5,
+      "samples": 3,
+      "expected_points": 2.4865251568271822
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 2,
+      "time": 1,
+      "samples": 90,
+      "expected_points": 4.0632482703875334
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 2,
+      "time": 2,
+      "samples": 102,
+      "expected_points": 4.011828812846012
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 2,
+      "time": 3,
+      "samples": 183,
+      "expected_points": 4.5768125753303295
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 2,
+      "time": 4,
+      "samples": 204,
+      "expected_points": 4.440770219807258
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 2,
+      "time": 5,
+      "samples": 483,
+      "expected_points": 4.607149750585707
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 3,
+      "time": 1,
+      "samples": 178,
+      "expected_points": 2.549600143823156
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 3,
+      "time": 2,
+      "samples": 153,
+      "expected_points": 2.7872688775383643
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 3,
+      "time": 3,
+      "samples": 270,
+      "expected_points": 3.258302953709834
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 3,
+      "time": 4,
+      "samples": 432,
+      "expected_points": 3.6862552647935596
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 3,
+      "time": 5,
+      "samples": 894,
+      "expected_points": 3.4605363130959663
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 4,
+      "time": 1,
+      "samples": 236,
+      "expected_points": 1.456604987962412
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 4,
+      "time": 2,
+      "samples": 192,
+      "expected_points": 1.88774666850868
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 4,
+      "time": 3,
+      "samples": 372,
+      "expected_points": 1.728599023661658
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 4,
+      "time": 4,
+      "samples": 455,
+      "expected_points": 2.1856447893306523
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 4,
+      "time": 5,
+      "samples": 1189,
+      "expected_points": 2.1303793386478342
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 5,
+      "time": 1,
+      "samples": 246,
+      "expected_points": 0.5286126056201303
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 5,
+      "time": 2,
+      "samples": 307,
+      "expected_points": 0.7455041862421241
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 5,
+      "time": 3,
+      "samples": 593,
+      "expected_points": 0.7683662139946159
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 5,
+      "time": 4,
+      "samples": 677,
+      "expected_points": 0.6773287147580107
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 5,
+      "time": 5,
+      "samples": 2096,
+      "expected_points": 0.2784068504457518
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 6,
+      "time": 1,
+      "samples": 125,
+      "expected_points": 0.03203575584261756
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 6,
+      "time": 2,
+      "samples": 143,
+      "expected_points": -0.7233671435375597
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 6,
+      "time": 3,
+      "samples": 272,
+      "expected_points": -0.14778430128101633
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 6,
+      "time": 4,
+      "samples": 324,
+      "expected_points": 0.5518707396369861
+    },
+    {
+      "down": 1,
+      "distance": 4,
+      "field": 6,
+      "time": 5,
+      "samples": 952,
+      "expected_points": -0.1306394729326889
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 1,
+      "time": 4,
+      "samples": 1,
+      "expected_points": 2.2113479126139426
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 1,
+      "time": 5,
+      "samples": 3,
+      "expected_points": 2.4865251568271822
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 2,
+      "time": 1,
+      "samples": 20,
+      "expected_points": 2.9774942346251123
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 2,
+      "time": 2,
+      "samples": 25,
+      "expected_points": 3.6378522011072394
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 2,
+      "time": 3,
+      "samples": 51,
+      "expected_points": 3.939751262930383
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 2,
+      "time": 4,
+      "samples": 57,
+      "expected_points": 3.9003705528172143
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 2,
+      "time": 5,
+      "samples": 135,
+      "expected_points": 4.236722945094851
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 3,
+      "time": 1,
+      "samples": 131,
+      "expected_points": 2.5058498371542792
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 3,
+      "time": 2,
+      "samples": 131,
+      "expected_points": 2.9171973548847756
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 3,
+      "time": 3,
+      "samples": 256,
+      "expected_points": 3.57640912420584
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 3,
+      "time": 4,
+      "samples": 345,
+      "expected_points": 3.510774160672545
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 3,
+      "time": 5,
+      "samples": 673,
+      "expected_points": 3.728147623775627
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 4,
+      "time": 1,
+      "samples": 208,
+      "expected_points": 1.6115817754071255
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 4,
+      "time": 2,
+      "samples": 201,
+      "expected_points": 1.7313972845438546
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 4,
+      "time": 3,
+      "samples": 357,
+      "expected_points": 2.3196861772173114
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 4,
+      "time": 4,
+      "samples": 411,
+      "expected_points": 2.321436643797514
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 4,
+      "time": 5,
+      "samples": 916,
+      "expected_points": 2.141819467644442
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 5,
+      "time": 1,
+      "samples": 238,
+      "expected_points": 0.48114849612400545
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 5,
+      "time": 2,
+      "samples": 256,
+      "expected_points": 1.2380632595441856
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 5,
+      "time": 3,
+      "samples": 374,
+      "expected_points": 1.0268875704134202
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 5,
+      "time": 4,
+      "samples": 506,
+      "expected_points": 1.006443463253398
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 5,
+      "time": 5,
+      "samples": 1214,
+      "expected_points": 0.949611786796367
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 6,
+      "time": 1,
+      "samples": 181,
+      "expected_points": 0.1011771049149392
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 6,
+      "time": 2,
+      "samples": 162,
+      "expected_points": -0.09113472651887575
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 6,
+      "time": 3,
+      "samples": 292,
+      "expected_points": -0.33998401642796905
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 6,
+      "time": 4,
+      "samples": 401,
+      "expected_points": 0.2732964161526846
+    },
+    {
+      "down": 1,
+      "distance": 5,
+      "field": 6,
+      "time": 5,
+      "samples": 990,
+      "expected_points": -0.43367517296124664
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 1,
+      "time": 1,
+      "samples": 1061,
+      "expected_points": 5.397128690045521
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 1,
+      "time": 2,
+      "samples": 797,
+      "expected_points": 5.924813912067849
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 1,
+      "time": 3,
+      "samples": 1423,
+      "expected_points": 6.0162769204736595
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 1,
+      "time": 4,
+      "samples": 1811,
+      "expected_points": 5.851359048346377
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 1,
+      "time": 5,
+      "samples": 3913,
+      "expected_points": 6.002122056344317
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 2,
+      "time": 1,
+      "samples": 258,
+      "expected_points": 3.616883682980423
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 2,
+      "time": 2,
+      "samples": 247,
+      "expected_points": 4.425388432057407
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 2,
+      "time": 3,
+      "samples": 442,
+      "expected_points": 4.947621298758304
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 2,
+      "time": 4,
+      "samples": 601,
+      "expected_points": 5.126554545071609
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 2,
+      "time": 5,
+      "samples": 1295,
+      "expected_points": 5.171896419186783
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 3,
+      "time": 1,
+      "samples": 747,
+      "expected_points": 3.012318133472594
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 3,
+      "time": 2,
+      "samples": 676,
+      "expected_points": 3.669569718715384
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 3,
+      "time": 3,
+      "samples": 1112,
+      "expected_points": 3.929879524989976
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 3,
+      "time": 4,
+      "samples": 1449,
+      "expected_points": 4.205157523672894
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 3,
+      "time": 5,
+      "samples": 3358,
+      "expected_points": 4.1862603405697
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 4,
+      "time": 1,
+      "samples": 956,
+      "expected_points": 1.8140008561477778
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 4,
+      "time": 2,
+      "samples": 950,
+      "expected_points": 2.4128383614987015
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 4,
+      "time": 3,
+      "samples": 1623,
+      "expected_points": 2.6909521292337746
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 4,
+      "time": 4,
+      "samples": 1925,
+      "expected_points": 2.8632169648779087
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 4,
+      "time": 5,
+      "samples": 5147,
+      "expected_points": 2.8732450702033647
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 5,
+      "time": 1,
+      "samples": 925,
+      "expected_points": 0.9607752160842283
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 5,
+      "time": 2,
+      "samples": 1028,
+      "expected_points": 1.4839352861645023
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 5,
+      "time": 3,
+      "samples": 1684,
+      "expected_points": 1.5468269344974932
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 5,
+      "time": 4,
+      "samples": 1934,
+      "expected_points": 1.5474921949787825
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 5,
+      "time": 5,
+      "samples": 5781,
+      "expected_points": 1.6812855857431797
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 6,
+      "time": 1,
+      "samples": 106,
+      "expected_points": 0.787282991713391
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 6,
+      "time": 2,
+      "samples": 105,
+      "expected_points": 0.8115202351195946
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 6,
+      "time": 3,
+      "samples": 212,
+      "expected_points": 0.9969586803547449
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 6,
+      "time": 4,
+      "samples": 229,
+      "expected_points": 0.9511499039278384
+    },
+    {
+      "down": 2,
+      "distance": 1,
+      "field": 6,
+      "time": 5,
+      "samples": 583,
+      "expected_points": 0.8352863862373582
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 1,
+      "time": 1,
+      "samples": 1147,
+      "expected_points": 4.796304949903849
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 1,
+      "time": 2,
+      "samples": 977,
+      "expected_points": 5.216134576533691
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 1,
+      "time": 3,
+      "samples": 1739,
+      "expected_points": 5.223742039473271
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 1,
+      "time": 4,
+      "samples": 2334,
+      "expected_points": 5.367459397200833
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 1,
+      "time": 5,
+      "samples": 4655,
+      "expected_points": 5.487529437736067
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 2,
+      "time": 1,
+      "samples": 512,
+      "expected_points": 3.575334917698761
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 2,
+      "time": 2,
+      "samples": 520,
+      "expected_points": 4.3874053340353845
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 2,
+      "time": 3,
+      "samples": 1009,
+      "expected_points": 4.812880105042938
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 2,
+      "time": 4,
+      "samples": 1297,
+      "expected_points": 4.724808589930186
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 2,
+      "time": 5,
+      "samples": 2646,
+      "expected_points": 5.004640371626036
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 3,
+      "time": 1,
+      "samples": 1291,
+      "expected_points": 2.6904879531427777
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 3,
+      "time": 2,
+      "samples": 1331,
+      "expected_points": 3.2455815265016805
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 3,
+      "time": 3,
+      "samples": 2379,
+      "expected_points": 3.732241451251048
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 3,
+      "time": 4,
+      "samples": 3077,
+      "expected_points": 3.6810252112208466
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 3,
+      "time": 5,
+      "samples": 6832,
+      "expected_points": 3.9709624126043197
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 4,
+      "time": 1,
+      "samples": 1737,
+      "expected_points": 1.565154451653551
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 4,
+      "time": 2,
+      "samples": 2042,
+      "expected_points": 1.9753044966075797
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 4,
+      "time": 3,
+      "samples": 3477,
+      "expected_points": 2.339066483234515
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 4,
+      "time": 4,
+      "samples": 4155,
+      "expected_points": 2.4512184458676476
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 4,
+      "time": 5,
+      "samples": 11044,
+      "expected_points": 2.464567109375679
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 5,
+      "time": 1,
+      "samples": 1814,
+      "expected_points": 0.7721079095607201
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 5,
+      "time": 2,
+      "samples": 2339,
+      "expected_points": 1.1746806415660935
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 5,
+      "time": 3,
+      "samples": 3704,
+      "expected_points": 1.0695543422290668
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 5,
+      "time": 4,
+      "samples": 4578,
+      "expected_points": 1.1916575473057438
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 5,
+      "time": 5,
+      "samples": 13415,
+      "expected_points": 1.200992538326909
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 6,
+      "time": 1,
+      "samples": 284,
+      "expected_points": 0.33443818720664414
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 6,
+      "time": 2,
+      "samples": 374,
+      "expected_points": 0.0555334037467535
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 6,
+      "time": 3,
+      "samples": 648,
+      "expected_points": 0.2649313480832117
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 6,
+      "time": 4,
+      "samples": 757,
+      "expected_points": 0.26769860109355076
+    },
+    {
+      "down": 2,
+      "distance": 2,
+      "field": 6,
+      "time": 5,
+      "samples": 1927,
+      "expected_points": 0.5897391982647152
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 1,
+      "time": 1,
+      "samples": 1217,
+      "expected_points": 3.9807048305124315
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 1,
+      "time": 2,
+      "samples": 1000,
+      "expected_points": 4.43101468023639
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 1,
+      "time": 3,
+      "samples": 1721,
+      "expected_points": 4.7384892126162645
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 1,
+      "time": 4,
+      "samples": 2303,
+      "expected_points": 4.614926427599979
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 1,
+      "time": 5,
+      "samples": 4679,
+      "expected_points": 4.765477676911655
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 2,
+      "time": 1,
+      "samples": 2008,
+      "expected_points": 3.5343532344096897
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 2,
+      "time": 2,
+      "samples": 1714,
+      "expected_points": 4.123158252342665
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 2,
+      "time": 3,
+      "samples": 2918,
+      "expected_points": 4.233034435464055
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 2,
+      "time": 4,
+      "samples": 3930,
+      "expected_points": 4.2863768596545055
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 2,
+      "time": 5,
+      "samples": 7978,
+      "expected_points": 4.389499853159584
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 3,
+      "time": 1,
+      "samples": 4830,
+      "expected_points": 2.506265460131974
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 3,
+      "time": 2,
+      "samples": 4286,
+      "expected_points": 2.896723656200827
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 3,
+      "time": 3,
+      "samples": 7072,
+      "expected_points": 3.3322966431853644
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 3,
+      "time": 4,
+      "samples": 9389,
+      "expected_points": 3.2788940128778337
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 3,
+      "time": 5,
+      "samples": 20211,
+      "expected_points": 3.3038091502417664
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 4,
+      "time": 1,
+      "samples": 5433,
+      "expected_points": 1.3224921600291664
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 4,
+      "time": 2,
+      "samples": 5794,
+      "expected_points": 1.6561552079667048
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 4,
+      "time": 3,
+      "samples": 9498,
+      "expected_points": 1.8309134231214508
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 4,
+      "time": 4,
+      "samples": 11889,
+      "expected_points": 1.9280044396200313
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 4,
+      "time": 5,
+      "samples": 29266,
+      "expected_points": 1.9427969950484612
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 5,
+      "time": 1,
+      "samples": 5991,
+      "expected_points": 0.501637198306741
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 5,
+      "time": 2,
+      "samples": 7560,
+      "expected_points": 0.5738870313129134
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 5,
+      "time": 3,
+      "samples": 12481,
+      "expected_points": 0.49806459266982256
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 5,
+      "time": 4,
+      "samples": 15046,
+      "expected_points": 0.49424314738567704
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 5,
+      "time": 5,
+      "samples": 43789,
+      "expected_points": 0.382344912601629
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 6,
+      "time": 1,
+      "samples": 1345,
+      "expected_points": -0.035922636871768714
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 6,
+      "time": 2,
+      "samples": 1937,
+      "expected_points": -0.26896516330829306
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 6,
+      "time": 3,
+      "samples": 3227,
+      "expected_points": -0.2844223580356029
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 6,
+      "time": 4,
+      "samples": 3740,
+      "expected_points": -0.1940467127896657
+    },
+    {
+      "down": 2,
+      "distance": 3,
+      "field": 6,
+      "time": 5,
+      "samples": 9448,
+      "expected_points": -0.3226554422669959
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 1,
+      "time": 1,
+      "samples": 1,
+      "expected_points": 1.5749842762503063
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 1,
+      "time": 2,
+      "samples": 2,
+      "expected_points": 2.277068919896114
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 1,
+      "time": 3,
+      "samples": 2,
+      "expected_points": 0.4437355865627808
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 1,
+      "time": 4,
+      "samples": 3,
+      "expected_points": 1.640371310673336
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 1,
+      "time": 5,
+      "samples": 11,
+      "expected_points": 1.110706049464446
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 2,
+      "time": 1,
+      "samples": 489,
+      "expected_points": 2.601853360799105
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 2,
+      "time": 2,
+      "samples": 390,
+      "expected_points": 3.7333120675968834
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 2,
+      "time": 3,
+      "samples": 648,
+      "expected_points": 3.7634115912443065
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 2,
+      "time": 4,
+      "samples": 862,
+      "expected_points": 3.7194092053196717
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 2,
+      "time": 5,
+      "samples": 1668,
+      "expected_points": 3.959669146030246
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 3,
+      "time": 1,
+      "samples": 1137,
+      "expected_points": 1.3743023775403254
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 3,
+      "time": 2,
+      "samples": 792,
+      "expected_points": 2.3158663678787446
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 3,
+      "time": 3,
+      "samples": 1312,
+      "expected_points": 2.7710475242350627
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 3,
+      "time": 4,
+      "samples": 1698,
+      "expected_points": 2.869628118875148
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 3,
+      "time": 5,
+      "samples": 3602,
+      "expected_points": 3.0341430861126115
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 4,
+      "time": 1,
+      "samples": 1412,
+      "expected_points": 0.6619724522072808
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 4,
+      "time": 2,
+      "samples": 979,
+      "expected_points": 1.7131696936691136
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 4,
+      "time": 3,
+      "samples": 1732,
+      "expected_points": 1.4588546653494567
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 4,
+      "time": 4,
+      "samples": 2186,
+      "expected_points": 1.5297471889976106
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 4,
+      "time": 5,
+      "samples": 5042,
+      "expected_points": 1.5335163949007826
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 5,
+      "time": 1,
+      "samples": 1301,
+      "expected_points": 0.3984171068182711
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 5,
+      "time": 2,
+      "samples": 1428,
+      "expected_points": 0.12957220239134443
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 5,
+      "time": 3,
+      "samples": 2525,
+      "expected_points": 0.18632143078451813
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 5,
+      "time": 4,
+      "samples": 3275,
+      "expected_points": -0.0355175564570005
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 5,
+      "time": 5,
+      "samples": 8811,
+      "expected_points": -0.03510658348954169
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 6,
+      "time": 1,
+      "samples": 588,
+      "expected_points": -0.026212663814793712
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 6,
+      "time": 2,
+      "samples": 565,
+      "expected_points": -0.8255220399326029
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 6,
+      "time": 3,
+      "samples": 965,
+      "expected_points": -0.45607710047307354
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 6,
+      "time": 4,
+      "samples": 1145,
+      "expected_points": -0.6265585913084386
+    },
+    {
+      "down": 2,
+      "distance": 4,
+      "field": 6,
+      "time": 5,
+      "samples": 3001,
+      "expected_points": -0.8926187887616229
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 1,
+      "time": 1,
+      "samples": 2,
+      "expected_points": 1.9437355865627808
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 1,
+      "time": 4,
+      "samples": 1,
+      "expected_points": 2.2113479126139426
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 1,
+      "time": 5,
+      "samples": 2,
+      "expected_points": 2.277068919896114
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 2,
+      "time": 1,
+      "samples": 67,
+      "expected_points": 3.1730497018019914
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 2,
+      "time": 2,
+      "samples": 51,
+      "expected_points": 3.185652902274646
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 2,
+      "time": 3,
+      "samples": 105,
+      "expected_points": 3.585433278597855
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 2,
+      "time": 4,
+      "samples": 120,
+      "expected_points": 3.1871140541442564
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 2,
+      "time": 5,
+      "samples": 193,
+      "expected_points": 3.8144080149692283
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 3,
+      "time": 1,
+      "samples": 415,
+      "expected_points": 2.1137054753853017
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 3,
+      "time": 2,
+      "samples": 315,
+      "expected_points": 2.3856148524269334
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 3,
+      "time": 3,
+      "samples": 546,
+      "expected_points": 2.531159760861067
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 3,
+      "time": 4,
+      "samples": 730,
+      "expected_points": 2.466655171673991
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 3,
+      "time": 5,
+      "samples": 1382,
+      "expected_points": 2.6690551918381846
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 4,
+      "time": 1,
+      "samples": 575,
+      "expected_points": 0.9800424393824845
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 4,
+      "time": 2,
+      "samples": 431,
+      "expected_points": 1.3454077710629329
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 4,
+      "time": 3,
+      "samples": 740,
+      "expected_points": 1.6110997693850044
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 4,
+      "time": 4,
+      "samples": 987,
+      "expected_points": 1.2079486730579274
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 4,
+      "time": 5,
+      "samples": 2019,
+      "expected_points": 1.1342162774956892
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 5,
+      "time": 1,
+      "samples": 552,
+      "expected_points": 0.36356730789813774
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 5,
+      "time": 2,
+      "samples": 525,
+      "expected_points": 0.19313051782944557
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 5,
+      "time": 3,
+      "samples": 890,
+      "expected_points": 0.0681386967097259
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 5,
+      "time": 4,
+      "samples": 1117,
+      "expected_points": -0.1558785918023483
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 5,
+      "time": 5,
+      "samples": 2469,
+      "expected_points": -0.15477013834661008
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 6,
+      "time": 1,
+      "samples": 407,
+      "expected_points": -0.16708674571042365
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 6,
+      "time": 2,
+      "samples": 455,
+      "expected_points": -0.48962402787364867
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 6,
+      "time": 3,
+      "samples": 725,
+      "expected_points": -0.984592072056118
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 6,
+      "time": 4,
+      "samples": 915,
+      "expected_points": -1.0461353221202667
+    },
+    {
+      "down": 2,
+      "distance": 5,
+      "field": 6,
+      "time": 5,
+      "samples": 2175,
+      "expected_points": -1.3673570585634998
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 1,
+      "time": 1,
+      "samples": 862,
+      "expected_points": 4.703354159448112
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 1,
+      "time": 2,
+      "samples": 711,
+      "expected_points": 5.363834711565539
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 1,
+      "time": 3,
+      "samples": 1149,
+      "expected_points": 5.40752789218184
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 1,
+      "time": 4,
+      "samples": 1632,
+      "expected_points": 5.302268469572931
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 1,
+      "time": 5,
+      "samples": 3108,
+      "expected_points": 5.440450553893122
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 2,
+      "time": 1,
+      "samples": 395,
+      "expected_points": 3.3193205605895146
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 2,
+      "time": 2,
+      "samples": 339,
+      "expected_points": 3.9035095330623304
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 2,
+      "time": 3,
+      "samples": 636,
+      "expected_points": 4.624341837521291
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 2,
+      "time": 4,
+      "samples": 823,
+      "expected_points": 4.458973381799224
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 2,
+      "time": 5,
+      "samples": 1644,
+      "expected_points": 4.497778009092354
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 3,
+      "time": 1,
+      "samples": 903,
+      "expected_points": 2.3300381457160495
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 3,
+      "time": 2,
+      "samples": 922,
+      "expected_points": 2.886614621286216
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 3,
+      "time": 3,
+      "samples": 1524,
+      "expected_points": 3.4949966277957976
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 3,
+      "time": 4,
+      "samples": 2082,
+      "expected_points": 3.665547240458295
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 3,
+      "time": 5,
+      "samples": 4197,
+      "expected_points": 3.550588264092882
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 4,
+      "time": 1,
+      "samples": 1021,
+      "expected_points": 1.236008561628277
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 4,
+      "time": 2,
+      "samples": 1219,
+      "expected_points": 1.6731691025539084
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 4,
+      "time": 3,
+      "samples": 2086,
+      "expected_points": 1.9347923793123822
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 4,
+      "time": 4,
+      "samples": 2594,
+      "expected_points": 1.982459610997985
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 4,
+      "time": 5,
+      "samples": 6597,
+      "expected_points": 2.0233577761523764
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 5,
+      "time": 1,
+      "samples": 974,
+      "expected_points": 0.5064276697548307
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 5,
+      "time": 2,
+      "samples": 1286,
+      "expected_points": 0.8142938480237295
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 5,
+      "time": 3,
+      "samples": 2196,
+      "expected_points": 0.6506458871435873
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 5,
+      "time": 4,
+      "samples": 2603,
+      "expected_points": 0.717690327990338
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 5,
+      "time": 5,
+      "samples": 7234,
+      "expected_points": 0.72616300759784
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 6,
+      "time": 1,
+      "samples": 139,
+      "expected_points": 0.3847303828104253
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 6,
+      "time": 2,
+      "samples": 188,
+      "expected_points": 0.2440647830240069
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 6,
+      "time": 3,
+      "samples": 295,
+      "expected_points": 0.08303221979919144
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 6,
+      "time": 4,
+      "samples": 388,
+      "expected_points": 0.1666452940672195
+    },
+    {
+      "down": 3,
+      "distance": 1,
+      "field": 6,
+      "time": 5,
+      "samples": 849,
+      "expected_points": 0.11330014789144753
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 1,
+      "time": 1,
+      "samples": 853,
+      "expected_points": 4.02355136389195
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 1,
+      "time": 2,
+      "samples": 686,
+      "expected_points": 4.491846015860277
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 1,
+      "time": 3,
+      "samples": 1187,
+      "expected_points": 4.3010232473172545
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 1,
+      "time": 4,
+      "samples": 1518,
+      "expected_points": 4.271809441779288
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 1,
+      "time": 5,
+      "samples": 3030,
+      "expected_points": 4.4494489562627475
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 2,
+      "time": 1,
+      "samples": 524,
+      "expected_points": 3.167274957001411
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 2,
+      "time": 2,
+      "samples": 469,
+      "expected_points": 3.781471455195727
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 2,
+      "time": 3,
+      "samples": 860,
+      "expected_points": 3.9245112954468433
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 2,
+      "time": 4,
+      "samples": 1186,
+      "expected_points": 3.811308383811667
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 2,
+      "time": 5,
+      "samples": 2181,
+      "expected_points": 4.05491776679085
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 3,
+      "time": 1,
+      "samples": 1272,
+      "expected_points": 2.0486153097026154
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 3,
+      "time": 2,
+      "samples": 1214,
+      "expected_points": 2.6448732247048636
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 3,
+      "time": 3,
+      "samples": 1965,
+      "expected_points": 2.881683456728483
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 3,
+      "time": 4,
+      "samples": 2673,
+      "expected_points": 2.8555068308008766
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 3,
+      "time": 5,
+      "samples": 5661,
+      "expected_points": 3.0116954376721488
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 4,
+      "time": 1,
+      "samples": 1555,
+      "expected_points": 1.0545206562547944
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 4,
+      "time": 2,
+      "samples": 1750,
+      "expected_points": 1.1462072880902008
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 4,
+      "time": 3,
+      "samples": 2868,
+      "expected_points": 1.3281184249613456
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 4,
+      "time": 4,
+      "samples": 3550,
+      "expected_points": 1.357675513213133
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 4,
+      "time": 5,
+      "samples": 8779,
+      "expected_points": 1.4092985353326606
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 5,
+      "time": 1,
+      "samples": 1351,
+      "expected_points": 0.3690851043635219
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 5,
+      "time": 2,
+      "samples": 1864,
+      "expected_points": 0.2579107935105408
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 5,
+      "time": 3,
+      "samples": 3090,
+      "expected_points": 0.1704273635608881
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 5,
+      "time": 4,
+      "samples": 3824,
+      "expected_points": 0.2343048583825648
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 5,
+      "time": 5,
+      "samples": 10627,
+      "expected_points": 0.05615538469857608
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 6,
+      "time": 1,
+      "samples": 258,
+      "expected_points": -0.133116317019577
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 6,
+      "time": 2,
+      "samples": 353,
+      "expected_points": -0.6933200357059137
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 6,
+      "time": 3,
+      "samples": 575,
+      "expected_points": -0.49688063754059236
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 6,
+      "time": 4,
+      "samples": 719,
+      "expected_points": -0.8706106624982807
+    },
+    {
+      "down": 3,
+      "distance": 2,
+      "field": 6,
+      "time": 5,
+      "samples": 1603,
+      "expected_points": -0.5968227978681008
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 1,
+      "time": 1,
+      "samples": 676,
+      "expected_points": 3.4567417303771917
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 1,
+      "time": 2,
+      "samples": 540,
+      "expected_points": 3.6914996855250064
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 1,
+      "time": 3,
+      "samples": 873,
+      "expected_points": 3.839552465502552
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 1,
+      "time": 4,
+      "samples": 1219,
+      "expected_points": 3.345260233554722
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 1,
+      "time": 5,
+      "samples": 2395,
+      "expected_points": 3.7768502399329535
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 2,
+      "time": 1,
+      "samples": 1060,
+      "expected_points": 3.016191427139022
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 2,
+      "time": 2,
+      "samples": 748,
+      "expected_points": 3.386972067333448
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 2,
+      "time": 3,
+      "samples": 1337,
+      "expected_points": 3.383314645166112
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 2,
+      "time": 4,
+      "samples": 1757,
+      "expected_points": 3.138270983044003
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 2,
+      "time": 5,
+      "samples": 3539,
+      "expected_points": 3.4717736903462257
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 3,
+      "time": 1,
+      "samples": 2323,
+      "expected_points": 1.9242712503380854
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 3,
+      "time": 2,
+      "samples": 1836,
+      "expected_points": 2.102559494603875
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 3,
+      "time": 3,
+      "samples": 3129,
+      "expected_points": 2.4594854498371306
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 3,
+      "time": 4,
+      "samples": 4157,
+      "expected_points": 2.2758158932178434
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 3,
+      "time": 5,
+      "samples": 8638,
+      "expected_points": 2.281374286197821
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 4,
+      "time": 1,
+      "samples": 2532,
+      "expected_points": 0.9269570523362523
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 4,
+      "time": 2,
+      "samples": 2472,
+      "expected_points": 0.7479149182267338
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 4,
+      "time": 3,
+      "samples": 4097,
+      "expected_points": 0.9102324877133561
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 4,
+      "time": 4,
+      "samples": 5391,
+      "expected_points": 0.9556239265022688
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 4,
+      "time": 5,
+      "samples": 12580,
+      "expected_points": 0.8735762372548652
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 5,
+      "time": 1,
+      "samples": 2531,
+      "expected_points": 0.09969493389954877
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 5,
+      "time": 2,
+      "samples": 3214,
+      "expected_points": -0.2058545821840096
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 5,
+      "time": 3,
+      "samples": 5335,
+      "expected_points": -0.27346588829957835
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 5,
+      "time": 4,
+      "samples": 6776,
+      "expected_points": -0.4037246055056362
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 5,
+      "time": 5,
+      "samples": 18445,
+      "expected_points": -0.6253955661317393
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 6,
+      "time": 1,
+      "samples": 577,
+      "expected_points": -0.4679304479748664
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 6,
+      "time": 2,
+      "samples": 772,
+      "expected_points": -1.1990731112036401
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 6,
+      "time": 3,
+      "samples": 1358,
+      "expected_points": -1.2928912083050048
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 6,
+      "time": 4,
+      "samples": 1596,
+      "expected_points": -1.2619397091913116
+    },
+    {
+      "down": 3,
+      "distance": 3,
+      "field": 6,
+      "time": 5,
+      "samples": 3947,
+      "expected_points": -1.5136909711805018
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 1,
+      "time": 2,
+      "samples": 1,
+      "expected_points": 1.029529730795761
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 1,
+      "time": 3,
+      "samples": 5,
+      "expected_points": 1.8883218025835582
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 1,
+      "time": 4,
+      "samples": 2,
+      "expected_points": 1.4437355865627808
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 1,
+      "time": 5,
+      "samples": 6,
+      "expected_points": 1.8953016899220856
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 2,
+      "time": 1,
+      "samples": 382,
+      "expected_points": 2.4191959873437585
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 2,
+      "time": 2,
+      "samples": 284,
+      "expected_points": 3.082737506934535
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 2,
+      "time": 3,
+      "samples": 442,
+      "expected_points": 3.12018767043972
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 2,
+      "time": 4,
+      "samples": 642,
+      "expected_points": 2.8195166058876584
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 2,
+      "time": 5,
+      "samples": 1206,
+      "expected_points": 2.870332916972659
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 3,
+      "time": 1,
+      "samples": 743,
+      "expected_points": 1.4798470478602304
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 3,
+      "time": 2,
+      "samples": 559,
+      "expected_points": 1.8722756186972818
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 3,
+      "time": 3,
+      "samples": 921,
+      "expected_points": 1.8188236595475331
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 3,
+      "time": 4,
+      "samples": 1278,
+      "expected_points": 1.9715254868313303
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 3,
+      "time": 5,
+      "samples": 2601,
+      "expected_points": 2.010465272707297
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 4,
+      "time": 1,
+      "samples": 874,
+      "expected_points": 0.5614534242519833
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 4,
+      "time": 2,
+      "samples": 658,
+      "expected_points": 0.6846180045490319
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 4,
+      "time": 3,
+      "samples": 1194,
+      "expected_points": 0.49860866033119056
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 4,
+      "time": 4,
+      "samples": 1629,
+      "expected_points": 0.2936698151548221
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 4,
+      "time": 5,
+      "samples": 3647,
+      "expected_points": 0.4310431575167496
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 5,
+      "time": 1,
+      "samples": 850,
+      "expected_points": -0.05078508483865883
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 5,
+      "time": 2,
+      "samples": 1046,
+      "expected_points": -0.47791209560724107
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 5,
+      "time": 3,
+      "samples": 1841,
+      "expected_points": -0.5638439616214189
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 5,
+      "time": 4,
+      "samples": 2388,
+      "expected_points": -1.098696902819536
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 5,
+      "time": 5,
+      "samples": 6169,
+      "expected_points": -1.069376140631372
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 6,
+      "time": 1,
+      "samples": 309,
+      "expected_points": -0.5099535202546914
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 6,
+      "time": 2,
+      "samples": 389,
+      "expected_points": -0.8387848946397158
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 6,
+      "time": 3,
+      "samples": 668,
+      "expected_points": -1.5629427329811896
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 6,
+      "time": 4,
+      "samples": 853,
+      "expected_points": -1.3252319501289067
+    },
+    {
+      "down": 3,
+      "distance": 4,
+      "field": 6,
+      "time": 5,
+      "samples": 2064,
+      "expected_points": -1.8494094373005048
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 1,
+      "time": 1,
+      "samples": 1,
+      "expected_points": 2.1204388217048518
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 1,
+      "time": 2,
+      "samples": 2,
+      "expected_points": 1.4437355865627808
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 1,
+      "time": 5,
+      "samples": 6,
+      "expected_points": 1.5203016899220856
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 2,
+      "time": 1,
+      "samples": 76,
+      "expected_points": 2.0735445004506206
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 2,
+      "time": 2,
+      "samples": 65,
+      "expected_points": 2.1109976938500448
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 2,
+      "time": 3,
+      "samples": 108,
+      "expected_points": 2.748515483379266
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 2,
+      "time": 4,
+      "samples": 122,
+      "expected_points": 2.328218386657223
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 2,
+      "time": 5,
+      "samples": 205,
+      "expected_points": 2.573603846691876
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 3,
+      "time": 1,
+      "samples": 461,
+      "expected_points": 1.527228932141727
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 3,
+      "time": 2,
+      "samples": 289,
+      "expected_points": 1.8405512609991752
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 3,
+      "time": 3,
+      "samples": 491,
+      "expected_points": 1.286077499079348
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 3,
+      "time": 4,
+      "samples": 689,
+      "expected_points": 1.3152000386820506
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 3,
+      "time": 5,
+      "samples": 1247,
+      "expected_points": 1.6677206261247042
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 4,
+      "time": 1,
+      "samples": 570,
+      "expected_points": 0.5040083224806093
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 4,
+      "time": 2,
+      "samples": 392,
+      "expected_points": -0.0016795347294692384
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 4,
+      "time": 3,
+      "samples": 688,
+      "expected_points": 0.5348493224050909
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 4,
+      "time": 4,
+      "samples": 870,
+      "expected_points": 0.04809639436221972
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 4,
+      "time": 5,
+      "samples": 1779,
+      "expected_points": -0.16415604972680076
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 5,
+      "time": 1,
+      "samples": 519,
+      "expected_points": -0.07878104529536231
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 5,
+      "time": 2,
+      "samples": 438,
+      "expected_points": -0.4903463682170684
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 5,
+      "time": 3,
+      "samples": 792,
+      "expected_points": -0.8300189189042975
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 5,
+      "time": 4,
+      "samples": 1063,
+      "expected_points": -0.9428473186964087
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 5,
+      "time": 5,
+      "samples": 2208,
+      "expected_points": -1.1657687885307695
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 6,
+      "time": 1,
+      "samples": 359,
+      "expected_points": -0.6034557532825111
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 6,
+      "time": 2,
+      "samples": 422,
+      "expected_points": -1.3811925300028858
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 6,
+      "time": 3,
+      "samples": 723,
+      "expected_points": -1.9490793628393541
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 6,
+      "time": 4,
+      "samples": 910,
+      "expected_points": -1.9116034488709202
+    },
+    {
+      "down": 3,
+      "distance": 5,
+      "field": 6,
+      "time": 5,
+      "samples": 2044,
+      "expected_points": -2.463327737566332
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 1,
+      "time": 1,
+      "samples": 539,
+      "expected_points": 3.437750140325598
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 1,
+      "time": 2,
+      "samples": 407,
+      "expected_points": 3.4540163717955723
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 1,
+      "time": 3,
+      "samples": 735,
+      "expected_points": 3.753456143676179
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 1,
+      "time": 4,
+      "samples": 828,
+      "expected_points": 3.776043946346961
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 1,
+      "time": 5,
+      "samples": 1644,
+      "expected_points": 3.823654671728388
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 2,
+      "time": 1,
+      "samples": 326,
+      "expected_points": 2.3581096042820042
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 2,
+      "time": 2,
+      "samples": 279,
+      "expected_points": 2.686245076258662
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 2,
+      "time": 3,
+      "samples": 411,
+      "expected_points": 3.1456646723010766
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 2,
+      "time": 4,
+      "samples": 563,
+      "expected_points": 2.9883504834882255
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 2,
+      "time": 5,
+      "samples": 1067,
+      "expected_points": 3.000301603564302
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 3,
+      "time": 1,
+      "samples": 755,
+      "expected_points": 1.5311435647565403
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 3,
+      "time": 2,
+      "samples": 611,
+      "expected_points": 1.9103459372604725
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 3,
+      "time": 3,
+      "samples": 985,
+      "expected_points": 2.0968088713957322
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 3,
+      "time": 4,
+      "samples": 1313,
+      "expected_points": 2.344160866998302
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 3,
+      "time": 5,
+      "samples": 2697,
+      "expected_points": 2.111313198019488
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 4,
+      "time": 1,
+      "samples": 731,
+      "expected_points": 0.44308343729926236
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 4,
+      "time": 2,
+      "samples": 773,
+      "expected_points": 0.5738503538170542
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 4,
+      "time": 3,
+      "samples": 1288,
+      "expected_points": 0.5549497897062815
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 4,
+      "time": 4,
+      "samples": 1543,
+      "expected_points": 0.5900353039528354
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 4,
+      "time": 5,
+      "samples": 3639,
+      "expected_points": 0.2957864694543034
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 5,
+      "time": 1,
+      "samples": 680,
+      "expected_points": -0.4009785115380387
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 5,
+      "time": 2,
+      "samples": 706,
+      "expected_points": -0.9492670013425232
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 5,
+      "time": 3,
+      "samples": 1182,
+      "expected_points": -0.8738885679205088
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 5,
+      "time": 4,
+      "samples": 1401,
+      "expected_points": -0.8863750339909614
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 5,
+      "time": 5,
+      "samples": 3857,
+      "expected_points": -1.257480003351758
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 6,
+      "time": 1,
+      "samples": 100,
+      "expected_points": -0.2243197541931511
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 6,
+      "time": 2,
+      "samples": 107,
+      "expected_points": -2.133975837275612
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 6,
+      "time": 3,
+      "samples": 172,
+      "expected_points": -1.6960174338530034
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 6,
+      "time": 4,
+      "samples": 199,
+      "expected_points": -2.1515558514892184
+    },
+    {
+      "down": 4,
+      "distance": 1,
+      "field": 6,
+      "time": 5,
+      "samples": 486,
+      "expected_points": -2.3037805906476745
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 1,
+      "time": 1,
+      "samples": 526,
+      "expected_points": 2.7935164683558833
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 1,
+      "time": 2,
+      "samples": 433,
+      "expected_points": 2.705022182931723
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 1,
+      "time": 3,
+      "samples": 685,
+      "expected_points": 2.839316297897487
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 1,
+      "time": 4,
+      "samples": 742,
+      "expected_points": 2.750431950849406
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 1,
+      "time": 5,
+      "samples": 1609,
+      "expected_points": 2.737075248325357
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 2,
+      "time": 1,
+      "samples": 399,
+      "expected_points": 2.154828427967612
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 2,
+      "time": 2,
+      "samples": 320,
+      "expected_points": 2.310075233450768
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 2,
+      "time": 3,
+      "samples": 461,
+      "expected_points": 2.1832798875557398
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 2,
+      "time": 4,
+      "samples": 497,
+      "expected_points": 2.328056858064602
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 2,
+      "time": 5,
+      "samples": 1138,
+      "expected_points": 2.2154397448072762
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 3,
+      "time": 1,
+      "samples": 818,
+      "expected_points": 1.31319423555405
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 3,
+      "time": 2,
+      "samples": 701,
+      "expected_points": 1.1931432166508487
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 3,
+      "time": 3,
+      "samples": 1020,
+      "expected_points": 1.38381051168811
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 3,
+      "time": 4,
+      "samples": 1317,
+      "expected_points": 1.4094384529304849
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 3,
+      "time": 5,
+      "samples": 2817,
+      "expected_points": 1.3775468082910343
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 4,
+      "time": 1,
+      "samples": 908,
+      "expected_points": 0.16266321028186648
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 4,
+      "time": 2,
+      "samples": 857,
+      "expected_points": -0.4309978926888658
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 4,
+      "time": 3,
+      "samples": 1435,
+      "expected_points": -0.29596897782785236
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 4,
+      "time": 4,
+      "samples": 1711,
+      "expected_points": -0.5326410069501722
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 4,
+      "time": 5,
+      "samples": 4280,
+      "expected_points": -0.5353555181727847
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 5,
+      "time": 1,
+      "samples": 789,
+      "expected_points": -0.47643951559605324
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 5,
+      "time": 2,
+      "samples": 979,
+      "expected_points": -1.0724723690204718
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 5,
+      "time": 3,
+      "samples": 1559,
+      "expected_points": -1.785643832352611
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 5,
+      "time": 4,
+      "samples": 1856,
+      "expected_points": -1.346556898693058
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 5,
+      "time": 5,
+      "samples": 5288,
+      "expected_points": -1.6364052799096354
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 6,
+      "time": 1,
+      "samples": 145,
+      "expected_points": -1.3140333739435264
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 6,
+      "time": 2,
+      "samples": 205,
+      "expected_points": -1.5101170835406819
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 6,
+      "time": 3,
+      "samples": 346,
+      "expected_points": -1.7125707105652996
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 6,
+      "time": 4,
+      "samples": 359,
+      "expected_points": -2.6820465391903703
+    },
+    {
+      "down": 4,
+      "distance": 2,
+      "field": 6,
+      "time": 5,
+      "samples": 822,
+      "expected_points": -2.535667275193806
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 1,
+      "time": 1,
+      "samples": 441,
+      "expected_points": 2.508480769487258
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 1,
+      "time": 2,
+      "samples": 359,
+      "expected_points": 2.3965442467174887
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 1,
+      "time": 3,
+      "samples": 563,
+      "expected_points": 2.661997952947214
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 1,
+      "time": 4,
+      "samples": 579,
+      "expected_points": 2.2484292479435544
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 1,
+      "time": 5,
+      "samples": 1363,
+      "expected_points": 2.642625511317373
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 2,
+      "time": 1,
+      "samples": 566,
+      "expected_points": 2.123827824720058
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 2,
+      "time": 2,
+      "samples": 454,
+      "expected_points": 2.0524241962042096
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 2,
+      "time": 3,
+      "samples": 679,
+      "expected_points": 2.2573654964277985
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 2,
+      "time": 4,
+      "samples": 755,
+      "expected_points": 1.914150100704253
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 2,
+      "time": 5,
+      "samples": 1750,
+      "expected_points": 2.16154819718111
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 3,
+      "time": 1,
+      "samples": 1258,
+      "expected_points": 1.1343255733744113
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 3,
+      "time": 2,
+      "samples": 955,
+      "expected_points": 1.0718391990038896
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 3,
+      "time": 3,
+      "samples": 1459,
+      "expected_points": 0.9879678877050738
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 3,
+      "time": 4,
+      "samples": 1723,
+      "expected_points": 0.8616992654580227
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 3,
+      "time": 5,
+      "samples": 4083,
+      "expected_points": 0.8075555404443571
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 4,
+      "time": 1,
+      "samples": 1314,
+      "expected_points": 0.121091259092714
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 4,
+      "time": 2,
+      "samples": 1248,
+      "expected_points": -0.4576114252474138
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 4,
+      "time": 3,
+      "samples": 2088,
+      "expected_points": -0.6571378326793357
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 4,
+      "time": 4,
+      "samples": 2473,
+      "expected_points": -0.6982179512530191
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 4,
+      "time": 5,
+      "samples": 6080,
+      "expected_points": -0.7189942812744248
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 5,
+      "time": 1,
+      "samples": 1255,
+      "expected_points": -0.5459882790207484
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 5,
+      "time": 2,
+      "samples": 1629,
+      "expected_points": -1.3317115149244947
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 5,
+      "time": 3,
+      "samples": 2716,
+      "expected_points": -1.4239454046079407
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 5,
+      "time": 4,
+      "samples": 3172,
+      "expected_points": -1.7814818268262878
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 5,
+      "time": 5,
+      "samples": 9117,
+      "expected_points": -1.8955489397349894
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 6,
+      "time": 1,
+      "samples": 274,
+      "expected_points": -1.2735041301452346
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 6,
+      "time": 2,
+      "samples": 381,
+      "expected_points": -2.3035170663970503
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 6,
+      "time": 3,
+      "samples": 667,
+      "expected_points": -2.3806132540047953
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 6,
+      "time": 4,
+      "samples": 786,
+      "expected_points": -2.361400971056842
+    },
+    {
+      "down": 4,
+      "distance": 3,
+      "field": 6,
+      "time": 5,
+      "samples": 1943,
+      "expected_points": -2.4529826794476435
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 1,
+      "time": 2,
+      "samples": 1,
+      "expected_points": 1.029529730795761
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 1,
+      "time": 3,
+      "samples": 1,
+      "expected_points": 0.93862063988667
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 1,
+      "time": 4,
+      "samples": 1,
+      "expected_points": 2.1204388217048518
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 1,
+      "time": 5,
+      "samples": 1,
+      "expected_points": 1.847711548977579
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 2,
+      "time": 1,
+      "samples": 275,
+      "expected_points": 2.1485081650482574
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 2,
+      "time": 2,
+      "samples": 209,
+      "expected_points": 2.1841316303139426
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 2,
+      "time": 3,
+      "samples": 356,
+      "expected_points": 2.194876576608616
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 2,
+      "time": 4,
+      "samples": 329,
+      "expected_points": 2.071754652031721
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 2,
+      "time": 5,
+      "samples": 842,
+      "expected_points": 2.2163436937074574
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 3,
+      "time": 1,
+      "samples": 541,
+      "expected_points": 1.029627635279044
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 3,
+      "time": 2,
+      "samples": 389,
+      "expected_points": 0.6674807695206851
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 3,
+      "time": 3,
+      "samples": 610,
+      "expected_points": 0.6360077855463764
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 3,
+      "time": 4,
+      "samples": 687,
+      "expected_points": 0.6087874132550264
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 3,
+      "time": 5,
+      "samples": 1606,
+      "expected_points": 0.67841882861309
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 4,
+      "time": 1,
+      "samples": 538,
+      "expected_points": -0.3333488557686981
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 4,
+      "time": 2,
+      "samples": 467,
+      "expected_points": -0.6764678678432842
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 4,
+      "time": 3,
+      "samples": 846,
+      "expected_points": -0.7192466973846339
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 4,
+      "time": 4,
+      "samples": 1071,
+      "expected_points": -0.6444728704544372
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 4,
+      "time": 5,
+      "samples": 2427,
+      "expected_points": -0.7614588317444589
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 5,
+      "time": 1,
+      "samples": 632,
+      "expected_points": -0.71288967750973
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 5,
+      "time": 2,
+      "samples": 741,
+      "expected_points": -1.3843877136634442
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 5,
+      "time": 3,
+      "samples": 1243,
+      "expected_points": -1.571169331972264
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 5,
+      "time": 4,
+      "samples": 1605,
+      "expected_points": -2.037569766539472
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 5,
+      "time": 5,
+      "samples": 4083,
+      "expected_points": -1.993079690437637
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 6,
+      "time": 1,
+      "samples": 186,
+      "expected_points": -1.0391590457206463
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 6,
+      "time": 2,
+      "samples": 283,
+      "expected_points": -1.2275603172738794
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 6,
+      "time": 3,
+      "samples": 443,
+      "expected_points": -2.381181397265445
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 6,
+      "time": 4,
+      "samples": 561,
+      "expected_points": -2.63340660763791
+    },
+    {
+      "down": 4,
+      "distance": 4,
+      "field": 6,
+      "time": 5,
+      "samples": 1451,
+      "expected_points": -2.821132904148697
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 1,
+      "time": 2,
+      "samples": 1,
+      "expected_points": 1.029529730795761
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 1,
+      "time": 5,
+      "samples": 4,
+      "expected_points": 0.5232019313395266
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 2,
+      "time": 1,
+      "samples": 67,
+      "expected_points": 1.6016211303734202
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 2,
+      "time": 2,
+      "samples": 58,
+      "expected_points": 1.3283062799816672
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 2,
+      "time": 3,
+      "samples": 80,
+      "expected_points": 1.403609189319482
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 2,
+      "time": 4,
+      "samples": 70,
+      "expected_points": 2.2415603379844176
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 2,
+      "time": 5,
+      "samples": 148,
+      "expected_points": 1.7488913103718569
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 3,
+      "time": 1,
+      "samples": 340,
+      "expected_points": 1.0523566486821525
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 3,
+      "time": 2,
+      "samples": 265,
+      "expected_points": 0.8520902801409214
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 3,
+      "time": 3,
+      "samples": 416,
+      "expected_points": 0.7049878568984821
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 3,
+      "time": 4,
+      "samples": 467,
+      "expected_points": -0.13349092863992998
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 3,
+      "time": 5,
+      "samples": 1003,
+      "expected_points": 0.7081192764449687
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 4,
+      "time": 1,
+      "samples": 448,
+      "expected_points": -0.16959644751363884
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 4,
+      "time": 2,
+      "samples": 374,
+      "expected_points": -0.4288415962532465
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 4,
+      "time": 3,
+      "samples": 599,
+      "expected_points": -0.6103040606917022
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 4,
+      "time": 4,
+      "samples": 714,
+      "expected_points": -0.6611535538138764
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 4,
+      "time": 5,
+      "samples": 1552,
+      "expected_points": -1.0586908917805675
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 5,
+      "time": 1,
+      "samples": 398,
+      "expected_points": -0.48694895333638877
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 5,
+      "time": 2,
+      "samples": 438,
+      "expected_points": -0.9032927967884968
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 5,
+      "time": 3,
+      "samples": 733,
+      "expected_points": -1.3077727765292686
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 5,
+      "time": 4,
+      "samples": 928,
+      "expected_points": -1.8056238517710517
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 5,
+      "time": 5,
+      "samples": 2141,
+      "expected_points": -2.0830660962162937
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 6,
+      "time": 1,
+      "samples": 320,
+      "expected_points": -1.471742948367414
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 6,
+      "time": 2,
+      "samples": 389,
+      "expected_points": -2.252318729226182
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 6,
+      "time": 3,
+      "samples": 708,
+      "expected_points": -2.6666785138736024
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 6,
+      "time": 4,
+      "samples": 838,
+      "expected_points": -2.5208433643410926
+    },
+    {
+      "down": 4,
+      "distance": 5,
+      "field": 6,
+      "time": 5,
+      "samples": 2111,
+      "expected_points": -3.0069189877233606
+    }
+  ]
+}

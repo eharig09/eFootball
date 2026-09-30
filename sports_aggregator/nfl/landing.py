@@ -4,6 +4,7 @@ from collections import defaultdict
 from contextlib import closing
 from typing import Any
 from sports_aggregator.cfb.prospects import consensus_board
+from sports_aggregator.nfl.draft_trade_value import pick_value
 from sports_aggregator.nfl.repository import NFLRepository
 
 GRADE_METRICS = ("grades_pass", "grades_pass_route", "grades_run", "grades_pass_block",
@@ -148,6 +149,7 @@ def draft_projection(repository: NFLRepository, cfb_repository, season: int,
                       "team_color": team.get("color"), "player": selected["player_name"],
                       "school": selected["school"], "position": position,
                       "board_rank": selected["rank"], "need_score": need(selected),
+                      "trade_value": pick_value(pick),
                       "qb_filter": established.get(code),
                       "reason": ("QB suppressed: " + established[code]["player"]
                                  if position != "QB" and code in established

@@ -99,6 +99,16 @@
         {% endfor %}
     </div>
 </section>
+
+<section class="section">
+    <h2>Draft outcomes, 2010&ndash;2025</h2>
+    <div class="section-note">
+        How drafted players at each position have actually turned out, by draft day &mdash;
+        a realized base rate to read the percentiles above against, not a projection for
+        any specific prospect.
+    </div>
+    {{ data_table(outcomes_table) }}
+</section>
 {% endblock %}
 
 {% block scripts %}{{ tabs_script() }}{% endblock %}

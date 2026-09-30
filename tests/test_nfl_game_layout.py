@@ -28,7 +28,15 @@ class GameLayoutTests(unittest.TestCase):
     def test_players_to_watch_come_first_on_the_matchups_tab(self):
         order = re.findall(r'id="([a-z-]+)" data-nfl-panel="matchups"', self.html)
         self.assertEqual(order[0], "player-watches")
-        self.assertEqual(order[1], "matchups")
+        self.assertEqual(order[1:3], ["separating-matchups", "matchups"])
+
+    def test_separating_matchups_live_on_matchups_and_coaches_compare_side_by_side(self):
+        self.assertEqual(self.panel("separating-matchups"), "matchups")
+        shape = self.html[self.html.index('id="shape"'):self.html.index('id="market"')]
+        self.assertNotIn("Matchup that separates", shape)
+        market = self.html[self.html.index('id="market"'):self.html.index('id="players"')]
+        self.assertIn("ui-coach", market)
+        self.assertNotIn("<th>Coach</th>", market)
 
     def test_the_redundant_unit_by_unit_table_is_gone(self):
         self.assertNotIn("expanded-matchup", self.html)

@@ -7,6 +7,8 @@ season unless a prior-season-only design is used later.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 from collections import defaultdict
 from typing import Any
 
@@ -21,7 +23,7 @@ KEYWORDS = (
 
 def report(repository: NFLRepository, *, from_season=2010, to_season=2026) -> dict[str, Any]:
     repository.initialize()
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         pressure = [
             dict(r) for r in connection.execute(
                 """SELECT season,COUNT(*) team_rows,

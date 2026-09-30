@@ -6,6 +6,8 @@ Weeks are snapshotted before any result from that week enters team state.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 from collections import defaultdict
 from typing import Any, Iterable
 
@@ -124,7 +126,7 @@ def narrative_tags(row: dict[str, Any]) -> list[dict[str, Any]]:
 
 def build_rows(repository: NFLRepository, start_season: int, end_season: int) -> list[dict[str, Any]]:
     repository.initialize()
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         games = [dict(row) for row in connection.execute(
             """SELECT game_id,season,season_type,week,game_date,away_team,home_team,
                       away_score,home_score,completed,spread_line,total_line

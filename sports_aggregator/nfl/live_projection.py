@@ -10,6 +10,8 @@ diagnostics. They are NOT automatically treated as betting edges.
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 from collections import defaultdict
 from typing import Any
 
@@ -98,7 +100,7 @@ def _history_before_week(repository: NFLRepository, season: int, week: int):
 
 def _target_games(repository: NFLRepository, season: int, week: int):
     repository.initialize()
-    with repository._connect() as connection:
+    with closing(repository._connect()) as connection:
         rows = connection.execute(
             """SELECT game_id,season,week,game_date,away_team,home_team,completed,
                       division_game,spread_line,total_line,away_rest,home_rest
@@ -201,8 +203,6 @@ def report(repository: NFLRepository, *, season: int, week: int):
     games = _target_games(repository, season, week)
 
     # First-stage models refit on every completed pregame row available before target week.
-    all_rows = _core_oof_rows(repository, 2010, max(2010, season - 1))
-    component_rows = []
     # Add completed current-season rows only as raw training examples for first-stage refit.
     from sports_aggregator.nfl.drive_projection import build_rows
     current_completed = build_rows(repository, start_season=2010, end_season=season)

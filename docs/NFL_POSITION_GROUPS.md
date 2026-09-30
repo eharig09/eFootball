@@ -6,7 +6,7 @@ group total and then expands into observed workload roles:
 
 - WR1 through WR4
 - TE1 through TE3
-- RB1 through RB3 (including players sourced as FB or HB)
+- QB rushing plus RB1 through RB3 (RB roles include players sourced as FB or HB)
 
 ## Role assignment
 
@@ -16,6 +16,11 @@ opportunities (targets plus carries), then scrimmage yards. The game-page
 window ends before kickoff, preventing the game being previewed from changing
 its own WR/RB/TE ordering. Group totals retain every player, including players
 beyond the displayed depth slots.
+
+Quarterbacks never consume an RB depth slot. All quarterback carries, rushing
+yards, and rushing touchdowns are included in the backfield group total and
+combined into a separate `QB rush` sub-row; QB passing production is not part
+of this ledger.
 
 This choice resolves a structural problem in the provider depth feed: an NFL
 formation can list several simultaneous first-team wide receivers, so its raw

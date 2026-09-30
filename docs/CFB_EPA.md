@@ -36,3 +36,25 @@ python -m sports_aggregator.cfb.ep_v2_rebuild_cli `
   --fit-from-year 2015 --fit-to-year 2025 `
   --score-from-year 2015 --score-to-year 2026 --min-cell 10
 ```
+
+## Deploying coefficients without expanding live PBP
+
+`data/cfb/models/ep-v2.json` contains the fitted 583-cell model and a SHA-256
+checksum. Installing it replaces only `cfb_expected_points_state`; it does not
+write `cfb_plays`, schedules, or any provider cache.
+
+To keep the live site's existing historical coverage and recalculate EPA only,
+run this from the disk-backed web-service shell after deploying the artifact:
+
+```bash
+python -m sports_aggregator.cfb.ep_v2_rebuild_cli \
+  --skip-fit \
+  --score-from-year 2015 --score-to-year 2026 \
+  --detail-from-year 2025
+```
+
+`--skip-fit` atomically installs the bundled artifact before scoring. A lower
+year bound earlier than the live PBP floor is harmless: the scorer reads and
+writes only play IDs already stored in that database. The command then rebuilds
+the EPA-dependent team-game, tendency, and quarterback summaries over that same
+available coverage.

@@ -69,7 +69,30 @@
         <aside class="landing-panel draft-board">
             <header><div><p class="eyebrow">{{ draft_projection.draft_year }}</p><h2>Projected draft order</h2></div><a href="{{ url_for('cfb.draft_watch', season=season) }}">CFB board →</a></header>
             <p class="panel-note">{{ draft_projection.note }}</p>
-            <div class="draft-projection-list">{% for pick in draft_projection.picks %}<div><strong>{{ pick.pick }}</strong><span class="draft-team" style="--club:{{ pick.team_color }}">{% if pick.team_logo %}<img src="{{ pick.team_logo }}" alt="">{% endif %}<b>{{ pick.team }}</b></span><span><b>{{ pick.player }}</b><small>{{ pick.position }} · {{ pick.school }} · board #{{ pick.board_rank }}</small></span><em title="{{ pick.reason }}">Need {{ pick.need_score }}</em></div>{% endfor %}</div>
+            <div class="draft-projection-list">{% for pick in draft_projection.picks %}<div><strong>{{ pick.pick }}</strong><span class="draft-team" style="--club:{{ pick.team_color }}">{% if pick.team_logo %}<img src="{{ pick.team_logo }}" alt="">{% endif %}<b>{{ pick.team }}</b></span><span><b>{{ pick.player }}</b><small>{{ pick.position }} · {{ pick.school }} · board #{{ pick.board_rank }}</small></span><em title="{{ pick.reason }}">Need {{ pick.need_score }}{% if pick.trade_value %} · {{ pick.trade_value }}pt{% endif %}</em></div>{% endfor %}</div>
+        </aside>
+        <aside class="landing-panel picks-board" id="picks-of-week">
+            <header><div><p class="eyebrow">Football Lab · independent model{% if picks_week %} · Week {{ picks_week }}{% endif %}</p><h2>Picks of the week</h2></div><a href="{{ url_for('nfl.engine_picks', season=season, week=picks_week) }}">Full board →</a></header>
+            <div class="picks-record-bar">
+                <div><span>ATS record</span><b>{{ picks_record.record }}</b></div>
+                <div><span>ROI</span><b class="{% if picks_record.roi is not none %}{{ 'is-positive' if picks_record.roi >= 0 else 'is-negative' }}{% endif %}">{% if picks_record.roi is not none %}{{ picks_record.roi|cell('signed') }}%{% else %}—{% endif %}</b></div>
+                <div><span>Graded</span><b>{{ picks_record.n }}</b><small>@ {{ picks_record.price }}</small></div>
+            </div>
+            <div class="picks-of-week-list">
+            {% for game in weekly_engine_picks %}
+                <a class="weekly-pick" href="{{ url_for('nfl.game_page', game_id=game.game_id) }}#tab-overview">
+                    <div class="weekly-pick-top"><span>{{ game.away_team }} @ {{ game.home_team }}</span><b>{{ game.game_date }}</b></div>
+                    <div class="weekly-pick-main">
+                        <div><small>Straight up</small><strong>{{ game.straight_up_pick }}</strong></div>
+                        <div><small>Against spread</small><strong>{{ game.ats_pick or 'Line pending' }}</strong></div>
+                    </div>
+                    <p>{{ game.total_pick or 'Total line pending' }} · {{ game.total_separation }} separation</p>
+                </a>
+            {% else %}
+                <p class="empty">Football Lab does not have a ready pick for Week {{ picks_week or '—' }} yet.</p>
+            {% endfor %}
+            </div>
+            <p class="panel-note">Experimental forecast — separation measures model-market distance, not a validated betting edge.</p>
         </aside>
     </section>
 
@@ -96,8 +119,8 @@
     <section class="section" id="leaders">
         <div class="section-head"><div><p class="eyebrow">Production command center</p><h2>Season and weekly leaders</h2></div></div>
         <div class="leader-window-grid">
-            <article><header><span>{{ analysis_season }}</span><h3>Season leaders{% if analysis_season != season %} <small>baseline</small>{% endif %}</h3></header><div class="compact-table-stack">{% for table in leaders.values() %}{{ data_table(table) }}{% endfor %}</div></article>
-            <article><header><span>{{ season }} &middot; Week {{ selected_week or '—' }}</span><h3>Weekly leaders</h3></header><div class="compact-table-stack">{% for table in weekly_leaders.values() %}{{ data_table(table) }}{% endfor %}</div></article>
+            <article><header><span>{{ analysis_season }}</span><h3>Season leaders{% if analysis_season != season %} <small>baseline</small>{% endif %}</h3></header>{{ tabbed_tables(leader_groups, 'nfl-season-leaders') }}</article>
+            <article><header><span>{{ season }} &middot; Week {{ selected_week or '—' }}</span><h3>Weekly leaders</h3></header>{{ tabbed_tables(weekly_leader_groups, 'nfl-weekly-leaders') }}</article>
         </div>
     </section>
 
