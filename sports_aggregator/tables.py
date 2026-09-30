@@ -4,6 +4,21 @@ Templates previously formatted every statistic inline with ad-hoc `%g`, `%.1f`,
 and `value * 100 if value <= 1` expressions, so the same number rendered
 differently on different pages and alignment was decided per template. A view
 now describes *what* a column is once, and one macro decides how it looks.
+
+Placing tables side by side in a grid is a template-layer decision, not a
+`Table` one, but it should follow the same source of truth this module
+provides rather than being decided ad hoc per page:
+
+* Side by side is for a genuine comparison pair the reader will look back and
+  forth between -- home vs. away, season vs. weekly, arrivals vs. departures --
+  or for tables this module already marks as narrow enough to shrink without
+  losing legibility (`templates/_tables.html`'s `NARROW_COLUMN_LIMIT`, 8
+  columns; see the `fits` class it grants below that).
+* It is not for unrelated tables placed in one row only because there was
+  space -- that reads as a comparison to a user even when none is intended.
+* It is never for a table past that column limit; a wide table degrades by
+  scrolling within its own `.table-wrap` (see `mobile-compact`/`mobile-scroll`
+  in the stylesheets), not by being squeezed into half a row.
 """
 
 from __future__ import annotations
@@ -36,6 +51,9 @@ class Column:
     #: this to "number" makes the row's `<key>_sort` value the thing compared,
     #: without turning the column into right-aligned tabular digits.
     sort: str | None = None
+    #: Optional band label. Adjacent columns sharing a label render under one
+    #: spanning header cell (RECORD, VOLUME & PACE, EFFICIENCY ...).
+    group: str | None = None
 
     def __post_init__(self) -> None:
         if self.align is None:
@@ -71,6 +89,20 @@ class Table:
     #: is worse than no control.
     sortable: bool = True
 
+    @property
+    def bands(self) -> list[tuple[str, int]]:
+        """(label, span) per run of adjacent columns sharing a `group`; empty when ungrouped."""
+        if not any(column.group for column in self.columns):
+            return []
+        runs: list[list[Any]] = []
+        for column in self.columns:
+            label = column.group or ""
+            if runs and runs[-1][0] == label:
+                runs[-1][1] += 1
+            else:
+                runs.append([label, 1])
+        return [(label, span) for label, span in runs]
+
     def __bool__(self) -> bool:
         return bool(self.rows)
 
@@ -85,7 +117,7 @@ class Table:
             "columns": [
                 {"key": column.key, "label": column.label, "format": column.format,
                  "align": column.align, "title": column.title,
-                 "sort": column.sort_kind}
+                 "sort": column.sort_kind, "group": column.group}
                 for column in self.columns
             ],
             "rows": self.rows,

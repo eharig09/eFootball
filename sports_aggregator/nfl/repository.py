@@ -14,6 +14,7 @@ from sports_aggregator.nfl.models import (
     Game, Player, SyncReport, Team, optional_float, optional_int, optional_text,
 )
 from sports_aggregator.nfl.naming import TEAMS, canon_team, normalize_name
+from sports_aggregator.nfl.plays import PLAY_COLUMNS, PLAY_TABLE_COLUMNS
 
 
 SCHEMA = """
@@ -435,6 +436,46 @@ CREATE TABLE IF NOT EXISTS sync_runs (
  started_at TEXT NOT NULL, finished_at TEXT NOT NULL, succeeded INTEGER NOT NULL,
  details_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS nfl_plays (
+ season INTEGER NOT NULL, week INTEGER, game_id TEXT NOT NULL, play_id INTEGER NOT NULL,
+ season_type TEXT, qtr INTEGER, clock TEXT, game_seconds INTEGER,
+ drive INTEGER, drive_result TEXT, posteam TEXT NOT NULL, defteam TEXT NOT NULL,
+ home_team TEXT, away_team TEXT, home_score INTEGER, away_score INTEGER,
+ down INTEGER, ydstogo INTEGER, yardline_100 REAL, yard_line TEXT, description TEXT, play_type TEXT,
+ is_pass INTEGER NOT NULL, is_rush INTEGER NOT NULL, is_sack INTEGER NOT NULL DEFAULT 0,
+ is_turnover INTEGER NOT NULL DEFAULT 0, is_touchdown INTEGER NOT NULL DEFAULT 0,
+ is_penalty INTEGER NOT NULL DEFAULT 0,
+ yards_gained REAL, epa REAL, success REAL, wp REAL, home_wp REAL, wpa REAL,
+ air_yards REAL, pass_location TEXT, run_location TEXT, run_gap TEXT, shotgun INTEGER, no_huddle INTEGER,
+ offense_formation TEXT, offense_personnel TEXT, offense_group TEXT,
+ defense_personnel TEXT, defense_package TEXT, defenders_in_box INTEGER, box TEXT,
+ pass_rushers INTEGER, man_zone TEXT, coverage TEXT, shell TEXT, was_pressure INTEGER, time_to_throw REAL,
+ motion INTEGER, play_action INTEGER, rpo INTEGER, screen INTEGER, qb_out_of_pocket INTEGER,
+ blitzers INTEGER, is_drop INTEGER, is_contested INTEGER, is_catchable INTEGER, starting_hash TEXT,
+ passer_id TEXT, receiver_id TEXT, rusher_id TEXT, route TEXT, is_complete INTEGER, yac REAL, cpoe REAL,
+ is_scramble INTEGER NOT NULL DEFAULT 0, goal_to_go INTEGER, zone TEXT,
+ is_pass_td INTEGER NOT NULL DEFAULT 0, is_rush_td INTEGER NOT NULL DEFAULT 0,
+ first_down INTEGER NOT NULL DEFAULT 0, qb_location TEXT,
+ is_interception INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY (game_id, play_id)
+);
+CREATE TABLE IF NOT EXISTS nfl_play_participants (
+ game_id TEXT NOT NULL, play_id INTEGER NOT NULL, season INTEGER NOT NULL,
+ offense_players TEXT, offense_positions TEXT, defense_players TEXT, defense_positions TEXT,
+ PRIMARY KEY (game_id, play_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_participants_season ON nfl_play_participants(season);
+CREATE TABLE IF NOT EXISTS nfl_player_package_snaps (
+ season INTEGER NOT NULL, team TEXT NOT NULL, player_id TEXT NOT NULL, position TEXT NOT NULL,
+ side TEXT NOT NULL, package TEXT NOT NULL, zone TEXT NOT NULL,
+ snaps INTEGER NOT NULL, pass_snaps INTEGER NOT NULL, rush_snaps INTEGER NOT NULL, epa_sum REAL NOT NULL,
+ PRIMARY KEY (season, team, player_id, position, side, package, zone)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_pkg_player ON nfl_player_package_snaps(player_id, season);
+CREATE INDEX IF NOT EXISTS idx_nfl_pkg_team ON nfl_player_package_snaps(season, team, side, package);
+CREATE INDEX IF NOT EXISTS idx_nfl_plays_game ON nfl_plays(game_id, game_seconds DESC);
+CREATE INDEX IF NOT EXISTS idx_nfl_plays_off ON nfl_plays(season, posteam);
+CREATE INDEX IF NOT EXISTS idx_nfl_plays_def ON nfl_plays(season, defteam);
 """
 
 
@@ -466,6 +507,14 @@ def _external_id(value: Any) -> str | None:
     return text
 
 
+# Indexes on columns that an existing database only gains by migration must be created after the ALTERs.
+PLAY_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_nfl_plays_passer ON nfl_plays(season, passer_id);
+CREATE INDEX IF NOT EXISTS idx_nfl_plays_receiver ON nfl_plays(season, receiver_id);
+CREATE INDEX IF NOT EXISTS idx_nfl_plays_rusher ON nfl_plays(season, rusher_id);
+"""
+
+
 class NFLRepository:
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -488,6 +537,26 @@ class NFLRepository:
             for name, definition in migrations.items():
                 if name not in columns:
                     connection.execute(f"ALTER TABLE nfl_content_items ADD COLUMN {name} {definition}")
+            play_columns = {row[1] for row in connection.execute("PRAGMA table_info(nfl_plays)")}
+            play_migrations = {
+                "passer_id": "TEXT", "receiver_id": "TEXT", "rusher_id": "TEXT", "route": "TEXT",
+                "is_complete": "INTEGER", "yac": "REAL", "cpoe": "REAL",
+                "is_scramble": "INTEGER NOT NULL DEFAULT 0", "goal_to_go": "INTEGER", "zone": "TEXT",
+                "is_pass_td": "INTEGER NOT NULL DEFAULT 0", "is_rush_td": "INTEGER NOT NULL DEFAULT 0",
+                "first_down": "INTEGER NOT NULL DEFAULT 0", "qb_location": "TEXT",
+                "is_interception": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for name, definition in play_migrations.items():
+                if play_columns and name not in play_columns:
+                    connection.execute(f"ALTER TABLE nfl_plays ADD COLUMN {name} {definition}")
+            # The player lists used to live on nfl_plays; they now live in nfl_play_participants.
+            for name in ("offense_players", "offense_positions", "defense_players", "defense_positions"):
+                if name in play_columns:
+                    try:
+                        connection.execute(f"ALTER TABLE nfl_plays DROP COLUMN {name}")
+                    except sqlite3.OperationalError:
+                        pass  # SQLite older than 3.35: the column stays, unused
+            connection.executescript(PLAY_INDEXES)
             game_columns = {row[1] for row in connection.execute("PRAGMA table_info(games)")}
             game_migrations = {
                 "away_rest": "INTEGER", "home_rest": "INTEGER",
@@ -907,6 +976,42 @@ class NFLRepository:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM team_weekly_stats WHERE season=?", (season,))
             connection.executemany("INSERT OR REPLACE INTO team_weekly_stats VALUES (?,?,?,?,?,?,?)", values)
+            connection.commit()
+        return len(values)
+
+    def replace_plays(self, season: int, rows: Iterable[tuple]) -> int:
+        """Replace a season's stored scrimmage plays (rows built by plays.build_play_rows)."""
+        self.initialize()
+        values = list(rows)
+        columns = ",".join(PLAY_TABLE_COLUMNS)
+        marks = ",".join("?" for _ in PLAY_TABLE_COLUMNS)
+        width = len(PLAY_TABLE_COLUMNS)
+        index = {name: position for position, name in enumerate(PLAY_COLUMNS)}
+        participants = [
+            (row[index["game_id"]], row[index["play_id"]], season, *row[width:])
+            for row in values if any(row[width:])
+        ]
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM nfl_plays WHERE season=?", (season,))
+            connection.execute("DELETE FROM nfl_play_participants WHERE season=?", (season,))
+            connection.executemany(
+                f"INSERT OR REPLACE INTO nfl_plays ({columns}) VALUES ({marks})",
+                [row[:width] for row in values])
+            connection.executemany(
+                "INSERT OR REPLACE INTO nfl_play_participants VALUES (?,?,?,?,?,?,?)", participants)
+            connection.commit()
+        return len(values)
+
+    def replace_package_snaps(self, season: int, rows: Iterable[tuple]) -> int:
+        """Replace a season's player-by-package-by-zone snap counts (plays.package_snap_rows)."""
+        self.initialize()
+        values = list(rows)
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM nfl_player_package_snaps WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO nfl_player_package_snaps VALUES (?,?,?,?,?,?,?,?,?,?,?)", values)
             connection.commit()
         return len(values)
 
@@ -1747,7 +1852,7 @@ class NFLRepository:
             "carries", "rushing_yards", "rushing_tds", "rushing_first_downs",
             "rushing_epa",
         )
-        positions = ("WR", "TE", "RB", "FB", "HB")
+        positions = ("WR", "TE", "RB", "FB", "HB", "QB")
         metric_marks = ",".join("?" for _ in metrics)
         position_marks = ",".join("?" for _ in positions)
         week_filter = " AND week<?" if before_week is not None else ""

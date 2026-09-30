@@ -140,6 +140,34 @@ def movement_tables(packet: dict) -> dict[str, Table]:
     return tables
 
 
+def personnel_change_tables(entry: dict) -> dict[str, Table]:
+    """Material roster arrivals and departures for one team entering a game.
+
+    `entry` is one team's slice of `matchups.matchup_context`'s `personnel`
+    packet: `{arrivals, departures, ...}`, each player already carrying a
+    `significance_evidence` list and a linkable `url`.
+    """
+    tables = {}
+    for key, label, empty in (
+        ("arrivals", "Key arrivals", "No material arrival."),
+        ("departures", "Key departures", "No material departure."),
+    ):
+        rows = []
+        for player in entry.get(key) or []:
+            rows.append({
+                "full_name": player["full_name"], "full_name_url": player.get("url"),
+                "position": player.get("position") or "—",
+                "why": " · ".join(player.get("significance_evidence") or []),
+                "detail": player.get("detail"),
+            })
+        tables[key] = Table(
+            (Column("full_name", "Player", emphasis=True), Column("position", "Pos."),
+             Column("why", "Why it matters"), Column("detail", "Detail")),
+            rows, caption=label, empty=empty, dense=True, sortable=False,
+        )
+    return tables
+
+
 def depth_chart_table(rows: list[dict]) -> Table:
     for row in rows:
         if row.get("gsis_id"):
@@ -239,6 +267,37 @@ def game_stat_tables(rows: list[dict]) -> list[dict]:
                 columns, projected, caption=f"Player box score — {label}", dense=True,
             )})
     return groups
+
+
+def team_box_table(rows: list[dict], away_team: str, home_team: str) -> Table:
+    """The postgame team box score, one metric per row, one team per column.
+
+    Matches CFB's `team_box_score_table`: transposing is what a printed box
+    score has always done, and it fits a phone -- the two numbers a reader
+    compares stay on the same row instead of being a full scroll apart.
+    """
+    table_rows = []
+    for row in rows:
+        away_value = format_value(row.get("away"), row.get("format") or "text")
+        home_value = format_value(row.get("home"), row.get("format") or "text")
+        item = {"label": row["label"], "away": away_value, "home": home_value}
+        lean = row.get("lean")
+        if lean == away_team:
+            item["away_class"] = "advantage"
+        elif lean == home_team:
+            item["home_class"] = "advantage"
+        table_rows.append(item)
+    return Table(
+        columns=[
+            Column("away", away_team, align="right"),
+            Column("label", "Metric"),
+            Column("home", home_team, align="right"),
+        ],
+        rows=table_rows, caption="Team box score", dense=True,
+        # One metric per row, each on its own scale: there is no order to put
+        # the value columns in, so the headers offer no sort.
+        sortable=False,
+        empty="No team box score is stored for this game.")
 
 
 def player_game_log(rows: list[dict]) -> Table:

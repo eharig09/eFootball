@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from sports_aggregator.nfl.models import Game, Player, SyncDatasetResult, SyncReport, Team, optional_float
 from sports_aggregator.nfl.naming import canon_team
+from sports_aggregator.nfl.plays import build_play_rows, package_snap_rows
 from sports_aggregator.nfl.nflverse import NflverseClient
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.elo import build_elo
@@ -31,7 +32,9 @@ CORE_FOUNDATION = frozenset({"teams", "games", "elo", "players"})
 CORE_STATS = frozenset({"weekly_stats", "next_gen_stats", "snap_counts",
                         "player_master", "player_ids", "team_weekly"})
 CORE_DEPTH = frozenset({"depth_charts"})
-CORE_PBP = frozenset({"pbp_efficiency"})
+CORE_PBP = frozenset({"pbp_efficiency", "pbp_plays"})
+
+PLAY_REQUIRED_COLUMNS = frozenset({"game_id", "play_id", "season", "posteam", "defteam", "pass", "rush"})
 
 REQUIRED_COLUMNS = {
     "teams": {"team_abbr", "team_name", "team_nick", "team_conf", "team_division"},
@@ -194,6 +197,27 @@ class NFLDataSync:
         )
         return self.repository.replace_players(season, current)
 
+    def sync_plays(self, season: int, *, force: bool = False) -> int:
+        """Store scrimmage plays with participation and FTN charting joined on.
+
+        Participation (formation/personnel/coverage) is published after the fact and FTN starts in
+        2022, so either can be empty for a season; the plays are still stored without those fields.
+        """
+        self.repository.initialize()
+        pbp = self.client.load_play_details([season], force=force)
+        missing = PLAY_REQUIRED_COLUMNS - set(pbp.columns)
+        if missing:
+            raise ValueError(f"nflverse pbp missing required columns {sorted(missing)}")
+        participation = self.client.load_participation([season], force=force)
+        ftn = self.client.load_ftn([season], force=force)
+        rows = build_play_rows(pbp.to_dict("records"), participation.to_dict("records"),
+                               ftn.to_dict("records"))
+        stored = self.repository.replace_plays(season, rows)
+        self.repository.replace_package_snaps(season, package_snap_rows(rows))
+        from sports_aggregator.nfl import route_analytics
+        route_analytics.clear_cache()
+        return stored
+
     def sync(self, season: int, *, force: bool = False,
              include_pbp: bool = True, only: frozenset[str] | None = None) -> SyncReport:
         """`only` scopes this call to a subset of dataset jobs by name (see
@@ -288,6 +312,9 @@ class NFLDataSync:
             return (efficiency + situational + playcalling + profiles + receivers
                    + rush_direction + situational_pass + rush_situational)
 
+        def store_plays() -> int:
+            return self.sync_plays(season, force=force)
+
         jobs: list[tuple[str, Callable[[], int]]] = [
             ("teams", store_teams), ("games", store_games), ("elo", store_elo),
             ("players", store_players), ("weekly_stats", store_weekly),
@@ -298,6 +325,7 @@ class NFLDataSync:
         ]
         if include_pbp:
             jobs.append(("pbp_efficiency", store_pbp))
+            jobs.append(("pbp_plays", store_plays))
         if only is not None:
             jobs = [(name, job) for name, job in jobs if name in only]
         results: list[SyncDatasetResult] = []
@@ -366,6 +394,7 @@ class NFLDataSync:
                 totals["rush_direction"] += self.repository.replace_rush_direction_profiles(season, pbp)
                 totals["situational_pass"] += self.repository.replace_situational_pass_profiles(season, pbp)
                 totals["rush_situational"] += self.repository.replace_rush_situational_profiles(season, pbp)
+                totals["plays"] = totals.get("plays", 0) + self.sync_plays(season, force=force)
         # Rebuild Elo once, after all canonical games are available.
         build_elo(self.repository, schedules)
         return totals

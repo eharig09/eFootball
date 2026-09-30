@@ -418,6 +418,23 @@ class UnifiedSourceRegistry:
             national_score=5, analytics_score=3, priority=4,
             trust_status="TRUSTED_SEED",
         ))
+        for name, key, specialties in (
+            ("CFBNumbers", "cfbnumbers", ("national_CFB", "EPA", "recruiting", "draft", "simulation")),
+            ("CFB Graphs", "cfbgraphs", ("national_CFB", "modeling", "transfer_portal", "roster_construction")),
+            ("The Mintner Method", "mintner-method", ("national_CFB", "PPA", "havoc", "returning_production")),
+            ("The Spade", "the-spade", ("national_CFB", "NFL", "efficiency", "transfer_portal")),
+            ("Bless Your Chart", "blessyourchart", ("national_CFB", "data_visualization", "margin_of_victory")),
+            ("Bets and Reps", "betsandreps", ("national_CFB", "power_ratings", "betting")),
+            ("Neil Paine", "neilpaine", ("national_CFB", "odds_tracker", "QB_value")),
+        ):
+            self.upsert_entity(SourceEntityProfile(
+                name=name, organization=name, entity_type="ORGANIZATION",
+                entity_key=f"publication:{key}",
+                source_classes=("PUBLICATION", "NATIONAL_ANALYST"),
+                specialties=specialties, conferences=("ALL",), reliability_score=4,
+                reporting_score=1, national_score=4, analytics_score=5, priority=4,
+                trust_status="TRUSTED_SEED",
+            ))
         configured = (
             ("organization:espn", SourceEndpointProfile(
                 platform="rss", endpoint_type="WEBSITE_RSS",
@@ -446,6 +463,34 @@ class UnifiedSourceRegistry:
                 url="https://sports.yahoo.com/college-football/rss/",
                 endpoint_key="rss:https://sports.yahoo.com/college-football/rss/",
                 verification_status="verified",
+            )),
+            ("publication:cfbnumbers", SourceEndpointProfile(
+                platform="rss", endpoint_type="WEBSITE_RSS", platform_id="https://cfbnumbers.substack.com/feed",
+                url="https://cfbnumbers.substack.com/feed", endpoint_key="rss:https://cfbnumbers.substack.com/feed", verification_status="verified",
+            )),
+            ("publication:cfbgraphs", SourceEndpointProfile(
+                platform="rss", endpoint_type="WEBSITE_RSS", platform_id="https://cfbgraphs.substack.com/feed",
+                url="https://cfbgraphs.substack.com/feed", endpoint_key="rss:https://cfbgraphs.substack.com/feed", verification_status="verified",
+            )),
+            ("publication:mintner-method", SourceEndpointProfile(
+                platform="rss", endpoint_type="WEBSITE_RSS", platform_id="https://themintnermethod.substack.com/feed",
+                url="https://themintnermethod.substack.com/feed", endpoint_key="rss:https://themintnermethod.substack.com/feed", verification_status="verified",
+            )),
+            ("publication:the-spade", SourceEndpointProfile(
+                platform="rss", endpoint_type="WEBSITE_RSS", platform_id="https://thespade.substack.com/feed",
+                url="https://thespade.substack.com/feed", endpoint_key="rss:https://thespade.substack.com/feed", verification_status="verified",
+            )),
+            ("publication:blessyourchart", SourceEndpointProfile(
+                platform="rss", endpoint_type="WEBSITE_RSS", platform_id="https://blessyourchart.substack.com/feed",
+                url="https://blessyourchart.substack.com/feed", endpoint_key="rss:https://blessyourchart.substack.com/feed", verification_status="verified",
+            )),
+            ("publication:betsandreps", SourceEndpointProfile(
+                platform="rss", endpoint_type="WEBSITE_RSS", platform_id="https://betsandreps.substack.com/feed",
+                url="https://betsandreps.substack.com/feed", endpoint_key="rss:https://betsandreps.substack.com/feed", verification_status="verified",
+            )),
+            ("publication:neilpaine", SourceEndpointProfile(
+                platform="rss", endpoint_type="WEBSITE_RSS", platform_id="https://neilpaine.substack.com/feed",
+                url="https://neilpaine.substack.com/feed", endpoint_key="rss:https://neilpaine.substack.com/feed", verification_status="verified",
             )),
         )
         self.initialize(); added = 0

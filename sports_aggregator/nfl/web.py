@@ -21,6 +21,7 @@ from sports_aggregator.nfl.engine_picks import (
     build_dashboard as build_engine_picks_dashboard,
     default_week as default_engine_pick_week,
 )
+from sports_aggregator.nfl.forecast_ledger import grading_report
 from sports_aggregator.nfl.explorer import (
     METRICS, METRIC_CATEGORIES, METRIC_LABELS, SUM_METRICS,
     player_stat_table, scatter_plot, with_rates,
@@ -45,7 +46,12 @@ from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.search import search_entities
 from sports_aggregator.nfl.storage_audit import storage_status
 from sports_aggregator.nfl.staff import staff_tendencies
+from sports_aggregator.nfl.team_panels import defense_panel, offense_panel, ranked_stats_panel, scoring_ranks, share_rows
+from sports_aggregator.nfl.enhanced_tables import player_enhanced, team_enhanced, to_json
+from sports_aggregator.nfl.play_story import play_story
+from sports_aggregator.nfl.season_tables import player_season_table, team_history_tables
 from sports_aggregator.nfl.teams import team_context
+from sports_aggregator.nfl.week_chart import epa_week_chart
 from sports_aggregator.nfl.trenches import trench_matchups
 from sports_aggregator.nfl.usage import returning_player_usage
 from sports_aggregator.nfl.live_projection import report as live_projection_report
@@ -54,7 +60,8 @@ from sports_aggregator.nfl.views import (
     leaders_table, matchup_cards, movement_tables, player_game_log, player_game_log_tables,
     player_headline_stats, pff_leaders_table, player_totals_table, power_table, roster_table,
     ingestion_runs_table, schedule_table, snap_usage_table, source_coverage_table,
-    team_source_coverage_table, usage_table, standings_tables, zone_matchup_table,
+    personnel_change_tables, team_box_table, team_source_coverage_table, usage_table,
+    standings_tables, zone_matchup_table,
 )
 
 
@@ -322,6 +329,24 @@ def _reporting_streams(items: list[dict], *, include_empty: bool = False) -> lis
     return streams
 
 
+def _picks_of_week_record(repository: NFLRepository, season: int) -> dict:
+    """Grade Football Lab's frozen against-the-spread picks at flat -110,
+    the same convention as the CFB dashboard's portfolio record."""
+    summary = grading_report(repository, season=season)["against_spread"]
+    wins = int(summary.get("wins") or 0)
+    losses = int(summary.get("losses") or 0)
+    pushes = int(summary.get("pushes") or 0)
+    n = wins + losses + pushes
+    net_units = wins * (100.0 / 110.0) - losses
+    return {
+        "wins": wins, "losses": losses, "pushes": pushes, "n": n,
+        "record": f"{wins}-{losses}" + (f"-{pushes}" if pushes else ""),
+        "net_units": round(net_units, 2),
+        "roi": round((net_units / n) * 100.0, 1) if n else None,
+        "price": "-110",
+    }
+
+
 def _dashboard_packet(season: int, week: int | None = None) -> dict:
     repository = _repository()
     all_games = repository.schedule(season)
@@ -459,6 +484,14 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
     matchups = matchup_cards(slate, identities, records, all_efficiency, elo)
     content_items = _content().latest(60)
     source_coverage = _content().source_coverage(_directory_sources())
+    picks_week = default_engine_pick_week(repository, season)
+    picks_dashboard = (build_engine_picks_dashboard(repository, season, picks_week)
+                       if picks_week is not None else None)
+    weekly_engine_picks = [
+        game for game in (picks_dashboard.get("games", []) if picks_dashboard else [])
+        if game.get("football_lab")
+    ]
+    picks_record = _picks_of_week_record(repository, season)
     return {
         "season": season, "analysis_season": analysis_season,
         "available_seasons": sorted({*repository.available_seasons(), season}, reverse=True),
@@ -482,6 +515,9 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
         "efficiency": power_table(efficiency_rows, season=analysis_season),
         "schedule": schedule_table(slate, identities=identities),
         "leaders": leaders, "weekly_leaders": weekly_leaders,
+        "leader_groups": [{"label": table.caption, "table": table} for table in leaders.values()],
+        "weekly_leader_groups": [{"label": table.caption, "table": table}
+                                 for table in weekly_leaders.values()],
         "pff_counts": pff_service.counts(analysis_season), "pff_features": pff_features,
         "pff_groups": [{"label": table.caption, "table": table}
                        for table in pff_features.values()],
@@ -489,6 +525,9 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
         "content": content_items,
         "content_streams": _reporting_streams(content_items, include_empty=True),
         "content_counts": _content().counts(), "source_coverage": source_coverage,
+        "picks_week": picks_week,
+        "weekly_engine_picks": weekly_engine_picks,
+        "picks_record": picks_record,
     }
 
 
@@ -910,9 +949,27 @@ def team_page(abbreviation: str):
     position_allowed = position_group_defense(
         _repository(), context["performance_season"], code,
     )
+    history_tables = team_history_tables(_repository(), code, season)
     return render_template(
         "nfl_team.html", league=get_league("nfl"), season=season, team=team,
         scheme_rate=scheme_rate,
+        offense_panel=offense_panel(
+            _repository(), _pff(), context["performance_season"], code, pff_season=pff_season),
+        defense_panel=defense_panel(defense),
+        scoring_ranks=scoring_ranks(_repository(), context["performance_season"], code),
+        season_options=_repository().available_seasons(),
+        enhanced=team_enhanced(_repository(), _pff(), season, code),
+        week_chart=epa_week_chart(_repository().team_weekly_performance(context["performance_season"], code)),
+        history_offense=history_tables[0], history_defense=history_tables[1],
+        usage_target_rows=share_rows(
+            context["usage"]["target_leaders"], "target_share",
+            lambda p: f"{p.get('position') or '—'} · {int(p.get('targets') or 0)} tgt"),
+        usage_carry_rows=share_rows(
+            context["usage"]["carry_leaders"], "carry_share",
+            lambda p: f"{p.get('position') or '—'} · {int(p.get('carries') or 0)} car"),
+        usage_opportunity_rows=share_rows(
+            context["usage"]["opportunity_leaders"], "opportunity_share",
+            lambda p: f"{p.get('position') or '—'} · {int(p.get('targets') or 0)} tgt + {int(p.get('carries') or 0)} car"),
         schedule=schedule_table(
             _repository().schedule(season, team=code), team=code,
             identities={row["abbreviation"]: row for row in _repository().list_teams()},
@@ -1218,6 +1275,11 @@ def _game_packet(game_id: str) -> dict:
             "football_lab": football_lab,
             "football_lab_status": football_lab_status,
             "postgame": postgame,
+            "play_story": play_story(repository, game),
+            "team_box_table": (team_box_table(postgame["team_box"], game["away_team"], game["home_team"])
+                               if postgame and postgame.get("team_box") else None),
+            "personnel_tables": {code: personnel_change_tables(context["personnel"][code])
+                                 for code in (game["away_team"], game["home_team"])},
             "opponent_mode": opponent_mode,
             "content": content_items, "content_streams": _reporting_streams(content_items),
             **context}
@@ -1384,16 +1446,23 @@ def _player_packet(player_id: str, season: int) -> dict:
         receiving_profile = pass_zone_packet(
             repository.receiver_pass_profile(season - 1, player_id), receiver=True,
         )
+    headline_stats = _headline_stats_with_rank(
+        repository, season, player.get("position"), player_id, totals)
+    ngs_stats = _ngs_headline_stats(repository, season, player.get("position"), player_id)
     content_items = _content().for_player(season, player_id, 50)
     career_view = request.args.get("career") == "1"
-    log_rows = repository.player_career_weekly(player_id) if career_view else weekly
+    career_rows = repository.player_career_weekly(player_id)
+    log_rows = career_rows if career_view else weekly
+    season_options = sorted({int(row["season"]) for row in career_rows}, reverse=True) or [season]
     return {
         "season": season, "player": player, "career_view": career_view,
+        "season_table": player_season_table(career_rows, season), "season_options": season_options,
+        "enhanced": player_enhanced(repository, _pff(), season, player_id, player.get("position")),
         "team_identity": team_identity or {},
         "totals": player_totals_table(totals),
-        "headline_stats": _headline_stats_with_rank(
-            repository, season, player.get("position"), player_id, totals),
-        "ngs_stats": _ngs_headline_stats(repository, season, player.get("position"), player_id),
+        "headline_stats": headline_stats, "ngs_stats": ngs_stats,
+        "stat_panel": ranked_stats_panel((("Production", headline_stats),
+                                          ("Next Gen Stats", ngs_stats))),
         "game_log": player_game_log(weekly),
         "game_log_groups": player_game_log_tables(log_rows, show_season=career_view),
         "performance_charts": player_charts(chart_rows, player.get("position")),
@@ -1418,6 +1487,8 @@ def player_api(player_id: str):
     packet = _player_packet(player_id, _season())
     return jsonify({**packet, "totals": packet["totals"].as_dict(),
                     "game_log": packet["game_log"].as_dict(),
+                    "season_table": packet["season_table"].as_dict(),
+                    "enhanced": to_json(packet["enhanced"]),
                     "game_log_groups": [
                         {"label": group["label"], "table": group["table"].as_dict()}
                         for group in packet["game_log_groups"]

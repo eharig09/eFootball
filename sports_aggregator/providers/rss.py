@@ -187,10 +187,18 @@ class RSSNewsProvider:
         entries = _field(feed, "entries", []) or []
         articles: list[Article] = []
         discovery = "RSS_NATIVE" if preferred and used_url == preferred else "RSS"
+        topic_pattern = (
+            re.compile(r"\b(?:" + "|".join(re.escape(term) for term in self.config.topic_terms) + r")\b", re.I)
+            if self.config.topic_terms else None
+        )
         for entry in entries[: self.config.max_articles]:
             title = _clean_text(_field(entry, "title"))
             url = str(_field(entry, "link")).strip()
             if not title or not url:
+                continue
+            if topic_pattern is not None and not topic_pattern.search(
+                f"{title} {_clean_text(_field(entry, 'summary'))}"
+            ):
                 continue
             try:
                 articles.append(

@@ -141,6 +141,9 @@ class FeedConfig:
     reliability: int = 3
     source_entity_key: str = ""
     source_endpoint_key: str = ""
+    # Multi-sport or multi-level publications: keep only entries whose title or
+    # summary mentions one of these terms (case-insensitive, whole word).
+    topic_terms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

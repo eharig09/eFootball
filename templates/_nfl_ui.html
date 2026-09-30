@@ -1,0 +1,237 @@
+{# Shared NFL UI components: percentile panels, filter bars, schedule strip. Styles live in static/nfl_ui.css. #}
+{% from '_tables.html' import data_table %}
+{% macro ordinal(n) -%}
+{%- set t = n % 100 -%}{{ n }}{{ 'th' if 10 < t < 14 else ('st' if n % 10 == 1 else ('nd' if n % 10 == 2 else ('rd' if n % 10 == 3 else 'th'))) }}
+{%- endmacro %}
+
+{% macro pctl_panel(title, panel, kind='offense', note='') %}
+<article class="ui-panel ui-pctl" data-kind="{{ kind }}">
+    <header class="ui-panel-head"><h3>{{ title }}</h3><span class="ui-median-key"><i></i> = league median</span></header>
+    {% if panel and panel.has_data %}
+    <div class="ui-pctl-cols" aria-hidden="true"><span>Stat</span><span>Value</span><span></span><span>Pctl</span><span>Rank</span></div>
+    {% for group in panel.groups %}
+    <div class="ui-pctl-group">
+        <h4>{{ group.label }}</h4>
+        {% for row in group.rows %}
+        <div class="ui-pctl-row" data-tone="{{ row.tone }}">
+            <span class="ui-lbl">{{ row.label }}</span>
+            <b class="ui-val">{{ row.value|cell(row.format) }}</b>
+            <span class="ui-bar" style="--p:{{ row.pctl if row.pctl is not none else 0 }}" role="img" aria-label="{{ row.label }} percentile {{ row.pctl if row.pctl is not none else 'unavailable' }}"><i></i></span>
+            <span class="ui-pc">{% if row.pctl is not none %}{{ ordinal(row.pctl) }}{% else %}&mdash;{% endif %}</span>
+            <span class="ui-rk">{% if row.rank %}#{{ row.rank }}{% else %}&mdash;{% endif %}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+    {% if note %}<p class="ui-panel-note">{{ note }}</p>{% endif %}
+    {% else %}<p class="ui-panel-note">Not enough charted data for this unit yet.</p>{% endif %}
+</article>
+{% endmacro %}
+
+{% macro filter_bar(label, options, current) %}
+{# options: sequence of (value, href) pairs #}
+<div class="ui-filter-group"><span class="ui-filter-label">{{ label }}</span>
+    <span class="ui-pills">{% for value, href in options %}<a href="{{ href }}" class="ui-pill{{ ' is-active' if value == current }}"{% if value == current %} aria-current="true"{% endif %}>{{ value }}</a>{% endfor %}</span>
+</div>
+{% endmacro %}
+
+{% macro schedule_strip(cards, title='Schedule') %}
+<section class="ui-schedule" aria-label="{{ title }}">
+    <h2 class="ui-kicker">{{ title }}</h2>
+    <div class="ui-schedule-track">
+        {% for game in cards %}
+        <a class="ui-game-chip" href="{{ game.url }}" data-result="{{ game.result|lower if game.result else 'upcoming' }}">
+            <small>WK {{ game.week }}</small>
+            <span class="ui-opp">{{ game.site }} {% if game.opponent_identity.logo_url %}<img src="{{ game.opponent_identity.logo_url }}" alt="" loading="lazy">{% endif %}{{ game.opponent }}</span>
+            <b>{% if game.completed %}{{ game.result }} {{ game.own_score }}&ndash;{{ game.opponent_score }}{% else %}{{ game.game_date }}{% endif %}</b>
+        </a>
+        {% else %}<p class="ui-panel-note">No schedule is stored for this season.</p>{% endfor %}
+    </div>
+</section>
+{% endmacro %}
+
+{% macro _gap_dot(identity, code, x, kind) %}
+<span class="ui-gap-dot" data-side="{{ kind }}" style="--x:{{ x }};--c:{{ identity.color or '#5b8db8' }}" title="{{ code }} {{ kind }}">{% if identity.logo_url %}<img src="{{ identity.logo_url }}" alt="{{ code }} {{ kind }}" loading="lazy">{% else %}{{ code }}{% endif %}</span>
+{% endmacro %}
+
+{# One offense against the opposing defense. Left = best (#1), right = worst. The connector spans the rank gap;
+   hovering (or focusing) a row shows the underlying values. Groups are picked with `wanted`. #}
+{% macro rank_gap_panel(card, attack_identity, resist_identity, wanted=('Efficiency', 'Next Gen Stats')) %}
+{% set shown = card.sections|selectattr('label', 'in', wanted)|list %}
+{% if shown %}
+<article class="ui-panel ui-gap" style="--attack:{{ attack_identity.color or '#5b8db8' }};--resist:{{ resist_identity.color or '#b85858' }}">
+    <header class="ui-panel-head"><h3>{{ card.offense }} offense vs {{ card.defense }} defense</h3><span class="ui-median-key">left = better</span></header>
+    {% for group in shown %}
+    <div class="ui-gap-group"><h4>{{ group.label }}</h4><small>{{ group.source }}</small></div>
+    {% for row in group.rows %}{% if row.offense_rank and row.defense_rank %}
+    {% set a = ((row.offense_rank - 1) / (((row.offense_of or 32) - 1) or 1) * 100)|round(1) %}
+    {% set b = ((row.defense_rank - 1) / (((row.defense_of or 32) - 1) or 1) * 100)|round(1) %}
+    <div class="ui-gap-row" tabindex="0" data-lean="{{ 'attack' if row.lean == card.offense else 'resist' if row.lean == card.defense else 'even' }}">
+        <span class="ui-lbl">{{ row.label }}</span>
+        <span class="ui-gap-track"><i class="ui-gap-link" style="--lo:{{ [a, b]|min }};--span:{{ (a - b)|abs }}"></i>{{ _gap_dot(attack_identity, card.offense, a, 'offense') }}{{ _gap_dot(resist_identity, card.defense, b, 'defense') }}</span>
+        <span class="ui-gap-read"><b>#{{ row.offense_rank }}</b> &middot; <b>#{{ row.defense_rank }}</b></span>
+        <span class="ui-gap-tip" role="tooltip">
+            <b>{{ row.label }}</b>
+            <span><i style="--c:{{ attack_identity.color or '#5b8db8' }}"></i>{{ card.offense }} offense <em>{{ row.offense_value|cell(row.format) }}</em> <small>#{{ row.offense_rank }} of {{ row.offense_of or '&mdash;'|safe }}</small></span>
+            <span><i class="is-def" style="--c:{{ resist_identity.color or '#b85858' }}"></i>{{ card.defense }} defense <em>{{ row.defense_value|cell(row.format) }}</em> <small>#{{ row.defense_rank }} of {{ row.defense_of or '&mdash;'|safe }}</small></span>
+            <small class="ui-gap-verdict">{% if row.lean == card.offense or row.lean == card.defense %}{{ row.lean }} advantage &middot; {{ row.separation }} ranks apart{% else %}Even matchup{% if row.separation is not none %} &middot; {{ row.separation }} ranks apart{% endif %}{% endif %}</small>
+        </span>
+    </div>
+    {% endif %}{% endfor %}
+    {% endfor %}
+    <p class="ui-panel-note">{{ card.offense }} logo = offense, {{ card.defense }} logo = defense (dashed). Left is better (#1); the connector spans the rank gap. Hover a row for values.</p>
+</article>
+{% endif %}
+{% endmacro %}
+
+{# Weekly EPA/play line chart (offense vs defense allowed) with a point-differential strip. Geometry comes from week_chart.py. #}
+{% macro epa_week_chart(chart, title='EPA / play by week') %}
+<article class="ui-panel ui-chart">
+    <header class="ui-panel-head"><h3>{{ title }}</h3><span class="ui-legend"><i class="off"></i>Offense <i class="def"></i>Defense allowed <em>(lower = better)</em></span></header>
+    {% if chart and chart.has_data %}
+    <svg class="ui-svg" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img" aria-label="{{ title }}: offense and defense-allowed EPA per play by week, with point margin bars">
+        {% for tick in chart.ticks %}<line class="grid" x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ tick.y }}" y2="{{ tick.y }}"/><text class="tick" x="{{ chart.left - 6 }}" y="{{ tick.y + 3 }}" text-anchor="end">{{ tick.label }}</text>{% endfor %}
+        <line class="zero" x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ chart.zero_y }}" y2="{{ chart.zero_y }}"/>
+        <polyline class="line def" points="{{ chart.defense_path }}"/>
+        <polyline class="line off" points="{{ chart.offense_path }}"/>
+        {% for point in chart.defense_points %}<a href="{{ point.url }}"><circle class="dot def" cx="{{ point.x }}" cy="{{ point.y }}" r="3.6"><title>Wk {{ point.week }} vs {{ point.opponent }}: {{ point.value|cell('signed2') }} EPA/play allowed</title></circle></a>{% endfor %}
+        {% for point in chart.offense_points %}<a href="{{ point.url }}"><circle class="dot off" cx="{{ point.x }}" cy="{{ point.y }}" r="3.6"><title>Wk {{ point.week }} vs {{ point.opponent }}: {{ point.value|cell('signed2') }} EPA/play</title></circle></a>{% endfor %}
+        <line class="zero" x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ chart.bars_zero_y }}" y2="{{ chart.bars_zero_y }}"/>
+        <text class="tick" x="{{ chart.left - 6 }}" y="{{ chart.bars_zero_y + 3 }}" text-anchor="end">PT DIFF</text>
+        {% for bar in chart.bars %}<rect class="bar {{ 'pos' if bar.positive else 'neg' }}" x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.w }}" height="{{ bar.h }}" rx="1.5"><title>Wk {{ bar.week }} vs {{ bar.opponent }}: {{ bar.margin|cell('signed') }}</title></rect>{% endfor %}
+        {% for label in chart.week_labels %}<text class="tick" x="{{ label.x }}" y="{{ chart.label_y }}" text-anchor="middle">{{ label.label }}</text>{% endfor %}
+    </svg>
+    {% else %}<p class="ui-panel-note">Weekly efficiency will appear once charted games are stored for this season.</p>{% endif %}
+</article>
+{% endmacro %}
+
+{# A table whose middle column is a proportional bar: rows are {label, url, sub, bar (0-1), value}. #}
+{% macro bar_table(title, rows, empty='No data is available.') %}
+<article class="ui-panel">
+    <header class="ui-panel-head"><h3>{{ title }}</h3></header>
+    {% if rows %}
+    <table class="ui-mini ui-bars"><tbody>
+        {% for row in rows %}<tr>
+            <th scope="row">{% if row.url %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.sub %}<small>{{ row.sub }}</small>{% endif %}</th>
+            <td class="ui-mini-bar"><span class="ui-bar" style="--p:{{ (row.bar * 100)|round(1) }}"><i></i></span></td>
+            <td class="num">{{ row.value }}</td>
+        </tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="ui-panel-note">{{ empty }}</p>{% endif %}
+</article>
+{% endmacro %}
+
+{# Win probability for the home team by play; the line takes the leading team's color and numbered dots mark the biggest swings. #}
+{% macro wp_chart(story, away_identity, home_identity, title='Win probability') %}
+{% set wp = story.wp %}
+<article class="ui-panel ui-chart" style="--away:{{ away_identity.color or '#4c9be8' }};--home:{{ home_identity.color or '#e5484d' }}">
+    <header class="ui-panel-head"><h3>{{ title }}</h3><span class="ui-legend"><i class="away"></i>{{ wp.away }} ahead <i class="home"></i>{{ wp.home }} ahead</span></header>
+    {% if wp.has_data %}
+    <svg class="ui-svg ui-wp" viewBox="0 0 {{ wp.width }} {{ wp.height }}" role="img" aria-label="{{ title }} for {{ wp.home }} by play, with the six biggest swings numbered">
+        {% for value, label in [(0, wp.bottom), (25, wp.top + (wp.bottom - wp.top) * 0.75), (50, wp.mid_y), (75, wp.top + (wp.bottom - wp.top) * 0.25), (100, wp.top)] %}
+        <line class="grid" x1="{{ wp.left }}" x2="{{ wp.right }}" y1="{{ label }}" y2="{{ label }}"/><text class="tick" x="{{ wp.left - 6 }}" y="{{ label + 3 }}" text-anchor="end">{{ value }}%</text>{% endfor %}
+        <line class="zero" x1="{{ wp.left }}" x2="{{ wp.right }}" y1="{{ wp.mid_y }}" y2="{{ wp.mid_y }}"/>
+        {% for quarter in wp.quarters %}<line class="qline" x1="{{ quarter.x }}" x2="{{ quarter.x }}" y1="{{ wp.top }}" y2="{{ wp.bottom }}"/><text class="tick" x="{{ quarter.x + 4 }}" y="{{ wp.label_y }}">{{ quarter.label }}</text>{% endfor %}
+        {% for segment in wp.segments %}<polyline class="line {{ segment.side }}" points="{{ segment.points }}"/>{% endfor %}
+        {% for marker in wp.markers %}<g class="mark {{ marker.side }}"><line x1="{{ marker.x }}" x2="{{ marker.x }}" y1="{{ wp.bottom }}" y2="{{ wp.bottom + 8 }}"/><text x="{{ marker.x }}" y="{{ wp.bottom + 18 }}" text-anchor="middle">{{ marker.kind }}</text></g>{% endfor %}
+        {% for swing in story.swings if swing.x is defined %}<g class="swing"><circle cx="{{ swing.x }}" cy="{{ swing.y }}" r="8"><title>{{ swing.team }} +{{ swing.pct }}%: {{ swing.description }}</title></circle><text x="{{ swing.x }}" y="{{ swing.y + 3.5 }}" text-anchor="middle">{{ swing.rank }}</text></g>{% endfor %}
+    </svg>
+    <p class="ui-panel-note">Y = {{ wp.home }} win probability &middot; X = play sequence (scrimmage plays) &middot; ticks below the axis mark touchdown and field-goal drives.</p>
+    {% else %}<p class="ui-panel-note">No win-probability data is stored for this game.</p>{% endif %}
+</article>
+{% endmacro %}
+
+{% macro swing_table(story, identities) %}
+<article class="ui-panel">
+    <header class="ui-panel-head"><h3>Biggest win-probability swings</h3></header>
+    <table class="ui-mini ui-swings">
+        <tbody>{% for swing in story.swings %}<tr>
+            <td class="rank"><span class="ui-rank">{{ swing.rank }}</span></td>
+            <th scope="row">{{ swing.description }}<small>{{ swing.when }} &middot; {{ swing.where }}</small></th>
+            <td class="num"><span class="tag">{{ swing.team }}</span> <b class="good">+{{ swing.pct }}%</b></td>
+        </tr>{% else %}<tr><td class="ctx">No swings are stored.</td></tr>{% endfor %}</tbody>
+    </table>
+    <p class="ui-panel-note">The team that gained win probability is shown; numbered dots match the chart.</p>
+</article>
+{% endmacro %}
+
+{# Offensive drives as proportional segments: width is plays, color is the result. #}
+{% macro drive_chart(drives) %}
+<article class="ui-panel ui-drives">
+    <header class="ui-panel-head"><h3>Drive chart</h3><span class="ui-legend"><i class="td"></i>TD <i class="fg"></i>FG <i class="punt"></i>Punt/End <i class="to"></i>TO / downs</span></header>
+    {% for row in drives.rows %}
+    <div class="ui-drive-row">
+        <span class="ui-drive-team"><b>{{ row.team }}</b><small>{{ row.totals.td }} TD &middot; {{ row.totals.fg }} FG &middot; {{ row.totals.to }} TO</small></span>
+        <span class="ui-drive-track">{% for drive in row.drives %}<span class="seg {{ drive.klass }}" style="flex:{{ drive.plays }} 1 0" title="{{ drive.label }} &middot; {{ drive.plays }} plays &middot; {{ drive.yards }} yds"><b>{{ drive.label }}</b><small>{{ drive.plays }} pl &middot; {{ drive.yards }} yd</small></span>{% endfor %}</span>
+    </div>
+    {% endfor %}
+    <p class="ui-panel-note">Offensive drives only, from stored scrimmage plays. Segment width = plays.</p>
+</article>
+{% endmacro %}
+
+{% macro play_table(story) %}
+<div class="ui-plays" data-play-filter>
+    <div class="ui-play-tools">
+        <span class="ui-pills" role="group" aria-label="Filter plays">{% for key, label, count in story.filters %}<button type="button" class="ui-pill{{ ' is-active' if key == 'explosive' }}" data-play-kind="{{ key }}">{{ label }} <small>{{ count }}</small></button>{% endfor %}</span>
+        <span class="ui-play-count" data-play-count></span>
+    </div>
+    <table class="ui-mini ui-play-rows">
+        <thead><tr><th>Situation</th><th>Play</th><th>Offense called</th><th>Defense played</th><th class="num">EPA</th><th class="num">WP &Delta;</th></tr></thead>
+        <tbody>{% for play in story.plays %}<tr data-kinds="{{ play.kinds }}">
+            <td class="sit"><b>{{ play.when }}</b><small>{{ play.offense }} &middot; {{ play.where }}</small></td>
+            <td class="desc">{{ play.description }}</td>
+            <td class="tags">{% for tag in play.called %}<span class="chip">{{ tag }}</span>{% else %}<span class="ctx">&mdash;</span>{% endfor %}</td>
+            <td class="tags">{% for tag in play.defense %}<span class="chip">{{ tag }}</span>{% endfor %}{% for tag in play.hot %}<span class="chip hot">{{ tag }}</span>{% endfor %}{% if not play.defense and not play.hot %}<span class="ctx">&mdash;</span>{% endif %}</td>
+            <td class="num {{ 'good' if play.epa and play.epa > 0 else 'poor' }}">{{ play.epa|cell('signed2') }}</td>
+            <td class="num{{ ' big' if play.big_wpa }}">{{ play.wpa|cell('signed') if play.wpa is none else ('%+.1f%%'|format(play.wpa)) }}</td>
+        </tr>{% endfor %}</tbody>
+    </table>
+    <p class="ui-panel-note">Play text from the stored play-by-play. {% if story.enhanced %}Offense called and defense played come from nflverse participation{% if story.ftn %} and FTN charting{% endif %}.{% else %}Formation, personnel and coverage are not published for this season yet{% if story.ftn %}; motion, play action and RPO are from FTN charting{% endif %}.{% endif %} WP &Delta; is from the offense's perspective; highlighted past &plusmn;5 points.</p>
+</div>
+{% endmacro %}
+
+{# Targets by route depth as one stacked bar. #}
+{% macro depth_mix(mix) %}
+{% if mix %}<div class="ui-mix" role="img" aria-label="Targets by route depth">{% for item in mix %}<span class="seg mix-{{ item.key }}" style="flex:{{ item.share }} 1 0" title="{{ item.label }}: {{ item.targets }} targets, {{ item.epa_per_target|cell('signed2') }} EPA/target"><b>{{ item.label }}</b><small>{{ (item.share * 100)|round|int }}% &middot; {{ item.targets }}</small></span>{% endfor %}</div>{% endif %}
+{% endmacro %}
+
+{# A table panel with an optional baseline note and depth mix. `table` goes through the shared banded data_table. #}
+{% macro table_panel(title, table, note='', mix=none, blurb='') %}
+<article class="ui-panel ui-tablepanel">
+    <header class="ui-panel-head"><h3>{{ title }}</h3>{% if note %}<span class="ui-median-key">{{ note }}</span>{% endif %}</header>
+    {{ depth_mix(mix) }}
+    {% if blurb %}<details class="ui-note"><summary>Method</summary><p>{{ blurb }}</p></details>{% endif %}
+    {{ data_table(table) }}
+</article>
+{% endmacro %}
+
+{# Hash-by-direction grid: where the ball starts (rows) against where it goes (columns). #}
+{% macro hash_matrix(grid) %}
+<table class="ui-matrix" aria-label="Ball start hash against direction">
+    <thead><tr><th>Ball starts</th><th>Left</th><th>Middle</th><th>Right</th></tr></thead>
+    <tbody>{% for row in grid %}<tr><th scope="row">{{ row.label }}</th>{% for cell in row.cells %}<td class="{{ cell.heat or '' }}">{% if cell.n %}<b>{{ cell.n }}</b><small class="{{ cell.epa_class or '' }}">{{ cell.epa_per|cell('signed2') }}</small>{% else %}<span class="ctx">&mdash;</span>{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table>
+{% endmacro %}
+
+{# Field / boundary split: share bars with the league split as a tick, efficiency, and the hash grid. #}
+{% macro side_panel(title, section, passing=True, note='') %}
+<article class="ui-panel ui-sidepanel">
+    <header class="ui-panel-head"><h3>{{ title }}</h3>{% if note %}<span class="ui-median-key">{{ note }}</span>{% endif %}</header>
+    {% if section and section.has_data %}
+    <div class="ui-ratio"><b>{{ section.ratio or '&mdash;'|safe }}</b><span>field : boundary{% if section.league_ratio %} &middot; league {{ section.league_ratio }}{% endif %}</span><small>{{ section.total }} charted</small></div>
+    <table class="ui-mini ui-sidebars">
+        <thead><tr><th>Side</th><th>Share <em>(tick = league)</em></th><th class="num">N</th><th class="num">EPA/play</th><th class="num">{{ 'Y/A' if passing else 'Y/C' }}</th><th class="num">{{ 'Cmp %' if passing else 'Succ %' }}</th>{% if passing %}<th class="num">aDOT</th>{% endif %}</tr></thead>
+        <tbody>{% for row in section.rows %}<tr>
+            <th scope="row">{{ row.bucket }}</th>
+            <td class="ui-mini-bar"><span class="ui-bar" style="--p:{{ (row.share * 100)|round(1) }}"><i></i>{% if row.league_share is not none %}<u style="left:{{ (row.league_share * 100)|round(1) }}%"></u>{% endif %}</span><span class="pct">{{ (row.share * 100)|round|int }}%</span></td>
+            <td class="num">{{ row.n }}</td>
+            <td class="num {{ row.epa_class or '' }}">{{ row.epa_per|cell('signed2') }}</td>
+            <td class="num">{{ row.yards_per|cell('f1') }}</td>
+            <td class="num">{{ row.completion_rate|cell('rate') if passing else row.success|cell('rate') }}</td>
+            {% if passing %}<td class="num">{{ row.adot|cell('f1') }}</td>{% endif %}
+        </tr>{% endfor %}</tbody>
+    </table>
+    {{ hash_matrix(section.matrix) }}
+    {% else %}<p class="ui-panel-note">Not enough charted plays to split by hash and side.</p>{% endif %}
+</article>
+{% endmacro %}

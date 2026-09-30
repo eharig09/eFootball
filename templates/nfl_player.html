@@ -3,6 +3,7 @@
 {% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
 {% from '_nfl_charts.html' import chart_workbench, nfl_chart_scripts %}
 {% from '_nfl_passing.html' import pass_zone_grid %}
+{% from '_nfl_ui.html' import pctl_panel, filter_bar, table_panel, side_panel %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,45 +14,121 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_neutral.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_ui.css') }}">
 </head>
 <body class="nfl-player-page">
 {{ nfl_nav('player', season, player.position or 'Player') }}
 <main>
-    <section class="nfl-hero player-hero" data-identity style="--team-primary:{{ team_identity.color or '#0b5aa5' }};--team-secondary:{{ team_identity.alternate_color or team_identity.color or '#d50a0a' }}">
-        {% if player.headshot_url %}<img src="{{ player.headshot_url }}" alt="" class="hero-headshot">{% endif %}
-        <div><p class="eyebrow">{{ season }} &middot; {{ player.position or 'NFL player' }}</p><h1>{{ player.full_name }}</h1>
-        <p>{% for team in player.teams %}<a href="{{ url_for('nfl.team_page', abbreviation=team, season=season) }}">{{ team }}</a>{{ ', ' if not loop.last }}{% endfor %}
-            {% if player.jersey_number is not none %} &middot; No. {{ player.jersey_number }}{% endif %}{% if player.status %} &middot; {{ player.status }}{% endif %}</p>
-        <div class="metrics">
-            {% if player.years_experience is not none %}<span><b>{{ player.years_experience }}</b> years experience</span>{% endif %}
-            {% if player.college %}<span><b>{{ player.college }}</b> college</span>{% endif %}
-            {% if player.height %}<span><b>{{ player.height|round|int }}</b> inches</span>{% endif %}
-            {% if player.weight %}<span><b>{{ player.weight }}</b> lbs</span>{% endif %}
-            {% if player.draft.draft_year %}<span><b>{{ player.draft.draft_year }}</b> draft &middot; round {{ player.draft.draft_round or '&mdash;' }} &middot; pick {{ player.draft.draft_pick or '&mdash;' }}</span>{% endif %}
-        </div></div>
+    <header class="ui-team-header ui-player-header" data-identity style="--team-primary:{{ team_identity.color or '#0b5aa5' }};--team-secondary:{{ team_identity.alternate_color or team_identity.color or '#d50a0a' }}">
+        <span class="ui-team-logo ui-headshot">{% if player.headshot_url %}<img src="{{ player.headshot_url }}" alt="{{ player.full_name }}">{% elif team_identity.logo_url %}<img src="{{ team_identity.logo_url }}" alt="">{% endif %}</span>
+        <div>
+            <h1 class="ui-team-title">{{ player.full_name }}</h1>
+            <div class="ui-chips">
+                {% for team in player.teams %}<a class="ui-chip" href="{{ url_for('nfl.team_page', abbreviation=team, season=season) }}">{{ team }}</a>{% endfor %}
+                {% if player.position %}<span class="ui-chip is-record">{{ player.position }}</span>{% endif %}
+                {% if player.jersey_number is not none %}<em>No. <b>{{ player.jersey_number }}</b></em>{% endif %}
+                {% if player.status %}<em>{{ player.status }}</em>{% endif %}
+                {% if player.years_experience is not none %}<em>Exp <b>{{ player.years_experience }}</b> yr</em>{% endif %}
+                {% if player.college %}<em>College <b>{{ player.college }}</b></em>{% endif %}
+                {% if player.height %}<em>Ht/Wt <b>{{ player.height|round|int // 12 }}&prime;{{ player.height|round|int % 12 }}&Prime;{% if player.weight %} / {{ player.weight }}{% endif %}</b></em>{% endif %}
+                {% if player.draft.draft_year %}<em>Draft <b>{{ player.draft.draft_year }} Rd {{ player.draft.draft_round or '&mdash;' }}{% if player.draft.draft_pick %}, #{{ player.draft.draft_pick }}{% endif %}{% if player.draft.draft_team %} ({{ player.draft.draft_team }}){% endif %}</b></em>{% endif %}
+            </div>
+        </div>
+        <nav class="ui-header-links" aria-label="Player shortcuts"><a href="#production">Production &rarr;</a><a href="#seasons">Seasons &rarr;</a>{% if enhanced.has_data %}<a href="#enhanced">Routes &amp; usage &rarr;</a>{% endif %}<a href="#game-log">Game log &rarr;</a></nav>
+    </header>
+
+    <div class="ui-filterbar" aria-label="Player filters">
+        {% set season_links = [] %}{% for option in season_options %}{% if season_links.append((option, url_for('nfl.player_page', player_id=player.player_id, season=option))) %}{% endif %}{% endfor %}
+        {{ filter_bar('Season', season_links, season) }}
+    </div>
+
+    <section class="section" id="production">
+        <div class="section-head"><div><p class="eyebrow">{{ season }} summary</p><h2>Season production</h2></div></div>
+        <div class="ui-deep-grid{{ '' if stat_panel.has_data and returning_usage else ' ui-single' }}">
+            {% if stat_panel.has_data %}{{ pctl_panel(player.position ~ ' · ' ~ season ~ ' percentile vs ' ~ player.position ~ 's', stat_panel, 'player', 'Ranks compare this player with every ' ~ player.position ~ ' who recorded the stat in ' ~ season ~ '; the bar shows percentile and the tick marks the league median.') }}
+            {% elif not returning_usage %}<p class="empty">No season totals are available for this player.</p>{% endif %}
+            {% if returning_usage %}
+            <article class="ui-panel">
+                <header class="ui-panel-head"><h3>Role &amp; workload &middot; {{ returning_usage.season }} {{ returning_usage.team }}</h3><span class="ui-median-key">{% if returning_usage.is_baseline %}returning-role baseline{% else %}team share{% endif %}</span></header>
+                <table class="ui-mini">
+                    <thead><tr><th>Measure</th><th class="num">Total</th><th class="num">Team share</th></tr></thead>
+                    <tbody>
+                        <tr><th scope="row">Targets</th><td class="num">{{ returning_usage.targets|cell('big') }}</td><td class="num">{{ returning_usage.target_share|cell('rate') }}</td></tr>
+                        <tr><th scope="row">Carries</th><td class="num">{{ returning_usage.carries|cell('big') }}</td><td class="num">{{ returning_usage.carry_share|cell('rate') }}</td></tr>
+                        <tr><th scope="row">Opportunities</th><td class="num">{{ returning_usage.opportunities|cell('big') }}</td><td class="num">{{ returning_usage.opportunity_share|cell('rate') }}</td></tr>
+                        <tr><th scope="row">Scrimmage yards<small>{{ returning_usage.first_downs|cell('int') }} first downs</small></th><td class="num">{{ returning_usage.scrimmage_yards|cell('big') }}</td><td class="num">&mdash;</td></tr>
+                        <tr><th scope="row">Air yards<small>{{ returning_usage.receptions|cell('big') }} receptions</small></th><td class="num">{{ returning_usage.air_yards|cell('big') }}</td><td class="num">&mdash;</td></tr>
+                        <tr><th scope="row">Explosive touches<small>20+ yd rushes + receptions</small></th><td class="num">{{ returning_usage.explosive_touches|cell('big') }}</td><td class="num">&mdash;</td></tr>
+                    </tbody>
+                </table>
+                <details class="ui-note"><summary>Method</summary><p>Targets plus carries define opportunities. Team shares use the player's listed team in that season and are descriptive, not a playing-time projection.</p></details>
+            </article>
+            {% endif %}
+        </div>
     </section>
 
-    {% if player.draft.draft_year %}
-    <section class="draft-pedigree" aria-label="Draft pedigree">
-        <span><small>Draft year</small><b>{{ player.draft.draft_year }}</b></span>
-        <span><small>Round</small><b>{{ player.draft.draft_round or 'UDFA' }}</b></span>
-        <span><small>Overall pick</small><b>{{ player.draft.draft_pick or '—' }}</b></span>
-        <span><small>Drafted by</small><b>{{ player.draft.draft_team or '—' }}</b></span>
+    <section class="section" id="seasons">
+        <div class="section-head"><div><p class="eyebrow">Regular season &middot; one row per season</p><h2>Season totals &mdash; all bands</h2></div></div>
+        {{ data_table(season_table) }}
     </section>
+
+    {% if enhanced.has_data %}
+    <span id="enhanced"></span>
+    {% if enhanced.routes %}{% set rt = enhanced.routes %}
+    <section class="section" id="routes">
+        <div class="section-head"><div><p class="eyebrow">{{ rt.meta.season }} charted targets{% if rt.note %} &middot; {{ rt.note }}{% endif %}</p><h2>{{ 'Throws by route' if rt.role == 'passer' else 'Route tree' }}</h2></div></div>
+        {% if rt.context %}<p class="ui-inline-chips">
+            {% if rt.context.pff_route_grade is defined %}<span>PFF route grade <b>{{ rt.context.pff_route_grade|cell('f1') }}</b></span>{% endif %}
+            {% if rt.context.pff_yprr is defined %}<span>Yards / route run <b>{{ rt.context.pff_yprr|cell('f2') }}</b></span>{% endif %}
+            {% if rt.context.pff_routes is defined %}<span>Routes run <b>{{ rt.context.pff_routes|cell('int') }}</b></span>{% endif %}
+            {% if rt.context.ngs_separation is defined %}<span>NGS separation <b>{{ rt.context.ngs_separation|cell('f1') }}</b> yd</span>{% endif %}
+            {% if rt.context.ngs_cushion is defined %}<span>NGS cushion <b>{{ rt.context.ngs_cushion|cell('f1') }}</b> yd</span>{% endif %}
+        </p>{% endif %}
+        {{ table_panel(('Throws' if rt.role == 'passer' else 'Targets') ~ ' by route', rt.table, rt.meta.season ~ ' · vs league on each route', rt.mix, 'The route is the targeted receiver’s route from nflverse participation data, so a row is a target, not a route run. PFF does not publish grades by route type; the PFF and NGS figures above are season-level. EPA vs league compares EPA per target with every other target on the same route. Depth groups: behind the line (screen, swing, flat), short (slant, quick out, hitch/curl, drag, texas), intermediate (in/dig, deep out), deep (go, post, corner, wheel).') }}
+    </section>
+    {% endif %}
+    {% if enhanced.pairs and enhanced.pairs.has_data %}{% set pr = enhanced.pairs %}
+    <section class="section" id="pairs">
+        <div class="section-head"><div><p class="eyebrow">{{ pr.season }} {{ 'quarterback' if pr.role == 'receiver' else 'target' }} pairings{% if pr.note %} &middot; {{ pr.note }}{% endif %}</p><h2>{{ 'Quarterbacks throwing to him' if pr.role == 'receiver' else 'Who he throws to' }}</h2></div></div>
+        {{ table_panel('Pairings', pr.table, '', none, 'A pairing is a pass thrown by this quarterback to this target. Top routes are the route types the pair connected on most often. PFF route grade, yards per route run and Next Gen separation and cushion are the target’s season-level figures.') }}
+    </section>
+    {% endif %}
+    {% if enhanced.sides %}{% set sd = enhanced.sides %}
+    <section class="section" id="sides">
+        <div class="section-head"><div><p class="eyebrow">{{ sd.meta.season }} hash and direction{% if sd.note %} &middot; {{ sd.note }}{% endif %}</p><h2>Field side vs boundary</h2></div></div>
+        <details class="ui-note"><summary>Method</summary><p>The hash is where the ball is spotted at the snap. A throw or run to the same side as the hash goes to the boundary (the short side of the field); the opposite side is the field (wide) side; middle is between the numbers regardless of hash. Mid-hash snaps have no short side and stay left or right. Ticks mark the league split. Quarterback scrambles are counted as runs for quarterbacks; sacks have no direction and are excluded. FTN hash charting starts in 2022.</p></details>
+        <div class="ui-enhanced-grid">
+            {% for item in sd['items'] %}
+                {% if item.role == 'rusher' %}{{ side_panel(item.label ~ ' · by side', item.view.runs, false, item.view.runs.total ~ ' charted') }}
+                {% else %}{{ side_panel(item.label ~ ' · by side', item.view.passes, true, item.view.passes.total ~ ' charted') }}{% endif %}
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+    {% if enhanced.packages %}{% set pk = enhanced.packages %}
+    <section class="section" id="packages">
+        <div class="section-head"><div><p class="eyebrow">{{ pk.meta.season }} {{ pk.usage.team }} &middot; {{ 'offense' if pk.usage.side == 'off' else 'defense' }}{% if pk.note %} &middot; {{ pk.note }}{% endif %}</p><h2>Personnel packages &amp; field zones</h2></div></div>
+        {{ table_panel('On-field rate by package and zone', pk.table, (pk.usage.snaps|string) ~ ' of ' ~ (pk.usage.team_snaps|string) ~ ' team snaps', none, 'On field = this player’s snaps divided by the team’s snaps in the same package (and zone). ' ~ ('Personnel is backs then tight ends: 11 = 1 RB and 1 TE, 12 = 1 RB and 2 TE, 21 = 2 RB and 1 TE, 13 = 1 RB and 3 TE. ' if pk.usage.side == 'off' else 'Packages count defensive backs: Base = 4 or fewer, Nickel = 5, Dime = 6 or more. ') ~ 'Zones: backed up = inside the offense’s own 20; neutral = own 21 to own 49; plus = midfield to the opponent’s 21; red zone = the 20 to the 11; goal to go = the first-down line is the goal line. Small cells show snaps / team snaps.') }}
+    </section>
+    {% endif %}
     {% endif %}
 
     {% if pff.highlights %}
     <section class="section" id="pff">
         <div class="section-head"><div><p class="eyebrow">{{ pff.season }} PFF profile{% if pff.season != season %} &middot; prior-season baseline{% endif %}</p><h2>Grading and alignment</h2></div><a class="section-action" href="{{ url_for('nfl.pff_explorer', season=pff.season) }}">Open explorer &rarr;</a></div>
-        <div class="player-pff-grid">{% for stat in pff.highlights %}<article><span>{{ stat.label }}</span><b>{{ stat.value|cell(stat.format) }}</b><small>{{ stat.family|replace('_',' ') }}</small></article>{% endfor %}</div>
-        <p class="section-note">PFF season aggregates are sourced read-only from scouting_report and joined to this page by the provider’s player ID.</p>
+        <table class="ui-mini ui-pff-table">
+            <thead><tr><th>Metric</th><th class="num">Value</th><th>Source family</th></tr></thead>
+            <tbody>{% for stat in pff.highlights %}<tr><th scope="row">{{ stat.label }}</th><td class="num"><b>{{ stat.value|cell(stat.format) }}</b></td><td class="ctx">{{ stat.family|replace('_',' ') }}</td></tr>{% endfor %}</tbody>
+        </table>
+        <details class="ui-note"><summary>Method</summary><p>PFF season aggregates are sourced read-only from scouting_report and joined to this page by the provider's player ID.</p></details>
     </section>
     {% endif %}
 
     {% if performance_charts %}
     <section class="section" id="form">
         <div class="section-head"><div><p class="eyebrow">{{ season }} weekly trend</p><h2>Recent performance</h2></div></div>
-        <p class="section-note">The series adapts to the player’s position and links every point back to the matchup.</p>
+        <details class="ui-note"><summary>Method</summary><p>The series adapts to the player's position and links every point back to the matchup.</p></details>
         {{ chart_workbench(performance_charts, 'player-form') }}
     </section>
     {% endif %}
@@ -59,7 +136,7 @@
     {% if passing_profile.has_data %}
     <section class="section" id="passing-zones">
         <div class="section-head"><div><p class="eyebrow">Pass depth + location</p><h2>Quarterback throwing map</h2></div></div>
-        <p class="section-note">Targeted throws only; sacks and unchartable throws are excluded. Cells show EPA per attempt, completion rate, and sample size.</p>
+        <details class="ui-note"><summary>Method</summary><p>Targeted throws only; sacks and unchartable throws are excluded. Cells show EPA per attempt, completion rate, and sample size.</p></details>
         {{ pass_zone_grid(passing_profile, player.full_name ~ ' passing profile') }}
     </section>
     {% endif %}
@@ -67,38 +144,20 @@
     {% if receiving_profile.has_data %}
     <section class="section" id="receiving-zones">
         <div class="section-head"><div><p class="eyebrow">Target depth + location</p><h2>Reception breakdown</h2></div></div>
-        <p class="section-note">Highlighted cells show where targets concentrate. Each section includes catches, targets, yards, EPA, YAC, and yards per reception.</p>
+        <details class="ui-note"><summary>Method</summary><p>Highlighted cells show where targets concentrate. Each section includes catches, targets, yards, EPA, YAC, and yards per reception.</p></details>
         {{ pass_zone_grid(receiving_profile, player.full_name ~ ' reception profile') }}
     </section>
     {% endif %}
 
-    {% if returning_usage %}
-    <section class="section" id="role">
-        <div class="section-head"><div><p class="eyebrow">{{ returning_usage.season }} {{ returning_usage.team }} workload{% if returning_usage.is_baseline %} &middot; returning-role baseline{% endif %}</p><h2>Opportunity profile</h2></div></div>
-        <p class="section-note">Targets plus carries define opportunities. Team shares use the player’s listed team in that season and are descriptive, not a playing-time projection.</p>
-        <div class="player-role-grid">
-            <article><span>Targets</span><b>{{ returning_usage.targets|cell('big') }}</b><small>{{ returning_usage.target_share|cell('rate') }} team share</small></article>
-            <article><span>Carries</span><b>{{ returning_usage.carries|cell('big') }}</b><small>{{ returning_usage.carry_share|cell('rate') }} team share</small></article>
-            <article><span>Opportunities</span><b>{{ returning_usage.opportunities|cell('big') }}</b><small>{{ returning_usage.opportunity_share|cell('rate') }} combined share</small></article>
-            <article><span>Scrimmage yards</span><b>{{ returning_usage.scrimmage_yards|cell('big') }}</b><small>{{ returning_usage.first_downs|cell('int') }} first downs</small></article>
-            <article><span>Air yards</span><b>{{ returning_usage.air_yards|cell('big') }}</b><small>{{ returning_usage.receptions|cell('big') }} receptions</small></article>
-            <article><span>Explosive touches</span><b>{{ returning_usage.explosive_touches|cell('big') }}</b><small>20+ yard rushes + receptions</small></article>
-        </div>
+    {% if ngs_stats and not stat_panel.has_data %}
+    <section class="section" id="ngs"><div class="section-head"><div><p class="eyebrow">Tracking</p><h2>Next Gen Stats</h2></div></div>
+        <table class="ui-mini"><tbody>{% for stat in ngs_stats %}<tr><th scope="row">{{ stat.label }}</th><td class="num"><b>{{ stat.value|cell(stat.format) }}</b></td><td class="ctx">{% if stat.rank %}#{{ stat.rank }} of {{ stat.of }} {{ player.position }}{% endif %}</td></tr>{% endfor %}</tbody></table>
     </section>
     {% endif %}
 
-    <section class="section" id="production">
-        <div class="section-head"><div><p class="eyebrow">Summary</p><h2>Season production</h2></div></div>
-        <div class="player-stat-grid">{% for stat in headline_stats %}<article><span>{{ stat.label }}</span><b>{{ stat.value|cell(stat.format) }}</b>{% if stat.rank %}<small>#{{ stat.rank }} of {{ stat.of }} {{ player.position }}</small>{% endif %}</article>{% else %}<p class="empty">No season totals are available for this player.</p>{% endfor %}</div>
-        {% if ngs_stats %}
-        <h3 class="subsection-title">Next Gen Stats</h3>
-        <div class="player-stat-grid">{% for stat in ngs_stats %}<article><span>{{ stat.label }}</span><b>{{ stat.value|cell(stat.format) }}</b>{% if stat.rank %}<small>#{{ stat.rank }} of {{ stat.of }} {{ player.position }}</small>{% endif %}</article>{% endfor %}</div>
-        {% endif %}
-    </section>
-
     <section class="section" id="game-log">
         <div class="section-head"><div><p class="eyebrow">{{ 'Full career' if career_view else 'By week' }}</p><h2>Game log</h2></div><a class="section-action" href="{{ url_for('nfl.player_page', player_id=player.player_id, season=season, career=(None if career_view else 1)) }}">{{ 'Back to ' ~ season|string if career_view else 'View full career' }}</a></div>
-        <p class="section-note">Only stat families this player recorded are shown. Each {{ 'game' if career_view else 'week' }} links to its matchup page.{% if career_view %} Spans every season synced for this player.{% endif %}</p>
+        <details class="ui-note"><summary>Method</summary><p>Only stat families this player recorded are shown. Each {{ 'game' if career_view else 'week' }} links to its matchup page.{% if career_view %} Spans every season synced for this player.{% endif %}</p></details>
         <div class="player-log-grid">{% for group in game_log_groups %}<div>{{ data_table(group.table) }}</div>{% else %}<div class="empty">No weekly statistics are available for this player.</div>{% endfor %}</div>
     </section>
     <section class="section" id="coverage"><div class="section-head"><div><p class="eyebrow">Connected reporting + social</p><h2>{{ player.full_name }} coverage</h2></div></div>{{ nfl_reporting_streams(content_streams, 'No stored coverage is linked to this player yet.') }}</section>

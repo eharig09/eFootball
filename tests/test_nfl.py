@@ -443,6 +443,17 @@ class FakeNflverseClient:
              "success": 1, "pass": 0, "rush": 0, "down": None, "yards_gained": 80},
         ])
 
+    def load_play_details(self, _seasons, **_kwargs):
+        rows = [dict(row, play_id=index, desc=f"play {index}")
+                for index, row in enumerate(self.load_pbp(_seasons).rows, start=1)]
+        return FakeFrame(rows)
+
+    def load_participation(self, _seasons, **_kwargs):
+        return FakeFrame([])
+
+    def load_ftn(self, _seasons, **_kwargs):
+        return FakeFrame([])
+
 
 class NFLCanonicalSyncTests(unittest.TestCase):
     def test_coach_ats_splits_roles_sites_and_replays_current_number(self):
@@ -609,7 +620,7 @@ class NFLCanonicalSyncTests(unittest.TestCase):
         all_job_names = {
             "teams", "games", "elo", "players", "weekly_stats", "next_gen_stats",
             "snap_counts", "depth_charts", "player_master", "player_ids",
-            "team_weekly", "pbp_efficiency",
+            "team_weekly", "pbp_efficiency", "pbp_plays",
         }
         groups = (sync_module.CORE_FOUNDATION, sync_module.CORE_STATS,
                  sync_module.CORE_DEPTH, sync_module.CORE_PBP)
@@ -1007,12 +1018,15 @@ class NFLSourceDirectoryTests(unittest.TestCase):
     def test_real_rss_directory_covers_every_team_and_national_feed(self):
         national = national_feeds()
         # 22 unique workbook feeds, minus 3 permanently broken feeds, plus
-        # 6 live-validated supplemental reporting/analysis feeds.
-        self.assertEqual(len(national), 25)
-        self.assertEqual(len({feed.url for feed in national}), 25)
+        # 11 live-validated supplemental reporting/analysis feeds.
+        self.assertEqual(len(national), 30)
+        self.assertEqual(len({feed.url for feed in national}), 30)
         self.assertIn("ESPN NFL Headlines", {feed.name for feed in national})
         self.assertIn("Unexpected Points", {feed.name for feed in national})
         self.assertIn("Over the Cap", {feed.name for feed in national})
+        self.assertIn("The Read Optional", {feed.name for feed in national})
+        paine = next(feed for feed in national if feed.name == "Neil Paine")
+        self.assertIn("nfl", paine.topic_terms)
 
         teams = team_feeds()
         self.assertEqual(len(teams), 32)

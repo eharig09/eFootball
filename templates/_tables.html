@@ -74,6 +74,12 @@
         <table class="data{{ ' fits' if (table.columns | length) <= NARROW_COLUMN_LIMIT }}
             {{- ' dense' if table.dense }}{{ ' ' ~ extra_class if extra_class }}">
             <thead>
+                {#- Optional band row: consecutive columns sharing a `group` get one spanning cell. -#}
+                {%- if table.bands %}
+                <tr class="band-row">
+                    {%- for label, span in table.bands %}<th scope="colgroup" colspan="{{ span }}" class="band band-{{ loop.index0 % 4 }}">{{ label }}</th>{% endfor %}
+                </tr>
+                {%- endif %}
                 <tr>
                     {%- for column in table.columns %}
                     <th scope="col"
@@ -89,7 +95,7 @@
             </thead>
             <tbody>
                 {%- for row in table.rows %}
-                <tr>
+                <tr{% if row.get('_row_class') %} class="{{ row.get('_row_class') }}"{% endif %}>
                     {%- for column in table.columns %}
                     {%- set text = row.get(column.key) | cell(column.format) %}
                     {%- set href = row.get(column.key ~ '_url') %}

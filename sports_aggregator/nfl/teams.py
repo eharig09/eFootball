@@ -181,6 +181,7 @@ def team_context(repository: NFLRepository, season: int, team: str) -> dict[str,
                             "url": f"/nfl/players/{rows[0]['player_id']}/?season={leader_season}"})
 
     return {
+        "schedule_cards": cards,
         "recent_games": list(reversed(completed[-3:])), "upcoming_games": upcoming[:3],
         "next_game": upcoming[0] if upcoming else None,
         "last_game": completed[-1] if completed else None,

@@ -48,12 +48,14 @@ def _rows(path: str | Path, sheet: str, header_marker: str) -> Iterator[dict[str
             yield row
 
 
-def _feed(name: str, url: str, *, source_type: str, reliability: int, key_prefix: str) -> FeedConfig:
+def _feed(name: str, url: str, *, source_type: str, reliability: int, key_prefix: str,
+          topic_terms: tuple[str, ...] = ()) -> FeedConfig:
     if not url.startswith("https://"):
         raise NFLRSSDirectoryError(f"feed {name!r} has no HTTPS URL: {url!r}")
     return FeedConfig(
         name=name, url=url, max_articles=30, source_type=source_type, reliability=reliability,
         source_entity_key=f"{key_prefix}:{name}", source_endpoint_key=f"rss:{url}",
+        topic_terms=topic_terms,
     )
 
 
@@ -90,6 +92,7 @@ def national_feeds(path: str | Path = DEFAULT_PATH) -> tuple[FeedConfig, ...]:
                 name, url, source_type=str(item.get("source_type") or "news"),
                 reliability=int(item.get("reliability") or 3),
                 key_prefix="nfl-supplemental-rss",
+                topic_terms=tuple(str(term) for term in item.get("topic_terms") or ()),
             )
             feeds.setdefault(feed.url, feed)
     return tuple(feeds.values())

@@ -183,6 +183,8 @@ class NFLContentRepository:
             quality = max(1, min(5, int(reliability)))
             score += (quality - 3) * 5
             reasons.append(f"source reliability {quality}/5")
+        if str(raw.get("source_type") or "").casefold() == "analysis":
+            score += 6; reasons.append("analysis publication")
         reporting = raw.get("reporting_score")
         if reporting is not None and int(reporting) >= 4:
             score += 5; reasons.append("original-reporting source")

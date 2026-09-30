@@ -27,6 +27,8 @@ CURRENT_ASSET_TTLS = {
     "team_weekly": 2 * 3600,
     "snap_counts": 2 * 3600,
     "pbp": 2 * 3600,
+    "participation": 2 * 3600,
+    "ftn": 2 * 3600,
     "ngs_passing": 2 * 3600,
     "ngs_rushing": 2 * 3600,
     "ngs_receiving": 2 * 3600,
@@ -45,6 +47,11 @@ ASSETS = {
     "player_master": ("players", "players.parquet"),
     "team_weekly": ("stats_team", "stats_team_week_{season}.parquet"),
     "pbp": ("pbp", "play_by_play_{season}.parquet"),
+    # Enhanced play-level releases. Both join to pbp on (game id, play id).
+    # Participation lags the season (404 until nflverse publishes it) and FTN
+    # charting starts in 2022; a missing file is an empty frame, not an error.
+    "participation": ("pbp_participation", "pbp_participation_{season}.parquet"),
+    "ftn": ("ftn_charting", "ftn_charting_{season}.parquet"),
     # These three are one continuously-updated file each, covering every
     # season since 2016 -- not one release per season like the assets above.
     "ngs_passing": ("nextgen_stats", "ngs_passing.parquet"),
@@ -66,6 +73,33 @@ PBP_ANALYTICS_COLUMNS = (
     "pass_defense_1_player_id", "pass_defense_1_player_name",
     "interception_player_id", "interception_player_name",
     "sack_player_id", "sack_player_name",
+)
+
+
+#: Columns kept from the full 372-column play-by-play file for the stored play table.
+PLAY_DETAIL_COLUMNS = (
+    "game_id", "play_id", "season", "week", "season_type", "qtr", "time", "game_seconds_remaining",
+    "drive", "fixed_drive", "fixed_drive_result", "posteam", "defteam", "home_team", "away_team",
+    "posteam_type", "down", "ydstogo", "yardline_100", "yrdln", "desc", "play_type", "pass", "rush",
+    "sack", "interception", "fumble_lost", "touchdown", "penalty", "yards_gained", "epa", "success",
+    "wp", "home_wp", "wpa", "score_differential", "total_home_score", "total_away_score",
+    "air_yards", "pass_location", "run_location", "run_gap", "shotgun", "no_huddle", "qb_dropback",
+    "play_deleted", "passer_player_id", "receiver_player_id", "rusher_player_id", "complete_pass",
+    "yards_after_catch", "cpoe", "qb_scramble", "goal_to_go", "pass_touchdown", "rush_touchdown",
+    "first_down",
+)
+PARTICIPATION_COLUMNS = (
+    "nflverse_game_id", "play_id", "offense_formation", "offense_personnel", "defense_personnel",
+    "defenders_in_box", "number_of_pass_rushers", "time_to_throw", "was_pressure",
+    "defense_man_zone_type", "defense_coverage_type", "route",
+    "offense_players", "offense_positions", "defense_players", "defense_positions",
+)
+FTN_COLUMNS = (
+    "nflverse_game_id", "nflverse_play_id", "starting_hash", "qb_location", "is_no_huddle",
+    "is_motion", "is_play_action", "is_screen_pass", "is_rpo", "is_trick_play",
+    "is_qb_out_of_pocket", "is_interception_worthy", "is_throw_away", "read_thrown",
+    "is_catchable_ball", "is_contested_ball", "is_created_reception", "is_drop",
+    "n_blitzers", "n_pass_rushers",
 )
 
 
@@ -227,6 +261,35 @@ class NflverseClient:
 
     def load_pbp(self, seasons: Iterable[int], *, force: bool = False):
         return self._stack("pbp", seasons, force=force, columns=PBP_ANALYTICS_COLUMNS)
+
+    def _projected(self, asset: str, seasons: Iterable[int], wanted: Iterable[str], *, force: bool = False):
+        """Stack a per-season asset keeping only `wanted` columns that the file actually has.
+
+        The full play-by-play parquet is ~370 columns; reading all of it on a small instance is
+        what once caused a MemoryError, so this reads the schema first and projects. A column
+        nflverse drops or renames simply comes through absent instead of failing the read.
+        """
+        pd = _pandas()
+        frames = []
+        for season in seasons:
+            # Ensures the file is cached (downloading if stale) without decoding it.
+            probe = self.frame(asset, int(season), force=force, columns=[next(iter(wanted))])
+            if probe.empty:
+                continue
+            import pyarrow.parquet as pq
+            present = set(pq.read_schema(self._path(asset, int(season))).names)
+            keep = [column for column in wanted if column in present]
+            frames.append(pd.read_parquet(self._path(asset, int(season)), columns=keep))
+        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+    def load_play_details(self, seasons: Iterable[int], *, force: bool = False):
+        return self._projected("pbp", seasons, PLAY_DETAIL_COLUMNS, force=force)
+
+    def load_participation(self, seasons: Iterable[int], *, force: bool = False):
+        return self._projected("participation", seasons, PARTICIPATION_COLUMNS, force=force)
+
+    def load_ftn(self, seasons: Iterable[int], *, force: bool = False):
+        return self._projected("ftn", seasons, FTN_COLUMNS, force=force)
 
     def _load_next_gen_stats(self, asset: str, seasons: Iterable[int], *, force: bool = False):
         """Next Gen Stats ships as one all-seasons file per stat type, so

@@ -41,6 +41,11 @@
     {"name": "Unexpected Points", "url": "https://unexpectedpoints.substack.com/feed", "source_type": "analysis", "reliability": 4},
     {"name": "Sports Info Solutions", "url": "https://www.sportsinfosolutions.com/feed/", "source_type": "analysis", "reliability": 4},
     {"name": "Sharp Football Analysis", "url": "https://www.sharpfootballanalysis.com/feed/", "source_type": "analysis", "reliability": 3},
-    {"name": "Over the Cap", "url": "https://overthecap.com/feed", "source_type": "news", "reliability": 4}
+    {"name": "Over the Cap", "url": "https://overthecap.com/feed", "source_type": "news", "reliability": 4},
+    {"name": "The Analytics Say", "url": "https://theanalyticssay.substack.com/feed", "source_type": "analysis", "reliability": 4, "topic_terms": ["nfl", "quarterback", "epa"]},
+    {"name": "Neil Paine", "url": "https://neilpaine.substack.com/feed", "source_type": "analysis", "reliability": 4, "topic_terms": ["nfl", "quarterback", "epa"]},
+    {"name": "Koalaty Stats", "url": "https://koalatystats.substack.com/feed", "source_type": "analysis", "reliability": 3},
+    {"name": "The Spade", "url": "https://thespade.substack.com/feed", "source_type": "analysis", "reliability": 4, "topic_terms": ["nfl", "quarterback"]},
+    {"name": "The Read Optional", "url": "https://www.readoptional.com/feed", "source_type": "analysis", "reliability": 4}
   ]
 }
