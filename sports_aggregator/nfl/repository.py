@@ -22,7 +22,7 @@ from sports_aggregator.nfl.models import (
     Game, Player, SyncReport, Team, optional_float, optional_int, optional_text,
 )
 from sports_aggregator.nfl.naming import TEAMS, canon_team, normalize_name
-from sports_aggregator.nfl.plays import PLAY_COLUMNS, PLAY_TABLE_COLUMNS
+from sports_aggregator.nfl.plays import PENALTY_COLUMNS, PLAY_COLUMNS, PLAY_TABLE_COLUMNS
 
 
 SCHEMA = """
@@ -449,6 +449,14 @@ CREATE TABLE IF NOT EXISTS sync_runs (
  started_at TEXT NOT NULL, finished_at TEXT NOT NULL, succeeded INTEGER NOT NULL,
  details_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS nfl_penalties (
+ season INTEGER NOT NULL, week INTEGER, season_type TEXT, game_id TEXT NOT NULL, play_id INTEGER NOT NULL,
+ team TEXT NOT NULL, opponent TEXT NOT NULL, penalty_type TEXT NOT NULL, yards REAL NOT NULL,
+ player_id TEXT, player_name TEXT, auto_first_down INTEGER NOT NULL DEFAULT 0, no_play INTEGER NOT NULL DEFAULT 0,
+ epa_team REAL, down INTEGER, ydstogo INTEGER, qtr INTEGER,
+ PRIMARY KEY (game_id, play_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_penalties_season ON nfl_penalties(season, team);
 CREATE TABLE IF NOT EXISTS nfl_plays (
  season INTEGER NOT NULL, week INTEGER, game_id TEXT NOT NULL, play_id INTEGER NOT NULL,
  season_type TEXT, qtr INTEGER, clock TEXT, game_seconds INTEGER,
@@ -1205,6 +1213,27 @@ class NFLRepository:
                 "INSERT OR REPLACE INTO nfl_play_participants VALUES (?,?,?,?,?,?,?)", participants)
             connection.commit()
         return len(values)
+
+    def replace_penalties(self, season: int, rows: Iterable[tuple]) -> int:
+        """Replace a season's enforced penalties (rows built by plays.build_penalty_rows)."""
+        self.initialize()
+        values = list(rows)
+        marks = ",".join("?" for _ in PENALTY_COLUMNS)
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM nfl_penalties WHERE season=?", (season,))
+            connection.executemany(
+                f"INSERT OR REPLACE INTO nfl_penalties ({','.join(PENALTY_COLUMNS)}) VALUES ({marks})", values)
+            connection.commit()
+        return len(values)
+
+    @memoized
+    def penalties(self, season: int, season_type: str = "REG") -> list[dict[str, Any]]:
+        """Every enforced penalty of a season (regular season by default), one dict each."""
+        self.initialize()
+        with closing(self._connect()) as connection:
+            return [dict(row) for row in connection.execute(
+                "SELECT * FROM nfl_penalties WHERE season=? AND season_type=?", (int(season), season_type))]
 
     def replace_package_snaps(self, season: int, rows: Iterable[tuple]) -> int:
         """Replace a season's player-by-package-by-zone snap counts (plays.package_snap_rows)."""

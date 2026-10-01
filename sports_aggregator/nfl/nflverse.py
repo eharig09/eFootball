@@ -86,7 +86,8 @@ PLAY_DETAIL_COLUMNS = (
     "air_yards", "pass_location", "run_location", "run_gap", "shotgun", "no_huddle", "qb_dropback",
     "play_deleted", "passer_player_id", "receiver_player_id", "rusher_player_id", "complete_pass",
     "yards_after_catch", "cpoe", "qb_scramble", "goal_to_go", "pass_touchdown", "rush_touchdown",
-    "first_down",
+    "first_down", "penalty_team", "penalty_type", "penalty_yards", "penalty_player_id", "penalty_player_name",
+    "first_down_penalty",
 )
 PARTICIPATION_COLUMNS = (
     "nflverse_game_id", "play_id", "offense_formation", "offense_personnel", "defense_personnel",

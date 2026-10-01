@@ -35,7 +35,7 @@
                 {% if player.draft.draft_year %}<em>Draft <b>{{ player.draft.draft_year }} Rd {{ player.draft.draft_round or '&mdash;' }}{% if player.draft.draft_pick %}, #{{ player.draft.draft_pick }}{% endif %}{% if player.draft.draft_team %} ({{ player.draft.draft_team }}){% endif %}</b></em>{% endif %}
             </div>
         </div>
-        <nav class="ui-header-links" aria-label="Player shortcuts"><a href="#production">Production &rarr;</a><a href="#seasons">Seasons &rarr;</a>{% if enhanced.has_data %}<a href="#enhanced">Routes &amp; usage &rarr;</a>{% endif %}<a href="#game-log">Game log &rarr;</a></nav>
+        <nav class="ui-header-links" aria-label="Player shortcuts"><a href="#production">Production &rarr;</a>{% if performance_charts %}<a href="#form">Recent form &rarr;</a>{% endif %}<a href="#game-log">Game log &rarr;</a><a href="#seasons">Seasons &rarr;</a>{% if enhanced.has_data %}<a href="#enhanced">Routes &amp; usage &rarr;</a>{% endif %}</nav>
     </header>
 
     <div class="ui-filterbar" aria-label="Player filters">
@@ -68,63 +68,6 @@
         </div>
     </section>
 
-    <section class="section" id="seasons">
-        <div class="section-head"><div><p class="eyebrow">Regular season &middot; one row per season</p><h2>Season totals &mdash; all bands</h2></div></div>
-        {{ data_table(season_table) }}
-    </section>
-
-    {% if enhanced.has_data %}
-    <span id="enhanced"></span>
-    {% if enhanced.routes %}{% set rt = enhanced.routes %}
-    <section class="section" id="routes">
-        <div class="section-head"><div><p class="eyebrow">{{ rt.meta.season }} charted targets{% if rt.note %} &middot; {{ rt.note }}{% endif %}</p><h2>{{ 'Throws by route' if rt.role == 'passer' else 'Route tree' }}</h2></div></div>
-        {% if rt.context %}<p class="ui-inline-chips">
-            {% if rt.context.pff_route_grade is defined %}<span>PFF route grade <b>{{ rt.context.pff_route_grade|cell('f1') }}</b></span>{% endif %}
-            {% if rt.context.pff_yprr is defined %}<span>Yards / route run <b>{{ rt.context.pff_yprr|cell('f2') }}</b></span>{% endif %}
-            {% if rt.context.pff_routes is defined %}<span>Routes run <b>{{ rt.context.pff_routes|cell('int') }}</b></span>{% endif %}
-            {% if rt.context.ngs_separation is defined %}<span>NGS separation <b>{{ rt.context.ngs_separation|cell('f1') }}</b> yd</span>{% endif %}
-            {% if rt.context.ngs_cushion is defined %}<span>NGS cushion <b>{{ rt.context.ngs_cushion|cell('f1') }}</b> yd</span>{% endif %}
-        </p>{% endif %}
-        {{ table_panel(('Throws' if rt.role == 'passer' else 'Targets') ~ ' by route', rt.table, rt.meta.season ~ ' · vs league on each route', rt.mix, 'The route is the targeted receiver’s route from nflverse participation data, so a row is a target, not a route run. PFF does not publish grades by route type; the PFF and NGS figures above are season-level. EPA vs league compares EPA per target with every other target on the same route. Depth groups: behind the line (screen, swing, flat), short (slant, quick out, hitch/curl, drag, texas), intermediate (in/dig, deep out), deep (go, post, corner, wheel).') }}
-    </section>
-    {% endif %}
-    {% if enhanced.pairs and enhanced.pairs.has_data %}{% set pr = enhanced.pairs %}
-    <section class="section" id="pairs">
-        <div class="section-head"><div><p class="eyebrow">{{ pr.season }} {{ 'quarterback' if pr.role == 'receiver' else 'target' }} pairings{% if pr.note %} &middot; {{ pr.note }}{% endif %}</p><h2>{{ 'Quarterbacks throwing to him' if pr.role == 'receiver' else 'Who he throws to' }}</h2></div></div>
-        {{ table_panel('Pairings', pr.table, '', none, 'A pairing is a pass thrown by this quarterback to this target. Top routes are the route types the pair connected on most often. PFF route grade, yards per route run and Next Gen separation and cushion are the target’s season-level figures.') }}
-    </section>
-    {% endif %}
-    {% if enhanced.sides %}{% set sd = enhanced.sides %}
-    <section class="section" id="sides">
-        <div class="section-head"><div><p class="eyebrow">{{ sd.meta.season }} hash and direction{% if sd.note %} &middot; {{ sd.note }}{% endif %}</p><h2>Field side vs boundary</h2></div></div>
-        <details class="ui-note"><summary>Method</summary><p>The hash is where the ball is spotted at the snap. A throw or run to the same side as the hash goes to the boundary (the short side of the field); the opposite side is the field (wide) side; middle is between the numbers regardless of hash. Mid-hash snaps have no short side and stay left or right. Ticks mark the league split. Quarterback scrambles are counted as runs for quarterbacks; sacks have no direction and are excluded. FTN hash charting starts in 2022.</p></details>
-        <div class="ui-enhanced-grid">
-            {% for item in sd['items'] %}
-                {% if item.role == 'rusher' %}{{ side_panel(item.label ~ ' · by side', item.view.runs, false, item.view.runs.total ~ ' charted') }}
-                {% else %}{{ side_panel(item.label ~ ' · by side', item.view.passes, true, item.view.passes.total ~ ' charted') }}{% endif %}
-            {% endfor %}
-        </div>
-    </section>
-    {% endif %}
-    {% if enhanced.packages %}{% set pk = enhanced.packages %}
-    <section class="section" id="packages">
-        <div class="section-head"><div><p class="eyebrow">{{ pk.meta.season }} {{ pk.usage.team }} &middot; {{ 'offense' if pk.usage.side == 'off' else 'defense' }}{% if pk.note %} &middot; {{ pk.note }}{% endif %}</p><h2>Personnel packages &amp; field zones</h2></div></div>
-        {{ table_panel('On-field rate by package and zone', pk.table, (pk.usage.snaps|string) ~ ' of ' ~ (pk.usage.team_snaps|string) ~ ' team snaps', none, 'On field = this player’s snaps divided by the team’s snaps in the same package (and zone). ' ~ ('Personnel is backs then tight ends: 11 = 1 RB and 1 TE, 12 = 1 RB and 2 TE, 21 = 2 RB and 1 TE, 13 = 1 RB and 3 TE. ' if pk.usage.side == 'off' else 'Packages count defensive backs: Base = 4 or fewer, Nickel = 5, Dime = 6 or more. ') ~ 'Zones: backed up = inside the offense’s own 20; neutral = own 21 to own 49; plus = midfield to the opponent’s 21; red zone = the 20 to the 11; goal to go = the first-down line is the goal line. Small cells show snaps / team snaps.') }}
-    </section>
-    {% endif %}
-    {% endif %}
-
-    {% if pff.highlights %}
-    <section class="section" id="pff">
-        <div class="section-head"><div><p class="eyebrow">{{ pff.season }} PFF profile{% if pff.season != season %} &middot; prior-season baseline{% endif %}</p><h2>Grading and alignment</h2></div><a class="section-action" href="{{ url_for('nfl.pff_explorer', season=pff.season) }}">Open explorer &rarr;</a></div>
-        <table class="ui-mini ui-pff-table">
-            <thead><tr><th>Metric</th><th class="num">Value</th><th>Source family</th></tr></thead>
-            <tbody>{% for stat in pff.highlights %}<tr><th scope="row">{{ stat.label }}</th><td class="num"><b>{{ stat.value|cell(stat.format) }}</b></td><td class="ctx">{{ stat.family|replace('_',' ') }}</td></tr>{% endfor %}</tbody>
-        </table>
-        <details class="ui-note"><summary>Method</summary><p>PFF season aggregates are sourced read-only from scouting_report and joined to this page by the provider's player ID.</p></details>
-    </section>
-    {% endif %}
-
     {% if performance_charts %}
     <section class="section" id="form">
         <div class="section-head"><div><p class="eyebrow">{{ season }} weekly trend</p><h2>Recent performance</h2></div></div>
@@ -149,9 +92,16 @@
     </section>
     {% endif %}
 
-    {% if ngs_stats and not stat_panel.has_data %}
-    <section class="section" id="ngs"><div class="section-head"><div><p class="eyebrow">Tracking</p><h2>Next Gen Stats</h2></div></div>
-        <table class="ui-mini"><tbody>{% for stat in ngs_stats %}<tr><th scope="row">{{ stat.label }}</th><td class="num"><b>{{ stat.value|cell(stat.format) }}</b></td><td class="ctx">{% if stat.rank %}#{{ stat.rank }} of {{ stat.of }} {{ player.position }}{% endif %}</td></tr>{% endfor %}</tbody></table>
+    {% if enhanced.has_data and enhanced.sides %}{% set sd = enhanced.sides %}
+    <section class="section" id="sides">
+        <div class="section-head"><div><p class="eyebrow">{{ sd.meta.season }} hash and direction{% if sd.note %} &middot; {{ sd.note }}{% endif %}</p><h2>Field side vs boundary</h2></div></div>
+        <details class="ui-note"><summary>Method</summary><p>The hash is where the ball is spotted at the snap. A throw or run to the same side as the hash goes to the boundary (the short side of the field); the opposite side is the field (wide) side; middle is between the numbers regardless of hash. Mid-hash snaps have no short side and stay left or right. Ticks mark the league split. Quarterback scrambles are counted as runs for quarterbacks; sacks have no direction and are excluded. FTN hash charting starts in 2022.</p></details>
+        <div class="ui-enhanced-grid">
+            {% for item in sd['items'] %}
+                {% if item.role == 'rusher' %}{{ side_panel(item.label ~ ' · by side', item.view.runs, false, item.view.runs.total ~ ' charted') }}
+                {% else %}{{ side_panel(item.label ~ ' · by side', item.view.passes, true, item.view.passes.total ~ ' charted') }}{% endif %}
+            {% endfor %}
+        </div>
     </section>
     {% endif %}
 
@@ -160,6 +110,58 @@
         <details class="ui-note"><summary>Method</summary><p>Only stat families this player recorded are shown. Each {{ 'game' if career_view else 'week' }} links to its matchup page.{% if career_view %} Spans every season synced for this player.{% endif %}</p></details>
         <div class="player-log-grid">{% for group in game_log_groups %}<div>{{ data_table(group.table) }}</div>{% else %}<div class="empty">No weekly statistics are available for this player.</div>{% endfor %}</div>
     </section>
+
+    <section class="section" id="seasons">
+        <div class="section-head"><div><p class="eyebrow">Regular season &middot; one row per season</p><h2>Season totals &mdash; all bands</h2></div></div>
+        {{ data_table(season_table) }}
+    </section>
+
+    {% if pff.highlights %}
+    <section class="section" id="pff">
+        <div class="section-head"><div><p class="eyebrow">{{ pff.season }} PFF profile{% if pff.season != season %} &middot; prior-season baseline{% endif %}</p><h2>Grading and alignment</h2></div><a class="section-action" href="{{ url_for('nfl.pff_explorer', season=pff.season) }}">Open explorer &rarr;</a></div>
+        <table class="ui-mini ui-pff-table">
+            <thead><tr><th>Metric</th><th class="num">Value</th><th>Source family</th></tr></thead>
+            <tbody>{% for stat in pff.highlights %}<tr><th scope="row">{{ stat.label }}</th><td class="num"><b>{{ stat.value|cell(stat.format) }}</b></td><td class="ctx">{{ stat.family|replace('_',' ') }}</td></tr>{% endfor %}</tbody>
+        </table>
+        <details class="ui-note"><summary>Method</summary><p>PFF season aggregates are sourced read-only from scouting_report and joined to this page by the provider's player ID.</p></details>
+    </section>
+    {% endif %}
+
+    {% if ngs_stats and not stat_panel.has_data %}
+    <section class="section" id="ngs"><div class="section-head"><div><p class="eyebrow">Tracking</p><h2>Next Gen Stats</h2></div></div>
+        <table class="ui-mini"><tbody>{% for stat in ngs_stats %}<tr><th scope="row">{{ stat.label }}</th><td class="num"><b>{{ stat.value|cell(stat.format) }}</b></td><td class="ctx">{% if stat.rank %}#{{ stat.rank }} of {{ stat.of }} {{ player.position }}{% endif %}</td></tr>{% endfor %}</tbody></table>
+    </section>
+    {% endif %}
+
+    {% if enhanced.has_data %}
+    <span id="enhanced"></span>
+    {% if enhanced.routes %}{% set rt = enhanced.routes %}
+    <section class="section" id="routes">
+        <div class="section-head"><div><p class="eyebrow">{{ rt.meta.season }} charted targets{% if rt.note %} &middot; {{ rt.note }}{% endif %}</p><h2>{{ 'Throws by route' if rt.role == 'passer' else 'Route tree' }}</h2></div></div>
+        {% if rt.context %}<p class="ui-inline-chips">
+            {% if rt.context.pff_route_grade is defined %}<span>PFF route grade <b>{{ rt.context.pff_route_grade|cell('f1') }}</b></span>{% endif %}
+            {% if rt.context.pff_yprr is defined %}<span>Yards / route run <b>{{ rt.context.pff_yprr|cell('f2') }}</b></span>{% endif %}
+            {% if rt.context.pff_routes is defined %}<span>Routes run <b>{{ rt.context.pff_routes|cell('int') }}</b></span>{% endif %}
+            {% if rt.context.ngs_separation is defined %}<span>NGS separation <b>{{ rt.context.ngs_separation|cell('f1') }}</b> yd</span>{% endif %}
+            {% if rt.context.ngs_cushion is defined %}<span>NGS cushion <b>{{ rt.context.ngs_cushion|cell('f1') }}</b> yd</span>{% endif %}
+        </p>{% endif %}
+        {{ table_panel(('Throws' if rt.role == 'passer' else 'Targets') ~ ' by route', rt.table, rt.meta.season ~ ' · vs league on each route', rt.mix, 'The route is the targeted receiver’s route from nflverse participation data, so a row is a target, not a route run. PFF does not publish grades by route type; the PFF and NGS figures above are season-level. EPA vs league compares EPA per target with every other target on the same route. Depth groups: behind the line (screen, swing, flat), short (slant, quick out, hitch/curl, drag, texas), intermediate (in/dig, deep out), deep (go, post, corner, wheel).') }}
+    </section>
+    {% endif %}
+    {% if enhanced.pairs and enhanced.pairs.has_data %}{% set pr = enhanced.pairs %}
+    <section class="section" id="pairs">
+        <div class="section-head"><div><p class="eyebrow">{{ pr.season }} {{ 'quarterback' if pr.role == 'receiver' else 'target' }} pairings{% if pr.note %} &middot; {{ pr.note }}{% endif %}</p><h2>{{ 'Quarterbacks throwing to him' if pr.role == 'receiver' else 'Who he throws to' }}</h2></div></div>
+        {{ table_panel('Pairings', pr.table, '', none, 'A pairing is a pass thrown by this quarterback to this target. Top routes are the route types the pair connected on most often. PFF route grade, yards per route run and Next Gen separation and cushion are the target’s season-level figures.') }}
+    </section>
+    {% endif %}
+    {% if enhanced.packages %}{% set pk = enhanced.packages %}
+    <section class="section" id="packages">
+        <div class="section-head"><div><p class="eyebrow">{{ pk.meta.season }} {{ pk.usage.team }} &middot; {{ 'offense' if pk.usage.side == 'off' else 'defense' }}{% if pk.note %} &middot; {{ pk.note }}{% endif %}</p><h2>Personnel packages &amp; field zones</h2></div></div>
+        {{ table_panel('On-field rate by package and zone', pk.table, (pk.usage.snaps|string) ~ ' of ' ~ (pk.usage.team_snaps|string) ~ ' team snaps', none, 'On field = this player’s snaps divided by the team’s snaps in the same package (and zone). ' ~ ('Personnel is backs then tight ends: 11 = 1 RB and 1 TE, 12 = 1 RB and 2 TE, 21 = 2 RB and 1 TE, 13 = 1 RB and 3 TE. ' if pk.usage.side == 'off' else 'Packages count defensive backs: Base = 4 or fewer, Nickel = 5, Dime = 6 or more. ') ~ 'Zones: backed up = inside the offense’s own 20; neutral = own 21 to own 49; plus = midfield to the opponent’s 21; red zone = the 20 to the 11; goal to go = the first-down line is the goal line. Small cells show snaps / team snaps.') }}
+    </section>
+    {% endif %}
+    {% endif %}
+
     <section class="section" id="coverage"><div class="section-head"><div><p class="eyebrow">Connected reporting + social</p><h2>{{ player.full_name }} coverage</h2></div></div>{{ nfl_reporting_streams(content_streams, 'No stored coverage is linked to this player yet.') }}</section>
 </main>
 <script src="{{ url_for('static', filename='table_sort.js') }}"></script>

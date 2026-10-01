@@ -56,18 +56,25 @@ PRODUCTION_METRICS = (
     ("Turnovers / game", "turnovers_per_game", "f1", True),
 )
 
-LEADER_METRICS = (
-    ("Passing", "passing_yards", "Passing yards"),
-    ("Pass TD", "passing_tds", "Passing touchdowns"),
-    ("Rushing", "rushing_yards", "Rushing yards"),
-    ("Carries", "carries", "Carries"),
-    ("Receiving", "receiving_yards", "Receiving yards"),
-    ("Targets", "targets", "Targets"),
-    ("Receptions", "receptions", "Receptions"),
-    ("Pressure", "def_sacks", "Sacks"),
-    ("QB hits", "def_qb_hits", "Quarterback hits"),
-    ("Takeaways", "def_interceptions", "Interceptions"),
+# One table per role: how many players to show, what orders them, and the columns. Depth follows how many players
+# actually matter at the position (one quarterback, but several receivers and pass rushers).
+LEADER_GROUPS = (
+    {"key": "passing", "label": "Passing", "limit": 1, "sort": ("passing_yards",),
+     "columns": (("Cmp", "completions", "int"), ("Att", "attempts", "int"), ("Yds", "passing_yards", "int"),
+                 ("TD", "passing_tds", "int"), ("INT", "passing_interceptions", "int"))},
+    {"key": "rushing", "label": "Rushing", "limit": 4, "sort": ("rushing_yards",),
+     "columns": (("Car", "carries", "int"), ("Yds", "rushing_yards", "int"), ("Y/C", "yards_per_carry", "f1"),
+                 ("TD", "rushing_tds", "int"))},
+    {"key": "receiving", "label": "Receiving", "limit": 6, "sort": ("receiving_yards",),
+     "columns": (("Tgt", "targets", "int"), ("Rec", "receptions", "int"), ("Yds", "receiving_yards", "int"),
+                 ("Y/R", "yards_per_reception", "f1"), ("TD", "receiving_tds", "int"))},
+    {"key": "defense", "label": "Defense", "limit": 5, "sort": ("def_sacks", "def_qb_hits", "def_tackles_for_loss"),
+     "columns": (("Sack", "def_sacks", "f1"), ("Hit", "def_qb_hits", "int"), ("TFL", "def_tackles_for_loss", "int"),
+                 ("PD", "def_pass_defended", "int"), ("INT", "def_interceptions", "int"))},
 )
+LEADER_METRICS = tuple(dict.fromkeys(
+    metric for group in LEADER_GROUPS for _, metric, _ in group["columns"] if not metric.startswith("yards_per_")
+))
 
 
 def _ranks(profiles: list[dict[str, Any]], key: str, *, lower: bool = False) -> dict[str, int]:
@@ -133,28 +140,45 @@ def _recent(repository: NFLRepository, game: dict[str, Any], team: str,
 
 def _leaders(repository: NFLRepository, season: int, team: str, before_week: int,
              *, stats_season: int | None = None) -> list[dict[str, Any]]:
-    output = []
+    """Per-role leader tables for one team: each player carries every column of the role, ordered by its key stat."""
     stats_season = stats_season or season
     current_ids = {row["player_id"] for row in repository.team_roster(season, team)}
     rows = repository.player_leaders_for_metrics(
-        stats_season, (metric for _, metric, _ in LEADER_METRICS), team=team,
+        stats_season, LEADER_METRICS, team=team,
         before_week=before_week if stats_season == season else None,
     )
-    by_metric = {metric: [] for _, metric, _ in LEADER_METRICS}
+    players: dict[str, dict[str, Any]] = {}
     for row in rows:
-        by_metric.setdefault(row["metric"], []).append(row)
-    for label, metric, value_label in LEADER_METRICS:
-        candidates = by_metric.get(metric, [])
-        if stats_season != season:
-            candidates = [row for row in candidates if row["player_id"] in current_ids]
-        if not candidates:
-            continue
-        for rank, leader in enumerate(candidates[:2], 1):
-            output.append({
-                **leader, "category": label, "category_rank": rank,
-                "value_label": value_label, "stat_season": stats_season,
-                "player_url": f"/nfl/players/{leader['player_id']}/?season={stats_season}",
+        player = players.setdefault(row["player_id"], {
+            "player_id": row["player_id"], "player_name": row["player_name"],
+            "position": row.get("position"), "metrics": {},
+        })
+        player["metrics"][row["metric"]] = row["value"] or 0
+    output = []
+    for group in LEADER_GROUPS:
+        ranked = []
+        for player in players.values():
+            if stats_season != season and player["player_id"] not in current_ids:
+                continue
+            key = tuple(player["metrics"].get(metric, 0) for metric in group["sort"])
+            if key[0] > 0:
+                ranked.append((key, player))
+        ranked.sort(key=lambda item: (item[0], item[1]["player_name"]), reverse=True)
+        table_rows = []
+        for _, player in ranked[:group["limit"]]:
+            values = dict(player["metrics"])
+            carries, receptions = values.get("carries"), values.get("receptions")
+            values["yards_per_carry"] = values.get("rushing_yards", 0) / carries if carries else None
+            values["yards_per_reception"] = values.get("receiving_yards", 0) / receptions if receptions else None
+            table_rows.append({
+                "player_id": player["player_id"], "player_name": player["player_name"],
+                "position": player["position"], "stat_season": stats_season,
+                "player_url": f"/nfl/players/{player['player_id']}/?season={stats_season}",
+                "cells": [{"value": values.get(metric), "format": fmt} for _, metric, fmt in group["columns"]],
             })
+        if table_rows:
+            output.append({"key": group["key"], "label": group["label"],
+                           "headers": [label for label, _, _ in group["columns"]], "rows": table_rows})
     return output
 
 

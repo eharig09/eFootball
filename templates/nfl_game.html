@@ -5,7 +5,7 @@
 {% from '_nfl_rushing.html' import run_matchup_grid %}
 {% from '_nfl_position_groups.html' import position_group_compact %}
 {% from '_nfl_injury.html' import injury_popover %}
-{% from '_nfl_ui.html' import rank_gap_panel, wp_chart, swing_table, drive_chart, play_table %}
+{% from '_nfl_ui.html' import rank_gap_panel, wp_chart, swing_table, drive_chart, play_table, tendency_compare, penalty_compare %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -356,6 +356,14 @@
             </article>
         </div>
     </section>
+    <section class="section" id="situation-discipline" data-nfl-panel="stats">
+        <div class="section-head"><div><p class="eyebrow">Call mix + flags{% if situational.season != game.season %} &middot; prior-season baseline{% endif %}</p><h2>Situational tendencies &amp; discipline</h2></div></div>
+        <details class="ui-note"><summary>Method</summary><p>Each offense's dominant call by down and distance (a cell needs 10 plays) with its pass rate against the league in the same situation, then each team's enforced penalties committed and drawn with league ranks (1 = best). Both use {{ situational.season }} regular-season data before this game. The full grids and flag breakdowns are on each team page.</p></details>
+        <div class="ui-side-by-side">
+            {{ tendency_compare(situational.rows, game.away_team, game.home_team, situational.season) }}
+            {{ penalty_compare(discipline.profiles[game.away_team], discipline.profiles[game.home_team], game.away_team, game.home_team, discipline.season) }}
+        </div>
+    </section>
     <section class="section" id="market" data-nfl-panel="stats">
         <div class="section-head"><div><p class="eyebrow">Market context</p><h2>Lines and against the number</h2></div></div>
 
@@ -398,11 +406,9 @@
             <article class="ui-panel">
                 <header class="ui-panel-head"><h3>{{ code }}</h3><span class="ui-median-key">{{ baseline_season }} through Week {{ game.week - 1 }}</span></header>
                 <table class="ui-mini ui-leaders">
-                    <thead><tr><th>Category</th><th>#1</th><th>#2</th></tr></thead>
-                    <tbody>{% for category in leaders[code]|map(attribute='category')|unique|list %}{% set pair = leaders[code]|selectattr('category', 'equalto', category)|list %}
-                        <tr><th scope="row">{{ category }}<small>{{ pair[0].value_label|lower }}</small></th>
-                            {% for leader in pair[:2] %}<td><a href="{{ leader.player_url }}">{{ leader.player_name }}</a> <b>{{ leader.value|cell('big') }}</b></td>{% endfor %}{% if pair|length < 2 %}<td class="ctx">&mdash;</td>{% endif %}</tr>
-                    {% else %}<tr><td colspan="3" class="ctx">No player production is available.</td></tr>{% endfor %}</tbody>
+                    {% for group in leaders[code] %}<thead><tr><th>{{ group.label }}</th>{% for header in group.headers %}<th class="num">{{ header }}</th>{% endfor %}</tr></thead>
+                    <tbody>{% for player in group.rows %}<tr><th scope="row"><a href="{{ player.player_url }}">{{ player.player_name }}</a><small>{{ player.position or '' }}</small></th>{% for item in player.cells %}<td class="num">{{ item.value|cell(item.format) }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+                    {% else %}<tbody><tr><td class="ctx">No player production is available.</td></tr></tbody>{% endfor %}
                 </table>
             </article>{% endfor %}
         </div>

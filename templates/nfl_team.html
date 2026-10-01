@@ -4,7 +4,7 @@
 {% from '_nfl_charts.html' import chart_workbench, nfl_chart_scripts %}
 {% from '_nfl_injury.html' import injury_popover %}
 {% from '_nfl_position_groups.html' import position_group_profile %}
-{% from '_nfl_ui.html' import pctl_panel, filter_bar, schedule_strip, epa_week_chart, bar_table, table_panel, side_panel %}
+{% from '_nfl_ui.html' import pctl_panel, filter_bar, schedule_strip, epa_week_chart, bar_table, table_panel, side_panel, tendency_grid, penalty_panels %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -166,12 +166,16 @@
         </table>
     </section>
 
-    <section class="section" id="tendencies" data-nfl-panel="tendencies">
-        <div class="section-head"><div><p class="eyebrow">Personnel, hash and routes</p><h2>Tendencies</h2></div></div>
-        {% if not enhanced.has_data %}<p class="empty">Personnel, hash and route data are not stored for this season yet. nflverse publishes participation data after the fact; earlier seasons have it.</p>{% else %}
-        <details class="ui-note"><summary>Method</summary><p>Personnel groups are running backs then tight ends (11 = 1 RB and 1 TE, 12 = 1 RB and 2 TE, 21 = 2 RB and 1 TE). Defensive packages count defensive backs: Base 4 or fewer, Nickel 5, Dime 6 or more. Field zones: backed up = inside the offense&rsquo;s own 20; neutral = own 21 to own 49; plus = midfield to the opponent&rsquo;s 21; red zone = the 20 to the 11; goal to go = the first-down line is the goal line. Field side is the wide side of the field, boundary is the sideline nearest the ball (the side of the hash). Routes are the targeted receiver&rsquo;s route.</p></details>
-        {% if enhanced.offense_packages %}{{ table_panel('Offense by personnel package', enhanced.offense_packages.table, enhanced.offense_packages.note or (enhanced.offense_packages.season ~ ' · ' ~ enhanced.offense_packages.plays ~ ' plays')) }}{% endif %}
-        {% if enhanced.defense_packages %}<div class="ui-block">{{ table_panel('Defense by package', enhanced.defense_packages.table, enhanced.defense_packages.note or (enhanced.defense_packages.season ~ ' · ' ~ enhanced.defense_packages.plays ~ ' plays')) }}</div>{% endif %}
+    {% if situational %}
+    <section class="section" id="situational" data-nfl-panel="tendencies">
+        <div class="section-head"><div><p class="eyebrow">Offensive tendencies &middot; by situation{% if team_context.performance_season != season %} &middot; prior-season baseline{% endif %}</p><h2>What they do when &hellip;</h2></div></div>
+        {{ tendency_grid(situational, 'Pass / rush mix by down and distance') }}
+    </section>
+    {% endif %}
+    {% if enhanced.offense_sides or enhanced.defense_sides %}
+    <section class="section" id="sides" data-nfl-panel="tendencies">
+        <div class="section-head"><div><p class="eyebrow">Hash and direction</p><h2>Field side vs boundary</h2></div></div>
+        <details class="ui-note"><summary>Method</summary><p>The hash is where the ball is spotted at the snap. A throw or run to the same side as the hash goes to the boundary (the short side of the field); the opposite side is the field (wide) side; middle is between the numbers regardless of hash. Ticks mark the league split. FTN hash charting starts in 2022.</p></details>
         {% if enhanced.offense_sides %}{% set os = enhanced.offense_sides %}
         <div class="ui-block"><h3>Offense &mdash; field side vs boundary{% if os.note %} &middot; {{ os.note }}{% endif %}</h3>
         <div class="ui-enhanced-grid">
@@ -184,6 +188,22 @@
             {{ side_panel('Throws faced · by side', ds.view.passes, true, ds.view.passes.total ~ ' charted') }}
             {{ side_panel('Runs faced · by side', ds.view.runs, false, ds.view.runs.total ~ ' charted') }}
         </div></div>{% endif %}
+    </section>
+    {% endif %}
+    {% if discipline %}
+    <section class="section" id="discipline" data-nfl-panel="tendencies">
+        <div class="section-head"><div><p class="eyebrow">Discipline &middot; both sides of the flag{% if team_context.performance_season != season %} &middot; prior-season baseline{% endif %}</p><h2>Penalties</h2></div></div>
+        <details class="ui-note"><summary>Method</summary><p>Enforced regular-season penalties only (declined and offsetting flags carry no yardage). Self-inflicted is what this team committed; opponent gifts is what its opponents committed against it. EPA is the flagged team's own EPA on no-play flags, where the penalty is the whole play. Ranks are best-first among teams with games played: fewest flags committed, most drawn.</p></details>
+        {{ penalty_panels(discipline.profile, discipline.committed, discipline.drawn) }}
+    </section>
+    {% endif %}
+
+    <section class="section" id="tendencies" data-nfl-panel="tendencies">
+        <div class="section-head"><div><p class="eyebrow">Personnel, hash and routes</p><h2>Tendencies</h2></div></div>
+        {% if not enhanced.has_data %}<p class="empty">Personnel, hash and route data are not stored for this season yet. nflverse publishes participation data after the fact; earlier seasons have it.</p>{% else %}
+        <details class="ui-note"><summary>Method</summary><p>Personnel groups are running backs then tight ends (11 = 1 RB and 1 TE, 12 = 1 RB and 2 TE, 21 = 2 RB and 1 TE). Defensive packages count defensive backs: Base 4 or fewer, Nickel 5, Dime 6 or more. Field zones: backed up = inside the offense&rsquo;s own 20; neutral = own 21 to own 49; plus = midfield to the opponent&rsquo;s 21; red zone = the 20 to the 11; goal to go = the first-down line is the goal line. Field side is the wide side of the field, boundary is the sideline nearest the ball (the side of the hash). Routes are the targeted receiver&rsquo;s route.</p></details>
+        {% if enhanced.offense_packages %}{{ table_panel('Offense by personnel package', enhanced.offense_packages.table, enhanced.offense_packages.note or (enhanced.offense_packages.season ~ ' · ' ~ enhanced.offense_packages.plays ~ ' plays')) }}{% endif %}
+        {% if enhanced.defense_packages %}<div class="ui-block">{{ table_panel('Defense by package', enhanced.defense_packages.table, enhanced.defense_packages.note or (enhanced.defense_packages.season ~ ' · ' ~ enhanced.defense_packages.plays ~ ' plays')) }}</div>{% endif %}
         {% if enhanced.offense_routes %}<div class="ui-block">{{ table_panel('Offense · targets by route', enhanced.offense_routes.table, enhanced.offense_routes.note or (enhanced.offense_routes.season ~ ' · vs league on each route'), enhanced.offense_routes.mix) }}</div>{% endif %}
         {% if enhanced.defense_routes %}<div class="ui-block">{{ table_panel('Defense · targets allowed by route', enhanced.defense_routes.table, enhanced.defense_routes.note or (enhanced.defense_routes.season ~ ' · vs league on each route'), enhanced.defense_routes.mix) }}</div>{% endif %}
         {% if enhanced.pairs %}<div class="ui-block">{{ table_panel('Most frequent quarterback-target pairings', enhanced.pairs.table, enhanced.pairs.note or ('' ~ enhanced.pairs.season)) }}</div>{% endif %}

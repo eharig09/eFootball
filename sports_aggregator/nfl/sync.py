@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from sports_aggregator.nfl.models import Game, Player, SyncDatasetResult, SyncReport, Team, optional_float
 from sports_aggregator.nfl.naming import canon_team
-from sports_aggregator.nfl.plays import build_play_rows, package_snap_rows
+from sports_aggregator.nfl.plays import build_penalty_rows, build_play_rows, package_snap_rows
 from sports_aggregator.nfl.nflverse import NflverseClient
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.elo import build_elo
@@ -213,6 +213,7 @@ class NFLDataSync:
         rows = build_play_rows(pbp.to_dict("records"), participation.to_dict("records"),
                                ftn.to_dict("records"))
         stored = self.repository.replace_plays(season, rows)
+        self.repository.replace_penalties(season, build_penalty_rows(pbp.to_dict("records")))
         self.repository.replace_package_snaps(season, package_snap_rows(rows))
         from sports_aggregator.nfl import route_analytics
         route_analytics.clear_cache()

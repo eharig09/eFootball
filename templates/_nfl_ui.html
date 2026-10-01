@@ -235,3 +235,86 @@
     {% else %}<p class="ui-panel-note">Not enough charted plays to split by hash and side.</p>{% endif %}
 </article>
 {% endmacro %}
+
+{# Offensive tendencies by down and distance (situational_tendencies.team_tendencies): a 4x3 grid of call mix cells. #}
+{% macro tendency_grid(profile, title='What they do when …', note='') %}
+<article class="ui-panel ui-sit">
+    <header class="ui-panel-head"><h3>{{ title }}</h3><span class="ui-median-key">{{ profile.season }} &middot; {{ profile.plays|cell('int') }} plays{% if note %} &middot; {{ note }}{% endif %}</span></header>
+    <div class="ui-sit-grid" role="table" aria-label="{{ title }}">
+        <span></span><b class="ui-sit-head">Short</b><b class="ui-sit-head">Medium</b><b class="ui-sit-head">Long</b>
+        {% for row in profile.rows %}<b class="ui-sit-down">{{ ['', '1st', '2nd', '3rd', '4th'][row.down] }}</b>
+        {% for cell in row.cells %}<div class="ui-sit-cell is-{{ cell.status }}" data-call="{{ cell.call or '' }}" role="cell">
+            <span class="ui-sit-top"><b>{{ cell.label }}</b><em>{{ cell.plays }} {{ 'play' if cell.plays == 1 else 'plays' }}</em></span>
+            {% if cell.status == 'ok' %}<span class="ui-sit-call"><b>{{ cell.call }} {{ (cell.call_rate * 100)|round(1) }}%</b>{% if cell.vs_league is not none %}<small class="{{ 'is-up' if cell.vs_league > 0.03 else ('is-down' if cell.vs_league < -0.03 else '') }}" title="Pass rate versus the league in this situation">{{ '%+d'|format((cell.vs_league * 100)|round|int) }} pts pass vs lg</small>{% endif %}</span>
+            {% else %}<span class="ui-sit-call is-muted">{{ 'sample too small' if cell.status == 'small' else 'no plays' }}</span>{% endif %}
+        </div>{% endfor %}{% endfor %}
+    </div>
+    <p class="ui-panel-note">Regular-season scrimmage plays, kneels and spikes excluded. A cell needs 10 plays to be called; the percentage is the dominant call and the points compare the team's pass rate with the league's in the same situation.</p>
+</article>
+{% endmacro %}
+
+{# Both sides of the flag for one team: net strip, committed/drawn panels with league ranks, flag types, repeat offenders. #}
+{% macro penalty_panels(profile, rows_committed, rows_drawn, note='') %}
+{% set net = profile.net_yards %}
+<div class="ui-net-strip {{ 'is-good' if net > 0 else ('is-poor' if net < 0 else '') }}">
+    <span class="ui-net-label">Net {{ 'favorable' if net > 0 else ('unfavorable' if net < 0 else 'even') }}</span>
+    <b>{{ '%+d'|format(net) }} <small>yds</small></b><b>{{ '%+d'|format(profile.net_flags) }} <small>flags</small></b>
+    <p>Drawn from opponents minus self-inflicted. Positive means penalties net out as a team advantage &mdash; opponents handed over more yards (and flags) than this team gave away.{% if note %} {{ note }}{% endif %}</p>
+    <span class="ui-net-rank"><small>League rank</small><b class="{{ 'is-good' if profile.ranks.net_yards_pg and profile.ranks.net_yards_pg <= profile.of / 3 else ('is-poor' if profile.ranks.net_yards_pg and profile.ranks.net_yards_pg > profile.of * 2 / 3 else '') }}">#{{ profile.ranks.net_yards_pg or '—' }}<small>/{{ profile.of }}</small></b></span>
+</div>
+<div class="ui-deep-grid ui-flags">
+    {% for side, title, kicker, rows, side_data in (('committed', 'Self-inflicted', 'Penalties committed', rows_committed, profile.committed), ('drawn', 'Opponent gifts', 'Penalties drawn', rows_drawn, profile.drawn)) %}
+    <article class="ui-panel ui-flag-panel is-{{ side }}">
+        <header class="ui-panel-head"><div><small class="ui-kick">{{ kicker }}</small><h3>{{ title }}</h3></div><span class="ui-median-key">{{ side_data.epa_flags }} of {{ side_data.flags }} flags had a no-play EPA</span></header>
+        {% for row in rows %}<div class="ui-flag-row">
+            <span class="ui-lbl">{{ row.label }}</span>
+            <span class="ui-flag-val"><b>{{ row.value|cell(row.format) }}</b>{% if row.rank %}<em class="{{ 'is-good' if row.good else ('is-poor' if row.poor else '') }}">#{{ row.rank }}<small>/{{ row.of }}</small></em>{% endif %}</span>
+            <span class="ui-flag-bar"><i class="{{ 'is-good' if row.good else ('is-poor' if row.poor else '') }}" style="--p:{{ row.bar }}"></i></span>
+        </div>{% endfor %}
+        <h4 class="ui-flag-sub">Top flag types</h4>
+        {% set top = side_data.types[0].count if side_data.types else 1 %}
+        {% for kind in side_data.types %}<div class="ui-flag-row is-type">
+            <span class="ui-lbl">{{ kind.type }}</span>
+            <span class="ui-flag-val"><b>{{ kind.count }}</b><small>{{ kind.yards|int }} yd &middot; {{ (kind.share * 100)|round|int }}%</small></span>
+            <span class="ui-flag-bar"><i class="is-{{ side }}" style="--p:{{ (kind.count / top * 100)|round }}"></i></span>
+        </div>{% else %}<p class="ui-panel-note">No flags.</p>{% endfor %}
+        {% if side == 'committed' and side_data.offenders %}
+        <h4 class="ui-flag-sub">Repeat offenders</h4>
+        <table class="ui-mini"><thead><tr><th>Player</th><th class="num">Flags</th><th class="num">Yds</th><th class="num">1st dn</th></tr></thead>
+            <tbody>{% for player in side_data.offenders %}<tr><th scope="row">{% if player.player_id %}<a href="/nfl/players/{{ player.player_id }}/?season={{ profile.season }}">{{ player.player_name }}</a>{% else %}{{ player.player_name }}{% endif %}</th><td class="num"><b>{{ player.flags }}</b></td><td class="num">{{ player.yards|int }}</td><td class="num">{{ player.first_downs }}</td></tr>{% endfor %}</tbody>
+        </table>{% endif %}
+    </article>{% endfor %}
+</div>
+{% endmacro %}
+
+{# Matchup summary: both offenses' call mix by situation, side by side. `rows` come from situational_tendencies.compare. #}
+{% macro tendency_compare(rows, away, home, season, note='') %}
+{% macro _side(cell) %}{% if cell and cell.status == 'ok' %}<b class="ui-call is-{{ cell.call|lower }}">{{ cell.call }} {{ (cell.call_rate * 100)|round|int }}%</b><small>{{ cell.plays }}{% if cell.vs_league is not none %} &middot; {{ '%+d'|format((cell.vs_league * 100)|round|int) }} vs lg{% endif %}</small>{% elif cell and cell.plays %}<span class="ctx">small sample <small>{{ cell.plays }}</small></span>{% else %}<span class="ctx">&mdash;</span>{% endif %}{% endmacro %}
+<article class="ui-panel">
+    <header class="ui-panel-head"><h3>Offensive tendencies by situation</h3><span class="ui-median-key">{{ season }} &middot; dominant call, plays{% if note %} &middot; {{ note }}{% endif %}</span></header>
+    <table class="ui-mini ui-compare ui-sit-compare">
+        <thead><tr><th class="side">{{ away }} offense</th><th>Situation</th><th>{{ home }} offense</th></tr></thead>
+        <tbody>{% for row in rows %}<tr><td class="side away">{{ _side(row.away) }}</td><td class="mid">{{ row.label }}</td><td class="home">{{ _side(row.home) }}</td></tr>{% endfor %}</tbody>
+    </table>
+    <p class="ui-panel-note">Pass rate versus the league in the same situation is shown in points; a call needs 10 plays.</p>
+</article>
+{% endmacro %}
+
+{# Matchup summary: discipline of both teams. Values with league rank, best-first. #}
+{% macro penalty_compare(away_profile, home_profile, away, home, season, note='') %}
+{% macro _val(profile, side, key, fmt) %}{% if profile %}<b>{{ profile[side][key]|cell(fmt) }}</b>{% set rank = profile.ranks[side][key] %}{% if rank %}<small class="{{ 'is-good' if rank <= profile.of / 3 else ('is-poor' if rank > profile.of * 2 / 3 else '') }}">#{{ rank }}</small>{% endif %}{% else %}<span class="ctx">&mdash;</span>{% endif %}{% endmacro %}
+{% macro _net(profile) %}{% if profile %}<b class="{{ 'is-good' if profile.net_yards > 0 else ('is-poor' if profile.net_yards < 0 else '') }}">{{ '%+d'|format(profile.net_yards) }}</b>{% if profile.ranks.net_yards_pg %}<small>#{{ profile.ranks.net_yards_pg }}</small>{% endif %}{% else %}<span class="ctx">&mdash;</span>{% endif %}{% endmacro %}
+{% macro _top(profile) %}{% if profile and profile.committed.types %}{{ profile.committed.types[0].type }} <small>{{ profile.committed.types[0].count }}</small>{% else %}<span class="ctx">&mdash;</span>{% endif %}{% endmacro %}
+<article class="ui-panel">
+    <header class="ui-panel-head"><h3>Discipline</h3><span class="ui-median-key">{{ season }} &middot; rank 1 = best{% if note %} &middot; {{ note }}{% endif %}</span></header>
+    <table class="ui-mini ui-compare ui-flag-compare">
+        <thead><tr><th class="side">{{ away }}</th><th>Measure</th><th>{{ home }}</th></tr></thead>
+        <tbody>
+            {% for label, side, key, fmt in (('Flags committed / game', 'committed', 'flags_pg', 'f1'), ('Yards given away', 'committed', 'yards', 'int'), ('Pre-snap flags committed', 'committed', 'presnap', 'int'), ('Auto first downs given', 'committed', 'auto_first_downs', 'int'), ('Flags drawn / game', 'drawn', 'flags_pg', 'f1'), ('Yards gained from flags', 'drawn', 'yards', 'int')) %}
+            <tr><td class="side away">{{ _val(away_profile, side, key, fmt) }}</td><td class="mid">{{ label }}</td><td class="home">{{ _val(home_profile, side, key, fmt) }}</td></tr>{% endfor %}
+            <tr class="ui-flag-net"><td class="side away">{{ _net(away_profile) }}</td><td class="mid">Net penalty yards</td><td class="home">{{ _net(home_profile) }}</td></tr>
+            <tr><td class="side away">{{ _top(away_profile) }}</td><td class="mid">Most common flag</td><td class="home">{{ _top(home_profile) }}</td></tr>
+        </tbody>
+    </table>
+</article>
+{% endmacro %}

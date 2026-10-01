@@ -267,6 +267,49 @@ def build_play_rows(pbp: Iterable[Mapping[str, Any]],
     return rows
 
 
+PENALTY_COLUMNS = ("season", "week", "season_type", "game_id", "play_id", "team", "opponent", "penalty_type",
+                   "yards", "player_id", "player_name", "auto_first_down", "no_play", "epa_team", "down",
+                   "ydstogo", "qtr")
+
+
+def build_penalty_rows(pbp: Iterable[Mapping[str, Any]]) -> list[tuple]:
+    """One tuple per enforced penalty (ordered as PENALTY_COLUMNS), kickoffs and punts included.
+
+    Declined and offsetting flags carry no yardage and are dropped. `epa_team` is the flagged team's own EPA
+    for the play and is only set on no-play flags, where the penalty is the whole play; on a live play the EPA
+    belongs to the result of the snap, not the flag.
+    """
+    rows: list[tuple] = []
+    for play in pbp:
+        if _flag(play.get("penalty")) != 1 or _flag(play.get("play_deleted")) == 1:
+            continue
+        yards = _number(play.get("penalty_yards"))
+        game_id, play_id = _text(play.get("game_id")), _int(play.get("play_id"))
+        team = canon_team(play.get("penalty_team"))
+        posteam, defteam = canon_team(play.get("posteam")), canon_team(play.get("defteam"))
+        penalty_type = _text(play.get("penalty_type"))
+        if not yards or yards <= 0 or not game_id or play_id is None or not team or not penalty_type:
+            continue
+        if team == posteam:
+            opponent = defteam
+        elif team == defteam:
+            opponent = posteam
+        else:
+            continue
+        if not opponent:
+            continue
+        no_play = 1 if _text(play.get("play_type")) == "no_play" else 0
+        epa = _number(play.get("epa"))
+        epa_team = (epa if team == posteam else -epa) if (no_play and epa is not None) else None
+        rows.append((
+            _int(play.get("season")), _int(play.get("week")), _text(play.get("season_type")), game_id, play_id,
+            team, opponent, penalty_type, yards, _text(play.get("penalty_player_id")),
+            _text(play.get("penalty_player_name")), _flag(play.get("first_down_penalty")) or 0, no_play,
+            epa_team, _int(play.get("down")), _int(play.get("ydstogo")), _int(play.get("qtr")),
+        ))
+    return rows
+
+
 PACKAGE_SNAP_COLUMNS = ("season", "team", "player_id", "position", "side", "package", "zone",
                         "snaps", "pass_snaps", "rush_snaps", "epa_sum")
 

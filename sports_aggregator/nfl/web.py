@@ -49,6 +49,8 @@ from sports_aggregator.nfl.staff import staff_tendencies
 from sports_aggregator.nfl.team_panels import defense_panel, offense_panel, ranked_stats_panel, scoring_ranks, share_rows
 from sports_aggregator.nfl.enhanced_tables import player_enhanced, team_enhanced, to_json
 from sports_aggregator.nfl.play_story import play_story
+from sports_aggregator.nfl import penalties as penalty_analytics
+from sports_aggregator.nfl import situational_tendencies as situational_analytics
 from sports_aggregator.nfl.season_tables import player_season_table, team_history_tables
 from sports_aggregator.nfl.teams import team_context
 from sports_aggregator.nfl.week_chart import epa_week_chart
@@ -957,6 +959,8 @@ def team_page(abbreviation: str):
         scoring_ranks=scoring_ranks(_repository(), context["performance_season"], code),
         season_options=_repository().available_seasons(),
         enhanced=team_enhanced(_repository(), _pff(), season, code),
+        situational=situational_analytics.team_tendencies(_repository(), context["performance_season"], code),
+        discipline=_discipline_view(_repository(), context["performance_season"], code),
         week_chart=epa_week_chart(_repository().team_weekly_performance(context["performance_season"], code)),
         history_offense=history_tables[0], history_defense=history_tables[1],
         usage_target_rows=share_rows(
@@ -1046,6 +1050,15 @@ def team_api(abbreviation: str):
         "availability": availability, "staff": staff_packet["staff"],
         "staff_packet": staff_packet,
     })
+
+
+def _discipline_view(repository, season: int, code: str) -> dict | None:
+    """Penalty profile for the team page: the profile plus the display rows of both panels, or None."""
+    profile = penalty_analytics.team_penalties(repository, season, code)
+    if not profile:
+        return None
+    return {"profile": profile, "committed": penalty_analytics.panel_rows(profile, "committed"),
+            "drawn": penalty_analytics.panel_rows(profile, "drawn")}
 
 
 def _game_packet(game_id: str) -> dict:
@@ -1204,6 +1217,21 @@ def _game_packet(game_id: str) -> dict:
         context["baseline_season"], context["profiles"],
     )
     player_watches = player_matchup_watches(player_matchups, trenches)
+    # Pre-game discipline and call tendencies for both teams; before the season has a sample these come from the
+    # baseline season the rest of the page already uses.
+    stats_week = game["week"] if context["baseline_season"] == game["season"] else None
+    away_code, home_code = game["away_team"], game["home_team"]
+    situational_profiles = {code: situational_analytics.team_tendencies(
+        repository, context["baseline_season"], code, before_week=stats_week) for code in (away_code, home_code)}
+    discipline = {
+        "season": context["baseline_season"],
+        "profiles": {code: penalty_analytics.team_penalties(
+            repository, context["baseline_season"], code, before_week=stats_week) for code in (away_code, home_code)},
+    }
+    situational = {
+        "season": context["baseline_season"], "profiles": situational_profiles,
+        "rows": situational_analytics.compare(situational_profiles[away_code], situational_profiles[home_code]),
+    }
     passer_ngs = passer_ngs_leaders(repository, game, pff_season)
     content_items = _content().for_game(game_id, 60)
     postgame = (postgame_packet(repository, game, efficiency_rows, player_rows)
@@ -1252,7 +1280,8 @@ def _game_packet(game_id: str) -> dict:
                 "error": str(exc),
             }
 
-    return {"game": game, "away_identity": identities.get(game["away_team"], {}),
+    return {"game": game, "situational": situational, "discipline": discipline,
+            "away_identity": identities.get(game["away_team"], {}),
             "home_identity": identities.get(game["home_team"], {}),
             "stats": game_stats_table(player_rows),
             "stat_groups": game_stat_tables(player_rows),
