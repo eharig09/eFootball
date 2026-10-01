@@ -17,8 +17,6 @@ from contextlib import closing
 from typing import Any
 
 import numpy as np
-from sklearn.ensemble import HistGradientBoostingRegressor
-
 from sports_aggregator.nfl.qb_player_ablation import SHRUNK_CHANGE, _paired, build_rows
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.score_calibration import TOTAL_FEATURES, _fit_ridge, _predict
@@ -68,6 +66,9 @@ def _walk(sample, base_features, ctx_features, target, shrinks=SHRINKS):
         if ridge is None or ridge_ctx is None or not test:
             continue
         residual = np.asarray([r[target] - _predict(ridge_ctx, r) for r in train])
+        # scikit-learn is a research dependency (requirements-dashboards.txt), not part of
+        # the web/refresh install, so it is imported only when this ablation actually runs.
+        from sklearn.ensemble import HistGradientBoostingRegressor
         boost = HistGradientBoostingRegressor(**BOOST).fit(_gbm_features(full)(train), residual)
         correction = boost.predict(_gbm_features(full)(test))
         for r, c in zip(test, correction):
