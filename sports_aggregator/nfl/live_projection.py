@@ -39,12 +39,14 @@ from sports_aggregator.nfl.score_calibration import (
     _game_rows, _fit_ridge, _predict as _predict_cal,
     TOTAL_FEATURES, MARGIN_FEATURES,
 )
+from sports_aggregator.nfl.live_margin import LiveMargin
+from sports_aggregator.nfl.live_total import LiveTotal
 from sports_aggregator.nfl.uncertainty_calibration import (
     _calibrated_oof, _fit_scale, _scale_predict,
     TOTAL_SCALE_FEATURES, MARGIN_SCALE_FEATURES,
 )
 
-MODEL_VERSION = "nfl-live-forecast-diagnostics-v1"
+MODEL_VERSION = "nfl-live-forecast-diagnostics-v2"
 
 
 def _update_history(history: dict[str, TeamHistory], game: dict[str, Any]) -> None:
@@ -103,7 +105,7 @@ def _target_games(repository: NFLRepository, season: int, week: int):
     with closing(repository._connect()) as connection:
         rows = connection.execute(
             """SELECT game_id,season,week,game_date,away_team,home_team,completed,
-                      division_game,spread_line,total_line,away_rest,home_rest
+                      division_game,spread_line,total_line,away_rest,home_rest,stadium,roof
                FROM games
                WHERE season=? AND week=?
                ORDER BY game_date,game_id""",
@@ -226,6 +228,18 @@ def report(repository: NFLRepository, *, season: int, week: int):
     total_scale_model = _fit_scale(calibrated, TOTAL_SCALE_FEATURES, "total_residual")
     margin_scale_model = _fit_scale(calibrated, MARGIN_SCALE_FEATURES, "margin_residual")
 
+    # Quarterback-aware margin (validated in qb_player_ablation). If it cannot be
+    # built, every game falls back to the core margin and says so.
+    try:
+        live_margin = LiveMargin(repository, season, week) if games else None
+    except Exception:
+        live_margin = None
+
+    try:
+        live_total = LiveTotal(repository, historical_games) if games else None
+    except Exception:
+        live_total = None
+
     output = []
     for game in games:
         away = _team_row(game, "away", history, league)
@@ -294,8 +308,16 @@ def report(repository: NFLRepository, *, season: int, week: int):
             "diff_pred_rush_epa": home_r["pred_rush_epa"] - away_r["pred_rush_epa"],
             "diff_pred_combined_epa": home_r["pred_combined_epa"] - away_r["pred_combined_epa"],
         }
-        cal_total = _predict_cal(total_model, game_row)
-        cal_margin = _predict_cal(margin_model, game_row)
+        core_total = _predict_cal(total_model, game_row)
+        wx_total = live_total.total(game, game_row) if live_total else None
+        if wx_total and wx_total["total"] is None:
+            wx_status, wx_total = wx_total["status"], None
+        else:
+            wx_status = wx_total["status"] if wx_total else "unavailable"
+        cal_total = wx_total["total"] if wx_total else core_total
+        core_margin = _predict_cal(margin_model, game_row)
+        qb_margin = live_margin.margin(game, game_row) if live_margin else None
+        cal_margin = qb_margin["margin"] if qb_margin else core_margin
         fl_home = (cal_total + cal_margin) / 2.0
         fl_away = (cal_total - cal_margin) / 2.0
 
@@ -307,9 +329,10 @@ def report(repository: NFLRepository, *, season: int, week: int):
         if total_scale_model and margin_scale_model:
             scale_row = {
                 **game_row,
-                "cal_total": cal_total,
-                "cal_margin": cal_margin,
-                "abs_cal_margin": abs(cal_margin),
+                "cal_total": core_total,
+                # The scale model was trained on the core calibrated margin.
+                "cal_margin": core_margin,
+                "abs_cal_margin": abs(core_margin),
                 "abs_sum_pred_combined_epa": abs(game_row["sum_pred_combined_epa"]),
                 "abs_diff_pred_drives": abs(game_row["diff_pred_drives"]),
                 "abs_diff_pred_pass_epa": abs(game_row["diff_pred_pass_epa"]),
@@ -334,6 +357,15 @@ def report(repository: NFLRepository, *, season: int, week: int):
                 "total": cal_total,
                 "home_points": fl_home,
                 "away_points": fl_away,
+                "margin_core": core_margin,
+                "total_core": core_total,
+                "total_model": wx_total["model"] if wx_total else "core",
+                "weather": wx_total["weather"] if wx_total else None,
+                "weather_status": wx_status,
+                "margin_sigma": qb_margin["margin_sigma"] if qb_margin else None,
+                "home_win_probability": qb_margin["home_win_probability"] if qb_margin else None,
+                "margin_model": qb_margin["model"] if qb_margin else "core",
+                "quarterbacks": qb_margin["quarterbacks"] if qb_margin else None,
             },
             "disagreement": {
                 "margin": cal_margin - float(spread) if spread is not None else None,

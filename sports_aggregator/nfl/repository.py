@@ -151,6 +151,12 @@ CREATE TABLE IF NOT EXISTS injury_reports (
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_injuries_team ON injury_reports(season,team,designation);
 CREATE INDEX IF NOT EXISTS idx_nfl_injuries_player ON injury_reports(season,gsis_id);
+CREATE TABLE IF NOT EXISTS nfl_injury_history (
+ season INTEGER NOT NULL,week INTEGER NOT NULL,team TEXT NOT NULL,gsis_id TEXT NOT NULL,
+ player_name TEXT NOT NULL,normalized_name TEXT NOT NULL,position TEXT,
+ report_status TEXT,practice_status TEXT,PRIMARY KEY(season,week,team,gsis_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_injury_history_team ON nfl_injury_history(season,team,week);
 CREATE TABLE IF NOT EXISTS player_master (
  gsis_id TEXT PRIMARY KEY, display_name TEXT NOT NULL, normalized_name TEXT NOT NULL,
  first_name TEXT, last_name TEXT, birth_date TEXT, position_group TEXT, position TEXT,
@@ -232,6 +238,15 @@ CREATE TABLE IF NOT EXISTS nfl_game_weather (
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_game_weather_game
   ON nfl_game_weather(game_id,forecast_generated_at DESC);
+CREATE TABLE IF NOT EXISTS nfl_weather_history (
+ game_id TEXT NOT NULL, kind TEXT NOT NULL, lead_days INTEGER NOT NULL,
+ source TEXT NOT NULL, kickoff_utc TEXT NOT NULL, stadium TEXT NOT NULL,
+ latitude REAL NOT NULL, longitude REAL NOT NULL, indoor INTEGER NOT NULL,
+ temperature REAL, wind_speed REAL, wind_gust REAL, precipitation REAL,
+ hours_used INTEGER NOT NULL DEFAULT 0, fetched_at TEXT NOT NULL,
+ PRIMARY KEY(game_id,kind,lead_days)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_weather_history_kind ON nfl_weather_history(kind,lead_days);
 CREATE TABLE IF NOT EXISTS qb_pass_profiles (
  season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
  offense_team TEXT NOT NULL, defense_team TEXT NOT NULL,
@@ -1127,6 +1142,55 @@ class NFLRepository:
                 "INSERT OR REPLACE INTO injury_reports VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 values,
             )
+            connection.commit()
+        return len(values)
+
+    def replace_injury_history(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
+        """Store nflverse weekly injury reports (regular season) for one season.
+
+        Kept apart from injury_reports, which holds the live ESPN snapshot and
+        is replaced wholesale per season.
+        """
+        self.initialize()
+        values = {}
+        for row in rows:
+            gsis = str(row.get("gsis_id") or "").strip()
+            team = canon_team(row.get("team"))
+            name = str(row.get("full_name") or "").strip()
+            if not gsis or not team or not name or str(row.get("game_type") or "REG") != "REG":
+                continue
+            week = int(row.get("week") or 0)
+            values[(season, week, team, gsis)] = (
+                season, week, team, gsis, name, normalize_name(name),
+                optional_text(row.get("position")), optional_text(row.get("report_status")),
+                optional_text(row.get("practice_status")),
+            )
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM nfl_injury_history WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO nfl_injury_history VALUES (?,?,?,?,?,?,?,?,?)",
+                list(values.values()),
+            )
+            connection.commit()
+        return len(values)
+
+    def upsert_weather_history(self, rows: Iterable[Mapping[str, Any]]) -> int:
+        """Store game-window weather ('observed' reanalysis or an issued 'forecast')."""
+        self.initialize()
+        values = [(
+            str(r["game_id"]), str(r["kind"]), int(r["lead_days"]), str(r["source"]),
+            str(r["kickoff_utc"]), str(r["stadium"]), float(r["latitude"]), float(r["longitude"]),
+            int(bool(r["indoor"])), optional_float(r.get("temperature")),
+            optional_float(r.get("wind_speed")), optional_float(r.get("wind_gust")),
+            optional_float(r.get("precipitation")), int(r.get("hours_used") or 0),
+            str(r.get("fetched_at") or datetime.now(timezone.utc).isoformat()),
+        ) for r in rows]
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.executemany(
+                "INSERT OR REPLACE INTO nfl_weather_history VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                values)
             connection.commit()
         return len(values)
 

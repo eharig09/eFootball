@@ -18,6 +18,14 @@ from sports_aggregator.nfl.pressure_ol_readiness import report as pressure_ol_re
 from sports_aggregator.nfl.scoring_bridge import report as scoring_bridge_report
 from sports_aggregator.nfl.score_calibration import report as score_calibration_report
 from sports_aggregator.nfl.margin_strength_ablation import report as margin_strength_report
+from sports_aggregator.nfl.availability_ablation import report as availability_report
+from sports_aggregator.nfl.context_ablation import report as context_report
+from sports_aggregator.nfl.distribution_calibration import report as distribution_report
+from sports_aggregator.nfl.market_gap import report as market_gap_report
+from sports_aggregator.nfl.travel_ablation import report as travel_report
+from sports_aggregator.nfl.nonlinear_ablation import report as nonlinear_report
+from sports_aggregator.nfl.weather_total_ablation import report as weather_total_report
+from sports_aggregator.nfl.qb_player_ablation import report as qb_player_report
 from sports_aggregator.nfl.uncertainty_calibration import report as uncertainty_report
 from sports_aggregator.nfl.market_disagreement import report as market_disagreement_report
 from sports_aggregator.nfl.market_anchor_leverage import report as market_anchor_report
@@ -68,6 +76,53 @@ def main(argv: list[str] | None = None) -> int:
     margin_strength = sub.add_parser("margin-strength")
     margin_strength.add_argument("--from-year", type=int, default=2010)
     margin_strength.add_argument("--to-year", type=int, default=2025)
+
+    backfill = sub.add_parser("backfill-injuries")
+    backfill.add_argument("--from-year", type=int, default=2009)
+    backfill.add_argument("--to-year", type=int, default=2025)
+    backfill.add_argument("--snaps-to-year", type=int, default=2024,
+                          help="snap counts are only backfilled through this season (2025+ is live-synced)")
+    backfill.add_argument("--force", action="store_true")
+
+    weather_backfill = sub.add_parser("weather-backfill")
+    weather_backfill.add_argument("--from-year", type=int, default=2013)
+    weather_backfill.add_argument("--to-year", type=int, default=2025)
+    weather_backfill.add_argument("--no-forecasts", action="store_true")
+    weather_backfill.add_argument("--check-only", action="store_true",
+                                  help="report unmapped stadiums and the games to fetch, then stop")
+
+    weather_total = sub.add_parser("weather-total")
+    weather_total.add_argument("--from-year", type=int, default=2013)
+    weather_total.add_argument("--to-year", type=int, default=2025)
+
+    travel = sub.add_parser("travel")
+    travel.add_argument("--from-year", type=int, default=2013)
+    travel.add_argument("--to-year", type=int, default=2025)
+
+    market_gap = sub.add_parser("market-gap")
+    market_gap.add_argument("--from-year", type=int, default=2013)
+    market_gap.add_argument("--to-year", type=int, default=2025)
+
+    nonlinear = sub.add_parser("nonlinear")
+    nonlinear.add_argument("--from-year", type=int, default=2013)
+    nonlinear.add_argument("--to-year", type=int, default=2025)
+
+    distribution = sub.add_parser("distribution")
+    distribution.add_argument("--from-year", type=int, default=2013)
+    distribution.add_argument("--to-year", type=int, default=2025)
+
+    context = sub.add_parser("context")
+    context.add_argument("--from-year", type=int, default=2010)
+    context.add_argument("--to-year", type=int, default=2025)
+
+    availability = sub.add_parser("availability")
+    availability.add_argument("--from-year", type=int, default=2013)
+    availability.add_argument("--to-year", type=int, default=2025)
+
+    qb_player = sub.add_parser("qb-player")
+    qb_player.add_argument("--from-year", type=int, default=2010)
+    qb_player.add_argument("--to-year", type=int, default=2025)
+    qb_player.add_argument("--decay", type=float, default=0.6)
 
     score_cal = sub.add_parser("score-calibration")
     score_cal.add_argument("--from-year", type=int, default=2010)
@@ -194,6 +249,101 @@ def main(argv: list[str] | None = None) -> int:
             repository,
             start_season=int(args.from_year),
             end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "backfill-injuries":
+        from sports_aggregator.nfl.injury_history import backfill
+        from sports_aggregator.nfl.refresh_cli import _nflverse_client
+        payload = backfill(repository, _nflverse_client(), args.from_year, args.to_year,
+                           snaps_end_season=args.snaps_to_year, force=args.force)
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "weather-backfill":
+        from sports_aggregator.nfl import weather_history as wh
+        missing = wh.unmapped_stadiums(repository, args.from_year, args.to_year)
+        if args.check_only:
+            games = wh._games(repository, args.from_year, args.to_year)
+            print(json.dumps({"unmapped_stadiums": missing, "games_to_fetch": len(games),
+                              "venue_seasons": len({(g["lat"], g["lon"], g["season"]) for g in games})},
+                             indent=2, sort_keys=True))
+            return 0
+        payload = wh.backfill(repository, wh.Fetcher(), args.from_year, args.to_year,
+                              forecasts=not args.no_forecasts)
+        print(json.dumps({**payload, "unmapped_stadiums": missing}, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "weather-total":
+        payload = weather_total_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "travel":
+        payload = travel_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "market-gap":
+        payload = market_gap_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "nonlinear":
+        payload = nonlinear_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "distribution":
+        payload = distribution_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "context":
+        payload = context_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "availability":
+        payload = availability_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "qb-player":
+        payload = qb_player_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+            decay=float(args.decay),
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0

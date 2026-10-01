@@ -106,6 +106,29 @@ def weather_for_game(repository: NFLRepository, game_id: str) -> dict[str, Any]:
     }
 
 
+def _store_window(repository: NFLRepository, game: dict[str, Any], payload: dict[str, Any],
+                  latitude: float, longitude: float, generated_at: str) -> None:
+    """Also keep the forecast aggregated over the game window, in the units and
+    shape the weather-aware total was fitted on (see weather_history).
+
+    Rows are kind='live', keyed by days-to-kickoff, so the latest snapshot at each
+    lead survives and the table doubles as a forward issued-forecast history.
+    """
+    from sports_aggregator.nfl.weather_history import aggregate, window_times
+    kickoff = game["kickoff_utc"]
+    window = aggregate(payload.get("hourly") or {}, window_times(kickoff))
+    if not window["hours_used"]:
+        return
+    issued = datetime.fromisoformat(generated_at)
+    lead = max(0, (datetime.fromisoformat(kickoff) - issued).days)
+    repository.upsert_weather_history([{
+        "game_id": game["game_id"], "kind": "live", "lead_days": lead,
+        "source": "open-meteo-forecast", "kickoff_utc": kickoff,
+        "stadium": game["venue_name"], "latitude": latitude, "longitude": longitude,
+        "indoor": False, "fetched_at": generated_at, **window,
+    }])
+
+
 def sync_game_weather(repository: NFLRepository, games: list[dict[str, Any]], *,
                       client: OpenMeteoClient | None = None,
                       force: bool = False) -> dict[str, int]:
@@ -155,6 +178,7 @@ def sync_game_weather(repository: NFLRepository, games: list[dict[str, Any]], *,
                 venue=game["venue_name"], latitude=latitude, longitude=longitude,
                 indoor=False, generated_at=generated_at,
             )
+            _store_window(repository, game, payload, latitude, longitude, generated_at)
             stored += 1
     return {"stored": stored, "skipped": skipped, "failed": failed,
             "venues": len(by_venue)}
