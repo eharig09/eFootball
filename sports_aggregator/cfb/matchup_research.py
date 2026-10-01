@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sports_aggregator.cfb import derived_cache
 from sports_aggregator.cfb import market_ats_totals as mat
 from sports_aggregator.cfb import totals_divergence_matrix as tdm
 from sports_aggregator.cfb import narrative_shapes as ns
@@ -162,14 +163,14 @@ def _live_narrative_context(
     market_home = -float(spread) if spread is not None else None
 
     with repository._reader() as connection:
-        history = [
+        history = derived_cache.derived(repository, "narrative_history_rows", lambda: [
             dict(r) for r in connection.execute(
                 """SELECT * FROM cfb_narrative_state
                    WHERE narrative_version=?
                    ORDER BY season,week,kickoff,game_id,side""",
                 (ns.NARRATIVE_VERSION,),
             )
-        ]
+        ])     # shared between requests: read-only below
         schedule_rows = [
             dict(r) for r in connection.execute(
                 """SELECT game_id,start_date,home_team,away_team

@@ -2,12 +2,15 @@
 {% from "_tables.html" import data_table, story_list, tabbed_tables, tabs_script %}
 {% from "_cfb_page_visuals.html" import passer_profile_module, percentile_radar_chart, radar_scripts %}
 {% from "_charts.html" import chart_workbench, chart_scripts %}
+{% from "_ui_kit.html" import pctl_panel %}
 
 {% block title %}{{ player.name }} | College Football Player{% endblock %}
 
 {% block head %}
     <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_player.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_production_visuals.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_kit.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_ui_kit.css') }}">
 {% endblock %}
 
 {% block body_attrs %} style="--team-light:{{ identity.accent }};--team-dark:{{ identity.accent_dark }};--team-fill:{{ identity.fill }};--team-on-fill:{{ identity.on_fill }};--conference-light:{{ identity.conference_color }};--conference-dark:{{ identity.conference_color_dark }}"{% endblock %}
@@ -48,6 +51,11 @@
             </div>
             {% if ppa_rank %}
                 <div class="section-note">Predicted points added (PPA) this season ranks <b>#{{ ppa_rank.rank }} of {{ ppa_rank.of }}</b> qualifying {{ player.position }}s.</div>
+            {% endif %}
+            {% if player_panel %}
+                <div class="ui-deep-grid ui-single">
+                    {{ pctl_panel(player.position ~ ' · ' ~ player_panel.season ~ ' percentile vs FBS ' ~ player_panel.group_label, player_panel.panel, 'player', 'Ranked among FBS ' ~ player_panel.group_label ~ ' who meet a volume minimum that grows with games played' ~ ('; shown as the prior-season baseline until this season has a real sample' if player_panel.baseline else '') ~ '. The bar is the percentile and the tick marks the median.') }}
+                </div>
             {% endif %}
             {% if stat_groups %}
                 {{ tabbed_tables(stat_groups, 'player-stats') }}

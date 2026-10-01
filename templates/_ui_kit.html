@@ -1,4 +1,4 @@
-{# Shared NFL UI components: percentile panels, filter bars, schedule strip. Styles live in static/nfl_ui.css. #}
+{# Shared UI components (NFL and college football): percentile panels, rank-gap rows, filter bars, schedule strip. Styles live in static/ui_kit.css. #}
 {% from '_tables.html' import data_table %}
 {% macro ordinal(n) -%}
 {%- set t = n % 100 -%}{{ n }}{{ 'th' if 10 < t < 14 else ('st' if n % 10 == 1 else ('nd' if n % 10 == 2 else ('rd' if n % 10 == 3 else 'th'))) }}
@@ -315,6 +315,87 @@
             <tr class="ui-flag-net"><td class="side away">{{ _net(away_profile) }}</td><td class="mid">Net penalty yards</td><td class="home">{{ _net(home_profile) }}</td></tr>
             <tr><td class="side away">{{ _top(away_profile) }}</td><td class="mid">Most common flag</td><td class="home">{{ _top(home_profile) }}</td></tr>
         </tbody>
+    </table>
+</article>
+{% endmacro %}
+
+{# One team's unit matchups against the opposing defense (cfb game_panels.unit_matchup_panels). The bar is the grade gap:
+   right of centre = the attacking unit is ahead, left = the defending unit. #}
+{% macro grade_matchup_panel(panel, note='') %}
+<article class="ui-panel ui-grade" style="--ui-accent:{{ panel.color or 'var(--accent)' }}">
+    <header class="ui-panel-head"><h3>{% if panel.logo_url %}<img class="ui-inline-logo" src="{{ panel.logo_url }}" alt="" loading="lazy">{% endif %}{{ panel.team }} attacking</h3><span class="ui-median-key">vs {{ panel.opponent }}{% if note %} &middot; {{ note }}{% endif %}</span></header>
+    <table class="ui-mini ui-grade-table">
+        <thead><tr><th>Unit</th><th class="num">{{ panel.team }}</th><th class="num">{{ panel.opponent }}</th><th class="ui-edge-head">Edge</th></tr></thead>
+        <tbody>{% for row in panel.rows %}<tr data-side="{{ row.side }}">
+            <th scope="row">{{ row.unit }}{% if row.badge %}<small class="ui-badge is-{{ row.tone }}">{{ row.badge }}</small>{% endif %}</th>
+            <td class="num{{ ' is-lead' if row.side == 'attack' }}"><b>{{ row.attack_grade|cell('f1') }}</b><small>{{ row.attack_label }}</small></td>
+            <td class="num{{ ' is-lead' if row.side == 'defend' }}"><b>{{ row.defend_grade|cell('f1') }}</b><small>{{ row.defend_label }}</small></td>
+            <td class="ui-edge-cell">{% if row.gap is not none %}<span class="ui-edge" data-side="{{ row.side }}" style="--w:{{ row.bar|round(1) }}" role="img" aria-label="{{ row.unit }}: {{ '%+.1f'|format(row.gap) }} grade points for the attacking unit"><i></i></span><em>{{ '%+.1f'|format(row.gap) }}</em>{% else %}<span class="ctx">&mdash;</span>{% endif %}</td>
+        </tr>{% else %}<tr><td colspan="4" class="ctx">No graded unit comparison is stored for these teams.</td></tr>{% endfor %}</tbody>
+    </table>
+</article>
+{% endmacro %}
+
+{# Both teams' unit grades side by side; the better grade is marked. rows from game_panels.unit_grade_rows. #}
+{% macro unit_grades_compare(rows, away, home, note='') %}
+<article class="ui-panel">
+    <header class="ui-panel-head"><h3>Unit grades</h3><span class="ui-median-key">{{ note }}</span></header>
+    <table class="ui-mini ui-compare ui-unit-compare">
+        <thead><tr><th class="side">{{ away }}</th><th>Unit</th><th>{{ home }}</th></tr></thead>
+        <tbody>{% for row in rows %}<tr>
+            <td class="side away{{ ' is-lead' if row.lead == 'away' }}"><b>{{ row.away.grade|cell('f1') }}</b><small>{% if row.away.returning is not none %}{{ row.away.returning|round|int }}% back{% endif %}{% if row.away.usage %} &middot; {{ row.away.usage|round|int }} snaps{% endif %}</small></td>
+            <td class="mid">{{ row.unit }}</td>
+            <td class="home{{ ' is-lead' if row.lead == 'home' }}"><b>{{ row.home.grade|cell('f1') }}</b><small>{% if row.home.returning is not none %}{{ row.home.returning|round|int }}% back{% endif %}{% if row.home.usage %} &middot; {{ row.home.usage|round|int }} snaps{% endif %}</small></td>
+        </tr>{% else %}<tr><td colspan="3" class="ctx">No unit grades are stored for these teams.</td></tr>{% endfor %}</tbody>
+    </table>
+</article>
+{% endmacro %}
+
+{# Production for / allowed for both teams (rows are the existing matchup_summary_table rows). #}
+{% macro production_compare(rows, away, home, caption='', note='') %}
+{% macro _cell(row, key) %}{% set value = row.get(key) %}{% if value %}<b class="{{ 'is-lead' if row.get(key ~ '_class') == 'advantage' }}">{{ value }}</b>{% if row.get(key ~ '_sub') %}<small>{{ row.get(key ~ '_sub') }}</small>{% endif %}{% else %}<span class="ctx">&mdash;</span>{% endif %}{% endmacro %}
+<article class="ui-panel">
+    <header class="ui-panel-head"><h3>{{ caption }}</h3><span class="ui-median-key">{{ note }}</span></header>
+    <table class="ui-mini ui-compare ui-prod-compare">
+        <thead><tr><th class="grp" colspan="2">{{ away }}</th><th rowspan="2">Measure</th><th class="grp" colspan="2">{{ home }}</th></tr>
+            <tr><th class="num">For</th><th class="num">Against</th><th class="num">For</th><th class="num">Against</th></tr></thead>
+        <tbody>{% for row in rows %}<tr>
+            <td class="num">{{ _cell(row, 'away_offense') }}</td><td class="num">{{ _cell(row, 'away_defense') }}</td>
+            <td class="mid">{{ row.metric }}{% if row.edge and row.edge != 'Even' %}<small class="ui-edge-note">{{ row.edge }} {{ row.edge_sub or '' }}</small>{% endif %}</td>
+            <td class="num">{{ _cell(row, 'home_offense') }}</td><td class="num">{{ _cell(row, 'home_defense') }}</td>
+        </tr>{% else %}<tr><td colspan="5" class="ctx">No comparable totals are stored.</td></tr>{% endfor %}</tbody>
+    </table>
+</article>
+{% endmacro %}
+
+{# One value per team per measure (rows are the existing opponent_quality_table rows). #}
+{% macro measure_compare(rows, away, home, caption='', note='') %}
+<article class="ui-panel">
+    <header class="ui-panel-head"><h3>{{ caption }}</h3><span class="ui-median-key">{{ note }}</span></header>
+    <table class="ui-mini ui-compare ui-measure-compare">
+        <thead><tr><th class="side">{{ away }}</th><th>Measure</th><th>{{ home }}</th></tr></thead>
+        <tbody>{% for row in rows %}<tr>
+            <td class="side away{{ ' is-lead' if row.get('away_class') == 'advantage' }}"><b>{{ row.away }}</b>{% if row.get('away_sub') %}<small>{{ row.away_sub }}</small>{% endif %}</td>
+            <td class="mid">{{ row.metric }}</td>
+            <td class="home{{ ' is-lead' if row.get('home_class') == 'advantage' }}"><b>{{ row.home }}</b>{% if row.get('home_sub') %}<small>{{ row.home_sub }}</small>{% endif %}</td>
+        </tr>{% else %}<tr><td colspan="3" class="ctx">Nothing to compare yet.</td></tr>{% endfor %}</tbody>
+    </table>
+</article>
+{% endmacro %}
+
+{# Named player pairings for one attacking team (cfb game_panels.player_matchup_panels). #}
+{% macro player_matchup_panel(panel) %}
+<article class="ui-panel ui-grade" style="--ui-accent:{{ panel.color or 'var(--accent)' }}">
+    <header class="ui-panel-head"><h3>{% if panel.logo_url %}<img class="ui-inline-logo" src="{{ panel.logo_url }}" alt="" loading="lazy">{% endif %}{{ panel.team }} players</h3><span class="ui-median-key">vs {{ panel.opponent }} &middot; PFF grades</span></header>
+    <table class="ui-mini ui-player-matchups">
+        <thead><tr><th>Matchup</th><th>Player</th><th class="num">PFF</th><th>Against</th><th class="num">PFF</th></tr></thead>
+        <tbody>{% for row in panel.rows %}<tr>
+            <th scope="row">{{ row.label }}{% if row.why %}<small>{{ row.why }}</small>{% endif %}</th>
+            <td>{% if row.player_url %}<a href="{{ row.player_url }}">{{ row.player }}</a>{% else %}{{ row.player }}{% endif %}<small>{{ row.player_detail }}</small></td>
+            <td class="num"><b>{{ row.player_grade|cell('f1') }}</b></td>
+            <td>{% if row.against_url %}<a href="{{ row.against_url }}">{{ row.against }}</a>{% else %}{{ row.against }}{% endif %}<small>{{ row.against_detail }}</small></td>
+            <td class="num"><b>{{ row.against_grade|cell('f1') }}</b></td>
+        </tr>{% else %}<tr><td colspan="5" class="ctx">No graded player pairing is available for this side.</td></tr>{% endfor %}</tbody>
     </table>
 </article>
 {% endmacro %}

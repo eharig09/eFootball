@@ -1,7 +1,7 @@
 """Generate static/nfl_neutral.css: the neutral-dark retint of the older NFL component styles.
 
 `nfl.css` / `nfl_components.css` paint cards, strips and tables in a blue-gray palette
-(#101b23, #14242e, #2b3e4b, ...). The newer `nfl_ui.css` kit uses neutral dark surfaces.
+(#101b23, #14242e, #2b3e4b, ...). The newer `ui_kit.css` kit uses neutral dark surfaces.
 Rather than edit ~1,000 literals in the legacy files (`tests/test_nfl_theme.py` guards
 them), this script emits scoped overrides that recolor only the *background / border /
 shadow* declarations that use a dark, low-chroma, blue-leaning hex, and nothing else:

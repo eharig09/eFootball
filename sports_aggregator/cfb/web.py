@@ -41,6 +41,9 @@ from sports_aggregator.cfb.matchup_research import (
 from sports_aggregator.cfb.lines import game_lines, lines_by_game
 from sports_aggregator.cfb import meta as page_meta_for
 from sports_aggregator.cfb import syndication
+from sports_aggregator.cfb import game_panels
+from sports_aggregator.cfb import player_panels as cfb_player_panels
+from sports_aggregator.cfb import team_panels as cfb_team_panels
 from sports_aggregator.page_cache import cached_page
 from sports_aggregator.cfb.search import search as search_entities
 from sports_aggregator.cfb.situations import game_situation
@@ -183,6 +186,12 @@ def _merge_stories(*groups: tuple[str, list[dict]], limit: int = 20) -> list[dic
     return merged
 
 
+def _kit_identity(identity: dict) -> dict:
+    """The two fields the shared UI kit paints a team with: its readable accent and a logo that shows on dark."""
+    return {"color": identity.get("accent") or identity.get("fill"),
+            "logo_url": identity.get("logo_dark") or identity.get("logo")}
+
+
 def _team_packet(team_id: int, season: int) -> dict:
     repository = _repository()
     team = repository.get_team(team_id)
@@ -221,6 +230,7 @@ def _team_packet(team_id: int, season: int) -> dict:
         "depth_chart": repository.team_depth_chart(team_id, season, movements=movements),
         "movements": movements,
         "leaders": repository.team_player_leaders(team["school"], season),
+        "team_panels": cfb_team_panels.team_panels(repository, season, team["school"]),
         "pff": repository.pff_team_context(team_id, repository.latest_pff_season()),
         "production": team_production(repository, team_id, season, movements=movements),
         "stories": [{**story, "coverage_label": "Team linked"} for story in team_stories],
@@ -956,6 +966,7 @@ def player_preview(player_id: str):
             player, repository.brand_for(player.get("team_id"))),
         identity=team_identity(_repository().brand_for(player.get("team_id"))),
         stat_groups=views.player_stat_groups(player),
+        player_panel=cfb_player_panels.player_panels(repository, season, player_id),
         ppa_rank=ppa_rank,
         percentile_radar=percentile_radar,
         passer_profile=passer_profile(repository, player_id, season),
@@ -1092,6 +1103,16 @@ def game_preview(game_id: int):
             story_count=len(direct_stories)),
         away_brand=away_identity,
         home_brand=home_identity,
+        gap_matchups=cfb_team_panels.matchup_cards(repository, season, game["away_team"], game["home_team"]),
+        gap_identities={game["away_team"]: _kit_identity(away_identity), game["home_team"]: _kit_identity(home_identity)},
+        grade_panels=game_panels.unit_matchup_panels(
+            matchup_report, game["away_team"], game["home_team"],
+            {game["away_team"]: _kit_identity(away_identity), game["home_team"]: _kit_identity(home_identity)}),
+        unit_grade_rows=game_panels.unit_grade_rows(pff_game_units),
+        player_panels=game_panels.player_matchup_panels(
+            player_matchups(repository, game["home_team_id"], game["away_team_id"]),
+            game["away_team"], game["home_team"], season, views._player_url,
+            {game["away_team"]: _kit_identity(away_identity), game["home_team"]: _kit_identity(home_identity)}),
         pff_season=pff_season,
         drive_outcomes=drive_outcomes,
         situation=game_situation(repository, game, elo),

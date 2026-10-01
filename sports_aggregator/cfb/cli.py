@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None, *, client: Any = None) -> int:
                 failures.append(name); print(f"{name}: failed ({exc})")
         return 1 if failures else 0
     if args.command == "link-transfer-grades":
-        report = repository.confirm_transfer_pff_links(args.year)
+        report = {**repository.revoke_invalid_portal_links(args.year), **repository.confirm_transfer_pff_links(args.year)}
         print(" ".join(f"{key}={value}" for key, value in report.items()))
         return 0
     if args.command == "sync-recruits":

@@ -4,7 +4,7 @@
 {% from '_nfl_charts.html' import chart_workbench, nfl_chart_scripts %}
 {% from '_nfl_injury.html' import injury_popover %}
 {% from '_nfl_position_groups.html' import position_group_profile %}
-{% from '_nfl_ui.html' import pctl_panel, filter_bar, schedule_strip, epa_week_chart, bar_table, table_panel, side_panel, tendency_grid, penalty_panels %}
+{% from '_ui_kit.html' import pctl_panel, filter_bar, schedule_strip, epa_week_chart, bar_table, table_panel, side_panel, tendency_grid, penalty_panels %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl_neutral.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_ui.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_kit.css') }}">
 </head>
 <body class="nfl-team-page" style="--team-primary:{{ team.color or '#0b5aa5' }};--team-secondary:{{ team.alternate_color or team.color or '#d50a0a' }}">
 {{ nfl_nav('team', season, team.abbreviation) }}

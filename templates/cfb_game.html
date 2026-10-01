@@ -1,5 +1,6 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import conference_mark, data_table, linked_piece_meta, story_list, tabbed_tables, tabs_script %}
+{% from "_ui_kit.html" import rank_gap_panel, grade_matchup_panel, unit_grades_compare, production_compare, measure_compare, player_matchup_panel %}
 {% from "_cfb_page_visuals.html" import compact_passing_matchups, compact_rushing_matchups, drive_outcomes_module, game_shape_module, probability_track, recent_form, visual_scripts %}
 
 {% block title %}{{ game.away_team }} at {{ game.home_team }} | Game Preview{% endblock %}
@@ -7,6 +8,8 @@
 {% block head %}
     <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_game.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_production_visuals.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_kit.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_ui_kit.css') }}">
 {% endblock %}
 
 {% block body_attrs %} class="matchup-page" style="--team-light:{{ home_brand.accent }};--team-dark:{{ home_brand.accent_dark }};--away-team-light:{{ away_brand.accent }};--away-team-dark:{{ away_brand.accent_dark }};--home-team-light:{{ home_brand.accent }};--home-team-dark:{{ home_brand.accent_dark }};--conference-light:{{ home_brand.conference_color }};--conference-dark:{{ home_brand.conference_color_dark }}"{% endblock %}
@@ -726,8 +729,8 @@
            href="{{ url_for('cfb.game_preview', game_id=game.game_id, stats_year=stats_year, stats_mode=mode) }}#tab-stats">{{ label }}</a>
         {% endfor %}
     </nav>
-    {{ data_table(totals_table) }}
-    {{ data_table(opponent_quality_table) }}
+    {{ production_compare(totals_table.rows, game.away_team, game.home_team, stats_year ~ ' production · ' ~ ('per game' if stats_mode == 'per_game' else 'totals'), 'highlighted = the better side; Against is what each defense allowed') }}
+    <div class="ui-gap-block">{{ measure_compare(opponent_quality_table.rows, game.away_team, game.home_team, stats_year ~ ' opponent quality', 'pregame Elo is at kickoff') }}</div>
 </section>
 
 <section class="section" data-mobile-tab-panel="stats">
@@ -925,6 +928,20 @@
 </section>
 
 
+{% if gap_matchups and gap_matchups.cards|selectattr('has_data')|list %}
+<section class="section" data-mobile-tab-panel="matchups" id="tab-gaps">
+    <h2>Offense versus defense</h2>
+    <div class="section-note">
+        {{ gap_matchups.season }} FBS ranks{% if gap_matchups.baseline %} (prior-season baseline until this season has a real sample){% endif %}. Each row sets one offense's rank against what the opposing defense allows; the left edge is #1 and a connector spans the gap. An edge needs at least a five-rank separation and is descriptive, not a projection. Hover or focus a row for the values.
+    </div>
+    {% for wanted, heading in ((('Efficiency',), 'Efficiency'), (('Traditional',), 'Scoring, drives and yardage')) %}
+    <h3 class="subhead">{{ heading }}</h3>
+    <div class="ui-deep-grid">
+        {% for card in gap_matchups.cards %}{% if card.has_data %}{{ rank_gap_panel(card, gap_identities[card.offense], gap_identities[card.defense], wanted) }}{% endif %}{% endfor %}
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
 <section class="section" data-mobile-tab-panel="matchups">
     <h2>Matchups to watch</h2>
     <div class="section-note">
@@ -938,8 +955,10 @@
         <span><b>{{ matchup_report.top_interest | cell('f1') }}</b> top watch score</span>
     </div>
     {% endif %}
-    {{ data_table(matchup_table) }}
-    {{ data_table(pff_units_table) }}
+    <div class="ui-deep-grid">
+        {% for panel in grade_panels %}{{ grade_matchup_panel(panel, pff_season ~ ' PFF') }}{% endfor %}
+    </div>
+    <div class="ui-gap-block">{{ unit_grades_compare(unit_grade_rows, game.away_team, game.home_team, pff_season ~ ' usage-weighted · share of snaps still on the roster') }}</div>
 </section>
 
 {{ compact_passing_matchups(passing_field_panels, passing_situational_panels) }}
@@ -959,7 +978,9 @@
         </div>
         <p>Linemen pair directly. Receiving backs test linebackers; tight ends test linebackers and safeties.</p>
     </div>
-    {{ data_table(player_matchup_table) }}
+    <div class="ui-deep-grid">
+        {% for panel in player_panels %}{{ player_matchup_panel(panel) }}{% endfor %}
+    </div>
 </section>
 
 <section class="section" data-mobile-tab-panel="players">

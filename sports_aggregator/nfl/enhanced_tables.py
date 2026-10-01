@@ -1,7 +1,7 @@
 """Display models for the route, hash-side and package analytics: banded tables and view dicts.
 
 Keeps `route_analytics` (queries) free of presentation. Each builder returns a `Table` using the shared
-banded-header contract, or a plain dict the `_nfl_ui.html` macros render (side bars, route-depth mix).
+banded-header contract, or a plain dict the `_ui_kit.html` macros render (side bars, route-depth mix).
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 {% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
 {% from '_nfl_charts.html' import chart_workbench, nfl_chart_scripts %}
 {% from '_nfl_passing.html' import pass_zone_grid %}
-{% from '_nfl_ui.html' import pctl_panel, filter_bar, table_panel, side_panel %}
+{% from '_ui_kit.html' import pctl_panel, filter_bar, table_panel, side_panel %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='nfl_neutral.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_ui.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_kit.css') }}">
 </head>
 <body class="nfl-player-page">
 {{ nfl_nav('player', season, player.position or 'Player') }}

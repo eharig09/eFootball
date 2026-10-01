@@ -14,6 +14,7 @@ import sqlite3
 import re
 from typing import Any, Iterable, Iterator
 
+from sports_aggregator.cfb import identity_links
 from sports_aggregator.cfb.identity import conference_slug as _conference_slug
 from sports_aggregator.cfb.models import Game, PollRanking, Team, normalize_alias
 from sports_aggregator.cfb.statlines import (
@@ -1346,18 +1347,25 @@ class CFBRepository:
                 """SELECT normalized_name FROM player_transfers WHERE season=?
                    GROUP BY normalized_name HAVING COUNT(*)>1""", (season,))}
             roster = {}
+            roster_position = {}
             for row in connection.execute(
-                "SELECT player_id,normalized_name,team FROM players WHERE season=?", (season,)
+                "SELECT player_id,normalized_name,team,position FROM players WHERE season=?", (season,)
             ):
                 roster.setdefault((row["normalized_name"], row["team"]), []).append(row["player_id"])
+                roster_position[row["player_id"]] = row["position"]
+            stints: dict[str, list[dict[str, Any]]] = {}
+            for row in connection.execute("SELECT player_id,season,team FROM players WHERE season<?", (season,)):
+                stints.setdefault(row["player_id"], []).append({"season": row["season"], "team": row["team"]})
             candidates = {}
+            pff_position = {}
             for row in connection.execute(
-                """SELECT pff_player_id,normalized_name,cfbd_team FROM pff_players
+                """SELECT pff_player_id,normalized_name,cfbd_team,position FROM pff_players
                    WHERE season=? AND match_status='possible_transfer'
                    AND cfbd_player_id IS NULL AND cfbd_team IS NOT NULL""", (pff_season,)
             ):
                 candidates.setdefault((row["normalized_name"], row["cfbd_team"]), []).append(
                     row["pff_player_id"])
+                pff_position[row["pff_player_id"]] = row["position"]
 
             confirmed = skipped = 0
             updates = []
@@ -1373,6 +1381,15 @@ class CFBRepository:
                 if len(pff_ids) != 1 or len(roster_ids) != 1:
                     skipped += 1
                     continue
+                # Same name, same origin and destination can still be two people: the PFF position must fit the
+                # rostered one, and a player with earlier roster stints must have been at the origin school.
+                if not identity_links.positions_compatible(pff_position.get(pff_ids[0]), roster_position.get(roster_ids[0])):
+                    skipped += 1
+                    continue
+                earlier = stints.get(roster_ids[0])
+                if earlier and not any(item["team"] == transfer["origin"] for item in earlier):
+                    skipped += 1
+                    continue
                 # Only the identity link is written. The team fields keep naming
                 # the school the performance actually happened at.
                 updates.append((roster_ids[0], pff_ids[0], pff_season))
@@ -1383,6 +1400,34 @@ class CFBRepository:
                    WHERE pff_player_id=? AND season=?""", updates)
         return {"season": season, "pff_season": pff_season,
                 "confirmed": confirmed, "ambiguous": skipped}
+
+    def revoke_invalid_portal_links(self, season: int, pff_season: int | None = None) -> dict[str, Any]:
+        """Demote `portal_confirmed` PFF links that fail the identity rules back to `possible_transfer`.
+
+        Links written before the position and roster-history checks existed are re-judged against them. Only the
+        identity is cleared; the PFF row and its grades stay, just unattached to a roster player.
+        """
+        self.initialize()
+        pff_season = pff_season or (season - 1)
+        with self.transaction() as connection:
+            roster = {row["player_id"]: row["position"] for row in connection.execute(
+                "SELECT player_id,position FROM players WHERE season=?", (season,))}
+            stints: dict[str, set[str]] = {}
+            for row in connection.execute("SELECT player_id,team FROM players WHERE season<?", (season,)):
+                stints.setdefault(row["player_id"], set()).add(row["team"])
+            revoked = []
+            for row in connection.execute(
+                """SELECT pff_player_id,position,cfbd_player_id,cfbd_team FROM pff_players
+                   WHERE season=? AND match_status='portal_confirmed'""", (pff_season,)).fetchall():
+                bad_position = not identity_links.positions_compatible(row["position"], roster.get(row["cfbd_player_id"]))
+                earlier = stints.get(row["cfbd_player_id"])
+                bad_history = bool(earlier) and row["cfbd_team"] not in earlier
+                if bad_position or bad_history:
+                    revoked.append((row["pff_player_id"], pff_season))
+            connection.executemany(
+                """UPDATE pff_players SET cfbd_player_id=NULL,match_status='possible_transfer',match_confidence=0.7
+                   WHERE pff_player_id=? AND season=?""", revoked)
+        return {"season": season, "pff_season": pff_season, "revoked": len(revoked)}
 
     def replace_recruits(self, season: int, recruits: Iterable[dict[str, Any]]) -> int:
         """Store the signing class so an incoming freshman carries his rating."""
@@ -2986,7 +3031,7 @@ class CFBRepository:
                    m.metrics_json,'REGULAR_SEASON' context,0 supplemental
                    FROM pff_players p LEFT JOIN pff_player_metrics m
                    ON m.season=p.season AND m.pff_player_id=p.pff_player_id
-                   WHERE p.cfbd_player_id=? OR (p.normalized_name=? AND p.cfbd_team=?)
+                   WHERE p.cfbd_player_id=? OR (p.normalized_name=? AND p.cfbd_team=? AND p.cfbd_player_id IS NULL)
                    ORDER BY p.season DESC,m.primary_grade DESC""",
                 (player_id, normalized, player["team"]),
             )]
@@ -2994,18 +3039,24 @@ class CFBRepository:
                 """SELECT s.*,s.game_count games,1 supplemental
                    FROM pff_supplemental_metrics s JOIN pff_players p
                    ON p.season=s.season AND p.pff_player_id=s.pff_player_id
-                   WHERE p.cfbd_player_id=? OR (p.normalized_name=? AND p.cfbd_team=?)
+                   WHERE p.cfbd_player_id=? OR (p.normalized_name=? AND p.cfbd_team=? AND p.cfbd_player_id IS NULL)
                    ORDER BY s.season DESC,s.context,s.dataset""",
                 (player_id, normalized, player["team"]),
             )]
-            player["transfers"] = [dict(item) for item in connection.execute(
-                "SELECT * FROM player_transfers WHERE normalized_name=? ORDER BY season DESC",
-                (normalized,),
-            )]
-            player["draft"] = [dict(item) for item in connection.execute(
-                """SELECT * FROM draft_picks WHERE college_athlete_id=? OR normalized_name=?
-                   ORDER BY draft_year DESC""", (player_id, normalized)
-            )]
+            # A portal entry or draft pick found by name is only his if it fits his own roster stints: two players
+            # who share a name must not share a transfer history (see identity_links).
+            player["transfers"] = [
+                item for item in (dict(row) for row in connection.execute(
+                    "SELECT * FROM player_transfers WHERE normalized_name=? ORDER BY season DESC",
+                    (normalized,),
+                )) if identity_links.transfer_belongs(item, player["stints"])
+            ]
+            player["draft"] = [
+                item for item in (dict(row) for row in connection.execute(
+                    """SELECT * FROM draft_picks WHERE college_athlete_id=? OR normalized_name=?
+                       ORDER BY draft_year DESC""", (player_id, normalized)
+                )) if identity_links.draft_pick_belongs(item, player_id, player["stints"])
+            ]
         return player
 
     def recent_movements(self, season: int, limit: int = 24) -> list[dict[str, Any]]:

@@ -1,6 +1,6 @@
-/* Shared NFL UI kit (percentile panels, chips, filter pills, schedule strip).
-   Loaded after nfl_components.css; everything is namespaced .ui-* so it cannot
-   collide with the older layered rules. */
+/* Shared UI kit for the NFL and college football pages (percentile panels, rank-gap rows, chips, filter pills,
+   schedule strip, discipline and tendency panels). Loaded after each side's own stylesheet; everything is namespaced
+   .ui-* so it cannot collide with older rules. Rules scoped under .nfl-*-page apply to the NFL pages only. */
 :root{--ui-good:#34d27b;--ui-mid:#f0b429;--ui-poor:#ef5b78;--ui-neutral:#9a9fae;--ui-track:#2a2e36;--ui-card:#1a1c20;--ui-line:#2c3038;--ui-accent:var(--team-primary,#d50a0a)}
 .ui-kicker,.ui-panel-head h3,.ui-pctl-group h4,.ui-filter-label,.ui-pctl-cols{font-size:.66rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
 .ui-kicker{margin:0 0 10px;color:var(--muted)}
@@ -456,4 +456,43 @@ a.ui-chip{text-decoration:none}
   .nfl-matchup-page .nfl-tab-buttons button:nth-child(3n){border-right:0}
   .nfl-matchup-page .nfl-tab-buttons button small{display:none}
   .nfl-matchup-page .nfl-tab-buttons button[aria-selected=true]{box-shadow:inset 0 -3px #8dc8fb}
+}
+
+/* College football matchup tables: per-team grade panels and for/against compare tables. */
+.ui-grade .ui-panel-head h3{display:flex;align-items:center;gap:8px;color:var(--ink);letter-spacing:.12em}
+.ui-grade-table th small,.ui-grade-table td small{display:block;margin:2px 0 0;font-size:.62rem}
+.ui-grade-table th small.ui-badge{display:inline-block;margin:0 0 0 8px;padding:1px 7px;border-radius:999px;background:#22252b;font-size:.58rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.ui-badge.is-edge{background:#173a2a;color:#8de6b3}.ui-badge.is-marquee{background:#3a2f12;color:#f6c85f}.ui-badge.is-even{background:#22303f;color:#a9b8c9}.ui-badge.is-muted{background:#1f232a;color:var(--muted)}
+.ui-grade-table td.num b,.ui-unit-compare b,.ui-prod-compare b,.ui-measure-compare b{font-variant-numeric:tabular-nums}
+.ui-grade-table td.is-lead b,.ui-compare td.is-lead b{color:#8de6b3}
+.ui-edge-head{text-align:center}
+.ui-edge-cell{min-width:132px;white-space:nowrap}
+.ui-edge{display:inline-block;position:relative;width:96px;height:6px;margin-right:8px;border-radius:4px;background:#23262c;vertical-align:middle}
+.ui-edge:before{content:"";position:absolute;left:50%;top:-3px;width:1px;height:12px;background:#4a4e58}
+.ui-edge i{position:absolute;top:0;height:100%;width:calc(var(--w) * .5%);border-radius:4px;background:#6b6f78}
+.ui-edge[data-side=attack] i{left:50%;background:color-mix(in srgb,var(--ui-accent,#6ea8f0) 62%,#fff)}
+.ui-edge[data-side=defend] i{right:50%;background:#e0705c}
+.ui-edge-cell em{font-style:normal;font-size:.74rem;font-variant-numeric:tabular-nums;color:var(--muted)}
+.ui-unit-compare td small,.ui-prod-compare td small,.ui-measure-compare td small{display:block;margin:1px 0 0;color:var(--muted);font-size:.62rem}
+.ui-unit-compare td.side,.ui-measure-compare td.side{text-align:right}.ui-unit-compare td.home,.ui-measure-compare td.home{text-align:left}
+.ui-prod-compare th.grp{text-align:center;border-bottom:1px solid var(--ui-line)}
+.ui-prod-compare td.mid{min-width:150px}
+.ui-prod-compare td.mid .ui-edge-note{display:block;margin-top:2px;color:var(--muted);font-size:.58rem;text-transform:none}
+.ui-prod-compare td.num{text-align:right}
+.ui-prod-compare td:nth-child(2){border-right:1px solid var(--ui-line)}
+.ui-player-matchups th small,.ui-player-matchups td small{display:block;margin:2px 0 0;font-size:.62rem;font-weight:500}
+.ui-player-matchups td a{color:var(--ink);font-weight:700;text-decoration:none}.ui-player-matchups td a:hover{color:#8dc8fb}
+@media(max-width:620px){.ui-edge{width:56px}.ui-edge-cell{min-width:96px}.ui-prod-compare td.mid{min-width:96px}.ui-player-matchups th small{display:none}}
+.ui-gap-block{margin-top:16px}
+.ui-prod-compare b.is-lead{color:#8de6b3}
+.ui-compare thead th:nth-child(2),.ui-prod-compare thead th[rowspan]{text-align:center}
+.ui-compare td.mid{text-align:center}
+@media(max-width:620px){
+  .ui-grade-table th small.ui-badge{display:none}
+  .ui-grade-table td small{font-size:.56rem}
+  .ui-grade-table thead th.num{max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ui-grade-table th,.ui-grade-table td{padding-left:5px;padding-right:5px}
+  .ui-edge-cell{min-width:0}.ui-edge{width:44px;margin-right:4px}
+  .ui-grade .ui-panel-head{flex-wrap:wrap}
+  .ui-grade .ui-panel-head h3{letter-spacing:.06em}
 }

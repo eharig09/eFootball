@@ -164,7 +164,7 @@ class MacroRenderTests(LowThresholds, Base):
         league = ra.league_hash_profile(self.repository, 2025)
         view = et.side_view(ra.hash_profile(self.repository, 2025, "passer", "QB1"), league)
         html = self.env().from_string(
-            "{% from '_nfl_ui.html' import side_panel %}{{ side_panel('Throws', v.passes, true, 'n') }}").render(v=view)
+            "{% from '_ui_kit.html' import side_panel %}{{ side_panel('Throws', v.passes, true, 'n') }}").render(v=view)
         self.assertIn("ui-ratio", html)
         self.assertIn("0.33 : 1", html)
         self.assertIn("<u style=", html)
@@ -174,7 +174,7 @@ class MacroRenderTests(LowThresholds, Base):
     def test_table_panel_renders_bands_mix_and_note_text_unescaped(self):
         tree = ra.route_tree(self.repository, 2025, "receiver", "R1")
         html = self.env().from_string(
-            "{% from '_nfl_ui.html' import table_panel %}{{ table_panel('Routes', t, '2025 · vs league', mix, 'why') }}"
+            "{% from '_ui_kit.html' import table_panel %}{{ table_panel('Routes', t, '2025 · vs league', mix, 'why') }}"
         ).render(t=et.route_table(tree, role="receiver"), mix=et.route_depth_mix(tree))
         self.assertIn("band-row", html)
         self.assertIn("ui-mix", html)

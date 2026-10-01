@@ -2,12 +2,15 @@
 {% from "_tables.html" import data_table, story_list, tabbed_tables, tabs_script %}
 {% from "_cfb_page_visuals.html" import depth_formation, pff_unit_bars_module, trend_chart, trend_scripts, visual_scripts %}
 {% from "_charts.html" import chart_workbench, chart_scripts %}
+{% from "_ui_kit.html" import pctl_panel %}
 
 {% block title %}{{ team.school }}{% if team.mascot %} {{ team.mascot }}{% endif %} | {{ season }} Team Intelligence{% endblock %}
 
 {% block head %}
     <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_team.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_production_visuals.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_kit.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_ui_kit.css') }}">
 {% endblock %}
 
 {% block body_attrs %} class="team-page" style="--team-light:{{ identity.accent }};--team-dark:{{ identity.accent_dark }};--team-fill:{{ identity.fill }};--team-on-fill:{{ identity.on_fill }};--conference-light:{{ identity.conference_color }};--conference-dark:{{ identity.conference_color_dark }}"{% endblock %}
@@ -83,6 +86,19 @@
             {{ data_table(schedule_table) }}
             {{ data_table(opponent_quality_table) }}
         </section>
+        {% if team_panels and (team_panels.offense.has_data or team_panels.defense.has_data) %}
+        <section class="section" id="tab-ranks" data-mobile-tab-panel="stats">
+            <h2>Offense &amp; defense vs FBS</h2>
+            <div class="section-note">
+                {{ team_panels.season }} regular-season play-by-play across {{ team_panels.offense.groups[0].rows[0].of if team_panels.offense.groups else 'all' }} FBS teams{% if team_panels.baseline %}; shown as the prior-season baseline until the season has a real sample{% else %} through {{ team_panels.games }} game{{ '' if team_panels.games == 1 else 's' }}{% endif %}.
+                A bar is the percentile among FBS teams (longer is better, including for stats where lower is better, like points allowed).
+            </div>
+            <div class="ui-deep-grid">
+                {{ pctl_panel('Offense · percentile vs FBS', team_panels.offense, 'offense', 'Rates are play-weighted across completed games; EPA is the in-house ep-v2 model.') }}
+                {{ pctl_panel('Defense · percentile vs FBS', team_panels.defense, 'defense', 'Defense is what opponents did against this team, on the same plays. Havoc created and takeaways are higher-is-better.') }}
+            </div>
+        </section>
+        {% endif %}
         <section class="section" id="tab-stats" data-mobile-tab-panel="stats">
             <h2>Team quality</h2>
             <div class="section-note">

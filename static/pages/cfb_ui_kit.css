@@ -1,0 +1,11 @@
+/* Maps the shared UI kit's tokens (ui_kit.css) onto the college football theme; load after ui_kit.css. */
+:root{--ui-card:var(--paper);--ui-line:var(--line);--ui-track:var(--zebra);--ui-accent:var(--team-light,var(--accent));--ui-good:var(--green);--ui-poor:var(--red);--ui-mid:var(--gold)}
+.ui-panel{background:var(--paper)}
+
+/* Phone: show every page tab at once (a 3-column grid, two rows for the six game tabs) instead of a sideways scroller
+   that hides half of them, with 48px targets and no sticky two-row bar. */
+@media(max-width:620px){
+  .matchup-page .mobile-page-tabs,.team-page .mobile-page-tabs{grid-auto-flow:row;grid-auto-columns:auto;grid-template-columns:repeat(3,minmax(0,1fr));position:static;overflow:visible;margin:12px 0 8px}
+  .matchup-page .mobile-page-tabs button,.team-page .mobile-page-tabs button{min-height:48px;padding:6px 4px;border-bottom:1px solid var(--on-strong-divider);white-space:normal;text-align:center;font-size:.72rem}
+  .matchup-page .mobile-page-tabs button:nth-child(3n),.team-page .mobile-page-tabs button:nth-child(3n){border-right:0}
+}

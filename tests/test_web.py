@@ -225,7 +225,7 @@ class WebTests(unittest.TestCase):
         self.assertIn(b"1-0", team.data)
         self.assertIn(b"ui-team-header", team.data)
         self.assertIn(b"ui-schedule", team.data)
-        self.assertIn(b"nfl_ui.css", team.data)
+        self.assertIn(b"ui_kit.css", team.data)
         self.assertIn(b"percentile vs 32 offenses", team.data)
         self.assertIn(b"Season totals", team.data)
         self.assertIn(b"band-row", team.data)

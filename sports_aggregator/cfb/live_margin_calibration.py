@@ -56,6 +56,7 @@ import math
 from collections import defaultdict
 from typing import Any
 
+from sports_aggregator.cfb import derived_cache
 from sports_aggregator.cfb import coach_elo, qb_elo
 from sports_aggregator.cfb.projection_backtest import BACKTEST_VERSION
 from sports_aggregator.cfb.xpoints import DATASET_VERSION as XPOINTS_VERSION
@@ -466,8 +467,13 @@ def predict_live(repository, *, target_season: int,
                  projection: dict[str, Any],
                  game: dict[str, Any] | None = None) -> dict[str, Any]:
     features = live_features(projection, repository=repository, game=game)
-    history = _historical_rows(repository, target_season=int(target_season))
-    models = fit_models(history)
+    # Fitted from walk-forward history only, so every game page in the same database state shares one fit
+    # instead of re-reading the history and refitting six ridge models per request.
+    models = derived_cache.derived(
+        repository, "live_margin_models",
+        lambda: fit_models(_historical_rows(repository, target_season=int(target_season))),
+        int(target_season),
+    )
 
     label, value, model = predict_with_models(models, features)
     if label is not None:

@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
+from sports_aggregator.cfb import derived_cache
 from sports_aggregator.cfb import coach_elo
 from sports_aggregator.cfb import conditional_convergence as cc
 from sports_aggregator.cfb import convergence_routing_holdout as routing
@@ -277,6 +278,18 @@ def _initialize_manifest(repository: CFBRepository) -> None:
         )
 
 
+def _line_rate_fingerprint(repository: CFBRepository) -> str:
+    """Identifies the inputs of the Line-Elo rate search: the historical narrative rows and the code that reads them."""
+    import hashlib
+    with repository._reader() as connection:
+        parts = tuple(connection.execute(
+            """SELECT COUNT(*), ROUND(SUM(COALESCE(market_expected_margin,0)),3), ROUND(SUM(COALESCE(true_elo,0)),3)
+               FROM cfb_narrative_state WHERE narrative_version=? AND season<=?""",
+            (nsv2.v1.NARRATIVE_VERSION, HISTORICAL_END_SEASON)).fetchone())
+    code = derived_cache.source_hash(nsv2, nsv2.v1)
+    return hashlib.sha1(repr((parts, code, nsv2.LINE_ELO_RATES, HISTORICAL_END_SEASON)).encode()).hexdigest()[:16]
+
+
 def _historical_context(repository: CFBRepository) -> dict[str, Any]:
     """Production-safe historical context using frozen research artifacts."""
     key = str(repository.path)
@@ -288,9 +301,17 @@ def _historical_context(repository: CFBRepository) -> dict[str, Any]:
     historical_narrative = [
         row for row in narrative_rows if int(row["season"]) <= HISTORICAL_END_SEASON
     ]
-    line_rate, _ = nsv2._choose_line_rate(
-        historical_narrative, validation_season=2024
-    )
+    # The grid search is six full chronological passes (~3 s) and a pure function of the historical rows and the
+    # model source, so it is kept on disk and only rebuilt when either changes.
+    def search_rate() -> float:
+        return float(nsv2._choose_line_rate(historical_narrative, validation_season=2024)[0])
+
+    try:
+        fingerprint = _line_rate_fingerprint(repository)
+    except Exception:       # a repository without the narrative table (or a stand-in): just compute it
+        line_rate = search_rate()
+    else:
+        line_rate = derived_cache.persisted(repository, "cfb_line_rate", fingerprint, search_rate)
     line_state, _ = nsv2._line_elo_pass(
         narrative_rows, learning_rate=float(line_rate)
     )

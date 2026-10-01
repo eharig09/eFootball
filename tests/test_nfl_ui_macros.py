@@ -8,7 +8,7 @@ from sports_aggregator.tables import format_value
 def _env():
     env = Environment(loader=FileSystemLoader("templates"), autoescape=True)
     env.filters["cell"] = format_value
-    # _nfl_ui.html imports the shared table macros, which reference these app-level filters and globals.
+    # _ui_kit.html imports the shared table macros, which reference these app-level filters and globals.
     for name in ("role", "height", "logo_pair"):
         env.filters[name] = lambda value, *args: value
     env.globals["url_for"] = lambda *args, **kwargs: "/x"
@@ -24,7 +24,7 @@ class RankGapTests(unittest.TestCase):
         card = {"offense": "NE", "defense": "SEA",
                 "sections": [{"label": "Efficiency", "source": "x", "rows": [base]}]}
         template = _env().from_string(
-            "{% from '_nfl_ui.html' import rank_gap_panel %}"
+            "{% from '_ui_kit.html' import rank_gap_panel %}"
             "{{ rank_gap_panel(card, {'color': '#123456'}, {'color': '#654321'}) }}")
         return template.render(card=card)
 
@@ -49,7 +49,7 @@ class RankGapTests(unittest.TestCase):
                  "offense_rank": 3, "offense_of": 32, "defense_rank": 1, "defense_of": 32,
                  "lean": "SEA", "separation": 2}]}]}
         tpl = _env().from_string(
-            "{% from '_nfl_ui.html' import rank_gap_panel %}"
+            "{% from '_ui_kit.html' import rank_gap_panel %}"
             "{{ rank_gap_panel(card, {}, {}, ('Efficiency',)) }}|"
             "{{ rank_gap_panel(card, {}, {}, ('Traditional',)) }}")
         empty, shown = tpl.render(card=card).split("|")

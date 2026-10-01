@@ -45,39 +45,12 @@ OFFENSE_GROUPS = (
 DEFENSE_NEUTRAL = frozenset({"pass_time_to_throw", "rush_stacked_box_pct"})
 
 
-def percentile(rank: int | None, total: int | None) -> int | None:
-    """0-100, higher is better; the best of N is 100 and the worst is 0."""
-    if not rank or not total:
-        return None
-    if total == 1:
-        return 100
-    return round(100 * (total - rank) / (total - 1))
-
-
-def tone(pctl: int | None, neutral: bool = False) -> str:
-    if neutral or pctl is None:
-        return "neutral"
-    return "good" if pctl >= 67 else ("mid" if pctl >= 34 else "poor")
-
-
-def _row(label: str, key: str, fmt: str, value: Any, rank: int | None, total: int | None,
-         neutral: bool) -> dict[str, Any]:
-    pctl = percentile(rank, total)
-    return {"label": label, "key": key, "format": fmt, "value": value, "rank": rank,
-            "of": total, "pctl": pctl, "tone": tone(pctl, neutral)}
+from sports_aggregator.ranked_panels import panel_row as _row, percentile, rows_for_team, tone  # noqa: F401  (re-exported)
 
 
 def _rows(pool: list[dict[str, Any]], team: str,
           definitions: Iterable[tuple[str, str, str, bool, bool]]) -> list[dict[str, Any]]:
-    current = next((row for row in pool if row.get("team") == team), {})
-    output = []
-    for label, key, fmt, lower, neutral in definitions:
-        value = current.get(key)
-        if value is None:
-            continue
-        ranked = rank_within(pool, id_key="team", value_key=key, lower_is_better=lower).get(team, {})
-        output.append(_row(label, key, fmt, value, ranked.get("rank"), ranked.get("of"), neutral))
-    return output
+    return rows_for_team(pool, team, "team", definitions)
 
 
 def offense_panel(repository: NFLRepository, pff: NFLPFFService, season: int, team: str,
