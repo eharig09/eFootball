@@ -151,6 +151,12 @@ CREATE TABLE IF NOT EXISTS injury_reports (
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_injuries_team ON injury_reports(season,team,designation);
 CREATE INDEX IF NOT EXISTS idx_nfl_injuries_player ON injury_reports(season,gsis_id);
+CREATE TABLE IF NOT EXISTS nfl_injury_history (
+ season INTEGER NOT NULL,week INTEGER NOT NULL,team TEXT NOT NULL,gsis_id TEXT NOT NULL,
+ player_name TEXT NOT NULL,normalized_name TEXT NOT NULL,position TEXT,
+ report_status TEXT,practice_status TEXT,PRIMARY KEY(season,week,team,gsis_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_injury_history_team ON nfl_injury_history(season,team,week);
 CREATE TABLE IF NOT EXISTS player_master (
  gsis_id TEXT PRIMARY KEY, display_name TEXT NOT NULL, normalized_name TEXT NOT NULL,
  first_name TEXT, last_name TEXT, birth_date TEXT, position_group TEXT, position TEXT,
@@ -1126,6 +1132,36 @@ class NFLRepository:
             connection.executemany(
                 "INSERT OR REPLACE INTO injury_reports VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 values,
+            )
+            connection.commit()
+        return len(values)
+
+    def replace_injury_history(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
+        """Store nflverse weekly injury reports (regular season) for one season.
+
+        Kept apart from injury_reports, which holds the live ESPN snapshot and
+        is replaced wholesale per season.
+        """
+        self.initialize()
+        values = {}
+        for row in rows:
+            gsis = str(row.get("gsis_id") or "").strip()
+            team = canon_team(row.get("team"))
+            name = str(row.get("full_name") or "").strip()
+            if not gsis or not team or not name or str(row.get("game_type") or "REG") != "REG":
+                continue
+            week = int(row.get("week") or 0)
+            values[(season, week, team, gsis)] = (
+                season, week, team, gsis, name, normalize_name(name),
+                optional_text(row.get("position")), optional_text(row.get("report_status")),
+                optional_text(row.get("practice_status")),
+            )
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM nfl_injury_history WHERE season=?", (season,))
+            connection.executemany(
+                "INSERT OR REPLACE INTO nfl_injury_history VALUES (?,?,?,?,?,?,?,?,?)",
+                list(values.values()),
             )
             connection.commit()
         return len(values)
