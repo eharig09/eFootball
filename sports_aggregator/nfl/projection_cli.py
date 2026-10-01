@@ -21,6 +21,8 @@ from sports_aggregator.nfl.margin_strength_ablation import report as margin_stre
 from sports_aggregator.nfl.availability_ablation import report as availability_report
 from sports_aggregator.nfl.context_ablation import report as context_report
 from sports_aggregator.nfl.distribution_calibration import report as distribution_report
+from sports_aggregator.nfl.market_gap import report as market_gap_report
+from sports_aggregator.nfl.travel_ablation import report as travel_report
 from sports_aggregator.nfl.nonlinear_ablation import report as nonlinear_report
 from sports_aggregator.nfl.weather_total_ablation import report as weather_total_report
 from sports_aggregator.nfl.qb_player_ablation import report as qb_player_report
@@ -92,6 +94,14 @@ def main(argv: list[str] | None = None) -> int:
     weather_total = sub.add_parser("weather-total")
     weather_total.add_argument("--from-year", type=int, default=2013)
     weather_total.add_argument("--to-year", type=int, default=2025)
+
+    travel = sub.add_parser("travel")
+    travel.add_argument("--from-year", type=int, default=2013)
+    travel.add_argument("--to-year", type=int, default=2025)
+
+    market_gap = sub.add_parser("market-gap")
+    market_gap.add_argument("--from-year", type=int, default=2013)
+    market_gap.add_argument("--to-year", type=int, default=2025)
 
     nonlinear = sub.add_parser("nonlinear")
     nonlinear.add_argument("--from-year", type=int, default=2013)
@@ -267,6 +277,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "weather-total":
         payload = weather_total_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "travel":
+        payload = travel_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "market-gap":
+        payload = market_gap_report(
             repository,
             start_season=int(args.from_year),
             end_season=int(args.to_year),
