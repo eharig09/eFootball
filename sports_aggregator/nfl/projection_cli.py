@@ -20,6 +20,7 @@ from sports_aggregator.nfl.score_calibration import report as score_calibration_
 from sports_aggregator.nfl.margin_strength_ablation import report as margin_strength_report
 from sports_aggregator.nfl.availability_ablation import report as availability_report
 from sports_aggregator.nfl.context_ablation import report as context_report
+from sports_aggregator.nfl.distribution_calibration import report as distribution_report
 from sports_aggregator.nfl.qb_player_ablation import report as qb_player_report
 from sports_aggregator.nfl.uncertainty_calibration import report as uncertainty_report
 from sports_aggregator.nfl.market_disagreement import report as market_disagreement_report
@@ -78,6 +79,10 @@ def main(argv: list[str] | None = None) -> int:
     backfill.add_argument("--snaps-to-year", type=int, default=2024,
                           help="snap counts are only backfilled through this season (2025+ is live-synced)")
     backfill.add_argument("--force", action="store_true")
+
+    distribution = sub.add_parser("distribution")
+    distribution.add_argument("--from-year", type=int, default=2013)
+    distribution.add_argument("--to-year", type=int, default=2025)
 
     context = sub.add_parser("context")
     context.add_argument("--from-year", type=int, default=2010)
@@ -226,6 +231,15 @@ def main(argv: list[str] | None = None) -> int:
         from sports_aggregator.nfl.refresh_cli import _nflverse_client
         payload = backfill(repository, _nflverse_client(), args.from_year, args.to_year,
                            snaps_end_season=args.snaps_to_year, force=args.force)
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "distribution":
+        payload = distribution_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 

@@ -346,6 +346,8 @@ def report(repository: NFLRepository, *, season: int, week: int):
                 "home_points": fl_home,
                 "away_points": fl_away,
                 "margin_core": core_margin,
+                "margin_sigma": qb_margin["margin_sigma"] if qb_margin else None,
+                "home_win_probability": qb_margin["home_win_probability"] if qb_margin else None,
                 "margin_model": qb_margin["model"] if qb_margin else "core",
                 "quarterbacks": qb_margin["quarterbacks"] if qb_margin else None,
             },

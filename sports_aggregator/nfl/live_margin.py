@@ -15,6 +15,9 @@ from collections import defaultdict
 from contextlib import closing
 from typing import Any
 
+import numpy as np
+
+from sports_aggregator.nfl.distribution_calibration import MAX_SIGMA, MIN_SIGMA, _pmf, _tail
 from sports_aggregator.nfl.drive_projection import STATE_SEASON_DECAY
 from sports_aggregator.nfl.margin_strength_ablation import _fit, _predict
 from sports_aggregator.nfl.naming import canon_team
@@ -26,12 +29,27 @@ MODEL_LABEL = "qb-aware-margin-v1"
 UNAVAILABLE = frozenset({"O", "OUT", "IR", "PUP", "SUSP", "D", "DOUBTFUL"})
 
 
+def residual_sigma(sample: list[dict[str, Any]]) -> float | None:
+    """Std of walk-forward (out-of-fold) margin residuals, clipped to a sane range."""
+    residuals = []
+    for season in sorted({int(r["season"]) for r in sample}):
+        train = [r for r in sample if int(r["season"]) < season]
+        model = _fit(train, SHRUNK_CHANGE)
+        if model is None:
+            continue
+        residuals.extend(float(r["actual_margin"]) - _predict(model, r)
+                         for r in sample if int(r["season"]) == season)
+    if len(residuals) < 200:
+        return None
+    return float(min(MAX_SIGMA, max(MIN_SIGMA, np.std(residuals))))
+
+
 def fit(repository: NFLRepository, season: int):
-    """Ridge margin model on rows from seasons before `season`, or None if too thin."""
+    """(ridge margin model, residual sigma) from seasons before `season`; (None, None) if thin."""
     rows = build_rows(repository, 2010, max(2010, int(season) - 1))
     sample = [r for r in rows if r.get("actual_margin") is not None
               and all(r.get(k) is not None for k in SHRUNK_CHANGE)]
-    return _fit(sample, SHRUNK_CHANGE)
+    return _fit(sample, SHRUNK_CHANGE), residual_sigma(sample)
 
 
 def _recent_margins(repository: NFLRepository, season: int, week: int) -> dict[str, float]:
@@ -63,7 +81,7 @@ class LiveMargin:
 
     def __init__(self, repository: NFLRepository, season: int, week: int) -> None:
         self.repository, self.season, self.week = repository, int(season), int(week)
-        self.model = fit(repository, season)
+        self.model, self.sigma = fit(repository, season)
         self.recent = _recent_margins(repository, season, week)
         self.tracker = QBTracker()
         by_week: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
@@ -101,6 +119,17 @@ class LiveMargin:
         last = self.tracker.last_qb.get(team)
         return {"qb_id": last, "name": None, "source": "last_game"} if last else None
 
+    def home_win_probability(self, margin: float) -> float | None:
+        """Gaussian on integer margins with the out-of-fold residual sigma.
+
+        distribution_calibration found this beat conditional-sigma, empirical and
+        key-number variants out of sample (log loss 0.626 vs 0.609 for the market line).
+        """
+        if self.sigma is None:
+            return None
+        p = _tail(_pmf(float(margin), self.sigma), 0.0)
+        return None if p is None else round(p, 4)
+
     def margin(self, game: dict[str, Any], game_row: dict[str, Any]) -> dict[str, Any] | None:
         """Prediction plus the inputs that drove it, or None if a feature is unavailable."""
         if self.model is None:
@@ -123,8 +152,11 @@ class LiveMargin:
             "sq_drop_diff": af["drop"] - hf["drop"],
             "sq_exp_diff": hf["exp"] - af["exp"],
         }
+        margin = _predict(self.model, row)
         return {
-            "margin": _predict(self.model, row),
+            "margin": margin,
+            "margin_sigma": self.sigma,
+            "home_win_probability": self.home_win_probability(margin),
             "model": MODEL_LABEL,
             "quarterbacks": {
                 "home": {**hs, "changed": bool(hf["changed"])},

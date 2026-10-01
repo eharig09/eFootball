@@ -47,3 +47,14 @@ def test_change_flag_follows_expected_starter():
     ctx = _ctx([], [], {"GNB": "old"})
     assert ctx.tracker.features("GNB", "old", 2026)["changed"] == 0.0
     assert ctx.tracker.features("GNB", "new", 2026)["changed"] == 1.0
+
+
+def test_home_win_probability_is_gaussian_on_integer_margins():
+    ctx = _ctx([], [])
+    ctx.sigma = 13.0
+    assert ctx.home_win_probability(0.0) == 0.5          # symmetric, tie mass removed
+    assert ctx.home_win_probability(3.0) > ctx.home_win_probability(1.0) > 0.5
+    assert 0.68 < ctx.home_win_probability(7.0) < 0.74   # ~Phi(7/13)
+    assert ctx.home_win_probability(-7.0) == round(1 - ctx.home_win_probability(7.0), 4)
+    ctx.sigma = None
+    assert ctx.home_win_probability(3.0) is None
