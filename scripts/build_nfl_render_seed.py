@@ -64,7 +64,22 @@ FILTERS = {
 }
 
 
-def build(source: Path, output: Path) -> None:
+#: The Football Lab model trains on 2010-onward game-level tables, but the main seed
+#: keeps per-game tables to recent seasons, which left production unable to fit
+#: anything ("insufficient_history" for every game). These three are small, so they
+#: ship in their own archive that existing disks can also top up from
+#: (production_seed.restore_football_lab_history). games and the Elo tables already
+#: ship in full from 2010 in the main seed.
+FOOTBALL_LAB_FILTERS = {
+    "game_team_efficiency": "season >= 2010",
+    "game_team_situational": "season >= 2010",
+    "qb_pass_profiles": "season >= 2010",
+}
+FOOTBALL_LAB_ARCHIVE = Path("data/nfl/football_lab_history.sqlite3.gz")
+
+
+def build(source: Path, output: Path, filters: dict[str, str] | None = None) -> None:
+    filters = FILTERS if filters is None else filters
     raw = output.with_suffix("") if output.suffix == ".gz" else output
     raw.unlink(missing_ok=True)
     NFLRepository(raw).initialize()
@@ -73,7 +88,7 @@ def build(source: Path, output: Path) -> None:
         connection.execute("PRAGMA foreign_keys=OFF")
         connection.execute("PRAGMA synchronous=OFF")
         connection.execute("ATTACH DATABASE ? AS source", (str(source.resolve()),))
-        for table, where in FILTERS.items():
+        for table, where in filters.items():
             # Column order can drift between databases whose "games"-style
             # tables picked up columns via different ALTER TABLE histories.
             # Matching by name (not position) keeps a stray reorder from
@@ -102,10 +117,16 @@ def build(source: Path, output: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, default=Path("instance/nfl.sqlite3"))
-    parser.add_argument("--output", type=Path,
-                        default=Path("data/nfl/render_seed.sqlite3.gz"))
+    parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument("--football-lab", action="store_true",
+                        help="build only the small 2010+ Football Lab history archive")
     args = parser.parse_args()
-    build(args.source, args.output)
+    if args.football_lab:
+        args.output = args.output or FOOTBALL_LAB_ARCHIVE
+        build(args.source, args.output, FOOTBALL_LAB_FILTERS)
+    else:
+        args.output = args.output or Path("data/nfl/render_seed.sqlite3.gz")
+        build(args.source, args.output)
     print(f"wrote {args.output} ({args.output.stat().st_size:,} bytes)")
 
 

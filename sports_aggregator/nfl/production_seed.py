@@ -8,6 +8,7 @@ its own subprocess so pandas/Arrow memory is returned before the next phase.
 
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import argparse
 import gzip
@@ -31,6 +32,11 @@ STATE_NAME = "nfl_production_seed.json"
 LOG_NAME = "nfl_production_seed.log"
 DEFAULT_RETRY_SECONDS = 6 * 3600
 DEFAULT_SEED_ARCHIVE = Path(__file__).resolve().parents[2] / "data" / "nfl" / "render_seed.sqlite3.gz"
+#: 2010+ efficiency/situational/QB-profile rows the Football Lab model trains on.
+FOOTBALL_LAB_ARCHIVE = Path(__file__).resolve().parents[2] / "data" / "nfl" / "football_lab_history.sqlite3.gz"
+HISTORY_STATE_NAME = "nfl_football_lab_history.json"
+#: Prior seasons of game_team_efficiency below which the model cannot be trained.
+FOOTBALL_LAB_MIN_SEASONS = 10
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -59,6 +65,65 @@ def needs_seed(repository: NFLRepository, season: int) -> bool:
     return counts["teams"] < 32 or counts["games"] == 0 or counts["players"] == 0
 
 
+def needs_history(repository: NFLRepository, season: int,
+                  archive: Path = FOOTBALL_LAB_ARCHIVE) -> bool:
+    """True when Football Lab's training history is missing but an archive can supply it.
+
+    The main seed only runs on an empty disk, so a disk seeded before this archive
+    existed would otherwise return "insufficient_history" forever.
+    """
+    if not archive.is_file():
+        return False
+    repository.initialize()
+    with closing(repository._connect()) as connection:
+        seasons = connection.execute(
+            "SELECT COUNT(DISTINCT season) FROM game_team_efficiency WHERE season < ?",
+            (int(season),),
+        ).fetchone()[0]
+    return int(seasons) < FOOTBALL_LAB_MIN_SEASONS
+
+
+def restore_football_lab_history(database: Path, archive: Path = FOOTBALL_LAB_ARCHIVE) -> dict[str, int]:
+    """Merge the Football Lab history tables; INSERT OR IGNORE, so newer rows win."""
+    return restore_public_seed(database, archive)
+
+
+def _launch_history_topup(database: Path, season: int, retry_seconds: int) -> bool:
+    """Detached, lightweight history restore for a disk that is already seeded."""
+    state_path = database.parent / HISTORY_STATE_NAME
+    last = _parse_stamp(_read_json(state_path).get("started_at"))
+    if last and datetime.now(timezone.utc) - last < timedelta(seconds=max(60, retry_seconds)):
+        return False
+    state_path.write_text(json.dumps({"status": "launching", "season": season,
+                                      "started_at": _stamp()}), encoding="utf-8")
+    environment = os.environ.copy()
+    environment["NFL_AUTO_SEED_CHILD"] = "1"
+    root = Path(__file__).resolve().parents[2]
+    with (database.parent / LOG_NAME).open("a", encoding="utf-8") as log:
+        subprocess.Popen(
+            [sys.executable, "-m", "sports_aggregator.nfl.production_seed",
+             "--season", str(season), "--history-only"],
+            cwd=str(root), env=environment, stdout=log, stderr=subprocess.STDOUT, close_fds=True,
+        )
+    return True
+
+
+def run_history_topup(season: int) -> dict[str, Any]:
+    database = Path(os.getenv("NFL_DATABASE_PATH", "instance/nfl.sqlite3"))
+    if not database.is_absolute():
+        database = Path(__file__).resolve().parents[2] / database
+    state_path = database.parent / HISTORY_STATE_NAME
+    state: dict[str, Any] = {"status": "running", "season": season, "started_at": _stamp()}
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    try:
+        state.update(restore_football_lab_history(database), status="success")
+    except Exception as exc:
+        state.update(status="failed", error=f"{type(exc).__name__}: {exc}")
+    state["finished_at"] = _stamp()
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    return state
+
+
 def maybe_launch(*, database_path: str | os.PathLike[str], season: int | None = None,
                  retry_seconds: int = DEFAULT_RETRY_SECONDS) -> bool:
     """Atomically launch a detached seed helper when a production DB is empty."""
@@ -68,6 +133,9 @@ def maybe_launch(*, database_path: str | os.PathLike[str], season: int | None = 
     database = Path(database_path)
     repository = NFLRepository(database)
     if not needs_seed(repository, season):
+        # Already seeded: only top up the Football Lab training history if it is absent.
+        if needs_history(repository, season):
+            return _launch_history_topup(database, season, retry_seconds)
         return False
 
     state_path = database.parent / STATE_NAME
@@ -227,6 +295,13 @@ def run(season: int) -> dict[str, Any]:
         state["stages"].append({"stage": "public_snapshot", "started_at": state["started_at"],
                                 "finished_at": _stamp(), "status": "success", **restored})
         try:
+            history = restore_football_lab_history(database)
+            state["stages"].append({"stage": "football_lab_history", "finished_at": _stamp(),
+                                    "status": "success", **history})
+        except Exception as exc:
+            state["stages"].append({"stage": "football_lab_history", "finished_at": _stamp(),
+                                    "status": "failed", "error": f"{type(exc).__name__}: {exc}"})
+        try:
             imported = _import_source_directory()
             state["stages"].append({"stage": "source_directory", "finished_at": _stamp(),
                                     "status": "success", "sources": imported})
@@ -295,12 +370,14 @@ def run(season: int) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Populate an empty production NFL database")
     parser.add_argument("--season", type=int, default=current_season())
+    parser.add_argument("--history-only", action="store_true",
+                        help="Only top up Football Lab's 2010+ training history on a seeded disk.")
     parser.add_argument("--delay", type=int, default=0,
                         help="Let the web process bind before loading data libraries.")
     args = parser.parse_args(argv)
     if args.delay:
         time.sleep(max(0, min(args.delay, 120)))
-    report = run(args.season)
+    report = run_history_topup(args.season) if args.history_only else run(args.season)
     print(json.dumps(report, sort_keys=True), flush=True)
     return 0 if report["status"] in {"success", "degraded"} else 1
 
