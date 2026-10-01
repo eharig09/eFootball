@@ -89,8 +89,11 @@ class NFLNamingTests(unittest.TestCase):
         # Offense EPA/att (+.3) and defense EPA/att allowed (-.2, stingy) share the
         # same offense-relative sign convention, so a stingy defense should shrink
         # the offense's edge, not add to it: .3 + (-.2) = .1, not .3 - (-.2) = .5.
-        self.assertAlmostEqual(cell["edge"], .1)
-        self.assertEqual(cell["lean"], "offense")
+        self.assertAlmostEqual(cell["edge_raw"], .1)
+        # The headline edge is volume-adjusted: each side is shrunk toward zero by its attempts (n / (n + 12)), so a
+        # thin 4-attempt offense counts for less than a 9-attempt defense and the small raw edge is not called.
+        self.assertAlmostEqual(cell["edge"], .3 * 4 / 16 + (-.2) * 9 / 21)
+        self.assertEqual(cell["lean"], "even")
         self.assertAlmostEqual(cell["interaction_share"], (0.4 * 0.25) ** .5)
 
     def test_pass_matchup_favors_offense_against_a_leaky_defense(self):
@@ -106,7 +109,8 @@ class NFLNamingTests(unittest.TestCase):
         # A below-average offense (-.3) facing a defense that has allowed a lot of
         # value in this zone (+.8, leaky) should still lean offense overall, since
         # both terms describe the same offense-relative outcome: -.3 + .8 = .5.
-        self.assertAlmostEqual(cell["edge"], .5)
+        self.assertAlmostEqual(cell["edge_raw"], .5)
+        self.assertAlmostEqual(cell["edge"], -.3 * 4 / 16 + .8 * 9 / 21)
         self.assertEqual(cell["lean"], "offense")
 
     def test_team_charts_include_defense_allowed_metrics(self):
@@ -754,8 +758,17 @@ class NFLPassingProfileTests(unittest.TestCase):
         ])
         self.assertEqual(rows[0], {
             "position": "WR", "players": 2, "targets": 9, "receptions": 6,
-            "yards": 79, "touchdowns": 1, "detail": "6/9 · 79 yd · 1 TD",
+            "yards": 79, "touchdowns": 1, "total_epa": 0.0, "epa_targets": 0, "epa_per_target": None,
+            "detail": "6/9 · 79 yd · 1 TD",
         })
+
+    def test_position_lines_carry_epa_per_target_when_players_have_it(self):
+        rows = receiver_position_breakdown([
+            {"position": "WR", "targets": 6, "receptions": 4, "receiving_yards": 58, "touchdowns": 1, "total_epa": 3.0},
+            {"position": "WR", "targets": 4, "receptions": 2, "receiving_yards": 21, "touchdowns": 0, "total_epa": -1.0},
+        ])
+        self.assertAlmostEqual(rows[0]["epa_per_target"], 0.2)
+        self.assertTrue(rows[0]["detail"].endswith("+0.20 EPA/tgt"))
 
     def test_targeted_passes_are_queryable_by_quarterback_and_defense(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -980,7 +993,8 @@ class RunDirectionPacketTests(unittest.TestCase):
         # Same offense-relative sign convention as the pass matchup: a good
         # offense (+.3) against a defense that's leaky there (+.5 allowed)
         # combines to a strong offense edge, not a canceled-out one.
-        self.assertAlmostEqual(cell["edge"], .8)
+        self.assertAlmostEqual(cell["edge_raw"], .8)
+        self.assertAlmostEqual(cell["edge"], .3 * 5 / 17 + .5 * 9 / 21)        # volume-adjusted
         self.assertEqual(cell["lean"], "offense")
 
     def test_run_direction_packet_covers_all_seven_cells_even_when_sparse(self):

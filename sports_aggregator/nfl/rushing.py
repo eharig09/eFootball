@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sports_aggregator.charting_edges import interaction_share, overall_edge, zone_edge
+
 from sports_aggregator.nfl.repository import NFLRepository
 
 DIRECTIONS = tuple(NFLRepository.RUN_DIRECTIONS)
@@ -108,7 +110,9 @@ def run_matchup_packet(offense: dict[str, Any] | None,
                           attack_epa is not None and defense_epa is not None)
         # Same offense-relative EPA sign convention as the pass matchup grid --
         # both terms favor the offense when positive, so they add, not subtract.
-        edge = attack_epa + defense_epa if comparable else None
+        adjusted = zone_edge(attack_epa, attack_attempts, defense_epa, defense_attempts, combine="sum")
+        edge = adjusted["edge"]       # volume-adjusted, as in the pass grid
+        interaction = interaction_share(attack_attempts, offense_total, defense_attempts, defense_total)
         magnitude = abs(edge) if edge is not None else 0
         strength = (1 if magnitude < .10 else (2 if magnitude < .30 else
                     (3 if magnitude < .60 else 4))) if comparable else 0
@@ -119,7 +123,8 @@ def run_matchup_packet(offense: dict[str, Any] | None,
             "short_label": DIRECTION_SHORT_LABELS[direction],
             "offense_attempts": attack_attempts, "defense_attempts": defense_attempts,
             "offense_epa": attack_epa, "defense_epa": defense_epa,
-            "edge": edge, "lean": lean, "strength": strength,
+            "edge": edge, "lean": lean, "strength": strength, "edge_raw": adjusted["raw"],
+            "reliability": adjusted["reliability"], "interaction_share": interaction,
             "contributors": attack.get("contributors", []),
             "defenders": resist.get("defenders", []),
             # Season-wide, every-opponent rushers this defense has allowed
@@ -131,4 +136,5 @@ def run_matchup_packet(offense: dict[str, Any] | None,
         })
     return {"cells": cells,
             "has_data": bool(offense.get("has_data") and defense.get("has_data")),
-            "offense_total": offense_total, "defense_total": defense_total}
+            "offense_total": offense_total, "defense_total": defense_total,
+            "overall": overall_edge((cell["edge"], cell["interaction_share"]) for cell in cells)}

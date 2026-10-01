@@ -24,9 +24,11 @@
 </article>
 {% endmacro %}
 
+{% from '_ui_kit.html' import overall_edge_chip %}
 {% macro pass_matchup_grid(comparison) %}
 <article class="pass-matchup-card" style="--offense-color:{{ comparison.offense_identity.color or '#3d8eb9' }};--defense-color:{{ comparison.defense_identity.color or '#a95757' }}">
     <header><div><small>{{ comparison.offense }} offense</small><h3>{{ comparison.quarterback.player_name if comparison.quarterback else 'Quarterback sample unavailable' }}</h3></div><span>vs</span><div><small>{{ comparison.defense }} defense</small><h3>Results allowed</h3></div></header>
+    {{ overall_edge_chip(comparison.matchup.overall, comparison.offense, comparison.defense) }}
     <div class="pass-matchup-table" role="table" aria-label="{{ comparison.offense }} passing offense against {{ comparison.defense }} defense by field zone">
     <div class="pass-zone-head" role="row"><span role="columnheader">Depth</span><b role="columnheader">Left</b><b role="columnheader">Middle</b><b role="columnheader">Right</b></div>
     {% for row in comparison.matchup.rows %}<div class="pass-zone-row" role="row"><strong role="rowheader">{{ row.label }}</strong>{% for zone in row.cells %}

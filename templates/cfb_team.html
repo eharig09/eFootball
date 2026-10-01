@@ -2,7 +2,7 @@
 {% from "_tables.html" import data_table, story_list, tabbed_tables, tabs_script %}
 {% from "_cfb_page_visuals.html" import depth_formation, pff_unit_bars_module, trend_chart, trend_scripts, visual_scripts %}
 {% from "_charts.html" import chart_workbench, chart_scripts %}
-{% from "_ui_kit.html" import pctl_panel %}
+{% from "_ui_kit.html" import pctl_panel, summary_panel, signal_panel %}
 
 {% block title %}{{ team.school }}{% if team.mascot %} {{ team.mascot }}{% endif %} | {{ season }} Team Intelligence{% endblock %}
 
@@ -84,7 +84,7 @@
                 {% endfor %}
             </nav>
             {{ data_table(schedule_table) }}
-            {{ data_table(opponent_quality_table) }}
+            <div class="ui-gap-block">{{ signal_panel(opponent_quality_table.rows, opponent_quality_table.caption, opponent_quality_table.note, 'metric', 'value', '', opponent_quality_table.empty) }}</div>
         </section>
         {% if team_panels and (team_panels.offense.has_data or team_panels.defense.has_data) %}
         <section class="section" id="tab-ranks" data-mobile-tab-panel="stats">
@@ -106,7 +106,7 @@
                 Preseason signals; live {{ season }} efficiency replaces them once games are played.
                 {% else %}Live {{ season }} CFBD metrics.{% endif %}
             </div>
-            {% if quality.state == 'PRESEASON' %}{{ data_table(quality_table) }}{% endif %}
+            {% if quality.state == 'PRESEASON' %}{{ signal_panel(quality_table.rows, 'Preseason context', 'signals, not a projection', 'label', 'value', 'source', quality_table.empty) }}{% endif %}
             <nav class="metric-switch" aria-label="Team statistics controls">
                 <span class="metric-switch-label">Season</span>
                 {% for year in stats_year_options %}
@@ -119,7 +119,7 @@
                    href="{{ url_for('cfb.team_preview', team_id=team.team_id, schedule_year=schedule_year, stats_year=stats_year, stats_mode=mode) }}#tab-stats">{{ label }}</a>
                 {% endfor %}
             </nav>
-            {{ data_table(team_stats_table) }}
+            <div class="ui-gap-block">{{ summary_panel(team_stats_table.rows, team_stats_table.caption, team_stats_table.note, team.school, 'Opponents', team_stats_table.empty) }}</div>
             {% if team_trend %}
             <h3 class="subhead">Team trajectory</h3>
             <div class="section-note">Weekly offense and defense, including pass/rush efficiency, attempts, targets, completions, yards, and scoring, {{ stats_year }} season.</div>

@@ -7,12 +7,14 @@
 </div>{% endif %}
 {% endmacro %}
 
+{% from "_ui_kit.html" import overall_edge_chip %}
 {% macro compact_passing_matchups(panels, situational_panels) %}
 {% if panels and panels | sum(attribute='attempts') %}<section class="section cfb-compact-matchups" data-mobile-tab-panel="matchups">
-  <div class="section-head-row"><div><h2>Passing field matchup</h2><div class="section-note">EPA/attempt edge by field zone. Positive favors the offense; negative favors the defense. O/D is the offense and defense attempt sample.</div></div></div>
+  <div class="section-head-row"><div><h2>Passing field matchup</h2><div class="section-note">EPA/attempt edge by field zone, volume-adjusted (thin samples are pulled toward average). Positive favors the offense; negative favors the defense. O and D are each side's raw EPA/attempt; the counts are offense/defense attempts.</div></div></div>
   <div class="cfb-compact-stack">{% for panel in panels %}{% set situation=(situational_panels | selectattr('attacker', 'equalto', panel.attacker) | first) %}
     <article class="cfb-compact-card">
       <header><div><small>{{ panel.attacker }} offense</small><h3>{{ panel.attempts }} charted attempts</h3></div><span>vs</span><div><small>{{ panel.defender }} defense</small><h3>{{ panel.allowed_attempts }} allowed</h3></div></header>
+      {{ overall_edge_chip(panel.overall, panel.attacker, panel.defender) }}
       <div class="cfb-compact-field" role="table" aria-label="{{ panel.attacker }} passing offense against {{ panel.defender }} defense by field zone">
         <div class="cfb-compact-field-head" role="row"><span role="columnheader">Depth</span><b role="columnheader">Left</b><b role="columnheader">Middle</b><b role="columnheader">Right</b></div>
         {% for depth, label in [('deep','Deep 20+'),('intermediate','Intermediate 10–19'),('short','Short 0–9'),('behind_line','Behind LOS')] %}<div class="cfb-compact-field-row" role="row"><strong role="rowheader">{{ label }}</strong>
@@ -35,10 +37,11 @@
 
 {% macro compact_rushing_matchups(panels, situational_panels) %}
 {% if panels and panels | sum(attribute='attempts') %}<section class="section cfb-compact-matchups" data-mobile-tab-panel="matchups">
-  <div class="section-head-row"><div><h2>Run direction matchup</h2><div class="section-note">EPA/attempt edge by left, middle, and right. Positive favors the offense; negative favors the defense. O/D is the offense and defense attempt sample.</div></div></div>
+  <div class="section-head-row"><div><h2>Run direction matchup</h2><div class="section-note">EPA/attempt edge by left, middle, and right, volume-adjusted (thin samples are pulled toward average). Positive favors the offense; negative favors the defense. O and D are each side's raw EPA/attempt; the counts are offense/defense attempts.</div></div></div>
   <div class="cfb-compact-stack">{% for panel in panels %}{% set situation=(situational_panels | selectattr('attacker', 'equalto', panel.attacker) | first) %}
     <article class="cfb-compact-card">
       <header><div><small>{{ panel.attacker }} offense</small><h3>{{ panel.attempts }} charted attempts</h3></div><span>vs</span><div><small>{{ panel.defender }} defense</small><h3>{{ panel.allowed_attempts }} allowed</h3></div></header>
+      {{ overall_edge_chip(panel.overall, panel.attacker, panel.defender) }}
       <div class="cfb-run-direction-grid" role="list" aria-label="{{ panel.attacker }} rushing offense against {{ panel.defender }} defense by direction">{% for zone in panel.zones %}<div class="cfb-edge-cell {{ 'positive' if zone.edge is not none and zone.edge > 0.05 else 'negative' if zone.edge is not none and zone.edge < -0.05 else 'neutral' }}" role="listitem"{% if zone.offense.rushers or zone.defense.allowed_by_position %} tabindex="0"{% endif %}>
         <span class="cfb-direction-label">{{ zone.direction | title }}</span><div class="cfb-edge-value"><b>{{ zone.edge | cell('signed2') if zone.edge is not none else '—' }}</b><span>{{ 'Offense' if zone.edge is not none and zone.edge > 0.05 else 'Defense' if zone.edge is not none and zone.edge < -0.05 else 'Even' }}</span></div>
         <small><b>O {{ zone.offense.epa_per_attempt | cell('signed2') }}</b><b>D {{ zone.defense.epa_per_attempt | cell('signed2') }}</b></small><em>{{ zone.offense.attempts }}/{{ zone.defense.attempts }} att</em>

@@ -1191,6 +1191,8 @@ def game_preview(game_id: int):
         game=game,
         metrics_table=views.matchup_metrics_table(
             game, repository.advanced_metric_ranks(season)),
+        advanced_rows=game_panels.advanced_metric_rows(
+            game, repository.advanced_metric_ranks(season), views.ADVANCED_METRICS),
         totals_table=views.matchup_summary_table(
             game, away_stats, home_stats, stats_year, stats_mode),
         opponent_quality_table=views.opponent_quality_table(

@@ -23,6 +23,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from sports_aggregator.charting_edges import interaction_share, overall_edge, zone_edge
 from sports_aggregator.cfb.repository import CFBRepository, schema_once
 
 
@@ -516,6 +517,11 @@ def passer_career_field(repository: CFBRepository, player_id: str, *,
             "seasons": sorted(seasons)}
 
 
+def _volume(zone: dict[str, Any]) -> int:
+    """Plays an EPA/attempt actually rests on (attempts without an EPA do not count)."""
+    return int(zone.get("epa_plays") or 0)
+
+
 def matchup_field(repository: CFBRepository, game: dict[str, Any], *,
                   model_version: str = MODEL_VERSION) -> list[dict[str, Any]]:
     """Both passing offenses against the defense each will face."""
@@ -537,12 +543,18 @@ def matchup_field(repository: CFBRepository, game: dict[str, Any], *,
                 # as off_epa, not an inverted defensive-quality score. A high
                 # def_epa means the defense allows a lot here, which favors the
                 # attacker, so the two signals are blended, not subtracted.
-                edge = (off_epa + def_epa) / 2 if off_epa is not None and def_epa is not None else None
-                zones.append({"depth": depth, "direction": direction, "offense": offense,
-                              "defense": defense, "edge": edge})
+                # Volume-adjusted: each side's EPA is shrunk toward the league average by its sample (see
+                # charting_edges), so a hot zone built on a few plays cannot outrank a deep one.
+                adjusted = zone_edge(off_epa, _volume(offense), def_epa, _volume(defense), combine="mean")
+                edge = adjusted["edge"]
+                zones.append({"depth": depth, "direction": direction, "offense": offense, "defense": defense,
+                              "edge": edge, "edge_raw": adjusted["raw"], "reliability": adjusted["reliability"],
+                              "weight": interaction_share(_volume(offense), profiles[attacker]["offense"]["attempts"],
+                                                          _volume(defense), profiles[defender]["defense"]["attempts"])})
         panels.append({"attacker": attacker, "defender": defender, "zones": zones,
                        "attempts": profiles[attacker]["offense"]["attempts"],
-                       "allowed_attempts": profiles[defender]["defense"]["attempts"]})
+                       "allowed_attempts": profiles[defender]["defense"]["attempts"],
+                       "overall": overall_edge((zone["edge"], zone["weight"]) for zone in zones)})
     return panels
 
 
@@ -564,8 +576,8 @@ def matchup_situational(repository: CFBRepository, game: dict[str, Any], *,
             defense = situational[defender]["defense"][key]
             if not offense["attempts"] and not defense["attempts"]:
                 continue
-            off_epa, def_epa = offense["epa_per_attempt"], defense["epa_per_attempt"]
-            edge = (off_epa + def_epa) / 2 if off_epa is not None and def_epa is not None else None
+            edge = zone_edge(offense["epa_per_attempt"], _volume(offense), defense["epa_per_attempt"],
+                             _volume(defense), combine="mean")["edge"]
             rows.append({"key": key, "label": label, "offense": offense, "defense": defense,
                         "edge": edge})
         panels.append({"attacker": attacker, "defender": defender, "rows": rows})

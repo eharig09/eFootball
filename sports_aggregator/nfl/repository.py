@@ -265,7 +265,7 @@ CREATE TABLE IF NOT EXISTS pass_zone_receivers (
  receiver_player_id TEXT NOT NULL,receiver_name TEXT NOT NULL,
  depth_bucket TEXT NOT NULL,pass_location TEXT NOT NULL,
  targets INTEGER NOT NULL,receptions INTEGER NOT NULL,receiving_yards REAL NOT NULL,
- air_yards REAL NOT NULL,touchdowns INTEGER NOT NULL,
+ air_yards REAL NOT NULL,touchdowns INTEGER NOT NULL,total_epa REAL NOT NULL DEFAULT 0,
  PRIMARY KEY(game_id,passer_player_id,receiver_player_id,depth_bucket,pass_location)
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_zone_receiver_passer
@@ -750,6 +750,23 @@ class NFLRepository:
                     except sqlite3.OperationalError:
                         pass  # SQLite older than 3.35: the column stays, unused
             connection.executescript(PLAY_INDEXES)
+            zone_columns = {row[1] for row in connection.execute("PRAGMA table_info(pass_zone_receivers)")}
+            if zone_columns and "total_epa" not in zone_columns:
+                connection.execute("ALTER TABLE pass_zone_receivers ADD COLUMN total_epa REAL NOT NULL DEFAULT 0")
+                # Rebuild each receiver-in-zone EPA from the stored plays, bucketing exactly as the sync does.
+                connection.execute(
+                    """UPDATE pass_zone_receivers SET total_epa = COALESCE((
+                           SELECT SUM(p.epa) FROM nfl_plays p
+                            WHERE p.season=pass_zone_receivers.season AND p.game_id=pass_zone_receivers.game_id
+                              AND p.passer_id=pass_zone_receivers.passer_player_id
+                              AND p.receiver_id=pass_zone_receivers.receiver_player_id
+                              AND p.is_pass=1 AND p.is_sack=0 AND p.air_yards IS NOT NULL
+                              AND CASE WHEN p.air_yards<=0 THEN 'behind' WHEN p.air_yards<10 THEN 'short'
+                                       WHEN p.air_yards<20 THEN 'intermediate' ELSE 'deep' END
+                                  = pass_zone_receivers.depth_bucket
+                              AND CASE WHEN LOWER(TRIM(COALESCE(p.pass_location,''))) IN ('left','middle','right')
+                                       THEN LOWER(TRIM(p.pass_location)) ELSE 'unknown' END
+                                  = pass_zone_receivers.pass_location), 0)""")
             connection.execute("DROP INDEX IF EXISTS idx_nfl_weekly_metric")     # superseded by idx_nfl_weekly_by_metric
             game_columns = {row[1] for row in connection.execute("PRAGMA table_info(games)")}
             game_migrations = {
@@ -1510,8 +1527,9 @@ class NFLRepository:
                         "defense": defense,
                         "name": str(row.get("receiver_player_name") or receiver_id),
                         "targets": 0, "receptions": 0, "yards": 0.0,
-                        "air_yards": 0.0, "touchdowns": 0,
+                        "air_yards": 0.0, "touchdowns": 0, "epa": 0.0,
                     })
+                contributor["epa"] += optional_float(row.get("epa")) or 0.0
                 contributor["targets"] += 1
                 contributor["receptions"] += int(optional_float(row.get("complete_pass")) == 1)
                 contributor["yards"] += optional_float(row.get("receiving_yards")) or 0.0
@@ -1525,7 +1543,7 @@ class NFLRepository:
         contributor_values = [(
             season, item["week"], game_id, item["offense"], item["defense"], passer_id,
             receiver_id, item["name"], depth, location, item["targets"], item["receptions"],
-            item["yards"], item["air_yards"], item["touchdowns"],
+            item["yards"], item["air_yards"], item["touchdowns"], item["epa"],
         ) for (game_id, passer_id, receiver_id, depth, location), item in contributors.items()]
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -1536,7 +1554,7 @@ class NFLRepository:
             )
             connection.execute("DELETE FROM pass_zone_receivers WHERE season=?", (season,))
             connection.executemany(
-                "INSERT OR REPLACE INTO pass_zone_receivers VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO pass_zone_receivers VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 contributor_values,
             )
             connection.commit()
@@ -3579,7 +3597,7 @@ class NFLRepository:
                 f"""SELECT depth_bucket,pass_location,receiver_player_id,
                            MAX(receiver_name) receiver_name,SUM(targets) targets,
                            SUM(receptions) receptions,SUM(receiving_yards) receiving_yards,
-                           SUM(air_yards) air_yards,SUM(touchdowns) touchdowns,
+                           SUM(air_yards) air_yards,SUM(touchdowns) touchdowns,SUM(total_epa) total_epa,
                            (SELECT position FROM players
                             WHERE season=? AND player_id=receiver_player_id LIMIT 1) position
                     FROM pass_zone_receivers WHERE season=? AND {field}=?{game_filter}
@@ -3591,7 +3609,10 @@ class NFLRepository:
             row["adot"] = row["air_yards"] / row["targets"] if row["targets"] else None
             row["player_url"] = f"/nfl/players/{row['receiver_player_id']}/?season={season}"
             row["position"] = row.get("position") or "UNK"
-            row["detail"] = f"{row['receptions']:g}/{row['targets']:g} · {row['receiving_yards']:g} yd · {row['touchdowns']:g} TD · {row['adot']:.1f} aDOT" if row["adot"] is not None else f"{row['receptions']:g}/{row['targets']:g} · {row['receiving_yards']:g} yd · {row['touchdowns']:g} TD"
+            row["epa_per_target"] = row["total_epa"] / row["targets"] if row["targets"] else None
+            epa = f" · {row['epa_per_target']:+.2f} EPA/tgt" if row["epa_per_target"] is not None else ""
+            row["detail"] = (f"{row['receptions']:g}/{row['targets']:g} · {row['receiving_yards']:g} yd · {row['touchdowns']:g} TD"
+                             + (f" · {row['adot']:.1f} aDOT" if row["adot"] is not None else "") + epa)
         return rows
 
     def pass_zone_defenders(self, season: int, *, defense_team: str,

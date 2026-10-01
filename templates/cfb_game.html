@@ -1,6 +1,6 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import conference_mark, data_table, linked_piece_meta, story_list, tabbed_tables, tabs_script %}
-{% from "_ui_kit.html" import rank_gap_panel, grade_matchup_panel, unit_grades_compare, production_compare, measure_compare, player_matchup_panel %}
+{% from "_ui_kit.html" import rank_gap_panel, grade_matchup_panel, unit_grades_compare, production_compare, measure_compare, player_matchup_panel, advanced_compare %}
 {% from "_cfb_page_visuals.html" import compact_passing_matchups, compact_rushing_matchups, drive_outcomes_module, game_shape_module, probability_track, recent_form, visual_scripts %}
 
 {% block title %}{{ game.away_team }} at {{ game.home_team }} | Game Preview{% endblock %}
@@ -701,7 +701,7 @@
         appear until plays are recorded.
     </div>
     {% if game.advanced_metrics %}
-        {{ data_table(metrics_table) }}
+        {{ advanced_compare(advanced_rows, game.away_team, game.home_team, game.season ~ ' advanced metrics', 'national FBS rank and percentile; the bar is the percentile, P100 is best') }}
     {% else %}
         {{ data_table(preseason_table) }}
         <div class="table-note">

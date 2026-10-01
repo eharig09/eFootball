@@ -93,3 +93,20 @@ def player_matchup_panels(matchups: Iterable[dict[str, Any]], away: str, home: s
         panels.append({"team": team, "opponent": opponent, "color": identity.get("color"),
                        "logo_url": identity.get("logo_url"), "rows": rows})
     return panels
+
+
+def advanced_metric_rows(game: dict[str, Any], national_context: dict[str, dict[str, dict[str, Any]]] | None,
+                         definitions: Iterable[tuple[str, str, str, str]]) -> list[dict[str, Any]]:
+    """One row per advanced metric: each team's offense and defense value with its national FBS rank and percentile."""
+    metrics = game.get("advanced_metrics") or {}
+    rows = []
+    for label, offense_key, defense_key, fmt in definitions:
+        cells = {}
+        for side, team in (("away", game["away_team"]), ("home", game["home_team"])):
+            for unit, key in (("offense", offense_key), ("defense", defense_key)):
+                value = (metrics.get(team) or {}).get(key)
+                context = ((national_context or {}).get(team) or {}).get(key) or {}
+                cells[f"{side}_{unit}"] = {"value": value, "rank": context.get("rank"), "of": context.get("of"),
+                                           "pctl": context.get("percentile")}
+        rows.append({"metric": label, "format": fmt, **cells})
+    return rows

@@ -236,6 +236,11 @@
 </article>
 {% endmacro %}
 
+{# Overall volume-adjusted EPA/play edge of a charting grid (charting_edges.overall_edge). #}
+{% macro overall_edge_chip(overall, offense, defense) %}
+{% if overall and overall.edge is not none %}<div class="ui-overall-row"><span class="ui-overall-edge" data-lean="{{ overall.lean }}"><small>Overall edge</small><b>{{ '%+.2f'|format(overall.edge) }}</b><em>EPA / play &middot; {{ offense if overall.lean == 'offense' else defense if overall.lean == 'defense' else 'even' }}</em></span><p>Volume-adjusted: each side's EPA/play in a zone is shrunk toward the league average by its attempts, and zones are weighted by how much of both sides' volume they carry, so thin samples cannot swing the number. The big number in each cell uses the same adjustment.</p></div>{% endif %}
+{% endmacro %}
+
 {# Offensive tendencies by down and distance (situational_tendencies.team_tendencies): a 4x3 grid of call mix cells. #}
 {% macro tendency_grid(profile, title='What they do when …', note='') %}
 <article class="ui-panel ui-sit">
@@ -398,4 +403,42 @@
         </tr>{% else %}<tr><td colspan="5" class="ctx">No graded player pairing is available for this side.</td></tr>{% endfor %}</tbody>
     </table>
 </article>
+{% endmacro %}
+
+{# Advanced metrics for both teams: value plus national rank and percentile per offense/defense cell (cfb game_panels.advanced_metric_rows). #}
+{% macro advanced_compare(rows, away, home, caption='', note='') %}
+{% macro _cell(item, fmt) %}{% if item.value is not none %}<b>{{ item.value|cell(fmt) }}</b>{% if item.pctl is not none %}<span class="ui-adv-bar" data-tone="{{ 'good' if item.pctl >= 67 else ('mid' if item.pctl >= 34 else 'poor') }}" style="--p:{{ item.pctl }}"><i></i></span><small>#{{ item.rank }} of {{ item.of }} &middot; P{{ item.pctl }}</small>{% endif %}{% else %}<span class="ctx">&mdash;</span>{% endif %}{% endmacro %}
+<article class="ui-panel">
+    <header class="ui-panel-head"><h3>{{ caption }}</h3><span class="ui-median-key">{{ note }}</span></header>
+    <table class="ui-mini ui-adv-compare">
+        <thead><tr><th rowspan="2">Metric</th><th class="grp" colspan="2">{{ away }}</th><th class="grp" colspan="2">{{ home }}</th></tr>
+            <tr><th class="num">Offense</th><th class="num">Defense</th><th class="num">Offense</th><th class="num">Defense</th></tr></thead>
+        <tbody>{% for row in rows %}<tr>
+            <th scope="row">{{ row.metric }}</th>
+            <td class="num">{{ _cell(row.away_offense, row.format) }}</td><td class="num">{{ _cell(row.away_defense, row.format) }}</td>
+            <td class="num">{{ _cell(row.home_offense, row.format) }}</td><td class="num">{{ _cell(row.home_defense, row.format) }}</td>
+        </tr>{% endfor %}</tbody>
+    </table>
+</article>
+{% endmacro %}
+
+{# Team vs opponents summary (rows: metric, offense, defense -- the existing team_summary_table rows). #}
+{% macro summary_panel(rows, caption, note='', team='Team', other='Opponents', empty='Nothing is stored yet.') %}
+{% if not rows %}<p class="empty">{{ empty }}</p>{% else %}<article class="ui-panel">
+    <header class="ui-panel-head"><h3>{{ caption }}</h3><span class="ui-median-key">{{ note }}</span></header>
+    <table class="ui-mini ui-summary">
+        <thead><tr><th>Measure</th><th class="num">{{ team }}</th><th class="num">{{ other }}</th></tr></thead>
+        <tbody>{% for row in rows %}<tr><th scope="row">{{ row.metric }}</th><td class="num"><b>{{ row.offense if row.offense not in (none, '') else '—' }}</b></td><td class="num">{{ row.defense if row.defense not in (none, '') else '—' }}</td></tr>{% else %}<tr><td colspan="3" class="ctx">{{ empty }}</td></tr>{% endfor %}</tbody>
+    </table>
+</article>{% endif %}
+{% endmacro %}
+
+{# One value per signal with an optional source line (rows keyed by label/value/source or metric/value). #}
+{% macro signal_panel(rows, caption, note='', label_key='label', value_key='value', source_key='source', empty='Nothing is stored yet.') %}
+{% if not rows %}<p class="empty">{{ empty }}</p>{% else %}<article class="ui-panel">
+    <header class="ui-panel-head"><h3>{{ caption }}</h3><span class="ui-median-key">{{ note }}</span></header>
+    <table class="ui-mini ui-signals">
+        <tbody>{% for row in rows %}<tr><th scope="row">{{ row.get(label_key) }}{% if row.get(source_key) %}<small>{{ row.get(source_key) }}</small>{% endif %}</th><td class="num"><b>{{ row.get(value_key) if row.get(value_key) not in (none, '') else '—' }}</b></td></tr>{% else %}<tr><td class="ctx">{{ empty }}</td></tr>{% endfor %}</tbody>
+    </table>
+</article>{% endif %}
 {% endmacro %}

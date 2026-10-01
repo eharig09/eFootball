@@ -5,6 +5,8 @@ from __future__ import annotations
 from math import sqrt
 from typing import Any
 
+from sports_aggregator.charting_edges import interaction_share, overall_edge, zone_edge
+
 
 DEPTHS = (("deep", "20+ yards"), ("intermediate", "10–19 yards"),
           ("short", "1–9 yards"), ("behind", "Behind LOS"))
@@ -18,17 +20,22 @@ def receiver_position_breakdown(players: list[dict[str, Any]]) -> list[dict[str,
         position = str(player.get("position") or "UNK").upper()
         row = grouped.setdefault(position, {
             "position": position, "players": 0, "targets": 0, "receptions": 0,
-            "yards": 0, "touchdowns": 0,
+            "yards": 0, "touchdowns": 0, "total_epa": 0.0, "epa_targets": 0,
         })
         row["players"] += 1
         row["targets"] += int(player.get("targets") or 0)
         row["receptions"] += int(player.get("receptions") or 0)
         row["yards"] += round(float(player.get("receiving_yards") or 0))
         row["touchdowns"] += int(player.get("touchdowns") or 0)
+        if player.get("total_epa") is not None:           # only players whose EPA is known count toward the rate
+            row["total_epa"] += float(player["total_epa"])
+            row["epa_targets"] += int(player.get("targets") or 0)
     rows = sorted(grouped.values(), key=lambda row: (-row["targets"], row["position"]))
     for row in rows:
+        row["epa_per_target"] = row["total_epa"] / row["epa_targets"] if row["epa_targets"] else None
+        epa = f" · {row['epa_per_target']:+.2f} EPA/tgt" if row["epa_per_target"] is not None else ""
         row["detail"] = (f"{row['receptions']}/{row['targets']} · {row['yards']} yd · "
-                         f"{row['touchdowns']} TD")
+                         f"{row['touchdowns']} TD{epa}")
     return rows
 
 
@@ -109,10 +116,9 @@ def pass_matchup_packet(offense: dict[str, Any] | None,
             # favors whoever has the ball), so a favorable matchup for the offense
             # needs BOTH terms to point that way — they combine additively, not by
             # subtraction (which would cancel a good offense against a leaky defense).
-            edge = attack_epa + defense_epa if comparable else None
-            interaction = (sqrt((attack_attempts / offense_total) *
-                                (defense_attempts / defense_total))
-                           if offense_total and defense_total else None)
+            adjusted = zone_edge(attack_epa, attack_attempts, defense_epa, defense_attempts, combine="sum")
+            edge = adjusted["edge"]       # volume-adjusted: each side shrunk toward league average by its attempts
+            interaction = interaction_share(attack_attempts, offense_total, defense_attempts, defense_total)
             magnitude = abs(edge) if edge is not None else 0
             strength = (1 if magnitude < .10 else (2 if magnitude < .30 else
                         (3 if magnitude < .60 else 4))) if comparable else 0
@@ -121,7 +127,8 @@ def pass_matchup_packet(offense: dict[str, Any] | None,
             cells.append({
                 "location": location.title(), "offense_attempts": attack_attempts,
                 "defense_attempts": defense_attempts, "offense_epa": attack_epa,
-                "defense_epa": defense_epa, "edge": edge, "lean": lean,
+                "defense_epa": defense_epa, "edge": edge, "lean": lean, "edge_raw": adjusted["raw"],
+                "reliability": adjusted["reliability"],
                 "strength": strength, "interaction_share": interaction,
                 "contributors": attack.get("contributors", []),
                 "defenders": resist.get("defenders", []),
@@ -135,4 +142,6 @@ def pass_matchup_packet(offense: dict[str, Any] | None,
         rows.append({"depth": depth, "label": label, "cells": cells})
     return {"rows": rows,
             "has_data": bool(offense.get("has_data") and defense.get("has_data")),
-            "offense_total": offense_total, "defense_total": defense_total}
+            "offense_total": offense_total, "defense_total": defense_total,
+            "overall": overall_edge((cell["edge"], cell["interaction_share"])
+                                    for row in rows for cell in row["cells"])}
