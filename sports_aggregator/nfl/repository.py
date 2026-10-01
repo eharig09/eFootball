@@ -238,6 +238,15 @@ CREATE TABLE IF NOT EXISTS nfl_game_weather (
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_game_weather_game
   ON nfl_game_weather(game_id,forecast_generated_at DESC);
+CREATE TABLE IF NOT EXISTS nfl_weather_history (
+ game_id TEXT NOT NULL, kind TEXT NOT NULL, lead_days INTEGER NOT NULL,
+ source TEXT NOT NULL, kickoff_utc TEXT NOT NULL, stadium TEXT NOT NULL,
+ latitude REAL NOT NULL, longitude REAL NOT NULL, indoor INTEGER NOT NULL,
+ temperature REAL, wind_speed REAL, wind_gust REAL, precipitation REAL,
+ hours_used INTEGER NOT NULL DEFAULT 0, fetched_at TEXT NOT NULL,
+ PRIMARY KEY(game_id,kind,lead_days)
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_weather_history_kind ON nfl_weather_history(kind,lead_days);
 CREATE TABLE IF NOT EXISTS qb_pass_profiles (
  season INTEGER NOT NULL, week INTEGER NOT NULL, game_id TEXT NOT NULL,
  offense_team TEXT NOT NULL, defense_team TEXT NOT NULL,
@@ -1163,6 +1172,25 @@ class NFLRepository:
                 "INSERT OR REPLACE INTO nfl_injury_history VALUES (?,?,?,?,?,?,?,?,?)",
                 list(values.values()),
             )
+            connection.commit()
+        return len(values)
+
+    def upsert_weather_history(self, rows: Iterable[Mapping[str, Any]]) -> int:
+        """Store game-window weather ('observed' reanalysis or an issued 'forecast')."""
+        self.initialize()
+        values = [(
+            str(r["game_id"]), str(r["kind"]), int(r["lead_days"]), str(r["source"]),
+            str(r["kickoff_utc"]), str(r["stadium"]), float(r["latitude"]), float(r["longitude"]),
+            int(bool(r["indoor"])), optional_float(r.get("temperature")),
+            optional_float(r.get("wind_speed")), optional_float(r.get("wind_gust")),
+            optional_float(r.get("precipitation")), int(r.get("hours_used") or 0),
+            str(r.get("fetched_at") or datetime.now(timezone.utc).isoformat()),
+        ) for r in rows]
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.executemany(
+                "INSERT OR REPLACE INTO nfl_weather_history VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                values)
             connection.commit()
         return len(values)
 
