@@ -37,6 +37,8 @@ FOOTBALL_LAB_ARCHIVE = Path(__file__).resolve().parents[2] / "data" / "nfl" / "f
 HISTORY_STATE_NAME = "nfl_football_lab_history.json"
 #: Prior seasons of game_team_efficiency below which the model cannot be trained.
 FOOTBALL_LAB_MIN_SEASONS = 10
+#: Observed-weather games below which the weather-aware total cannot be fitted.
+FOOTBALL_LAB_MIN_WEATHER_GAMES = 1000
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -66,7 +68,8 @@ def needs_seed(repository: NFLRepository, season: int) -> bool:
 
 
 def needs_history(repository: NFLRepository, season: int,
-                  archive: Path = FOOTBALL_LAB_ARCHIVE) -> bool:
+                  archive: Path = FOOTBALL_LAB_ARCHIVE,
+                  min_weather_games: int = FOOTBALL_LAB_MIN_WEATHER_GAMES) -> bool:
     """True when Football Lab's training history is missing but an archive can supply it.
 
     The main seed only runs on an empty disk, so a disk seeded before this archive
@@ -80,7 +83,9 @@ def needs_history(repository: NFLRepository, season: int,
             "SELECT COUNT(DISTINCT season) FROM game_team_efficiency WHERE season < ?",
             (int(season),),
         ).fetchone()[0]
-    return int(seasons) < FOOTBALL_LAB_MIN_SEASONS
+        weather = connection.execute(
+            "SELECT COUNT(*) FROM nfl_weather_history WHERE kind='observed'").fetchone()[0]
+    return int(seasons) < FOOTBALL_LAB_MIN_SEASONS or int(weather) < int(min_weather_games)
 
 
 def restore_football_lab_history(database: Path, archive: Path = FOOTBALL_LAB_ARCHIVE) -> dict[str, int]:

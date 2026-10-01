@@ -74,6 +74,9 @@ FOOTBALL_LAB_FILTERS = {
     "game_team_efficiency": "season >= 2010",
     "game_team_situational": "season >= 2010",
     "qb_pass_profiles": "season >= 2010",
+    # Reanalysis weather the weather-aware total is fitted on. Live/forecast rows are
+    # excluded: production's own weather cron produces those.
+    "nfl_weather_history": "kind = 'observed'",
 }
 FOOTBALL_LAB_ARCHIVE = Path("data/nfl/football_lab_history.sqlite3.gz")
 

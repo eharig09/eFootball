@@ -25,7 +25,7 @@ def test_history_topup_detects_restores_and_never_overwrites(tmp_path):
     target = tmp_path / "prod.sqlite3"
     repo = NFLRepository(target)
     repo.initialize()
-    assert production_seed.needs_history(repo, 2026, archive) is True
+    assert production_seed.needs_history(repo, 2026, archive, min_weather_games=0) is True
     assert production_seed.needs_history(repo, 2026, tmp_path / "missing.gz") is False  # nothing to supply it
 
     # A newer row already on disk must survive the merge.
@@ -37,7 +37,7 @@ def test_history_topup_detects_restores_and_never_overwrites(tmp_path):
     assert result["rows"] == 11  # 12 archive rows minus the pre-existing 2023 one
     with sqlite3.connect(target) as c:
         assert c.execute("SELECT plays FROM game_team_efficiency WHERE season=2023").fetchone()[0] == 999
-    assert production_seed.needs_history(repo, 2026, archive) is False
+    assert production_seed.needs_history(repo, 2026, archive, min_weather_games=0) is False
 
 
 def test_topup_launch_is_throttled(tmp_path, monkeypatch):
@@ -58,3 +58,13 @@ def test_maybe_launch_tops_up_a_seeded_disk_without_a_full_seed(tmp_path, monkey
     monkeypatch.setattr(production_seed, "_launch_history_topup", lambda *a: calls.append(a) or True)
     assert production_seed.maybe_launch(database_path=tmp_path / "prod.sqlite3", season=2026) is True
     assert calls and not (tmp_path / production_seed.STATE_NAME).exists()  # no full-seed state written
+
+
+def test_missing_observed_weather_also_triggers_a_top_up(tmp_path):
+    archive = tmp_path / "history.sqlite3.gz"
+    build(_source(tmp_path / "source.sqlite3", range(2012, 2024)), archive, FOOTBALL_LAB_FILTERS)
+    repo = NFLRepository(tmp_path / "prod.sqlite3")
+    repo.initialize()
+    production_seed.restore_football_lab_history(tmp_path / "prod.sqlite3", archive)
+    assert production_seed.needs_history(repo, 2026, archive, min_weather_games=0) is False
+    assert production_seed.needs_history(repo, 2026, archive, min_weather_games=5) is True  # no weather rows
