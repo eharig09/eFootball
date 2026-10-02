@@ -62,10 +62,10 @@ def _nfl_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
-def code_modules() -> list[str]:
+def code_modules(roots: tuple[str, ...] | None = None) -> list[str]:
     """The model modules whose source decides what the cached functions compute (imports followed)."""
     seen: set[str] = set()
-    pending = list(ROOT_MODULES)
+    pending = list(roots or ROOT_MODULES)
     while pending:
         name = pending.pop()
         if name in seen or name in INFRASTRUCTURE_MODULES:
@@ -80,25 +80,30 @@ def code_modules() -> list[str]:
     return sorted(seen)
 
 
-def code_hash() -> str:
-    """Hash of the model source files, computed once per process."""
-    cached = _CODE_HASH.get("value")
+def code_hash(roots: tuple[str, ...] | None = None) -> str:
+    """Hash of the model source files, computed once per process.
+
+    `roots` scopes the hash to the closure of specific modules, so a cache for a newer model does not change the
+    hash (and therefore force a rebuild) of the long-standing Football Lab caches, which use the default roots.
+    """
+    slot = "value" if not roots else "roots:" + ",".join(roots)
+    cached = _CODE_HASH.get(slot)
     if cached:
         return cached
     digest = hashlib.sha1()
-    for name in code_modules():
+    for name in code_modules(roots):
         digest.update(name.encode())
         digest.update((_nfl_dir() / f"{name}.py").read_bytes())
     value = digest.hexdigest()[:16]
-    _CODE_HASH["value"] = value
+    _CODE_HASH[slot] = value
     return value
 
 
-def history_fingerprint(repository: NFLRepository, end_season: int) -> str:
+def history_fingerprint(repository: NFLRepository, end_season: int, extra_queries: tuple[str, ...] = ()) -> str:
     repository.initialize()
     parts = []
     with closing(repository._connect()) as connection:
-        for query in _FINGERPRINT_QUERIES:
+        for query in (*_FINGERPRINT_QUERIES, *extra_queries):
             parts.append(tuple(connection.execute(query, (int(end_season),)).fetchone()))
     return hashlib.sha1(repr(parts).encode()).hexdigest()[:16]
 
@@ -137,8 +142,12 @@ def _write(directory: Path, prefix: str, name: str, value: Any) -> None:
         pass   # a cache that cannot be written is just a cache miss next time
 
 
-def history_cached(name: str) -> Callable:
-    """Decorate `fn(repository, ..., start_season, end_season, ...)` with the fingerprinted cache."""
+def history_cached(name: str, *, roots: tuple[str, ...] | None = None, extra_queries: tuple[str, ...] = ()) -> Callable:
+    """Decorate `fn(repository, ..., start_season, end_season, ...)` with the fingerprinted cache.
+
+    `roots` scopes the source hash to those modules' import closure; `extra_queries` (each taking the end season as its one
+    parameter) add tables the shared fingerprint does not cover to the data fingerprint.
+    """
     def decorate(function: Callable) -> Callable:
         signature = inspect.signature(function)
 
@@ -153,12 +162,12 @@ def history_cached(name: str) -> Callable:
                 start, end = int(arguments["start_season"]), int(arguments["end_season"])
                 extras = tuple(sorted((key, repr(value)) for key, value in arguments.items()
                                       if key not in {"repository", "start_season", "end_season"}))
-                fingerprint = history_fingerprint(repository, end)
+                fingerprint = history_fingerprint(repository, end, extra_queries)
             except Exception:
                 return function(repository, *args, **kwargs)
             digest = hashlib.sha1(repr(extras).encode()).hexdigest()[:8]
             prefix = f"{name}-{start}-{end}-{digest}-"
-            filename = f"{prefix}{fingerprint}-{code_hash()}.pkl"
+            filename = f"{prefix}{fingerprint}-{code_hash(roots)}.pkl"
             memory_key = (os.path.abspath(repository.path), filename)
             with _LOCK:
                 hit = _MEMORY.get(memory_key, _MISS)
@@ -190,7 +199,7 @@ def warm(repository: NFLRepository, season: int) -> dict[str, float]:
     already cached (same data and model code) return immediately.
     """
     import time
-    from sports_aggregator.nfl import drive_projection, score_calibration, scoring_bridge, uncertainty_calibration
+    from sports_aggregator.nfl import drive_projection, live_margin, score_calibration, scoring_bridge, uncertainty_calibration
 
     end = max(2010, int(season) - 1)
     steps = (
@@ -198,6 +207,7 @@ def warm(repository: NFLRepository, season: int) -> dict[str, float]:
         ("game_rows", lambda: score_calibration._game_rows(repository, start_season=2010, end_season=end)),
         ("calibrated_oof", lambda: uncertainty_calibration._calibrated_oof(repository, 2010, end)),
         ("drive_rows", lambda: drive_projection.build_rows(repository, start_season=2010, end_season=int(season))),
+        ("live_margin_fit", lambda: live_margin.fit_model(repository, 2010, end)),
     )
     seconds: dict[str, float] = {}
     for name, step in steps:

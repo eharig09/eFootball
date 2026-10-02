@@ -11,8 +11,10 @@ the current injury report lists as out. The report says which source it used.
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from contextlib import closing
+import os
+import threading
 from typing import Any
 
 import numpy as np
@@ -20,6 +22,7 @@ import numpy as np
 from sports_aggregator.nfl.distribution_calibration import MAX_SIGMA, MIN_SIGMA, _pmf, _tail
 from sports_aggregator.nfl.drive_projection import STATE_SEASON_DECAY
 from sports_aggregator.nfl.margin_strength_ablation import _fit, _predict
+from sports_aggregator.nfl.model_cache import history_cached
 from sports_aggregator.nfl.naming import canon_team
 from sports_aggregator.nfl.qb_player_ablation import SHRUNK_CHANGE, QBTracker, build_rows
 from sports_aggregator.nfl.qb_quality_projection import _qb_games
@@ -44,12 +47,38 @@ def residual_sigma(sample: list[dict[str, Any]]) -> float | None:
     return float(min(MAX_SIGMA, max(MIN_SIGMA, np.std(residuals))))
 
 
-def fit(repository: NFLRepository, season: int):
-    """(ridge margin model, residual sigma) from seasons before `season`; (None, None) if thin."""
-    rows = build_rows(repository, 2010, max(2010, int(season) - 1))
+#: The fit reads these modules' closure; hashing only them keeps this cache independent of the older model caches.
+FIT_ROOTS = ("live_margin", "qb_player_ablation", "margin_strength_ablation", "distribution_calibration")
+#: build_rows also reads quarterback profiles and Elo, which the shared history fingerprint does not cover.
+FIT_FINGERPRINT = (
+    "SELECT COUNT(*), ROUND(SUM(total_epa),3) FROM qb_pass_profiles WHERE season<=?",
+    "SELECT COUNT(*), ROUND(SUM(home_pre),1) FROM nfl_elo_games WHERE season<=?",
+)
+
+
+@history_cached("live_margin_fit", roots=FIT_ROOTS, extra_queries=FIT_FINGERPRINT)
+def fit_model(repository: NFLRepository, start_season: int, end_season: int):
+    """(ridge margin model, residual sigma) from seasons start..end; (None, None) if thin.
+
+    Rebuilding the historical feature rows takes seconds and depends only on completed seasons, so it is cached on disk
+    and in memory (see model_cache) instead of being redone by every page that shows a forecast.
+    """
+    rows = build_rows(repository, start_season, end_season)
     sample = [r for r in rows if r.get("actual_margin") is not None
               and all(r.get(k) is not None for k in SHRUNK_CHANGE)]
     return _fit(sample, SHRUNK_CHANGE), residual_sigma(sample)
+
+
+def fit(repository: NFLRepository, season: int):
+    """(ridge margin model, residual sigma) from seasons before `season`; (None, None) if thin."""
+    return fit_model(repository, 2010, max(2010, int(season) - 1))
+
+
+# Pregame state for one (season, week): who the quarterbacks were and how each team has been priced so far. It changes
+# only when a game completes, so it is shared between requests and retired by any database write.
+_STATE: "OrderedDict[tuple, dict[str, Any]]" = OrderedDict()
+_STATE_LOCK = threading.Lock()
+_STATE_LIMIT = 6
 
 
 def _recent_margins(repository: NFLRepository, season: int, week: int) -> dict[str, float]:
@@ -82,21 +111,39 @@ class LiveMargin:
     def __init__(self, repository: NFLRepository, season: int, week: int) -> None:
         self.repository, self.season, self.week = repository, int(season), int(week)
         self.model, self.sigma = fit(repository, season)
-        self.recent = _recent_margins(repository, season, week)
-        self.tracker = QBTracker()
+        state = self._pregame_state(repository, self.season, self.week)
+        self.recent, self.tracker = state["recent"], state["tracker"]
+        self.current_elo, self.game_elo = state["current_elo"], state["game_elo"]
+
+    @staticmethod
+    def _pregame_state(repository: NFLRepository, season: int, week: int) -> dict[str, Any]:
+        """Read-only after construction (the tracker is only asked for features), so it is shared, not copied."""
+        key = (os.path.abspath(str(repository.path)), repository.data_stamp(), season, week)
+        with _STATE_LOCK:
+            hit = _STATE.get(key)
+            if hit is not None:
+                _STATE.move_to_end(key)
+                return hit
+        tracker = QBTracker()
         by_week: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
         for row in _qb_games(repository, 2010, season):
             by_week[(int(row["season"]), int(row["week"]))].append(row)
-        for key in sorted(by_week):
-            if key < (self.season, self.week):
-                self.tracker.update(by_week[key])
+        for week_key in sorted(by_week):
+            if week_key < (season, week):
+                tracker.update(by_week[week_key])
         with closing(repository._connect()) as connection:
-            self.current_elo = {str(r["team"]): float(r["rating"]) for r in connection.execute(
+            current_elo = {str(r["team"]): float(r["rating"]) for r in connection.execute(
                 "SELECT team,rating FROM nfl_elo_ratings")}
-            self.game_elo = {str(r["game_id"]): float(r["home_pre"]) - float(r["away_pre"])
-                             for r in connection.execute(
-                "SELECT game_id,home_pre,away_pre FROM nfl_elo_games WHERE season=? AND week=?",
-                (self.season, self.week))}
+            game_elo = {str(r["game_id"]): float(r["home_pre"]) - float(r["away_pre"])
+                        for r in connection.execute(
+                "SELECT game_id,home_pre,away_pre FROM nfl_elo_games WHERE season=? AND week=?", (season, week))}
+        state = {"recent": _recent_margins(repository, season, week), "tracker": tracker,
+                 "current_elo": current_elo, "game_elo": game_elo}
+        with _STATE_LOCK:
+            _STATE[key] = state
+            while len(_STATE) > _STATE_LIMIT:
+                _STATE.popitem(last=False)
+        return state
 
     def _elo_diff(self, game: dict[str, Any]) -> float | None:
         if str(game["game_id"]) in self.game_elo:

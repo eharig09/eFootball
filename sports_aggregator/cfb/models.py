@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
+from functools import lru_cache
 from typing import Any
 
 
@@ -27,11 +28,13 @@ def parse_datetime(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+@lru_cache(maxsize=65536)
 def normalize_alias(value: str) -> str:
     """Normalize punctuation and whitespace without guessing ambiguous identities."""
     return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
 
 
+@lru_cache(maxsize=65536)
 def normalize_person_name(value: str) -> str:
     """Normalize a person name, collapsing initials into one token.
 
