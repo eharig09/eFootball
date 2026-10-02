@@ -39,7 +39,7 @@ from sports_aggregator.cfb.matchup_research import (
     _live_narrative_context,
     matchup_research_packet,
 )
-from sports_aggregator.cfb.repository import CFBRepository
+from sports_aggregator.cfb.repository import CFBRepository, schema_once
 
 MANIFEST_VERSION = "two-engine-pregame-v1"
 HISTORICAL_END_SEASON = 2025
@@ -231,7 +231,28 @@ def engine_b_rules_plain_language(rules: list[str] | None) -> str | None:
 _HISTORICAL_CACHE: dict[str, dict[str, Any]] = {}
 
 
+_MANIFEST_OBJECTS = ("cfb_two_engine_manifest", "cfb_two_engine_manifest_history", "idx_two_engine_manifest_history_game")
+
+
+def _manifest_schema_present(repository: CFBRepository) -> bool:
+    """True when every table and index this module needs already exists (a read, which never waits for a writer)."""
+    try:
+        with repository._reader() as connection:
+            found = {row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE name IN (?,?,?)", _MANIFEST_OBJECTS)}
+    except Exception:       # anything unreadable: fall through and let the real setup report the problem
+        return False
+    return set(_MANIFEST_OBJECTS) <= found
+
+
+@schema_once("two_engine_manifest")
 def _initialize_manifest(repository: CFBRepository) -> None:
+    # Reached from every game-page view, and `transaction()` takes the database's single write lock, so replaying
+    # CREATE TABLE IF NOT EXISTS there made a plain page load wait (and, past the busy timeout, fail with "database is
+    # locked") whenever a refresh or build was writing. Two guards: schema_once runs this once per process, and an
+    # existing database is recognised with a read so even that first call takes no write lock.
+    if _manifest_schema_present(repository):
+        return
     with repository.transaction() as connection:
         connection.execute(
             """CREATE TABLE IF NOT EXISTS cfb_two_engine_manifest (
