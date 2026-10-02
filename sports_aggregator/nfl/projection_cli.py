@@ -22,6 +22,8 @@ from sports_aggregator.nfl.availability_ablation import report as availability_r
 from sports_aggregator.nfl.context_ablation import report as context_report
 from sports_aggregator.nfl.distribution_calibration import report as distribution_report
 from sports_aggregator.nfl.market_gap import report as market_gap_report
+from sports_aggregator.nfl.scoring_form_model import report as scoring_form_report
+from sports_aggregator.nfl.line_elo import report as line_elo_report
 from sports_aggregator.nfl.travel_ablation import report as travel_report
 from sports_aggregator.nfl.nonlinear_ablation import report as nonlinear_report
 from sports_aggregator.nfl.weather_total_ablation import report as weather_total_report
@@ -98,6 +100,17 @@ def main(argv: list[str] | None = None) -> int:
     travel = sub.add_parser("travel")
     travel.add_argument("--from-year", type=int, default=2013)
     travel.add_argument("--to-year", type=int, default=2025)
+
+    line_elo = sub.add_parser("line-elo")
+    line_elo.add_argument("--from-year", type=int, default=2010)
+    line_elo.add_argument("--to-year", type=int, default=2025)
+    line_elo.add_argument("--flags-season", type=int, default=None,
+                          help="instead of the backtest, list this season/week's drifted lines (needs --flags-week)")
+    line_elo.add_argument("--flags-week", type=int, default=None)
+
+    scoring_form = sub.add_parser("scoring-form")
+    scoring_form.add_argument("--from-year", type=int, default=2013)
+    scoring_form.add_argument("--to-year", type=int, default=2025)
 
     market_gap = sub.add_parser("market-gap")
     market_gap.add_argument("--from-year", type=int, default=2013)
@@ -286,6 +299,29 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "travel":
         payload = travel_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "line-elo" and args.flags_season and args.flags_week:
+        from sports_aggregator.nfl.line_elo import flags as line_elo_flags
+        print(json.dumps(line_elo_flags(repository, args.flags_season, args.flags_week), indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "line-elo":
+        payload = line_elo_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "scoring-form":
+        payload = scoring_form_report(
             repository,
             start_season=int(args.from_year),
             end_season=int(args.to_year),
