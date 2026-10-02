@@ -48,6 +48,22 @@ class DerivedCacheTests(unittest.TestCase):
         derived_cache.derived(self.repository, "x", build)
         self.assertEqual(len(calls), 2)
 
+    def test_a_new_database_state_drops_the_older_copies_of_the_same_value(self):
+        """A writer that re-reads between commits must not pile up one full copy of the value per state."""
+        build = lambda: list(range(10))
+        for round_ in range(4):
+            derived_cache.derived(self.repository, "history", build, 2026)
+            derived_cache.derived(self.repository, "other", build)           # a different name is untouched
+            connection = sqlite3.connect(self.path)
+            connection.executemany("INSERT INTO t VALUES (?)", [(index,) for index in range(5000)])
+            connection.commit()
+            connection.close()
+        derived_cache.derived(self.repository, "history", build, 2026)
+        derived_cache.derived(self.repository, "other", build)
+        names = sorted(key[2] for key in derived_cache._MEMORY)
+        self.assertEqual(names.count("history"), 1)
+        self.assertEqual(names.count("other"), 1)
+
     def test_an_idle_open_and_close_does_not_retire_the_value(self):
         calls = []
         build = lambda: calls.append(1) or 1

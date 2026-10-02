@@ -62,6 +62,11 @@ def derived(repository, name: str, build: Callable[[], Any], *key: Any) -> Any:
             return hit
     value = build()
     with _LOCK:
+        # A new stamp retires every older copy of the same value: they can never be served again, and a process that
+        # writes between reads (the manifest freeze commits after each game) otherwise piled up one full copy of
+        # the history tables per game -- ~8 copies, past 600 MB, until MemoryError on the refresh host.
+        for stale in [k for k in _MEMORY if k[0] == full[0] and k[2:] == full[2:] and k[1] != full[1]]:
+            del _MEMORY[stale]
         _MEMORY[full] = value
         _MEMORY.move_to_end(full)
         while len(_MEMORY) > MEMORY_LIMIT:

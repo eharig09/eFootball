@@ -82,6 +82,18 @@ def _step_exit_code(*, attempted: int, errors: int, stored: int) -> int:
     return 1 if (errors / attempted) > MAX_TOLERATED_FAILURE_SHARE else 0
 
 
+def _reporting_exit_code(feeds, errors, stored: int) -> int:
+    """Exit code for the RSS reporting step.
+
+    Newsletter feeds (source_type "analysis") are extras that publishers' bot defences often refuse from a datacenter
+    address; losing them is not a failed step, so only the news-desk feeds decide it. Their errors stay in the
+    recorded run and the printed counts.
+    """
+    extras = {feed.name for feed in feeds if feed.source_type == "analysis"}
+    return _step_exit_code(attempted=len([feed for feed in feeds if feed.name not in extras]),
+                           errors=len([error for error in errors if error.source not in extras]), stored=stored)
+
+
 def _use_small_thread_stacks() -> None:
     """Ask for modest thread stacks, where the platform allows it."""
     try:
@@ -229,8 +241,7 @@ def main(argv=None) -> int:
         # second time here was the memory spike that made `articles` fail with
         # a MemoryError on the constrained instance.
         print(f"articles={len(result.articles)} stored={stored} errors={len(result.errors)}")
-        return _step_exit_code(attempted=len(result.league.feeds),
-                               errors=len(result.errors), stored=stored)
+        return _reporting_exit_code(result.league.feeds, result.errors, stored)
     if args.command=="ingest-local-reporting":
         from sports_aggregator.models import FeedConfig
         from sports_aggregator.providers.rss import RSSNewsProvider

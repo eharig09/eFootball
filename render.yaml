@@ -141,7 +141,9 @@ services:
     # Keep the live matchup model current without rerunning the full analytics
     # suite. The web service owns the persistent SQLite disk, so this cron only
     # triggers the lock-safe projections segment over the authenticated hook.
-    schedule: "15 */2 * * *"
+    # Offset from :00/:15/:30/:45: the scores ticks take the single refresh lock at those
+    # minutes, which likely skipped this segment silently (its last clean run stalled for 12 days).
+    schedule: "20 */2 * * *"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m sports_aggregator.render_trigger
     envVars:

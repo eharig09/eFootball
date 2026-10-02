@@ -20,7 +20,7 @@ from sports_aggregator.providers.weather import (
     DAILY_LIMIT_MARKERS, OpenMeteoClient, WeatherQuotaExhausted,
 )
 from sports_aggregator.social.content_cli import (
-    MAX_TOLERATED_FAILURE_SHARE, WORKER_STACK_BYTES, _step_exit_code,
+    MAX_TOLERATED_FAILURE_SHARE, WORKER_STACK_BYTES, _reporting_exit_code, _step_exit_code,
     _use_small_thread_stacks,
 )
 
@@ -147,6 +147,18 @@ class StepOutcomeTests(unittest.TestCase):
         for step, counts in observed.items():
             with self.subTest(step=step):
                 self.assertEqual(_step_exit_code(**counts), 0)
+
+    def test_refused_newsletter_feeds_do_not_fail_the_reporting_step(self):
+        """Production: 66 articles stored, 6 of 10 feeds (all newsletters) refused -> the step used to read as failed."""
+        from types import SimpleNamespace as NS
+        desk = [NS(name=n, source_type="national_reporting") for n in ("ESPN", "NCAA", "Yahoo", "AP")]
+        letters = [NS(name=f"letter{i}", source_type="analysis") for i in range(7)]
+        refused = [NS(source=feed.name) for feed in letters[:6]]
+        self.assertEqual(_reporting_exit_code(desk + letters, refused, stored=66), 0)
+        self.assertEqual(_reporting_exit_code(desk + letters, refused + [NS(source="ESPN")], stored=66), 0)
+        # losing the news-desk feeds still fails, and so does storing nothing
+        self.assertEqual(_reporting_exit_code(desk + letters, [NS(source="ESPN"), NS(source="NCAA")], stored=66), 1)
+        self.assertEqual(_reporting_exit_code(desk + letters, [], stored=0), 1)
 
     def test_a_step_that_stored_nothing_fails_even_with_few_errors(self):
         """Storing nothing is the definition of not having done the job."""
