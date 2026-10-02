@@ -21,8 +21,18 @@ from sports_aggregator.nfl.situational_tendencies import band, build_grid
 #: Fewer plays than this is still early September: use the prior season as a baseline.
 MIN_SEASON_PLAYS = 150
 
-_QUERY = """
-SELECT p.offense, p.down, p.distance, p.yards_to_goal, m.rush_pass, e.epa, m.success
+_CELLS_SQL = """
+SELECT p.offense, p.week, p.down,
+       CASE
+         WHEN p.down = 1 THEN CASE
+              WHEN p.yards_to_goal IS NOT NULL AND p.distance IS NOT NULL AND p.yards_to_goal <= p.distance THEN 'short'
+              WHEN COALESCE(p.distance, 10) <= 10 THEN 'medium' ELSE 'long' END
+         WHEN p.down IN (2, 3) THEN CASE
+              WHEN COALESCE(p.distance, 10) <= 3 THEN 'short' WHEN COALESCE(p.distance, 10) <= 6 THEN 'medium' ELSE 'long' END
+         ELSE CASE
+              WHEN COALESCE(p.distance, 10) <= 2 THEN 'short' WHEN COALESCE(p.distance, 10) <= 5 THEN 'medium' ELSE 'long' END
+       END AS band,
+       COUNT(*), SUM(CASE WHEN m.rush_pass = 'pass' THEN 1 ELSE 0 END), SUM(COALESCE(e.epa, 0.0)), SUM(COALESCE(m.success, 0))
 FROM cfb_plays p
 JOIN games g ON g.game_id = p.game_id AND g.season_type = 'regular'
 JOIN cfb_play_metrics m ON m.play_id = p.play_id
@@ -31,22 +41,34 @@ WHERE p.season = ? AND p.down BETWEEN 1 AND 4 AND m.rush_pass IN ('pass', 'rush'
   AND p.play_type <> 'Penalty'
   AND p.offense IN (SELECT school FROM teams WHERE classification = 'fbs')
   AND LOWER(COALESCE(p.play_text, '')) NOT LIKE '%kneel%'
-  AND LOWER(COALESCE(p.play_text, '')) NOT LIKE '%spike%' {week_filter}
+  AND LOWER(COALESCE(p.play_text, '')) NOT LIKE '%spike%'
+GROUP BY p.offense, p.week, p.down, band
 """
+
+
+def season_cells(repository, season: int) -> list[tuple]:
+    """(team, week, down, band, plays, passes, epa, successes) for a whole season, aggregated by SQLite.
+
+    One grouped query replaces a Python loop over ~190,000 plays, and keeping the week lets every "games before week N"
+    request be a cheap sum over this list instead of its own scan. `band` is the same rule as `situational_tendencies.band`
+    (spelled out in SQL; tests pin the two together).
+    """
+    def build() -> list[tuple]:
+        with closing(repository._connect()) as connection:
+            return [tuple(row) for row in connection.execute(_CELLS_SQL, (int(season),))]
+    return derived(repository, "cfb_situational_cells", build, int(season))
 
 
 def _tally(repository, season: int, before_week: int | None = None) -> dict[str, Any]:
     cells: dict[tuple[str, int, str], list[float]] = defaultdict(lambda: [0, 0, 0.0, 0])
-    parameters: list[Any] = [int(season)] + ([int(before_week)] if before_week is not None else [])
-    query = _QUERY.format(week_filter="AND p.week < ?" if before_week is not None else "")
-    with closing(repository._connect()) as connection:
-        for offense, down, distance, to_goal, call, epa, success in connection.execute(query, parameters):
-            goal_to_go = 1 if (to_goal is not None and distance is not None and to_goal <= distance) else 0
-            cell = cells[(offense, int(down), band(int(down), distance, goal_to_go))]
-            cell[0] += 1
-            cell[1] += 1 if call == "pass" else 0
-            cell[2] += epa or 0.0
-            cell[3] += success or 0
+    for team, week, down, situation_band, plays, passes, epa, successes in season_cells(repository, season):
+        if before_week is not None and (week is None or int(week) >= int(before_week)):
+            continue
+        cell = cells[(team, int(down), situation_band)]
+        cell[0] += plays
+        cell[1] += passes
+        cell[2] += epa or 0.0
+        cell[3] += successes or 0
     totals: dict[tuple[int, str], list[int]] = defaultdict(lambda: [0, 0])
     teams: dict[str, dict[tuple[int, str], list[float]]] = defaultdict(dict)
     for (team, down, situation_band), values in cells.items():

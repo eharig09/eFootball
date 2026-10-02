@@ -27,19 +27,24 @@ MIN_CHARTED = 60
 MIN_SECTION = 20
 
 _PASS = """
-SELECT {side}, pass_direction, pass_depth, air_yards, total_yards, outcome, e.epa
+SELECT p.{side} AS team, p.pass_direction, COALESCE(p.pass_depth, 'short'), COUNT(*),
+       SUM(COALESCE(p.total_yards, 0.0)), SUM(CASE WHEN p.outcome = 'completion' THEN 1 ELSE 0 END),
+       SUM(p.air_yards), COUNT(p.air_yards), SUM(e.epa), COUNT(e.epa)
 FROM cfbd_passing_plays p
 JOIN games g ON g.game_id = p.game_id AND g.season_type = 'regular'
 LEFT JOIN cfb_play_epa e ON e.play_id = p.play_id
 WHERE p.season = ? AND p.pass_direction IN ('left','middle','right')
+GROUP BY p.{side}, p.pass_direction, COALESCE(p.pass_depth, 'short')
 """
 _RUSH = """
-SELECT {side}, rush_direction, rushing_yards, e.epa, m.success
+SELECT p.{side} AS team, p.rush_direction, COUNT(*), SUM(COALESCE(p.rushing_yards, 0.0)),
+       SUM(e.epa), COUNT(e.epa), SUM(m.success), COUNT(m.success)
 FROM cfbd_rushing_plays p
 JOIN games g ON g.game_id = p.game_id AND g.season_type = 'regular'
 LEFT JOIN cfb_play_epa e ON e.play_id = p.play_id
 LEFT JOIN cfb_play_metrics m ON m.play_id = p.play_id
 WHERE p.season = ? AND p.rush_direction IN ('left','middle','right') AND COALESCE(p.is_kneel, 0) = 0
+GROUP BY p.{side}, p.rush_direction
 """
 
 
@@ -49,41 +54,40 @@ def _new() -> dict[str, float]:
 
 
 def _tally(repository, season: int) -> dict[str, Any]:
-    """{'pass'|'run': {'offense'|'defense': {team: {'dir': {direction: cell}, 'matrix': {(depth, dir): cell}}}}}."""
+    """{'pass'|'run': {'offense'|'defense': {team: {'dir': {direction: cell}, 'matrix': {(depth, dir): cell}}}}}.
+
+    Aggregated by SQLite (a few thousand grouped rows) rather than looped over in Python (~100,000 plays).
+    """
     out: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
         kind: {side: defaultdict(lambda: {"dir": defaultdict(_new), "matrix": defaultdict(_new)})
                for side in ("offense", "defense")} for kind in ("pass", "run")}
     with closing(repository._connect()) as connection:
         fbs = {row[0] for row in connection.execute("SELECT school FROM teams WHERE classification = 'fbs'")}
-        for column, side in (("offense", "offense"), ("defense", "defense")):
-            for team, direction, depth, air, yards, outcome, epa in connection.execute(
-                    _PASS.format(side="p." + column), (int(season),)):
+        for side in ("offense", "defense"):
+            for team, direction, depth, n, yards, completions, air, air_n, epa, epa_n in connection.execute(
+                    _PASS.format(side=side), (int(season),)):
                 if team not in fbs:
                     continue
                 bucket = out["pass"][side][team]
-                for cell in (bucket["dir"][direction], bucket["matrix"][(depth or "short", direction)]):
-                    cell["n"] += 1
+                for cell in (bucket["dir"][direction], bucket["matrix"][(depth, direction)]):
+                    cell["n"] += n
                     cell["yards"] += yards or 0.0
-                    cell["completions"] += 1 if outcome == "completion" else 0
-                    if epa is not None:
-                        cell["epa"] += epa
-                        cell["epa_n"] += 1
-                    if air is not None:
-                        cell["air"] += air
-                        cell["air_n"] += 1
-            for team, direction, yards, epa, success in connection.execute(
-                    _RUSH.format(side="p." + column), (int(season),)):
+                    cell["completions"] += completions or 0
+                    cell["air"] += air or 0.0
+                    cell["air_n"] += air_n or 0
+                    cell["epa"] += epa or 0.0
+                    cell["epa_n"] += epa_n or 0
+            for team, direction, n, yards, epa, epa_n, success, success_n in connection.execute(
+                    _RUSH.format(side=side), (int(season),)):
                 if team not in fbs:
                     continue
                 cell = out["run"][side][team]["dir"][direction]
-                cell["n"] += 1
+                cell["n"] += n
                 cell["yards"] += yards or 0.0
-                if epa is not None:
-                    cell["epa"] += epa
-                    cell["epa_n"] += 1
-                if success is not None:
-                    cell["success"] += success
-                    cell["success_n"] += 1
+                cell["epa"] += epa or 0.0
+                cell["epa_n"] += epa_n or 0
+                cell["success"] += success or 0.0
+                cell["success_n"] += success_n or 0
     return {kind: {side: {team: {"dir": dict(v["dir"]), "matrix": dict(v["matrix"])} for team, v in teams.items()}
                    for side, teams in sides.items()} for kind, sides in out.items()}
 

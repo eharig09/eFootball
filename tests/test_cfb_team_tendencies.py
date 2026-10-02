@@ -100,6 +100,20 @@ class Fixture(unittest.TestCase):
 
 
 class SituationalTests(Fixture):
+    def test_sql_band_matches_the_python_band_rule(self):
+        sql = situational_tendencies._CELLS_SQL
+        case = sql[sql.index("CASE"):sql.index("END AS band") + 3].replace("END AS", "END")
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.execute("CREATE TABLE p (down INT, distance INT, yards_to_goal INT)")
+            cases = [(d, dist, ytg) for d in (1, 2, 3, 4) for dist in (None, 1, 2, 3, 4, 5, 6, 7, 10, 11, 20)
+                     for ytg in (None, 3, 10, 40, 80)]
+            connection.executemany("INSERT INTO p VALUES (?,?,?)", cases)
+            rows = connection.execute(f"SELECT down, distance, yards_to_goal, {case} FROM p").fetchall()
+        self.assertEqual(len(rows), len(cases))
+        for down, distance, to_goal, got in rows:
+            goal_to_go = to_goal is not None and distance is not None and to_goal <= distance
+            self.assertEqual(got, situational_tendencies.band(down, distance, goal_to_go), (down, distance, to_goal))
+
     def test_cells_league_rate_and_exclusions(self):
         self.game(1)
         self.game(2, kind="postseason")

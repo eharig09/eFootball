@@ -198,6 +198,25 @@ class _ThinLeagueRepositoryTests(unittest.TestCase):
                     (season, week, game_id, team, opponent),
                 )
 
+    def test_report_is_memoized_until_the_database_changes(self):
+        from unittest import mock
+        from sports_aggregator.nfl import live_projection
+        with closing(self.repository._connect()) as connection:
+            self._insert_week(connection, 2026, 1, completed=True)
+            self._insert_week(connection, 2026, 3, completed=False, spread=-2.5, total=46.5)
+            connection.commit()
+        with mock.patch.object(live_projection, "_report", wraps=live_projection._report) as spy:
+            first = report(self.repository, season=2026, week=3)
+            first["games"].clear()                                   # callers get private copies
+            second = report(self.repository, season=2026, week=3)
+            self.assertEqual(spy.call_count, 1)
+            self.assertTrue(second["games"])
+            with closing(self.repository._connect()) as connection:
+                self._insert_week(connection, 2026, 4, completed=False, spread=-1.5, total=44.5)
+                connection.commit()
+            report(self.repository, season=2026, week=3)
+            self.assertEqual(spy.call_count, 2)
+
     def test_thin_league_history_still_surfaces_the_market_line(self):
         with closing(self.repository._connect()) as connection:
             # Only 2 completed weeks exist anywhere in the database (mirrors

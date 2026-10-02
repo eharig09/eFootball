@@ -101,11 +101,50 @@ class ModelCacheTests(unittest.TestCase):
         for name in ("repository", "web", "views", "models", "sync"):
             self.assertNotIn(name, modules)        # editing these must not retire a cache that takes minutes to rebuild
 
+    def test_a_scoped_code_hash_is_independent_of_the_default_one(self):
+        default_before = model_cache.code_hash()
+        scoped = model_cache.code_hash(("live_margin", "qb_player_ablation"))
+        self.assertNotEqual(scoped, default_before)
+        self.assertEqual(model_cache.code_hash(), default_before)          # adding a scoped cache never retires the old ones
+        self.assertEqual(model_cache.code_hash(("live_margin", "qb_player_ablation")), scoped)
+        self.assertIn("margin_strength_ablation", model_cache.code_modules(("live_margin",)))   # imports are followed
+        self.assertEqual(model_cache.code_modules(("line_elo",)), ["line_elo"])         # a scope really is narrower than the default
+
+    def test_extra_fingerprint_queries_retire_the_entry_when_their_table_changes(self):
+        calls = []
+
+        @history_cached("extra", extra_queries=("SELECT COUNT(*) FROM team_venues WHERE ?>0",))
+        def compute(repository, *, start_season, end_season):
+            calls.append(1)
+            return len(calls)
+
+        self.assertEqual(compute(self.repository, start_season=2010, end_season=2024), 1)
+        self.assertEqual(compute(self.repository, start_season=2010, end_season=2024), 1)
+        from contextlib import closing
+        with closing(self.repository._connect()) as connection:
+            connection.execute("DELETE FROM team_venues")                    # a table only the extra query watches
+            connection.commit()
+        model_cache.clear_memory()
+        self.assertEqual(compute(self.repository, start_season=2010, end_season=2024), 2)
+
+    def test_the_live_margin_fit_is_computed_once_and_then_served_from_the_cache(self):
+        from sports_aggregator.nfl import live_margin
+        with mock.patch.object(live_margin, "build_rows", return_value=[]) as build:
+            first = live_margin.fit(self.repository, 2026)
+            second = live_margin.fit(self.repository, 2026)
+            model_cache.clear_memory()                                       # a new process: the disk copy answers
+            third = live_margin.fit(self.repository, 2026)
+        self.assertEqual(build.call_count, 1)
+        self.assertEqual(first, (None, None))
+        self.assertEqual(first, second)
+        self.assertEqual(second, third)
+
     def test_warm_builds_every_cached_piece_and_is_instant_the_second_time(self):
         first = model_cache.warm(self.repository, 2025)
-        self.assertEqual(set(first), {"core_oof", "game_rows", "calibrated_oof", "drive_rows"})
+        expected = {"core_oof", "game_rows", "calibrated_oof", "drive_rows", "live_margin_fit"}
+        self.assertEqual(set(first), expected)
         names = {path.name.split("-")[0] for path in cache_dir(self.repository).glob("*.pkl")}
-        self.assertEqual(names, {"core_oof", "game_rows", "calibrated_oof", "drive_rows"})
+        self.assertEqual(names, expected)
         model_cache.clear_memory()
         second = model_cache.warm(self.repository, 2025)
         self.assertLess(sum(second.values()), max(sum(first.values()), 0.5))

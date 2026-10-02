@@ -128,21 +128,23 @@ def _fbs_keys(connection) -> dict[str, list[str]]:
         "SELECT school, abbreviation FROM teams WHERE classification = 'fbs'")}
 
 
-def _build(repository, season: int, before_week: int | None = None) -> dict[str, dict[str, Any]]:
+def _season_data(repository, season: int) -> dict[str, Any]:
+    """Everything a season's discipline profiles are built from, read and parsed once (the parse is the slow part).
+
+    Rows keep their week and games keep theirs, so "games before week N" is a filter over this, not another parse.
+    """
     rows: list[dict[str, Any]] = []
-    week_filter = "AND p.week < ?" if before_week is not None else ""
-    parameters: list[Any] = [int(season)] + ([int(before_week)] if before_week is not None else [])
-    games: dict[str, set[str]] = defaultdict(set)
+    game_weeks: set[tuple[str, Any, Any]] = set()
     with closing(repository._connect()) as connection:
         fbs = _fbs_keys(connection)
-        for offense, game_id in connection.execute(
-                """SELECT DISTINCT p.offense, p.game_id FROM cfb_plays p
-                   JOIN games g ON g.game_id = p.game_id AND g.season_type = 'regular' WHERE p.season = ? """
-                + week_filter, parameters):
+        for offense, game_id, week in connection.execute(
+                """SELECT DISTINCT p.offense, p.game_id, p.week FROM cfb_plays p
+                   JOIN games g ON g.game_id = p.game_id AND g.season_type = 'regular' WHERE p.season = ?""",
+                (int(season),)):
             if offense in fbs:
-                games[offense].add(game_id)
+                game_weeks.add((offense, game_id, week))
         for _pid, game_id, week, offense, defense, yards_gained, text, epa in connection.execute(
-                _QUERY.format(week_filter=week_filter), parameters):
+                _QUERY.format(week_filter=""), [int(season)]):
             if offense not in fbs and defense not in fbs:
                 continue
             parsed = parse_penalty(text or "", fbs.get(offense) or _keys(offense, None),
@@ -156,9 +158,23 @@ def _build(repository, season: int, before_week: int | None = None) -> dict[str,
                 epa_team = epa if by_offense else -epa      # the flagged team's own EPA on the no-play
             rows.append({**parsed, "team": team, "opponent": opponent, "week": week, "game_id": game_id,
                          "epa_team": epa_team, "player_id": None})
+    return {"rows": rows, "game_weeks": game_weeks, "fbs": set(fbs)}
+
+
+def _build(repository, season: int, before_week: int | None = None) -> dict[str, dict[str, Any]]:
+    data = derived(repository, "cfb_penalty_season_data", lambda: _season_data(repository, season), int(season))
+
+    def counted(week) -> bool:
+        return before_week is None or (week is not None and int(week) < int(before_week))
+
+    games: dict[str, set[str]] = defaultdict(set)
+    for team, game_id, week in data["game_weeks"]:
+        if counted(week):
+            games[team].add(game_id)
+    rows = [row for row in data["rows"] if counted(row["week"])]
     # Only FBS teams are profiled and ranked; a flag drawn from (or committed against) an FCS opponent still
     # counts for the FBS side.
-    return profiles_from_rows(rows, games, season, presnap_types=PRESNAP_TYPES, only_teams=set(fbs))
+    return profiles_from_rows(rows, games, season, presnap_types=PRESNAP_TYPES, only_teams=data["fbs"])
 
 
 def league_penalties(repository, season: int, before_week: int | None = None) -> dict[str, dict[str, Any]]:

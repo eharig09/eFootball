@@ -61,8 +61,9 @@ def _side(rows: list[dict[str, Any]], games: int, *, drawn: bool,
         "auto_first_downs": sum(row["auto_first_down"] or 0 for row in rows),
         "presnap": sum(1 for row in rows if row["penalty_type"] in presnap_types),
         "epa": epa, "epa_flags": len(epas), "no_play_flags": sum(1 for row in rows if row["no_play"]),
+        # Most common first; ties break by name, so the list does not depend on the order rows were read in.
         "types": [{"type": name, "count": count, "yards": type_yards[name], "share": count / flags}
-                  for name, count in types.most_common(TOP_TYPES)] if flags else [],
+                  for name, count in sorted(types.items(), key=lambda item: (-item[1], item[0]))[:TOP_TYPES]] if flags else [],
         "offenders": sorted(offenders.values(), key=lambda item: (-item["flags"], -item["yards"], item["player_name"] or ""))[:TOP_OFFENDERS],
     }
 

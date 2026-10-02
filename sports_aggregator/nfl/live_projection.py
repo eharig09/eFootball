@@ -200,6 +200,20 @@ def _team_row(game: dict[str, Any], side: str, history, league):
 
 
 def report(repository: NFLRepository, *, season: int, week: int):
+    """The week's forecast packet, shared by every page that shows it.
+
+    All sixteen game pages of a week, the picks page, the dashboard and the picks API ask for the same packet, and it is a
+    pure function of the database. It is therefore computed once per database state and week and handed out as private
+    copies; any write (a completed game, a new forecast snapshot, an injury update) retires it.
+    """
+    memo = getattr(repository, "memo", None)
+    if memo is None:                       # a stand-in repository (tests) without the state-keyed memo
+        return _report(repository, season=season, week=week)
+    return memo(("live_projection_report", int(season), int(week)),
+                lambda: _report(repository, season=int(season), week=int(week)))
+
+
+def _report(repository: NFLRepository, *, season: int, week: int):
     history = _history_before_week(repository, season, week)
     league = _league_snapshot(history)
     games = _target_games(repository, season, week)
