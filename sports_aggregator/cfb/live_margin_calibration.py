@@ -176,6 +176,70 @@ def _side_red_zone_rate(row: dict[str, Any]) -> float | None:
     return trips * td_rate if trips is not None and td_rate is not None else None
 
 
+def _game_record(gid: int, sides: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """One game's feature row from its home and away backtest rows (None unless both exist)."""
+    home, away = sides.get("home"), sides.get("away")
+    if not home or not away:
+        return None
+    hp = float(home["projected_offensive_points"])
+    ap = float(away["projected_offensive_points"])
+    ha = float(home["actual_score_points"])
+    aa = float(away["actual_score_points"])
+    h_red_zone, a_red_zone = _side_red_zone_rate(home), _side_red_zone_rate(away)
+    return {
+        "game_id": gid,
+        "season": int(home["season"]),
+        "raw_margin": hp - ap,
+        "ppd_diff": (
+            float(home["projected_points_per_drive"])
+            - float(away["projected_points_per_drive"])
+            if home.get("projected_points_per_drive") is not None
+            and away.get("projected_points_per_drive") is not None
+            else None
+        ),
+        "drive_diff": (
+            float(home["projected_drives"]) - float(away["projected_drives"])
+            if home.get("projected_drives") is not None
+            and away.get("projected_drives") is not None
+            else None
+        ),
+        "elo_diff": (
+            float(home["elo_difference"])
+            if home.get("elo_difference") is not None else None
+        ),
+        "core_margin": (
+            float(home["core_margin"])
+            if home.get("core_margin") is not None else None
+        ),
+        "fpi_margin": (
+            float(home["fpi_margin"])
+            if home.get("fpi_margin") is not None else None
+        ),
+        "hc_diff": (
+            float(home["hc_home_pre_elo"]) - float(home["hc_away_pre_elo"])
+            if home.get("hc_home_pre_elo") is not None
+            and home.get("hc_away_pre_elo") is not None
+            else None
+        ),
+        "qb_diff": (
+            float(home["qb_home_pre_rating"]) - float(home["qb_away_pre_rating"])
+            if home.get("qb_home_pre_rating") is not None
+            and home.get("qb_away_pre_rating") is not None
+            else None
+        ),
+        "recent_margin_diff": (
+            float(home["team_recent_margin"]) - float(home["opponent_recent_margin"])
+            if home.get("team_recent_margin") is not None
+            and home.get("opponent_recent_margin") is not None
+            else None
+        ),
+        "red_zone_diff": (
+            h_red_zone - a_red_zone if h_red_zone is not None and a_red_zone is not None else None
+        ),
+        "actual_margin": ha - aa,
+    }
+
+
 def _historical_rows(repository, *, target_season: int) -> list[dict[str, Any]]:
     with repository._reader() as connection:
         # Called from the live request path (matchup_research.py on every
@@ -255,7 +319,7 @@ def _historical_rows(repository, *, target_season: int) -> list[dict[str, Any]]:
             params.append(XREDZONE_VERSION)
         params += [BACKTEST_VERSION, int(target_season)]
 
-        rows = [dict(r) for r in connection.execute(
+        cursor = connection.execute(
             f"""SELECT p.game_id,p.season,p.side,p.team,
                       p.projected_offensive_points,p.projected_points_per_drive,
                       p.projected_drives,p.actual_score_points,
@@ -272,74 +336,27 @@ def _historical_rows(repository, *, target_season: int) -> list[dict[str, Any]]:
                  AND p.actual_score_points IS NOT NULL
                ORDER BY p.season,p.game_id,p.side""",
             params,
-        )]
+        )
 
-    grouped: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
-    for row in rows:
-        grouped[int(row["game_id"])][str(row["side"])] = row
-
-    out = []
-    for gid, sides in grouped.items():
-        home, away = sides.get("home"), sides.get("away")
-        if not home or not away:
-            continue
-        hp = float(home["projected_offensive_points"])
-        ap = float(away["projected_offensive_points"])
-        ha = float(home["actual_score_points"])
-        aa = float(away["actual_score_points"])
-        h_red_zone, a_red_zone = _side_red_zone_rate(home), _side_red_zone_rate(away)
-        out.append({
-            "game_id": gid,
-            "season": int(home["season"]),
-            "raw_margin": hp - ap,
-            "ppd_diff": (
-                float(home["projected_points_per_drive"])
-                - float(away["projected_points_per_drive"])
-                if home.get("projected_points_per_drive") is not None
-                and away.get("projected_points_per_drive") is not None
-                else None
-            ),
-            "drive_diff": (
-                float(home["projected_drives"]) - float(away["projected_drives"])
-                if home.get("projected_drives") is not None
-                and away.get("projected_drives") is not None
-                else None
-            ),
-            "elo_diff": (
-                float(home["elo_difference"])
-                if home.get("elo_difference") is not None else None
-            ),
-            "core_margin": (
-                float(home["core_margin"])
-                if home.get("core_margin") is not None else None
-            ),
-            "fpi_margin": (
-                float(home["fpi_margin"])
-                if home.get("fpi_margin") is not None else None
-            ),
-            "hc_diff": (
-                float(home["hc_home_pre_elo"]) - float(home["hc_away_pre_elo"])
-                if home.get("hc_home_pre_elo") is not None
-                and home.get("hc_away_pre_elo") is not None
-                else None
-            ),
-            "qb_diff": (
-                float(home["qb_home_pre_rating"]) - float(home["qb_away_pre_rating"])
-                if home.get("qb_home_pre_rating") is not None
-                and home.get("qb_away_pre_rating") is not None
-                else None
-            ),
-            "recent_margin_diff": (
-                float(home["team_recent_margin"]) - float(home["opponent_recent_margin"])
-                if home.get("team_recent_margin") is not None
-                and home.get("opponent_recent_margin") is not None
-                else None
-            ),
-            "red_zone_diff": (
-                h_red_zone - a_red_zone if h_red_zone is not None and a_red_zone is not None else None
-            ),
-            "actual_margin": ha - aa,
-        })
+        # Rows come ordered by (season, game_id, side), so a game's two sides are adjacent: pair them as they stream
+        # past instead of holding every wide row at once (this list was the MemoryError on the small refresh host).
+        out: list[dict[str, Any]] = []
+        pending_gid: int | None = None
+        pending: dict[str, dict[str, Any]] = {}
+        for record in cursor:
+            row = dict(record)
+            gid = int(row["game_id"])
+            if gid != pending_gid:
+                if pending_gid is not None:
+                    built = _game_record(pending_gid, pending)
+                    if built is not None:
+                        out.append(built)
+                pending_gid, pending = gid, {}
+            pending[str(row["side"])] = row
+        if pending_gid is not None:
+            built = _game_record(pending_gid, pending)
+            if built is not None:
+                out.append(built)
     return out
 
 
