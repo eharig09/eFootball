@@ -206,21 +206,22 @@
 {% endmacro %}
 
 {# Hash-by-direction grid: where the ball starts (rows) against where it goes (columns). #}
-{% macro hash_matrix(grid) %}
-<table class="ui-matrix" aria-label="Ball start hash against direction">
-    <thead><tr><th>Ball starts</th><th>Left</th><th>Middle</th><th>Right</th></tr></thead>
+{% macro hash_matrix(grid, title='Ball starts') %}
+<table class="ui-matrix" aria-label="{{ title }} against direction">
+    <thead><tr><th>{{ title }}</th><th>Left</th><th>Middle</th><th>Right</th></tr></thead>
     <tbody>{% for row in grid %}<tr><th scope="row">{{ row.label }}</th>{% for cell in row.cells %}<td class="{{ cell.heat or '' }}">{% if cell.n %}<b>{{ cell.n }}</b><small class="{{ cell.epa_class or '' }}">{{ cell.epa_per|cell('signed2') }}</small>{% else %}<span class="ctx">&mdash;</span>{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
 </table>
 {% endmacro %}
 
 {# Field / boundary split: share bars with the league split as a tick, efficiency, and the hash grid. #}
-{% macro side_panel(title, section, passing=True, note='') %}
+{# `split_label` / `matrix_title` let college football reuse this with left : right and depth in place of the hash. #}
+{% macro side_panel(title, section, passing=True, note='', split_label='field : boundary', matrix_title='Ball starts', side_head='Side', empty='Not enough charted plays to split by hash and side.') %}
 <article class="ui-panel ui-sidepanel">
     <header class="ui-panel-head"><h3>{{ title }}</h3>{% if note %}<span class="ui-median-key">{{ note }}</span>{% endif %}</header>
     {% if section and section.has_data %}
-    <div class="ui-ratio"><b>{{ section.ratio or '&mdash;'|safe }}</b><span>field : boundary{% if section.league_ratio %} &middot; league {{ section.league_ratio }}{% endif %}</span><small>{{ section.total }} charted</small></div>
+    <div class="ui-ratio"><b>{{ section.ratio or '&mdash;'|safe }}</b><span>{{ split_label }}{% if section.league_ratio %} &middot; league {{ section.league_ratio }}{% endif %}</span><small>{{ section.total }} charted</small></div>
     <table class="ui-mini ui-sidebars">
-        <thead><tr><th>Side</th><th>Share <em>(tick = league)</em></th><th class="num">N</th><th class="num">EPA/play</th><th class="num">{{ 'Y/A' if passing else 'Y/C' }}</th><th class="num">{{ 'Cmp %' if passing else 'Succ %' }}</th>{% if passing %}<th class="num">aDOT</th>{% endif %}</tr></thead>
+        <thead><tr><th>{{ side_head }}</th><th>Share <em>(tick = league)</em></th><th class="num">N</th><th class="num">EPA/play</th><th class="num">{{ 'Y/A' if passing else 'Y/C' }}</th><th class="num">{{ 'Cmp %' if passing else 'Succ %' }}</th>{% if passing %}<th class="num">aDOT</th>{% endif %}</tr></thead>
         <tbody>{% for row in section.rows %}<tr>
             <th scope="row">{{ row.bucket }}</th>
             <td class="ui-mini-bar"><span class="ui-bar" style="--p:{{ (row.share * 100)|round(1) }}"><i></i>{% if row.league_share is not none %}<u style="left:{{ (row.league_share * 100)|round(1) }}%"></u>{% endif %}</span><span class="pct">{{ (row.share * 100)|round|int }}%</span></td>
@@ -231,8 +232,8 @@
             {% if passing %}<td class="num">{{ row.adot|cell('f1') }}</td>{% endif %}
         </tr>{% endfor %}</tbody>
     </table>
-    {{ hash_matrix(section.matrix) }}
-    {% else %}<p class="ui-panel-note">Not enough charted plays to split by hash and side.</p>{% endif %}
+    {% if section.matrix %}{{ hash_matrix(section.matrix, matrix_title) }}{% endif %}
+    {% else %}<p class="ui-panel-note">{{ empty }}</p>{% endif %}
 </article>
 {% endmacro %}
 
@@ -259,7 +260,7 @@
 {% endmacro %}
 
 {# Both sides of the flag for one team: net strip, committed/drawn panels with league ranks, flag types, repeat offenders. #}
-{% macro penalty_panels(profile, rows_committed, rows_drawn, note='') %}
+{% macro penalty_panels(profile, rows_committed, rows_drawn, note='', show_epa=True) %}
 {% set net = profile.net_yards %}
 <div class="ui-net-strip {{ 'is-good' if net > 0 else ('is-poor' if net < 0 else '') }}">
     <span class="ui-net-label">Net {{ 'favorable' if net > 0 else ('unfavorable' if net < 0 else 'even') }}</span>
@@ -270,7 +271,7 @@
 <div class="ui-deep-grid ui-flags">
     {% for side, title, kicker, rows, side_data in (('committed', 'Self-inflicted', 'Penalties committed', rows_committed, profile.committed), ('drawn', 'Opponent gifts', 'Penalties drawn', rows_drawn, profile.drawn)) %}
     <article class="ui-panel ui-flag-panel is-{{ side }}">
-        <header class="ui-panel-head"><div><small class="ui-kick">{{ kicker }}</small><h3>{{ title }}</h3></div><span class="ui-median-key">{{ side_data.epa_flags }} of {{ side_data.flags }} flags had a no-play EPA</span></header>
+        <header class="ui-panel-head"><div><small class="ui-kick">{{ kicker }}</small><h3>{{ title }}</h3></div>{% if show_epa %}<span class="ui-median-key">{{ side_data.epa_flags }} of {{ side_data.flags }} flags had a no-play EPA</span>{% else %}<span class="ui-median-key">{{ side_data.flags }} flags</span>{% endif %}</header>
         {% for row in rows %}<div class="ui-flag-row">
             <span class="ui-lbl">{{ row.label }}</span>
             <span class="ui-flag-val"><b>{{ row.value|cell(row.format) }}</b>{% if row.rank %}<em class="{{ 'is-good' if row.good else ('is-poor' if row.poor else '') }}">#{{ row.rank }}<small>/{{ row.of }}</small></em>{% endif %}</span>

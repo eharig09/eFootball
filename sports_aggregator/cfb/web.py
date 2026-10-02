@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 import json
 import os
+import sqlite3
 from zoneinfo import ZoneInfo
 
 from flask import (Blueprint, Response, abort, current_app, jsonify,
@@ -44,6 +45,9 @@ from sports_aggregator.cfb import syndication
 from sports_aggregator.cfb import game_panels
 from sports_aggregator.cfb import player_panels as cfb_player_panels
 from sports_aggregator.cfb import team_panels as cfb_team_panels
+from sports_aggregator.cfb import direction_splits as cfb_direction_splits
+from sports_aggregator.cfb import penalties as cfb_penalties
+from sports_aggregator.cfb import situational_tendencies as cfb_situational
 from sports_aggregator.page_cache import cached_page
 from sports_aggregator.cfb.search import search as search_entities
 from sports_aggregator.cfb.situations import game_situation
@@ -192,6 +196,21 @@ def _kit_identity(identity: dict) -> dict:
             "logo_url": identity.get("logo_dark") or identity.get("logo")}
 
 
+def _optional_panel(name: str, build):
+    """A new analytic must never be able to take the team page down: log it and show the page without it."""
+    try:
+        return build()
+    except sqlite3.OperationalError as error:
+        if "no such table" in str(error):      # an older or partial database simply has no play data to show
+            current_app.logger.info("team page panel %s skipped: %s", name, error)
+            return None
+        current_app.logger.exception("team page panel %s failed", name)
+        return None
+    except Exception:
+        current_app.logger.exception("team page panel %s failed", name)
+        return None
+
+
 def _team_packet(team_id: int, season: int) -> dict:
     repository = _repository()
     team = repository.get_team(team_id)
@@ -233,6 +252,9 @@ def _team_packet(team_id: int, season: int) -> dict:
         "team_panels": cfb_team_panels.team_panels(repository, season, team["school"]),
         "pff": repository.pff_team_context(team_id, repository.latest_pff_season()),
         "production": team_production(repository, team_id, season, movements=movements),
+        "situational": _optional_panel("situational", lambda: cfb_situational.team_view(repository, season, team["school"])),
+        "directions": _optional_panel("directions", lambda: cfb_direction_splits.team_view(repository, season, team["school"])),
+        "discipline": _optional_panel("discipline", lambda: cfb_penalties.team_view(repository, season, team["school"])),
         "stories": [{**story, "coverage_label": "Team linked"} for story in team_stories],
         "conference_stories": conference_stories,
     }

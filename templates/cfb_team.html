@@ -2,7 +2,7 @@
 {% from "_tables.html" import data_table, story_list, tabbed_tables, tabs_script %}
 {% from "_cfb_page_visuals.html" import depth_formation, pff_unit_bars_module, trend_chart, trend_scripts, visual_scripts %}
 {% from "_charts.html" import chart_workbench, chart_scripts %}
-{% from "_ui_kit.html" import pctl_panel, summary_panel, signal_panel %}
+{% from "_ui_kit.html" import pctl_panel, summary_panel, signal_panel, tendency_grid, side_panel, penalty_panels %}
 
 {% block title %}{{ team.school }}{% if team.mascot %} {{ team.mascot }}{% endif %} | {{ season }} Team Intelligence{% endblock %}
 
@@ -67,6 +67,7 @@
     <button type="button" role="tab" data-mobile-tab="overview" aria-selected="true">Overview</button>
     <button type="button" role="tab" data-mobile-tab="roster" aria-selected="false">Roster</button>
     <button type="button" role="tab" data-mobile-tab="stats" aria-selected="false">Stats</button>
+    {% if situational or directions or discipline %}<button type="button" role="tab" data-mobile-tab="tendencies" aria-selected="false">Tendencies</button>{% endif %}
 </nav>
 
 <div class="layout team-layout">
@@ -223,6 +224,36 @@
             </div>
             {{ data_table(draft_table) }}
         </section>
+        {% if situational %}
+        <section class="section" id="situational" data-mobile-tab-panel="tendencies">
+            <h2>What they do when &hellip;</h2>
+            <div class="section-note">Offensive tendencies by down and distance: how often {{ team.school }} passes in each situation against the FBS average. Regular-season scrimmage plays; penalties, kneels and spikes are excluded.</div>
+            {{ tendency_grid(situational.profile, 'Pass / rush mix by down and distance', situational.note) }}
+        </section>
+        {% endif %}
+        {% if directions %}
+        <section class="section" id="directions" data-mobile-tab-panel="tendencies">
+            <h2>Where they throw and run</h2>
+            <div class="section-note">Left, middle and right, with ticks marking the FBS split. College play-by-play has no hash mark, so this is direction rather than field side versus boundary; only plays whose direction was parsed from the play text are charted.</div>
+            <div class="ui-block"><h3>Offense{% if directions.note %} &middot; {{ directions.note }}{% endif %}</h3>
+            <div class="ui-enhanced-grid">
+                {{ side_panel('Throws · by direction', directions.offense.passes, true, directions.offense.passes.total ~ ' charted', 'left : right', 'Depth', 'Direction', 'Not enough charted throws to split by direction.') }}
+                {{ side_panel('Runs · by direction', directions.offense.runs, false, directions.offense.runs.total ~ ' charted', 'left : right', 'Depth', 'Direction', 'Not enough charted runs to split by direction.') }}
+            </div></div>
+            <div class="ui-block"><h3>Defense &mdash; what opponents do against it</h3>
+            <div class="ui-enhanced-grid">
+                {{ side_panel('Throws faced · by direction', directions.defense.passes, true, directions.defense.passes.total ~ ' charted', 'left : right', 'Depth', 'Direction', 'Not enough charted throws to split by direction.') }}
+                {{ side_panel('Runs faced · by direction', directions.defense.runs, false, directions.defense.runs.total ~ ' charted', 'left : right', 'Depth', 'Direction', 'Not enough charted runs to split by direction.') }}
+            </div></div>
+        </section>
+        {% endif %}
+        {% if discipline %}
+        <section class="section" id="discipline" data-mobile-tab-panel="tendencies">
+            <h2>Penalties{% if discipline.note %} <small>&middot; {{ discipline.note }}</small>{% endif %}</h2>
+            <details class="ui-note"><summary>Method</summary><p>Enforced regular-season penalties only (declined and offsetting flags are dropped), read from the play text. Self-inflicted is what {{ team.school }} committed; opponent gifts is what its opponents committed against it. The pre-snap count is the alignment, motion and clock flags a team controls entirely. Expected points are not scored for most no-play flags in college play-by-play, so no EPA is shown. Ranks are best-first among the FBS teams with games played: fewest flags committed, most drawn.</p></details>
+            {{ penalty_panels(discipline.profile, discipline.committed, discipline.drawn, '', false) }}
+        </section>
+        {% endif %}
     </div>
 
     <aside>
