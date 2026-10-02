@@ -34,7 +34,8 @@ DRAWN_METRICS = (
 )
 
 
-def _side(rows: list[dict[str, Any]], games: int, *, drawn: bool) -> dict[str, Any]:
+def _side(rows: list[dict[str, Any]], games: int, *, drawn: bool,
+          presnap_types: frozenset[str] = PRESNAP_TYPES) -> dict[str, Any]:
     flags = len(rows)
     yards = sum(row["yards"] for row in rows)
     epas = [row["epa_team"] for row in rows if row.get("epa_team") is not None]
@@ -58,7 +59,7 @@ def _side(rows: list[dict[str, Any]], games: int, *, drawn: bool) -> dict[str, A
         "flags": flags, "yards": yards, "flags_pg": flags / games if games else None,
         "yards_pg": yards / games if games else None,
         "auto_first_downs": sum(row["auto_first_down"] or 0 for row in rows),
-        "presnap": sum(1 for row in rows if row["penalty_type"] in PRESNAP_TYPES),
+        "presnap": sum(1 for row in rows if row["penalty_type"] in presnap_types),
         "epa": epa, "epa_flags": len(epas), "no_play_flags": sum(1 for row in rows if row["no_play"]),
         "types": [{"type": name, "count": count, "yards": type_yards[name], "share": count / flags}
                   for name, count in types.most_common(TOP_TYPES)] if flags else [],
@@ -90,16 +91,31 @@ def _build(repository: NFLRepository, season: int, before_week: int | None) -> d
             continue
         games_by_team[game["away_team"]].add(game["game_id"])
         games_by_team[game["home_team"]].add(game["game_id"])
+    return profiles_from_rows(penalties, games_by_team, season)
+
+
+def profiles_from_rows(penalties: list[dict[str, Any]], games_by_team: dict[str, set[str]], season: int, *,
+                       presnap_types: frozenset[str] = PRESNAP_TYPES,
+                       only_teams: set[str] | frozenset[str] | None = None) -> dict[str, dict[str, Any]]:
+    """Per-team discipline profiles with league ranks from enforced-penalty rows.
+
+    Rows need: team, opponent, penalty_type, yards, epa_team, auto_first_down, no_play, player_id, player_name.
+    Shared by the NFL and college football pages so both rank and render identically. `only_teams` limits who is
+    profiled and ranked (college football ranks FBS teams only) while flags against anyone else still count for
+    the teams they were committed against.
+    """
     committed: dict[str, list] = defaultdict(list)
     drawn: dict[str, list] = defaultdict(list)
     for row in penalties:
         committed[row["team"]].append(row)
         drawn[row["opponent"]].append(row)
     teams = sorted(set(games_by_team) | set(committed) | set(drawn))
+    if only_teams is not None:
+        teams = [team for team in teams if team in only_teams]
     profiles: dict[str, dict[str, Any]] = {}
     for team in teams:
         games = len(games_by_team.get(team, ()))
-        own, theirs = _side(committed.get(team, []), games, drawn=False), _side(drawn.get(team, []), games, drawn=True)
+        own, theirs = _side(committed.get(team, []), games, drawn=False, presnap_types=presnap_types), _side(drawn.get(team, []), games, drawn=True, presnap_types=presnap_types)
         profiles[team] = {
             "team": team, "games": games, "season": int(season), "committed": own, "drawn": theirs,
             "net_yards": theirs["yards"] - own["yards"], "net_flags": theirs["flags"] - own["flags"],
@@ -122,6 +138,8 @@ def _build(repository: NFLRepository, season: int, before_week: int | None) -> d
     return profiles
 
 
+
+
 def team_penalties(repository: NFLRepository, season: int, team: str, *,
                    before_week: int | None = None) -> dict[str, Any] | None:
     """One team's discipline profile with league ranks, or None when nothing is stored for it."""
@@ -138,7 +156,7 @@ def panel_rows(profile: dict[str, Any], side: str) -> list[dict[str, Any]]:
     rows = []
     for label, key, fmt, _ in metrics:
         rank = profile["ranks"][side].get(key)
-        rows.append({"label": label, "value": profile[side][key], "format": fmt, "rank": rank, "of": total,
+        rows.append({"key": key, "label": label, "value": profile[side][key], "format": fmt, "rank": rank, "of": total,
                      "bar": round(abs(profile[side][key] or 0) / profile["maxes"][side][key] * 100),
                      "good": bool(rank and rank <= total / 3), "poor": bool(rank and rank > total * 2 / 3)})
     return rows

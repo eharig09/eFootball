@@ -81,10 +81,19 @@ def team_tendencies(repository: NFLRepository, season: int, team: str, *,
     mine = data["teams"].get(team)
     if not mine:
         return None
+    return build_grid(mine, data["league"], team, season)
+
+
+def build_grid(mine: dict[tuple[int, str], list[float]], league: dict[tuple[int, str], float | None],
+               team: str, season: int) -> dict[str, Any]:
+    """Assemble the 4x3 grid from a team's (down, band) tallies [plays, passes, epa, successes].
+
+    Shared with the college football page, which tallies its own plays into the same shape.
+    """
     grid: dict[tuple[int, str], dict[str, Any]] = {}
     for down, situation_band, label in SITUATIONS:
         values = mine.get((down, situation_band))
-        league_rate = data["league"].get((down, situation_band))
+        league_rate = league.get((down, situation_band))
         plays = int(values[0]) if values else 0
         cell: dict[str, Any] = {"label": label, "down": down, "band": situation_band, "plays": plays,
                                 "status": "none" if not plays else ("small" if plays < MINIMUM_PLAYS else "ok"),
