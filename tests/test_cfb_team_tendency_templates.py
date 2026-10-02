@@ -64,3 +64,18 @@ def test_tendency_grid_renders_the_college_profile(env):
     html = _render(env, "{{ tendency_grid(p, 'Pass / rush mix by down and distance', '2025 baseline') }}", p=profile)
     assert "3rd &amp; 7+" in html or "3rd & 7+" in html
     assert "PASS 85.0%" in html and "RUN 60.0%" in html and "2025 baseline" in html
+
+
+def test_matchup_comparisons_render_both_teams(env):
+    from sports_aggregator.nfl.situational_tendencies import compare
+    profiles = profiles_from_rows(_penalty_rows(), {"Tulsa": {"a", "b", "c"}, "Air Force": {"a", "b", "c"}}, 2026)
+    grids = {team: build_grid({(3, "long"): [20, 17, 2.0, 9]}, {(3, "long"): 0.77}, team, 2026)
+             for team in ("Tulsa", "Air Force")}
+    html = env.from_string(
+        '{% from "_ui_kit.html" import tendency_compare, penalty_compare %}'
+        "{{ tendency_compare(rows, 'Air Force', 'Tulsa', 2026, 'through week 4') }}"
+        "{{ penalty_compare(away, home, 'Air Force', 'Tulsa', 2026, 'through week 4') }}"
+    ).render(rows=compare(grids["Air Force"], grids["Tulsa"]), away=profiles["Air Force"], home=profiles["Tulsa"])
+    assert "Air Force offense" in html and "Tulsa offense" in html and "PASS 85%" in html
+    assert "Net penalty yards" in html and "Flags committed / game" in html and "Holding" in html and "False Start" in html
+    assert html.count("through week 4") == 2

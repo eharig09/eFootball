@@ -1126,6 +1126,8 @@ def game_preview(game_id: int):
         away_brand=away_identity,
         home_brand=home_identity,
         gap_matchups=cfb_team_panels.matchup_cards(repository, season, game["away_team"], game["home_team"]),
+        situational_matchup=_optional_panel("situational matchup", lambda: cfb_situational.matchup_view(repository, game)),
+        discipline_matchup=_optional_panel("discipline matchup", lambda: cfb_penalties.matchup_view(repository, game)),
         gap_identities={game["away_team"]: _kit_identity(away_identity), game["home_team"]: _kit_identity(home_identity)},
         grade_panels=game_panels.unit_matchup_panels(
             matchup_report, game["away_team"], game["home_team"],

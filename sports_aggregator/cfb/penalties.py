@@ -34,7 +34,7 @@ SELECT p.play_id, p.game_id, p.week, p.offense, p.defense, p.yards_gained, p.pla
 FROM cfb_plays p
 JOIN games g ON g.game_id = p.game_id AND g.season_type = 'regular'
 LEFT JOIN cfb_play_epa e ON e.play_id = p.play_id
-WHERE p.season = ? AND p.play_type = 'Penalty'
+WHERE p.season = ? AND p.play_type = 'Penalty' {week_filter}
 """
 _TYPE_END = re.compile(r"\s+\(|\s+\d+\s+yards?\b|\s+to the\b|\.|,\s*1ST\b|\s+1ST\b", re.IGNORECASE)
 _PLAYER = re.compile(r"\(([^)]*)\)")
@@ -128,18 +128,21 @@ def _fbs_keys(connection) -> dict[str, list[str]]:
         "SELECT school, abbreviation FROM teams WHERE classification = 'fbs'")}
 
 
-def _build(repository, season: int) -> dict[str, dict[str, Any]]:
+def _build(repository, season: int, before_week: int | None = None) -> dict[str, dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    week_filter = "AND p.week < ?" if before_week is not None else ""
+    parameters: list[Any] = [int(season)] + ([int(before_week)] if before_week is not None else [])
     games: dict[str, set[str]] = defaultdict(set)
     with closing(repository._connect()) as connection:
         fbs = _fbs_keys(connection)
         for offense, game_id in connection.execute(
                 """SELECT DISTINCT p.offense, p.game_id FROM cfb_plays p
-                   JOIN games g ON g.game_id = p.game_id AND g.season_type = 'regular' WHERE p.season = ?""",
-                (int(season),)):
+                   JOIN games g ON g.game_id = p.game_id AND g.season_type = 'regular' WHERE p.season = ? """
+                + week_filter, parameters):
             if offense in fbs:
                 games[offense].add(game_id)
-        for _pid, game_id, week, offense, defense, yards_gained, text, epa in connection.execute(_QUERY, (int(season),)):
+        for _pid, game_id, week, offense, defense, yards_gained, text, epa in connection.execute(
+                _QUERY.format(week_filter=week_filter), parameters):
             if offense not in fbs and defense not in fbs:
                 continue
             parsed = parse_penalty(text or "", fbs.get(offense) or _keys(offense, None),
@@ -158,12 +161,12 @@ def _build(repository, season: int) -> dict[str, dict[str, Any]]:
     return profiles_from_rows(rows, games, season, presnap_types=PRESNAP_TYPES, only_teams=set(fbs))
 
 
-def league_penalties(repository, season: int) -> dict[str, dict[str, Any]]:
-    return derived(repository, "cfb_penalties", lambda: _build(repository, season), int(season))
+def league_penalties(repository, season: int, before_week: int | None = None) -> dict[str, dict[str, Any]]:
+    return derived(repository, "cfb_penalties", lambda: _build(repository, season, before_week), int(season), before_week)
 
 
-def team_penalties(repository, season: int, school: str) -> dict[str, Any] | None:
-    profile = league_penalties(repository, season).get(school)
+def team_penalties(repository, season: int, school: str, before_week: int | None = None) -> dict[str, Any] | None:
+    profile = league_penalties(repository, season, before_week).get(school)
     if not profile or not profile["games"]:
         return None
     return profile
@@ -185,3 +188,18 @@ def team_view(repository, season: int, school: str, *, minimum_games: int = 3) -
     return {"profile": profile, "note": note,
             "committed": [row for row in panel_rows(profile, "committed") if row["key"] != "epa"],
             "drawn": [row for row in panel_rows(profile, "drawn") if row["key"] != "epa"]}
+
+
+def matchup_view(repository, game: dict[str, Any], *, minimum_games: int = 3) -> dict[str, Any] | None:
+    """Both teams' discipline for a game page, from games played before it (see situational_tendencies.matchup_view)."""
+    season, away, home = int(game["season"]), game["away_team"], game["home_team"]
+    before = int(game["week"]) if game.get("season_type", "regular") == "regular" else None
+    current = {team: team_penalties(repository, season, team, before) for team in (away, home)}
+    if all(profile and profile["games"] >= minimum_games for profile in current.values()):
+        chosen, note = current, (f"through week {before - 1}" if before else "regular season")
+    else:
+        chosen = {team: team_penalties(repository, season - 1, team) for team in (away, home)}
+        if not all(chosen.values()):
+            return None
+        note = f"{season - 1} baseline"
+    return {"season": next(iter(chosen.values()))["season"], "note": note, "away": chosen[away], "home": chosen[home]}

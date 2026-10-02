@@ -74,22 +74,23 @@ class Fixture(unittest.TestCase):
             if os.path.exists(path):
                 os.unlink(path)
 
-    def game(self, game_id, season=2026, kind="regular"):
+    def game(self, game_id, season=2026, kind="regular", week=1):
         with closing(sqlite3.connect(self.path)) as c:
             c.execute("INSERT INTO games(game_id,season,week,season_type,start_date,start_time_tbd,completed,"
                       "neutral_site,conference_game,home_team_id,home_team,away_team_id,away_team,updated_at) "
-                      "VALUES (?,?,1,?,'2026-09-01',0,1,0,0,1,'Tulsa',2,'Air Force',?)", (game_id, season, kind, NOW))
+                      "VALUES (?,?,?,?,'2026-09-01',0,1,0,0,1,'Tulsa',2,'Air Force',?)",
+                      (game_id, season, week, kind, NOW))
             c.commit()
 
     def play(self, offense, defense, play_type, down=1, distance=10, to_goal=70, text="play", call=None,
-             epa=0.1, success=1, game_id=1, season=2026, yards=0):
+             epa=0.1, success=1, game_id=1, season=2026, yards=0, week=1):
         self.n += 1
         with closing(sqlite3.connect(self.path)) as c:
             c.execute("INSERT INTO cfb_plays(play_id,game_id,season,week,offense,defense,home_team,away_team,"
                       "down,distance,yards_to_goal,yards_gained,scoring,play_type,play_text,raw_json,imported_at) "
-                      "VALUES (?,?,?,1,?,?,?,?,?,?,?,?,0,?,?,'{}',?)",
-                      (f"p{self.n}", game_id, season, offense, defense, offense, defense, down, distance, to_goal,
-                       yards, play_type, text, NOW))
+                      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,'{}',?)",
+                      (f"p{self.n}", game_id, season, week, offense, defense, offense, defense, down, distance,
+                       to_goal, yards, play_type, text, NOW))
             c.execute("INSERT INTO cfb_play_epa(play_id,model_version,epa,possession_changed,scored_at) "
                       "VALUES (?,'ep-v2',?,0,?)", (f"p{self.n}", epa, NOW))
             c.execute("INSERT INTO cfb_play_metrics(play_id,metric_version,rush_pass,success,derived_at) "
@@ -133,6 +134,55 @@ class SituationalTests(Fixture):
         view = situational_tendencies.team_view(self.repository, 2026, "Tulsa")
         self.assertEqual(view["profile"]["season"], 2025)
         self.assertIn("2025 baseline", view["note"])
+
+
+class MatchupTests(Fixture):
+    """Game-page summaries use only games played before the game, on one common period for both teams."""
+
+    def target(self, week, season=2026, kind="regular"):
+        return {"season": season, "week": week, "season_type": kind, "away_team": "Air Force", "home_team": "Tulsa"}
+
+    def seed_season(self, season, weeks, plays_per_week):
+        for week in weeks:
+            self.game(season * 100 + week, season=season, week=week)
+            for _ in range(plays_per_week):
+                self.play("Tulsa", "Air Force", "Rush", call="rush", season=season, week=week, game_id=season * 100 + week)
+                self.play("Air Force", "Tulsa", "Pass Reception", call="pass", season=season, week=week,
+                          game_id=season * 100 + week)
+
+    def test_week_cutoff_excludes_the_game_itself_and_later_weeks(self):
+        self.seed_season(2026, range(1, 6), 60)                    # 60 plays a side per week
+        early = situational_tendencies.team_tendencies(self.repository, 2026, "Tulsa", before_week=3)
+        everything = situational_tendencies.team_tendencies(self.repository, 2026, "Tulsa")
+        self.assertEqual((early["plays"], everything["plays"]), (120, 300))    # weeks 1-2 only, not week 3
+        view = situational_tendencies.matchup_view(self.repository, self.target(4))
+        self.assertEqual((view["season"], view["note"], view["home"]["plays"]), (2026, "through week 3", 180))
+        self.assertEqual(len(view["rows"]), 12)
+
+    def test_a_thin_current_season_puts_both_teams_on_last_season(self):
+        self.seed_season(2025, range(1, 6), 40)
+        self.seed_season(2026, [1], 10)
+        view = situational_tendencies.matchup_view(self.repository, self.target(2))
+        self.assertEqual((view["season"], view["note"]), (2025, "2025 baseline"))
+        self.assertIsNone(situational_tendencies.matchup_view(self.repository, self.target(2, season=2030)))  # no data anywhere
+
+    def test_postseason_games_see_the_whole_regular_season(self):
+        self.seed_season(2026, range(1, 6), 60)
+        view = situational_tendencies.matchup_view(self.repository, self.target(1, kind="postseason"))
+        self.assertEqual((view["note"], view["home"]["plays"]), ("regular season", 300))
+
+    def test_discipline_matchup_applies_the_same_cutoff_and_fallback(self):
+        for week in range(1, 5):
+            self.game(100 + week, week=week)
+            self.play("Tulsa", "Air Force", "Penalty", text="PENALTY TLSA False Start (East,Cam) 5 yards from A to B. NO PLAY.",
+                      yards=-5, epa=None, week=week, game_id=100 + week)
+            for offense in ("Tulsa", "Air Force"):
+                self.play(offense, "x", "Rush", call="rush", week=week, game_id=100 + week)
+        view = penalties.matchup_view(self.repository, self.target(5), minimum_games=3)
+        self.assertEqual((view["season"], view["note"], view["home"]["games"]), (2026, "through week 4", 4))
+        self.assertEqual(view["home"]["committed"]["flags"], 4)
+        early = penalties.matchup_view(self.repository, self.target(3), minimum_games=3)   # only 2 games before week 3
+        self.assertIsNone(early)                                                           # ...and no prior season stored
 
 
 class PenaltyTests(Fixture):
