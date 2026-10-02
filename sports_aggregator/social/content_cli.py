@@ -65,6 +65,13 @@ LOCAL_REPORTING_WORKERS = 4
 
 MAX_TOLERATED_FAILURE_SHARE = 0.25
 
+#: Feeds fetched at once by ingest-reporting.
+#:
+#: The step runs under the refresh's 320 MB address-space ceiling. Newsletter feeds carry whole posts, so eight
+#: parsed at once exhausted it: six of ten feeds failed with `SSLError(OSError(12, 'Cannot allocate memory'))`.
+#: Two at a time costs about a minute and keeps every feed inside the ceiling.
+REPORTING_WORKERS = 2
+
 
 def _step_exit_code(*, attempted: int, errors: int, stored: int) -> int:
     """0 when the step did its job, 1 when it genuinely did not.
@@ -228,7 +235,7 @@ def main(argv=None) -> int:
         return _step_exit_code(attempted=len(endpoints), errors=len(errors), stored=stored)
     if args.command=="ingest-reporting":
         started=datetime.now(timezone.utc).isoformat()
-        result=build_default_service().aggregate(get_league("college-football"),force_refresh=True)
+        result=build_default_service(max_workers=REPORTING_WORKERS).aggregate(get_league("college-football"),force_refresh=True)
         stored=sum(repository.store_article(article,args.season) is not None for article in result.articles)
         errors=[{"source": error.source, "error": error.message} for error in result.errors]
         repository.record_run(
