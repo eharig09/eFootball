@@ -29,6 +29,8 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(format_value(83122, "big"), "83,122")
         self.assertEqual(format_value(0.4521, "f3"), "0.452")
         self.assertEqual(format_value(9.0, "num"), "9")
+        self.assertEqual(format_value(-3.67496, "signed1"), "-3.7")
+        self.assertEqual(format_value(4.04508, "signed1"), "+4.0")
 
     def test_non_numeric_values_survive_a_numeric_format(self):
         self.assertEqual(format_value("TBD", "f1"), "TBD")

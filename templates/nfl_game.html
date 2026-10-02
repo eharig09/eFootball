@@ -80,8 +80,8 @@
         <table class="ui-mini ui-compare">
             <thead><tr><th>Source</th><th class="num">{{ game.away_team }}</th><th class="num">{{ game.home_team }}</th><th class="num">Total</th><th class="num">{{ game.home_team }} margin</th></tr></thead>
             <tbody>
-                <tr><th scope="row">Market anchor<small>primary accuracy view</small></th>{% if ma %}<td class="num"><b>{{ ma.away_points|cell('f1') }}</b></td><td class="num"><b>{{ ma.home_points|cell('f1') }}</b></td><td class="num">{{ ma.total|cell('f1') }}</td><td class="num">{{ ma.margin|cell('signed') }}</td>{% else %}<td colspan="4" class="ctx">No market spread/total is stored for this game.</td>{% endif %}</tr>
-                <tr><th scope="row">Independent Football Lab<small>market-free diagnostic</small></th>{% if fl %}<td class="num"><b>{{ fl.away_points|cell('f1') }}</b></td><td class="num"><b>{{ fl.home_points|cell('f1') }}</b></td><td class="num">{{ fl.total|cell('f1') }}</td><td class="num">{{ fl.margin|cell('signed') }}</td>{% else %}<td colspan="4" class="ctx">Not enough completed games this season yet to train the independent model (typically ready by week 3&ndash;4).</td>{% endif %}</tr>
+                <tr><th scope="row">Market anchor<small>primary accuracy view</small></th>{% if ma %}<td class="num"><b>{{ ma.away_points|cell('f1') }}</b></td><td class="num"><b>{{ ma.home_points|cell('f1') }}</b></td><td class="num">{{ ma.total|cell('f1') }}</td><td class="num">{{ ma.margin|cell('signed1') }}</td>{% else %}<td colspan="4" class="ctx">No market spread/total is stored for this game.</td>{% endif %}</tr>
+                <tr><th scope="row">Independent Football Lab<small>market-free diagnostic</small></th>{% if fl %}<td class="num"><b>{{ fl.away_points|cell('f1') }}</b></td><td class="num"><b>{{ fl.home_points|cell('f1') }}</b></td><td class="num">{{ fl.total|cell('f1') }}</td><td class="num">{{ fl.margin|cell('signed1') }}</td>{% else %}<td colspan="4" class="ctx">Not enough completed games this season yet to train the independent model (typically ready by week 3&ndash;4).</td>{% endif %}</tr>
             </tbody>
         </table>
 
@@ -89,8 +89,8 @@
         <table class="ui-mini">
             <thead><tr><th>Disagreement &amp; scale</th><th class="num">Value</th><th>Reading</th></tr></thead>
             <tbody>
-                <tr><th scope="row">Margin disagreement</th><td class="num"><b>{{ football_lab.disagreement.margin|cell('signed') if football_lab.disagreement.margin is not none else '&mdash;'|safe }}</b></td><td class="ctx">Football Lab minus market</td></tr>
-                <tr><th scope="row">Total disagreement</th><td class="num"><b>{{ football_lab.disagreement.total|cell('signed') if football_lab.disagreement.total is not none else '&mdash;'|safe }}</b></td><td class="ctx">Football Lab minus market</td></tr>
+                <tr><th scope="row">Margin disagreement</th><td class="num"><b>{{ football_lab.disagreement.margin|cell('signed1') if football_lab.disagreement.margin is not none else '&mdash;'|safe }}</b></td><td class="ctx">Football Lab minus market</td></tr>
+                <tr><th scope="row">Total disagreement</th><td class="num"><b>{{ football_lab.disagreement.total|cell('signed1') if football_lab.disagreement.total is not none else '&mdash;'|safe }}</b></td><td class="ctx">Football Lab minus market</td></tr>
                 <tr><th scope="row">Historical margin scale</th><td class="num">{{ football_lab.historical_uncertainty_scale.margin_residual_scale|cell('f1') if football_lab.historical_uncertainty_scale else '&mdash;'|safe }}</td><td class="ctx">Typical residual scale, points</td></tr>
                 <tr><th scope="row">Historical total scale</th><td class="num">{{ football_lab.historical_uncertainty_scale.total_residual_scale|cell('f1') if football_lab.historical_uncertainty_scale else '&mdash;'|safe }}</td><td class="ctx">Typical residual scale, points</td></tr>
             </tbody>
@@ -346,9 +346,9 @@
                 </table>
                 <table class="ui-mini">
                     <tbody>
-                        <tr><th scope="row">Combined midpoint</th><td class="num"><b>{{ game_shape.combined_points|cell('f1') }}</b></td><td class="ctx">{% if game.total_line is not none and game_shape.combined_points is not none %}{{ (game_shape.combined_points - game.total_line)|cell('signed') }} vs listed total{% endif %}</td></tr>
+                        <tr><th scope="row">Combined midpoint</th><td class="num"><b>{{ game_shape.combined_points|cell('f1') }}</b></td><td class="ctx">{% if game.total_line is not none and game_shape.combined_points is not none %}{{ (game_shape.combined_points - game.total_line)|cell('signed1') }} vs listed total{% endif %}</td></tr>
                         <tr><th scope="row">Context range</th><td class="num">{{ game_shape.range_low|cell('f1') }}&ndash;{{ game_shape.range_high|cell('f1') }}</td><td class="ctx">combined points</td></tr>
-                        <tr><th scope="row">Home scoring margin</th><td class="num"><b>{{ game_shape.margin|cell('signed') }}</b></td><td class="ctx">{{ game.home_team }} minus {{ game.away_team }}</td></tr>
+                        <tr><th scope="row">Home scoring margin</th><td class="num"><b>{{ game_shape.margin|cell('signed1') }}</b></td><td class="ctx">{{ game.home_team }} minus {{ game.away_team }}</td></tr>
                         <tr><th scope="row">Expected plays / team</th><td class="num">{{ game_shape.expected_plays_per_team|cell('f1') }}</td><td class="ctx">{{ game_shape.pace_label }} pace</td></tr>
                         <tr><th scope="row">Expected possessions / team</th><td class="num">{{ game_shape.expected_possessions_per_team|cell('f1') }}</td><td class="ctx"></td></tr>
                     </tbody>
