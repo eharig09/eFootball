@@ -66,7 +66,7 @@
                     <thead><tr><th>Split</th><th class="num">Record</th><th class="num">Pt diff</th></tr></thead>
                     <tbody>
                         {% for split in team_context.record_splits %}<tr><th scope="row">{{ split.label }}</th><td class="num">{{ split.record }}</td><td class="num {{ 'good' if split.point_diff > 0 else ('poor' if split.point_diff < 0 else '') }}">{{ split.point_diff|cell('signed') }}</td></tr>{% endfor %}
-                        {% if hc and hc.games %}<tr><th scope="row">Head coach<small>{{ hc.games }} games</small></th><td class="num">{{ hc.record }}</td><td class="num">{{ hc.point_diff_per_game|cell('signed') }}<small>/g</small></td></tr>{% endif %}
+                        {% if hc and hc.games %}<tr><th scope="row">Head coach<small>{{ hc.games }} games</small></th><td class="num">{{ hc.record }}</td><td class="num">{{ hc.point_diff_per_game|cell('signed1') }}<small>/g</small></td></tr>{% endif %}
                     </tbody>
                 </table>
                 <table class="ui-mini ui-block">

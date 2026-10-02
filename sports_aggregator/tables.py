@@ -155,6 +155,8 @@ def format_value(value: Any, fmt: str = "text") -> str:
         return f"{number * 100:.1f}%"
     if fmt == "signed":
         return f"{number:+g}"
+    if fmt == "signed1":
+        return f"{number:+.1f}"
     if fmt == "signed2":
         return f"{number:+.2f}"
     return str(value)

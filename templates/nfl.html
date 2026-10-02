@@ -75,7 +75,7 @@
             <header><div><p class="eyebrow">Football Lab · independent model{% if picks_week %} · Week {{ picks_week }}{% endif %}</p><h2>Picks of the week</h2></div><a href="{{ url_for('nfl.engine_picks', season=season, week=picks_week) }}">Full board →</a></header>
             <div class="picks-record-bar">
                 <div><span>ATS record</span><b>{{ picks_record.record }}</b></div>
-                <div><span>ROI</span><b class="{% if picks_record.roi is not none %}{{ 'is-positive' if picks_record.roi >= 0 else 'is-negative' }}{% endif %}">{% if picks_record.roi is not none %}{{ picks_record.roi|cell('signed') }}%{% else %}—{% endif %}</b></div>
+                <div><span>ROI</span><b class="{% if picks_record.roi is not none %}{{ 'is-positive' if picks_record.roi >= 0 else 'is-negative' }}{% endif %}">{% if picks_record.roi is not none %}{{ picks_record.roi|cell('signed1') }}%{% else %}—{% endif %}</b></div>
                 <div><span>Graded</span><b>{{ picks_record.n }}</b><small>@ {{ picks_record.price }}</small></div>
             </div>
             <div class="picks-of-week-list">
