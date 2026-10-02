@@ -241,6 +241,8 @@ def main(argv=None) -> int:
         # second time here was the memory spike that made `articles` fail with
         # a MemoryError on the constrained instance.
         print(f"articles={len(result.articles)} stored={stored} errors={len(result.errors)}")
+        for error in result.errors:
+            print(f"  {error.source}: {str(error.message)[:200]}")
         return _reporting_exit_code(result.league.feeds, result.errors, stored)
     if args.command=="ingest-local-reporting":
         from sports_aggregator.models import FeedConfig
