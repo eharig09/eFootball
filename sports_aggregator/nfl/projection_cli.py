@@ -25,6 +25,7 @@ from sports_aggregator.nfl.market_gap import report as market_gap_report
 from sports_aggregator.nfl.scoring_form_model import report as scoring_form_report
 from sports_aggregator.nfl.line_elo import report as line_elo_report
 from sports_aggregator.nfl.lean_model import report as lean_model_report
+from sports_aggregator.nfl.pace_totals import report as pace_totals_report
 from sports_aggregator.nfl.travel_ablation import report as travel_report
 from sports_aggregator.nfl.nonlinear_ablation import report as nonlinear_report
 from sports_aggregator.nfl.weather_total_ablation import report as weather_total_report
@@ -101,6 +102,10 @@ def main(argv: list[str] | None = None) -> int:
     travel = sub.add_parser("travel")
     travel.add_argument("--from-year", type=int, default=2013)
     travel.add_argument("--to-year", type=int, default=2025)
+
+    pace = sub.add_parser("pace-totals")
+    pace.add_argument("--from-year", type=int, default=2013)
+    pace.add_argument("--to-year", type=int, default=2025)
 
     lean = sub.add_parser("lean-model")
     lean.add_argument("--from-year", type=int, default=2013)
@@ -304,6 +309,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "travel":
         payload = travel_report(
+            repository,
+            start_season=int(args.from_year),
+            end_season=int(args.to_year),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "pace-totals":
+        payload = pace_totals_report(
             repository,
             start_season=int(args.from_year),
             end_season=int(args.to_year),
