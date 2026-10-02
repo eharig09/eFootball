@@ -83,7 +83,24 @@
             <button class="attn-btn" type="button" data-nfl-rerun="{{ segment }}">{{ label }}</button>
             {% endfor %}
         </div>
-        <p class="section-note" id="nfl-refresh-result"></p>
+        <div class="refresh-confirm" id="nfl-refresh-confirm" hidden>
+            <span id="nfl-refresh-confirm-text"></span>
+            <label id="nfl-refresh-token-wrap" hidden>Refresh token or admin PIN
+                <input type="password" id="nfl-refresh-token" autocomplete="off" spellcheck="false"></label>
+            <button class="attn-btn" type="button" id="nfl-refresh-go">Run now</button>
+            <button class="attn-btn" type="button" id="nfl-refresh-cancel">Cancel</button>
+        </div>
+        <p class="section-note refresh-result" id="nfl-refresh-result" role="status" aria-live="polite"></p>
+        <style>
+            .refresh-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid var(--line,#2c3038);border-radius:8px}
+            .refresh-confirm[hidden],.refresh-confirm label[hidden]{display:none}
+            .refresh-confirm label{display:flex;align-items:center;gap:8px;font-size:.85rem}
+            .refresh-confirm input{min-width:220px;padding:6px 8px;border:1px solid var(--line,#2c3038);border-radius:6px;background:transparent;color:inherit}
+            .refresh-result[data-tone="ok"]{color:var(--ui-good,#34d27b)}
+            .refresh-result[data-tone="warn"]{color:var(--ui-mid,#f0b429)}
+            .refresh-result[data-tone="error"]{color:var(--ui-poor,#ef5b78)}
+            .attn-btn:disabled{opacity:.55;cursor:wait}
+        </style>
     </section>
 
     <section class="section" id="pff-storage">
@@ -149,32 +166,6 @@
 
     <section class="section" id="ingestion-runs"><div class="section-head"><div><p class="eyebrow">RSS + Bluesky</p><h2>Content ingestion runs</h2></div></div>{% if latest_ingestion %}<p class="section-note">Latest completed ingestion: {{ latest_ingestion.finished_at }} · {{ latest_ingestion.stored }} stored from {{ latest_ingestion.succeeded }}/{{ latest_ingestion.attempted }} successful sources.</p>{% endif %}{{ data_table(runs_table) }}</section>
 </main>
-<script>
-(function(){
-  function token(){
-    var t=sessionStorage.getItem('nflAuditToken')||sessionStorage.getItem('cfbAuditToken')||'';
-    if(!t){t=window.prompt('Enter the refresh token or admin PIN:')||'';if(t)sessionStorage.setItem('nflAuditToken',t);}
-    return t;
-  }
-  document.querySelectorAll('[data-nfl-rerun]').forEach(function(btn){
-    btn.addEventListener('click',async function(){
-      var seg=btn.dataset.nflRerun;
-      if(!window.confirm('Run NFL '+seg+' now?'))return;
-      var t=token();if(!t)return;
-      var old=btn.textContent;btn.disabled=true;btn.textContent='Starting…';
-      try{
-        var r=await fetch('{{ request.url_root }}internal/nfl-refresh?segment='+encodeURIComponent(seg),{
-          method:'POST',headers:{'Authorization':'Bearer '+t}
-        });
-        if(r.status===401){sessionStorage.removeItem('nflAuditToken');throw new Error('Token was rejected.');}
-        if(!r.ok&&r.status!==202)throw new Error('Refresh not accepted ('+r.status+')');
-        var data=await r.json();
-        document.getElementById('nfl-refresh-result').textContent='Started '+seg+' for season '+data.season+'. Refresh this page to inspect the result.';
-        btn.textContent='Started';
-      }catch(e){window.alert(e.message||String(e));btn.textContent=old;btn.disabled=false;}
-    });
-  });
-})();
-</script>
+<script src="{{ url_for('static', filename='nfl_manual_refresh.js') }}" defer></script>
 </body>
 </html>
