@@ -231,17 +231,24 @@ def historical_games_table(games: Sequence[dict[str, Any]], *,
         "score_sort": leading_number(row.get("score")),
         "score_url": row.get("game_url"), "slot": row.get("slot"),
         "conference": row.get("opponent_conference"),
+        "ats": row.get("ats") or ("—" if "ats" in row else None),
+        "line": row.get("line"),
         "conference_conference": (conference_identity(row["opponent_conference"])
                                   if row.get("opponent_conference") else None),
         "box_score": "Box score", "box_score_url": row.get("box_score_url") or
         (f"/college-football/games/{row['game_id']}/box-score/" if row.get("game_id") else None),
     } for row in games]
+    # Series tables carry the closing line and the against-the-spread result; other game logs have neither.
+    spread_columns = ([Column("line", "Line", format="signed", align="right", title="Closing spread for this team"),
+                       Column("ats", "ATS", title="Against the spread: W covered, L did not, P push")]
+                      if any("ats" in row for row in games) else [])
     return Table(
         columns=[Column("season", "Season", format="int", align="right"),
                  Column("date", "Date"), Column("opponent", "Opponent"),
                  Column("site", "Site"), Column("result", "Result", emphasis=True),
                  Column("score", "Score", align="right", sort="number",
                         title="Sorted by points scored"),
+                 *spread_columns,
                  Column("slot", "Window"),
                  Column("conference", "Opp. conf."), Column("box_score", "Detail")],
         rows=rows, caption=caption, dense=True,

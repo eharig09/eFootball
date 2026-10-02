@@ -94,7 +94,7 @@
     <div class="section-note">
         Derived from completed games stored for {{ history.coverage.from or 'an unavailable start year' }}
         through {{ history.coverage.through or 'an unavailable end year' }}. Coach records use
-        CFBD team-season attribution; kickoff windows use US Eastern time.
+        CFBD team-season attribution; kickoff windows use US Eastern time. ATS uses the stored closing spread; meetings without a stored line are left out of the count.
     </div>
     <div class="facts">
         <div class="fact"><b>{{ history.meetings }}</b><span>Meetings stored</span></div>
@@ -103,6 +103,8 @@
         <div class="fact"><b>{{ history.away_record.ppg_for | cell('f1') }}</b><span>{{ game.away_team }} PPG</span></div>
         <div class="fact"><b>{{ history.home_record.ppg_for | cell('f1') }}</b><span>{{ game.home_team }} PPG</span></div>
         <div class="fact"><b>{{ history.away_record.streak or '—' }}</b><span>{{ game.away_team }} series streak</span></div>
+        <div class="fact"><b>{{ history.away_record.ats.record or '—' }}</b><span>{{ game.away_team }} ATS in series{% if history.away_record.ats.games %} ({{ history.away_record.ats.games }} w/ lines){% endif %}</span></div>
+        <div class="fact"><b>{{ history.home_record.ats.record or '—' }}</b><span>{{ game.home_team }} ATS in series{% if history.home_record.ats.games %} ({{ history.home_record.ats.games }} w/ lines){% endif %}</span></div>
     </div>
     <div class="split">
         {% for team_name, team_id, context in [(game.away_team, game.away_team_id, history.away_context), (game.home_team, game.home_team_id, history.home_context)] %}
@@ -114,6 +116,11 @@
             </p>
             <p><strong>{{ context.site.record }}</strong> in this series when playing
                {{ context.site.label | lower }}.</p>
+            {% if context.series_ats.record %}
+            <p><strong>{{ context.series_ats.record }}</strong> against the spread in this series
+               ({{ context.series_ats.games }} with stored lines){% if context.site.ats.record %};
+               <strong>{{ context.site.ats.record }}</strong> when playing {{ context.site.label | lower }}{% endif %}.</p>
+            {% endif %}
             <p>
                 <strong>{{ context.conference.record }}</strong> vs {{ context.conference.conference or 'opponent conference unavailable' }}
                 ({{ context.conference.ppg_for | cell('f1') }}&ndash;{{ context.conference.ppg_against | cell('f1') }} PPG).

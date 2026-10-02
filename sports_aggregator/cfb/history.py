@@ -77,6 +77,48 @@ def _record(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _series_spreads(repository: CFBRepository, game_ids: list[int]) -> dict[int, float]:
+    """Closing home-signed spread per game (negative = home favoured): the consensus line when the provider has one,
+    otherwise the mean across providers rounded to the half point. Games with no stored line are absent."""
+    if not game_ids:
+        return {}
+    from sports_aggregator.cfb import lines
+    lines.initialize(repository)          # once per process; the table is created lazily elsewhere
+    placeholders = ",".join("?" for _ in game_ids)
+    with repository._reader() as connection:
+        rows = connection.execute(
+            f"""SELECT game_id,
+                       AVG(CASE WHEN provider='consensus' THEN spread END) consensus,
+                       AVG(spread) average
+                FROM game_lines WHERE spread IS NOT NULL AND game_id IN ({placeholders}) GROUP BY game_id""",
+            game_ids).fetchall()
+    return {int(row["game_id"]): float(row["consensus"]) if row["consensus"] is not None
+            else round(float(row["average"]) * 2) / 2 for row in rows}
+
+
+def _attach_ats(rows: list[dict[str, Any]], spreads: dict[int, float]) -> None:
+    """Add `ats` ('W'/'L'/'P') and the team's own closing line (`line`, negative = favourite) to each row, in place."""
+    for row in rows:
+        spread = spreads.get(row["game_id"])
+        if spread is None or row.get("points_for") is None or row.get("points_against") is None:
+            row["ats"], row["line"] = None, None
+            continue
+        team_line = spread if row["home_team_id"] == row["team_id"] else -spread
+        margin = float(row["points_for"]) - float(row["points_against"]) + team_line
+        row["ats"] = "W" if margin > 0 else "L" if margin < 0 else "P"
+        row["line"] = team_line
+
+
+def _ats_record(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Against-the-spread record over the rows that have a stored line; `games` says how many that was."""
+    items = [row for row in rows if row.get("ats")]
+    wins = sum(row["ats"] == "W" for row in items)
+    losses = sum(row["ats"] == "L" for row in items)
+    pushes = sum(row["ats"] == "P" for row in items)
+    return {"games": len(items), "wins": wins, "losses": losses, "pushes": pushes,
+            "record": f"{wins}-{losses}" + (f"-{pushes}" if pushes else "") if items else None}
+
+
 def _streak(rows: list[dict[str, Any]]) -> str | None:
     if not rows:
         return None
@@ -129,10 +171,15 @@ def matchup_history(repository: CFBRepository, game: dict[str, Any],
                 == {home_id, away_id}]
     away_meetings = [_perspective(row, away_id) for row in meetings]
     home_meetings = [_perspective(row, home_id) for row in meetings]
+    spreads = _series_spreads(repository, [int(row["game_id"]) for row in meetings])
+    _attach_ats(away_meetings, spreads)
+    _attach_ats(home_meetings, spreads)
     away_all = [_perspective(row, away_id) for row in all_games
                 if away_id in (row["home_team_id"], row["away_team_id"])]
     home_all = [_perspective(row, home_id) for row in all_games
                 if home_id in (row["home_team_id"], row["away_team_id"])]
+    for rows_ in (away_all, home_all):
+        _attach_ats([row for row in rows_ if int(row["game_id"]) in spreads], spreads)
     slot = time_slot(game["start_date"])
 
     def context(team_id: int, rows: list[dict[str, Any]], opponent_conference: str | None,
@@ -147,7 +194,8 @@ def matchup_history(repository: CFBRepository, game: dict[str, Any],
         unique_opponents = len({row["opponent_id"] for row in rows})
         return {
             "overall": _record(rows), "slot": {**_record(slot_rows), "label": slot},
-            "site": {**_record(site_rows), "label": target_site},
+            "site": {**_record(site_rows), "label": target_site, "ats": _ats_record(site_rows)},
+            "series_ats": _ats_record(row for row in rows if row["opponent_id"] == opponent_id),
             "conference": {**_record(conference_rows), "conference": opponent_conference},
             "unique_opponents": unique_opponents,
             "coach": _coach_record(repository, team_id, opponent_id,
@@ -180,8 +228,8 @@ def matchup_history(repository: CFBRepository, game: dict[str, Any],
     return {
         "meetings": len(meetings), "first_meeting": min((row["season"] for row in meetings), default=None),
         "last_meeting": max((row["season"] for row in meetings), default=None),
-        "away_record": {**_record(away_meetings), "streak": _streak(away_meetings)},
-        "home_record": {**_record(home_meetings), "streak": _streak(home_meetings)},
+        "away_record": {**_record(away_meetings), "streak": _streak(away_meetings), "ats": _ats_record(away_meetings)},
+        "home_record": {**_record(home_meetings), "streak": _streak(home_meetings), "ats": _ats_record(home_meetings)},
         "away_context": context(away_id, away_all, game.get("home_conference"), home_id),
         "home_context": context(home_id, home_all, game.get("away_conference"), away_id),
         "slot": slot, "recent": recent,
