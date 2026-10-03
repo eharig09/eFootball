@@ -5,7 +5,7 @@
 {% from '_nfl_rushing.html' import run_matchup_grid %}
 {% from '_nfl_position_groups.html' import position_group_compact %}
 {% from '_nfl_injury.html' import injury_popover %}
-{% from '_ui_kit.html' import rank_gap_panel, wp_chart, swing_table, drive_chart, play_table, tendency_compare, penalty_compare %}
+{% from '_ui_kit.html' import ordinal, line_panel, table_panel, rank_gap_panel, wp_chart, swing_table, drive_chart, play_table, tendency_compare, penalty_compare %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -160,13 +160,13 @@
     <section class="section" id="trenches" data-nfl-panel="matchups">
         <div class="section-head"><div><p class="eyebrow">Protection against pressure</p><h2>Trench analysis</h2></div></div>
 
-        <details class="ui-note"><summary>Method</summary><p>Blocking grades are PFF snap-weighted current-roster baselines. Opposing pressure comes from nflverse box scores; the site does not imply a PFF pass-rush grade where that export is unavailable.</p></details>
+        <details class="ui-note"><summary>Method</summary><p>Blocking grades are PFF snap-weighted current-roster baselines; the percentile ranks each line among all 32 teams' blocking grades. Opposing pressure comes from nflverse box scores; the site does not imply a PFF pass-rush grade where that export is unavailable.</p></details>
         <div class="ui-deep-grid">{% for trench in trenches %}
             <article class="ui-panel ui-trench">
                 <header class="ui-panel-head"><h3>{{ trench.offense }} line vs {{ trench.defense }} front</h3><span class="ui-median-key">protection vs pass rush</span></header>
                 <table class="ui-mini ui-trench-stats">
                     <thead><tr><th class="num">Pass block</th><th class="num">PBE</th><th class="num">Pressures allowed</th><th class="num">Run block</th><th class="num">Rush EPA allowed</th></tr></thead>
-                    <tbody><tr><td class="num">{{ trench.pass_block_grade|cell('f1') }}</td><td class="num">{{ trench.pbe|cell('f1') }}</td><td class="num">{{ trench.pressures_allowed|cell('int') }}</td><td class="num">{{ trench.run_block_grade|cell('f1') }}</td><td class="num">{{ trench.defensive_rush_epa_allowed|cell('signed2') }}</td></tr></tbody>
+                    <tbody><tr><td class="num">{{ trench.pass_block_grade|cell('f1') }}{% if trench.pass_block_pctl is not none %}<small>{{ ordinal(trench.pass_block_pctl) }} pctl</small>{% endif %}</td><td class="num">{{ trench.pbe|cell('f1') }}</td><td class="num">{{ trench.pressures_allowed|cell('int') }}</td><td class="num">{{ trench.run_block_grade|cell('f1') }}{% if trench.run_block_pctl is not none %}<small>{{ ordinal(trench.run_block_pctl) }} pctl</small>{% endif %}</td><td class="num">{{ trench.defensive_rush_epa_allowed|cell('signed2') }}</td></tr></tbody>
                 </table>
                 <div class="ui-side-by-side ui-tight">
                     <table class="ui-mini">
@@ -309,6 +309,23 @@
             </article>{% endfor %}</div>
     </section>
     {% endif %}
+    {% if injury_impact.available %}
+    <section class="section matchup-injury-impact" id="injury-impact" data-nfl-panel="overview">
+        <div class="section-head"><div><p class="eyebrow">Quantified availability &middot; experimental</p><h2>Injury impact</h2></div></div>
+        <details class="ui-note"><summary>Method</summary><p>Each non-quarterback listed Out, Doubtful or Questionable counts for the chance he is lost (1.0 / 0.85 / 0.2) times his mean snap share over his last six games. The total reads as "starters out": 2.0 is about two every-down players missing. Injured-reserve players and quarterbacks are excluded, because long-term absences are already in recent form and the quarterback is modelled separately. Points use one pooled slope fitted on past seasons; the backtest could not support separate slopes by position group.</p></details>
+        {{ table_panel('Matchup read', injury_impact_tables.summary) }}
+        <p class="ui-panel-note">{{ injury_impact.evidence.text }} {% if injury_impact.applied_status == 'applied' %}Football Lab's margin, win probability and picks include this adjustment; the margin before injuries is shown above.{% elif injury_impact.applied_status == 'too_early' %}Kickoff is more than six days away and the report is not final, so Football Lab has not applied it yet.{% else %}Football Lab has not applied it to this game.{% endif %}</p>
+        <div class="ui-side-by-side">
+            {{ table_panel(game.away_team, injury_impact_tables.away) }}
+            {{ table_panel(game.home_team, injury_impact_tables.home) }}
+        </div>
+        {% for side in ['away', 'home'] %}{% set team = injury_impact[side] %}{% if team.excluded or team.unrated %}
+        <p class="ui-panel-note"><b>{{ team.team }} not counted:</b>
+            {% for p in team.excluded %}{{ p.player }} ({{ p.position }}, {{ p.status }} &middot; {{ p.reason|lower }}){{ ', ' if not loop.last or team.unrated }}{% endfor %}
+            {% for p in team.unrated %}{{ p.player }} ({{ p.position }}, {{ p.status }} &middot; no snap history){{ ', ' if not loop.last }}{% endfor %}</p>
+        {% endif %}{% endfor %}
+    </section>
+    {% endif %}
     <section class="section" id="production" data-nfl-panel="stats">
         <div class="section-head"><div><p class="eyebrow">{{ baseline_season }} season profile{% if baseline_season != game.season %} &middot; prior-season baseline{% endif %}</p><h2>Production comparison</h2></div></div>
         <details class="ui-note"><summary>Method</summary><p>Per-game production from the comparison window. Lower is better for points allowed, sacks allowed, and turnovers.</p></details>
@@ -398,6 +415,14 @@
                 </table>
             </article>
         </div>
+        {% if line_movement.available %}
+        <div class="section-head"><div><p class="eyebrow">{{ line_movement.provider }} &middot; {{ 'closed' if line_movement.final else 'live' }}</p><h2>Line movement</h2></div></div>
+        {{ table_panel('Open to ' ~ ('close' if game.completed else 'now'), line_movement.table, note='spread is the away-team line') }}
+        <div class="ui-side-by-side">
+            {{ line_panel(game.away_team ~ ' line', line_movement.spread_chart, 'Spread movement from the opener', 'Dashed line is where Football Lab sits on the same scale.', '', 'Needs at least two stored readings.') }}
+            {{ line_panel('Total', line_movement.total_chart, 'Total movement from the opener', '', '', 'Needs at least two stored readings.') }}
+        </div>
+        {% endif %}
     </section>
     <section class="section" id="players" data-nfl-panel="players">
         <div class="section-head"><div><p class="eyebrow">Season production + workload</p><h2>Player production</h2></div></div>

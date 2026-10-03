@@ -17,6 +17,7 @@
         <p class="eyebrow">Independent model · {{ season }}</p>
         <h1>Football Lab picks</h1>
         <p>Experimental projected scores and model leans for every game with a stored line. Separation measures distance from the market, not confidence or a validated betting edge.</p>
+        <p><a href="{{ url_for('nfl.picks_record', season=season) }}">View the season pick record &rarr;</a></p>
     </section>
 
     <section class="section">
@@ -48,6 +49,7 @@
                     <span class="confidence-{{ game.ats_separation }}"><small>Against spread · {{ game.ats_separation }} separation</small><b>{{ game.ats_pick or 'Line pending' }}</b>{% if game.disagreement and game.disagreement.margin is not none %}<em>{{ game.disagreement.margin|round(1) }} model-market gap</em>{% endif %}</span>
                     <span class="confidence-{{ game.total_separation }}"><small>Total · {{ game.total_separation }} separation</small><b>{{ game.total_pick or 'Line pending' }}</b>{% if game.disagreement and game.disagreement.total is not none %}<em>{{ game.disagreement.total|round(1) }} model-market gap</em>{% endif %}</span>
                 </div>
+                {% if game.line_move %}<p class="nfl-pick-move" title="DraftKings via ESPN: opening line to latest, spread shown as the away-team line">Line moved · {{ game.line_move.text }}</p>{% endif %}
                 {% if game.narrative_tags %}<div class="nfl-pick-tags">{% for tag in game.narrative_tags %}<span title="Research-only perception proxy">{{ tag.label }} · fade {{ tag.contrarian_fade }}</span>{% endfor %}</div>{% endif %}
                 {% else %}<p class="empty">The market line is stored, but Football Lab does not yet have enough pregame history for an independent pick.</p>{% endif %}
             </article>

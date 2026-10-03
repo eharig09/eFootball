@@ -45,6 +45,12 @@ services:
         value: "3600"
       - key: CFB_PAGE_CACHE_DIR
         value: /var/data/page_cache
+      # Compiled Jinja templates survive worker recycles (--max-requests) and deploys
+      # that do not touch a template; requests over SLOW_REQUEST_SECONDS are logged.
+      - key: JINJA_BYTECODE_CACHE_DIR
+        value: /var/data/jinja_cache
+      - key: SLOW_REQUEST_SECONDS
+        value: "3"
       - key: CFB_PAGE_CACHE_THRESHOLD
         value: "600"
       - key: CFB_REFRESH_TIMEZONE

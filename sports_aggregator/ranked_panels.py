@@ -21,6 +21,21 @@ def percentile(rank: int | None, total: int | None) -> int | None:
     return round(100 * (total - rank) / (total - 1))
 
 
+def percentile_in(value: float | None, population: list[float]) -> int | None:
+    """Percentile of `value` among `population` by the same rule as the ranked panels.
+
+    Rank is standard competition ranking (ties share the better rank), so a value
+    equal to the league's best is 100 and one equal to its worst is 0.
+    """
+    if value is None or not population:
+        return None
+    rank = 1 + sum(1 for other in population if other > value)
+    # A value outside the field (a current-roster line graded below every team's season
+    # grade) would rank past last place; it is simply the bottom of the field.
+    pct = percentile(rank, len(population))
+    return None if pct is None else max(0, min(100, pct))
+
+
 def tone(pctl: int | None, neutral: bool = False) -> str:
     if neutral or pctl is None:
         return "neutral"

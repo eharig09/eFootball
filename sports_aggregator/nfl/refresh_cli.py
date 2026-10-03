@@ -97,6 +97,7 @@ def _sync_core(season: int, *, include_pbp: bool, only: "frozenset[str] | None" 
     if include_extras:
         from sports_aggregator.nfl.source_directory import DEFAULT_PATH, import_directory
         _sync_espn_context(repository, season, force=force)
+        _sync_market_lines(repository, season)
         # Normally a fresh empty disk's fast path handles this (see
         # production_seed.restore_public_seed); repeated here so a disk
         # that already has core data but never got the registry seeded
@@ -112,11 +113,59 @@ def _sync_core(season: int, *, include_pbp: bool, only: "frozenset[str] | None" 
             print("model_cache: " + json.dumps(model_cache.warm(repository, season), sort_keys=True))
         except Exception as exc:
             print(f"model_cache: skipped ({exc.__class__.__name__}: {exc})")
+        _freeze_forecasts(repository, season)
     from sports_aggregator.nfl.data_health import season_coverage
     print("nfl_game_coverage: " + json.dumps(
         season_coverage(repository, season), sort_keys=True
     ))
     return report.succeeded
+
+
+def _sync_market_lines(repository, season: int) -> None:
+    """Keep ESPN's opening/current lines for the live weeks, and settle finished ones once.
+
+    The upcoming week and the one after are refetched every run (lines move);
+    earlier weeks are only touched while a finished game still lacks its final
+    line, so a long season costs a handful of requests per run, not eighteen
+    scoreboard calls. A failure must never fail the refresh.
+    """
+    try:
+        from sports_aggregator.nfl.engine_picks import default_week
+        from sports_aggregator.nfl.odds_history import sync_market_lines
+        schedule = repository.schedule(season)
+        current = default_week(repository, season)
+        if current is None:
+            return
+        settled = repository.espn_market_game_ids(season)
+        unsettled_past = {int(g["week"]) for g in schedule
+                          if g["completed"] and g["game_id"] not in settled}
+        weeks = sorted(unsettled_past | {current, current + 1})
+        weeks = [w for w in weeks if any(int(g["week"]) == w for g in schedule)]
+        print("nfl_market_lines: " + json.dumps(
+            {"weeks": weeks, **sync_market_lines(repository, season, weeks)}, sort_keys=True))
+    except Exception as exc:
+        print(f"nfl_market_lines: skipped ({exc.__class__.__name__}: {exc})")
+
+
+def _freeze_forecasts(repository, season: int) -> None:
+    """Store the upcoming week's picks in the immutable ledger behind /nfl/picks/record/.
+
+    Runs beside the model-cache warm-up because the walk-forward inputs are
+    already built here, so freezing costs one cheap projection pass. Only
+    changed forecasts are written, and freeze_dashboard refuses anything issued
+    after kickoff. A failure must never fail the refresh.
+    """
+    try:
+        from sports_aggregator.nfl.engine_picks import build_dashboard, default_week
+        from sports_aggregator.nfl.forecast_ledger import freeze_dashboard
+        week = default_week(repository, season)
+        if week is None:
+            print("forecast_ledger: skipped (no upcoming week)")
+            return
+        stored = freeze_dashboard(repository, build_dashboard(repository, season, week))
+        print("forecast_ledger: " + json.dumps({"week": week, "stored": stored}, sort_keys=True))
+    except Exception as exc:
+        print(f"forecast_ledger: skipped ({exc.__class__.__name__}: {exc})")
 
 
 def _sync_content(season: int) -> None:

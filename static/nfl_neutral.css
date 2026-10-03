@@ -266,3 +266,4 @@ body.nfl-matchup-page,body.nfl-team-page,body.nfl-player-page{background:#101114
 .nfl-matchup-page .index-value,.nfl-team-page .index-value,.nfl-player-page .index-value{background:#353639}
 .nfl-matchup-page .index-good,.nfl-team-page .index-good,.nfl-player-page .index-good{background:#2b2c2f}
 .nfl-matchup-page .position-matchup-block+.position-matchup-block,.nfl-team-page .position-matchup-block+.position-matchup-block,.nfl-player-page .position-matchup-block+.position-matchup-block{border-top:1px solid #3a3b3e}
+.nfl-matchup-page .nfl-pick-move,.nfl-team-page .nfl-pick-move,.nfl-player-page .nfl-pick-move{border-top:1px solid #3a3b3e}

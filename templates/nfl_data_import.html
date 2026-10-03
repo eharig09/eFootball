@@ -85,6 +85,37 @@
             <button type="submit">Upload and sync batch</button>
         </form>
     </section>
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Team level</p><h2>Team PFF grades</h2></div></div>
+        <p class="section-note">Upload the "Team PFF Grades" sheet (NFL and college together). Each team's
+           record and points are checked against our stored results before anything is saved, and
+           nothing is stored if the names and data do not line up. Grades are PFF's own team-level
+           scale: overall, offense, passing, pass block, receiving, rushing, run block, defense, run
+           defense, tackling, pass rush, coverage and special teams. The sheet is a snapshot, so say
+           which week it runs through.</p>
+        <form class="import-form" method="post" enctype="multipart/form-data"
+              action="{{ url_for('nfl_data_import.import_team_grades') }}">
+            <div class="import-fields">
+                <label>Admin PIN or refresh token
+                    <input type="password" name="token" required autocomplete="current-password">
+                </label>
+                <label>Season
+                    <input type="number" name="season" value="{{ season }}" min="2000" max="2100">
+                </label>
+                <label>NFL: through week
+                    <input type="number" name="nfl_week" min="1" max="22" required>
+                </label>
+                <label>College: through week
+                    <input type="number" name="cfb_week" min="1" max="20" required>
+                </label>
+            </div>
+            <label class="import-file">Sheet (.csv)
+                <input type="file" name="sheet" accept=".csv,text/csv" required>
+            </label>
+            <button type="submit">Upload team grades</button>
+        </form>
+    </section>
 </main>
 </body>
 </html>

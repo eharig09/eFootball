@@ -157,6 +157,12 @@ def main(argv: list[str] | None = None) -> int:
     availability.add_argument("--from-year", type=int, default=2013)
     availability.add_argument("--to-year", type=int, default=2025)
 
+    injury_cal = sub.add_parser(
+        "injury-calibrate",
+        help="Points of home margin per starter-equivalent out (feeds nfl/injury_impact.py)")
+    injury_cal.add_argument("--from-year", type=int, default=2013)
+    injury_cal.add_argument("--to-year", type=int, default=2025)
+
     qb_player = sub.add_parser("qb-player")
     qb_player.add_argument("--from-year", type=int, default=2010)
     qb_player.add_argument("--to-year", type=int, default=2025)
@@ -442,6 +448,13 @@ def main(argv: list[str] | None = None) -> int:
             end_season=int(args.to_year),
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "injury-calibrate":
+        from sports_aggregator.nfl.injury_impact import calibrate as injury_calibrate
+        print(json.dumps(injury_calibrate(
+            repository, start_season=int(args.from_year), end_season=int(args.to_year)),
+            indent=2, sort_keys=True))
         return 0
 
     if args.command == "qb-player":

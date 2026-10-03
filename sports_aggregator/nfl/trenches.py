@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from sports_aggregator.nfl.pff import NFLPFFService, season_scaled_minimum
 from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.ranked_panels import percentile_in
 
 FRONT = {"EDGE", "DE", "DT", "DL", "NT", "LB", "OLB"}
 
@@ -17,6 +18,10 @@ def trench_matchups(repository: NFLRepository, pff: NFLPFFService, game: dict[st
                     profiles: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     # A full season of snaps is the assumption behind "100 combined snaps";
     # early in a season that excludes every lineman who has actually played.
+    # The field a line is ranked in: every team's snap-weighted blocking grade that season.
+    league = pff.league_unit_grades(pff_season)
+    pass_block_field = [row["pass_block_grade"] for row in league if row.get("pass_block_grade") is not None]
+    run_block_field = [row["run_block_grade"] for row in league if row.get("run_block_grade") is not None]
     minimum_snaps = season_scaled_minimum(100, repository.latest_stat_week(stats_season))
     cards = []
     for offense, defense in ((game["away_team"], game["home_team"]),
@@ -42,6 +47,10 @@ def trench_matchups(repository: NFLRepository, pff: NFLPFFService, game: dict[st
             "pass_block_grade": _weighted(blockers, "grades_pass_block", "snap_counts_pass_block"),
             "run_block_grade": _weighted(blockers, "grades_run_block", "snap_counts_run_block"),
             "pbe": _weighted(blockers, "pbe", "snap_counts_pass_block"),
+            "pass_block_pctl": percentile_in(
+                _weighted(blockers, "grades_pass_block", "snap_counts_pass_block"), pass_block_field),
+            "run_block_pctl": percentile_in(
+                _weighted(blockers, "grades_run_block", "snap_counts_run_block"), run_block_field),
             "pressures_allowed": sum(row.get("pressures_allowed") or 0 for row in blockers),
             "pass_block_snaps": sum(row.get("snap_counts_pass_block") or 0 for row in blockers),
             "blockers": sorted(blockers, key=lambda row: -(row.get("snap_counts_pass_block") or 0))[:5],

@@ -54,8 +54,10 @@ def unit_grade_rows(units: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
         lead = ("away" if away > home else "home" if home > away else None) if away is not None and home is not None else None
         rows.append({
             "unit": unit.get("label"), "lead": lead,
-            "away": {"grade": away, "returning": _percent(unit.get("away_returning_share")), "usage": unit.get("away_usage")},
-            "home": {"grade": home, "returning": _percent(unit.get("home_returning_share")), "usage": unit.get("home_usage")},
+            "away": {"grade": away, "percentile": unit.get("away_percentile"),
+                     "returning": _percent(unit.get("away_returning_share")), "usage": unit.get("away_usage")},
+            "home": {"grade": home, "percentile": unit.get("home_percentile"),
+                     "returning": _percent(unit.get("home_returning_share")), "usage": unit.get("home_usage")},
         })
     return rows
 

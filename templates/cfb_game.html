@@ -980,7 +980,7 @@
     <div class="ui-deep-grid">
         {% for panel in grade_panels %}{{ grade_matchup_panel(panel, pff_season ~ ' PFF') }}{% endfor %}
     </div>
-    <div class="ui-gap-block">{{ unit_grades_compare(unit_grade_rows, game.away_team, game.home_team, pff_season ~ ' usage-weighted · share of snaps still on the roster') }}</div>
+    <div class="ui-gap-block">{{ unit_grades_compare(unit_grade_rows, game.away_team, game.home_team, pff_season ~ ' percentile among FBS teams, with the usage-weighted PFF grade beneath · share of snaps still on the roster') }}</div>
 </section>
 
 {{ compact_passing_matchups(passing_field_panels, passing_situational_panels) }}

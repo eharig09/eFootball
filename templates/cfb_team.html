@@ -2,7 +2,7 @@
 {% from "_tables.html" import data_table, story_list, tabbed_tables, tabs_script %}
 {% from "_cfb_page_visuals.html" import depth_formation, pff_unit_bars_module, trend_chart, trend_scripts, visual_scripts %}
 {% from "_charts.html" import chart_workbench, chart_scripts %}
-{% from "_ui_kit.html" import pctl_panel, summary_panel, signal_panel, tendency_grid, side_panel, penalty_panels %}
+{% from "_ui_kit.html" import table_panel, pctl_panel, summary_panel, signal_panel, tendency_grid, side_panel, penalty_panels %}
 
 {% block title %}{{ team.school }}{% if team.mascot %} {{ team.mascot }}{% endif %} | {{ season }} Team Intelligence{% endblock %}
 
@@ -131,9 +131,14 @@
             <div class="section-note">Weekly pregame Elo and AP Top 25 rank, {{ season }} season. AP rank is only plotted for weeks this team was ranked.</div>
             {{ trend_chart(rank_trend, 'rank-trend-chart', 'Rank trend') }}
             {% endif %}
+            {% if pff_team_grades %}
+            <h3 class="subhead">PFF team grades</h3>
+            <div class="section-note">{{ season }} through week {{ pff_team_grades.week }} ({{ pff_team_grades.record }}). PFF's own team-level grades: a wider scale than the unit grades below, and noisy until more games are in.</div>
+            {{ table_panel('Team grades', pff_team_grades.table, note='rank among all graded teams') }}
+            {% endif %}
             {% if pff_unit_bars %}
             <h3 class="subhead">PFF unit grades</h3>
-            <div class="section-note">Ranked best to worst; each bar is a usage-weighted average across the unit's graded players.</div>
+            <div class="section-note">Ranked best to worst by percentile among FBS teams, with the usage-weighted PFF grade beside it. Averaged player grades bunch in the 60s, so the percentile is the fairer read.</div>
             {{ pff_unit_bars_module(pff_unit_bars) }}
             {% endif %}
         </section>

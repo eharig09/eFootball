@@ -584,12 +584,17 @@ _UNIT_GRADE_CEILING = 90.0
 
 
 def pff_unit_grade_bars(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Ranked PFF unit grades for a team, with a display bar width attached."""
+    """Ranked PFF unit grades for a team; the bar is the unit's percentile among FBS teams."""
     span = _UNIT_GRADE_CEILING - _UNIT_GRADE_FLOOR
     bars = []
     for unit in units:
-        grade = unit.get("grade")
-        pct = max(4.0, min(100.0, 100 * (float(grade) - _UNIT_GRADE_FLOOR) / span)) if grade is not None else 0.0
+        grade, percentile = unit.get("grade"), unit.get("percentile")
+        if percentile is not None:
+            pct = max(4.0, float(percentile))
+        elif grade is not None:  # no field to rank against: fall back to the raw-grade scale
+            pct = max(4.0, min(100.0, 100 * (float(grade) - _UNIT_GRADE_FLOOR) / span))
+        else:
+            pct = 0.0
         bars.append({**unit, "bar_pct": round(pct, 1)})
     return bars
 

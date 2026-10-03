@@ -40,6 +40,7 @@ from sports_aggregator.cfb.matchup_research import (
     matchup_research_packet, TOTALS_RESEARCH_OVERALL, TOTALS_TRACKED_OVERALL,
     TOTALS_TRACKED_MIN_WIN_RATE)
 from sports_aggregator.cfb.lines import game_lines, lines_by_game
+from sports_aggregator import pff_team_grades
 from sports_aggregator.cfb import meta as page_meta_for
 from sports_aggregator.cfb import syndication
 from sports_aggregator.cfb import game_panels
@@ -866,6 +867,9 @@ def _team_tables(packet: dict, season: int, *, schedule_year: int | None = None,
         "team_trend": team_trend,
         "rank_trend": rank_trend,
         "pff_unit_bars": pff_unit_bars,
+        "pff_team_grades": pff_team_grades.team_grades_table(
+            pff_team_grades.latest_cfb_team_grades(_repository(), season),
+            packet["team"]["team_id"], "cfbd_team_id"),
         "schedule_table": views.schedule_table(
             packet["schedule"], packet["team"]["team_id"], schedule_year,
             _repository().team_brands(), _repository().team_elo(schedule_year),
