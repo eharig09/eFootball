@@ -39,6 +39,24 @@ def _separation(edge: float | None, scale: float | None) -> tuple[str, float | N
     return "low", strength
 
 
+def _line_move(game: dict[str, Any], stored: dict[str, Any] | None) -> dict[str, Any] | None:
+    """ESPN opener-to-now movement for the pick card, on the away-team line."""
+    if not stored or stored.get("open_spread") is None or stored.get("current_spread") is None:
+        return None
+
+    def spread(value: float) -> str:
+        return "PK" if value == 0 else f"{value:+g}"
+
+    parts = [f"{game['away_team']} {spread(stored['open_spread'])} → {spread(stored['current_spread'])}"]
+    if stored.get("open_total") is not None and stored.get("current_total") is not None:
+        parts.append(f"total {stored['open_total']:g} → {stored['current_total']:g}")
+    return {"text": " · ".join(parts),
+            "spread": round(stored["current_spread"] - stored["open_spread"], 2),
+            "total": (round(stored["current_total"] - stored["open_total"], 2)
+                      if stored.get("open_total") is not None and stored.get("current_total") is not None
+                      else None)}
+
+
 def build_dashboard(repository: NFLRepository, season: int, week: int) -> dict[str, Any]:
     packet = live_projection_report(repository, season=int(season), week=int(week))
     narratives = {}
@@ -48,9 +66,11 @@ def build_dashboard(repository: NFLRepository, season: int, week: int) -> dict[s
             for item in perception_rows(repository, int(season), int(season))
             if int(item["week"]) == int(week)
         }
+    stored_lines = repository.espn_market_week(int(season), int(week)) if isinstance(repository, NFLRepository) else {}
     games = []
     for raw in packet.get("games", []):
         row = dict(raw)
+        row["line_move"] = _line_move(row, stored_lines.get(str(row.get("game_id"))))
         row["narrative_tags"] = narratives.get(str(row.get("game_id")), [])
         model = row.get("football_lab")
         market = row.get("market_anchor")

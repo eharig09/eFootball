@@ -1,0 +1,101 @@
+{% from '_tables.html' import data_table %}
+{% from '_ui_kit.html' import table_panel, line_panel %}
+{% from '_nfl_nav.html' import nfl_nav with context %}
+{% macro calibration_panel(title, chart, aria) %}
+<article class="ui-panel ui-chart">
+    <header class="ui-panel-head"><h3>{{ title }}</h3><span class="ui-median-key">dot = win rate · whisker = 95% range · dashed = 50% · dotted = -110 breakeven</span></header>
+    {% if record.settled and chart.has_data %}
+    <svg class="ui-svg" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img" aria-label="{{ aria }}">
+        {% for tick in chart.ticks %}<line class="grid" x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ tick.y }}" y2="{{ tick.y }}"/><text class="tick" x="{{ chart.left - 6 }}" y="{{ tick.y + 3 }}" text-anchor="end">{{ tick.label }}</text>{% endfor %}
+        <line class="zero" x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ chart.half_y }}" y2="{{ chart.half_y }}"/>
+        <line class="zero" style="stroke-dasharray:1 3" x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ chart.breakeven_y }}" y2="{{ chart.breakeven_y }}"/>
+        {% for p in chart.points %}<line class="grid" style="stroke:var(--ui-off,#4c9be8);stroke-width:2" x1="{{ p.x }}" x2="{{ p.x }}" y1="{{ p.y_low }}" y2="{{ p.y_high }}"/>
+        <circle class="dot off" cx="{{ p.x }}" cy="{{ p.y }}" r="4.5"><title>Gap {{ p.bucket }}: {{ '%.0f'|format(p.rate * 100) }}% over {{ p.n }} picks</title></circle>{% endfor %}
+        {% for label in chart.labels %}<text class="tick" x="{{ label.x }}" y="{{ chart.label_y }}" text-anchor="middle">{{ label.label }}</text>{% endfor %}
+    </svg>
+    <p class="ui-panel-note">X = how far Football Lab sat from the market when the pick was stored (points). If the model's edge were real, win rate would climb to the right.</p>
+    {% else %}<p class="ui-panel-note">Building sample: a calibration chart on fewer than {{ record.min_graded }} picks would mostly show noise.</p>{% endif %}
+</article>
+{% endmacro %}
+{% macro record_card(label, tally, show_rate) %}
+<article><small>{{ label }}</small><b>{{ tally.record if tally.n else '—' }}</b>
+    <span>{% if tally.n and show_rate and tally.win_rate is not none %}{{ '%.1f'|format(tally.win_rate * 100) }}% &middot; {{ '%+.1f'|format(tally.units) }}u{% elif tally.n %}{{ tally.n }} graded{% else %}none graded yet{% endif %}</span></article>
+{% endmacro %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>{{ season }} NFL Football Lab pick record</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_neutral.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_kit.css') }}">
+</head>
+<body class="nfl-picks-page">
+{{ nfl_nav('picks', season, 'Pick record') }}
+<main>
+    <section class="nfl-hero compact-hero">
+        <p class="eyebrow">Accountability · {{ season }}</p>
+        <h1>Football Lab pick record</h1>
+        <p>Every pick is stored before kickoff and graded against the exact line it was issued at. Each game counts once, at its first stored pick, priced at flat -110. Tracking starts with the first stored forecast; nothing is back-filled.</p>
+        <p><a href="{{ url_for('nfl.engine_picks', season=season) }}">&larr; This week's picks</a></p>
+    </section>
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Season to date</p><h2>Record</h2></div></div>
+        <div class="game-shape-grid nfl-pick-summary">
+            {{ record_card('Against the spread', record.ats, record.settled) }}
+            {{ record_card('Over / under', record.totals, record.settled) }}
+            {{ record_card('Straight up', record.straight_up, record.settled) }}
+            <article><small>Stored forecasts</small><b>{{ record.frozen }}</b><span>{{ record.graded_issuances }} on finished games</span></article>
+        </div>
+        {% if not record.settled %}
+        <p class="ui-panel-note">Building sample: win rates, units and charts stay hidden until {{ record.min_graded }} picks have settled, so a short streak is not read as an edge. Records above are final.</p>
+        {% endif %}
+    </section>
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Did we beat the number?</p><h2>Closing-line value</h2></div></div>
+        <div class="game-shape-grid nfl-pick-summary">
+            {% for label, clv in [('Spread', record.clv.ats), ('Total', record.clv.totals)] %}
+            <article><small>{{ label }} CLV</small>
+                <b>{% if clv.n %}{{ '%+.2f'|format(clv.mean) }}{% else %}—{% endif %}</b>
+                <span>{% if clv.n %}pts per pick &middot; {{ clv.beat_close }} beat close, {{ clv.lost_to_close }} lost, {{ clv.unchanged }} flat ({{ clv.n }} picks){% else %}needs closed games{% endif %}</span></article>
+            {% endfor %}
+        </div>
+        <p class="ui-panel-note">Positive means the market later moved toward our side. It is the fastest read on whether a pick had an edge, because it does not wait for one noisy final score. Closing line is the final stored market line for the game.</p>
+    </section>
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Trend and drift</p><h2>Over the season</h2></div></div>
+        <div class="chart-grid">
+            {{ line_panel('Cumulative ATS units', record.units_chart if record.settled else {'has_data': false}, 'Cumulative against-the-spread units by week', 'Units at flat -110; the dashed line is break-even.', 'u', 'Appears once ' ~ record.min_graded ~ ' picks have settled.') }}
+            {{ line_panel('Margin error by week', record.error_chart if record.settled else {'has_data': false}, 'Weekly mean absolute margin error, Football Lab versus market', 'If Football Lab drifts above the market for several weeks, the model has lost ground.', ' pts', 'Appears once ' ~ record.min_graded ~ ' picks have settled.', true) }}
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Does a bigger gap mean a better pick?</p><h2>Calibration</h2></div></div>
+        <div class="chart-grid">
+            {{ calibration_panel('Against the spread', record.calibration_chart.ats, 'ATS win rate by model-market gap') }}
+            {{ calibration_panel('Over / under', record.calibration_chart.totals, 'Totals win rate by model-market gap') }}
+        </div>
+        <div class="chart-grid">
+            {{ table_panel('ATS by gap', tables.calibration_ats) }}
+            {{ table_panel('Totals by gap', tables.calibration_totals) }}
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-head"><div><p class="eyebrow">Week by week</p><h2>Results</h2></div></div>
+        <div class="chart-grid">
+            {{ table_panel('Weekly record', tables.weekly) }}
+            {{ table_panel('Margin error', tables.errors, note='MAE, points') }}
+        </div>
+    </section>
+</main>
+</body>
+</html>

@@ -443,3 +443,21 @@
     </table>
 </article>{% endif %}
 {% endmacro %}
+
+{# Generic line chart from pick_record.line_chart() geometry. Series with markers=false draw as dashed reference lines. #}
+{% macro line_panel(title, chart, aria, note='', unit='', empty='No data is stored for this chart yet.', lower_better=false) %}
+<article class="ui-panel ui-chart">
+    <header class="ui-panel-head"><h3>{{ title }}</h3>
+        {% if chart.has_data and chart.series|length > 1 %}<span class="ui-legend">{% for s in chart.series %}<i class="{{ s.key }}"></i>{{ s.label }} {% endfor %}{% if lower_better %}<em>(lower = better)</em>{% endif %}</span>{% endif %}</header>
+    {% if chart.has_data %}
+    <svg class="ui-svg" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img" aria-label="{{ aria }}">
+        {% for tick in chart.ticks %}<line class="grid" x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ tick.y }}" y2="{{ tick.y }}"/><text class="tick" x="{{ chart.left - 6 }}" y="{{ tick.y + 3 }}" text-anchor="end">{{ tick.label }}</text>{% endfor %}
+        {% if chart.zero_y is not none %}<line class="zero" x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ chart.zero_y }}" y2="{{ chart.zero_y }}"/>{% endif %}
+        {% for s in chart.series %}<polyline class="line {{ s.key }}"{% if s.dashed %} style="stroke-dasharray:5 4;opacity:.75"{% endif %} points="{{ s.path }}"/>
+        {% if s.markers %}{% for p in s.points %}<circle class="dot {{ s.key }}" cx="{{ p.x }}" cy="{{ p.y }}" r="3.6"><title>{{ p.x_label }}: {{ s.label }} {{ '%.2f'|format(p.value) }}{{ unit }}</title></circle>{% endfor %}{% endif %}{% endfor %}
+        {% for label in chart.week_labels %}<text class="tick" x="{{ label.x }}" y="{{ chart.label_y }}" text-anchor="middle">{{ label.label }}</text>{% endfor %}
+    </svg>
+    {% if note %}<p class="ui-panel-note">{{ note }}</p>{% endif %}
+    {% else %}<p class="ui-panel-note">{{ empty }}</p>{% endif %}
+</article>
+{% endmacro %}

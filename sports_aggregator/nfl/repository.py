@@ -61,6 +61,14 @@ CREATE INDEX IF NOT EXISTS idx_nfl_market_snapshots_game
  ON market_line_snapshots(game_id, snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_nfl_market_snapshots_season
  ON market_line_snapshots(season, week, captured_at);
+CREATE TABLE IF NOT EXISTS espn_market_lines (
+ game_id TEXT PRIMARY KEY, season INTEGER NOT NULL, week INTEGER NOT NULL,
+ event_id TEXT NOT NULL, provider TEXT NOT NULL, final INTEGER NOT NULL DEFAULT 0,
+ open_spread REAL, open_total REAL, open_home_moneyline REAL, open_away_moneyline REAL,
+ current_spread REAL, current_total REAL, current_home_moneyline REAL, current_away_moneyline REAL,
+ fetched_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_nfl_espn_market_week ON espn_market_lines(season, week);
 CREATE TABLE IF NOT EXISTS nfl_engine_forecasts (
  forecast_id INTEGER PRIMARY KEY AUTOINCREMENT,
  game_id TEXT NOT NULL, season INTEGER NOT NULL, week INTEGER NOT NULL,
@@ -917,6 +925,80 @@ class NFLRepository:
             "total_change": change("total_line"),
             "is_closing_snapshot": bool(latest["completed"]),
         }
+
+    def record_espn_market(self, game_id: str, season: int, week: int, row: dict[str, Any]) -> bool:
+        """Store ESPN's opener and latest line for a game.
+
+        The opener is ESPN's own and only ever fills in or replaces itself; the
+        latest state is also appended to market_line_snapshots (source "espn")
+        when it changed, so each game gets a movement timeline. Spreads use the
+        nflverse sign (positive = home favored). Returns True when anything
+        changed.
+        """
+        self.initialize()
+        fields = ("open_spread", "open_total", "open_home_moneyline", "open_away_moneyline",
+                  "current_spread", "current_total", "current_home_moneyline",
+                  "current_away_moneyline")
+        final = int(bool(row.get("completed")))
+        values = tuple(row.get(field) for field in fields)
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            previous = connection.execute(
+                f"SELECT {','.join(fields)},final FROM espn_market_lines WHERE game_id=?",
+                (str(game_id),)).fetchone()
+            changed = previous is None or tuple(previous) != (*values, final)
+            if changed:
+                connection.execute(
+                    f"""INSERT OR REPLACE INTO espn_market_lines (
+                          game_id,season,week,event_id,provider,final,{','.join(fields)},fetched_at
+                        ) VALUES (?,?,?,?,?,?,{','.join('?' * len(fields))},?)""",
+                    (str(game_id), int(season), int(week), str(row["event_id"]),
+                     row.get("provider") or "ESPN", final, *values, now))
+            state = (row.get("current_spread"), row.get("current_total"),
+                     row.get("current_home_moneyline"), row.get("current_away_moneyline"),
+                     row.get("home_spread_odds"), row.get("away_spread_odds"),
+                     row.get("under_odds"), row.get("over_odds"))
+            if any(value is not None for value in state[:4]):
+                last = connection.execute(
+                    """SELECT spread_line,total_line,home_moneyline,away_moneyline,
+                              home_spread_odds,away_spread_odds,under_odds,over_odds
+                       FROM market_line_snapshots WHERE game_id=? AND source='espn'
+                       ORDER BY snapshot_id DESC LIMIT 1""", (str(game_id),)).fetchone()
+                if last is None or tuple(last)[:4] != state[:4]:
+                    connection.execute(
+                        """INSERT INTO market_line_snapshots (
+                             game_id,season,week,captured_at,source,spread_line,total_line,
+                             home_moneyline,away_moneyline,home_spread_odds,away_spread_odds,
+                             under_odds,over_odds,completed
+                           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (str(game_id), int(season), int(week), now, "espn",
+                         state[0], state[1], state[2], state[3], state[4], state[5],
+                         state[6], state[7], int(bool(row.get("completed")))))
+                    changed = True
+            connection.commit()
+        return changed
+
+    def espn_market(self, game_id: str) -> dict[str, Any] | None:
+        self.initialize()
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM espn_market_lines WHERE game_id=?", (str(game_id),)).fetchone()
+        return dict(row) if row else None
+
+    def espn_market_week(self, season: int, week: int) -> dict[str, dict[str, Any]]:
+        self.initialize()
+        with closing(self._connect()) as connection:
+            return {row["game_id"]: dict(row) for row in connection.execute(
+                "SELECT * FROM espn_market_lines WHERE season=? AND week=?",
+                (int(season), int(week)))}
+
+    def espn_market_game_ids(self, season: int) -> set[str]:
+        """Games whose stored line was read after the game finished (can no longer move)."""
+        self.initialize()
+        with closing(self._connect()) as connection:
+            return {row[0] for row in connection.execute(
+                "SELECT game_id FROM espn_market_lines WHERE season=? AND final=1", (int(season),))}
 
     def replace_players(self, season: int, players: Iterable[Player]) -> int:
         rows = list(players)

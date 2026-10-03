@@ -21,7 +21,7 @@ from sports_aggregator.nfl.engine_picks import (
     build_dashboard as build_engine_picks_dashboard,
     default_week as default_engine_pick_week,
 )
-from sports_aggregator.nfl.forecast_ledger import grading_report
+from sports_aggregator.nfl import injury_impact, odds_history, pick_record
 from sports_aggregator.nfl.explorer import (
     METRICS, METRIC_CATEGORIES, METRIC_LABELS, SUM_METRICS,
     player_stat_table, scatter_plot, with_rates,
@@ -332,19 +332,13 @@ def _reporting_streams(items: list[dict], *, include_empty: bool = False) -> lis
 
 
 def _picks_of_week_record(repository: NFLRepository, season: int) -> dict:
-    """Grade Football Lab's frozen against-the-spread picks at flat -110,
-    the same convention as the CFB dashboard's portfolio record."""
-    summary = grading_report(repository, season=season)["against_spread"]
-    wins = int(summary.get("wins") or 0)
-    losses = int(summary.get("losses") or 0)
-    pushes = int(summary.get("pushes") or 0)
-    n = wins + losses + pushes
-    net_units = wins * (100.0 / 110.0) - losses
+    """Football Lab's frozen against-the-spread record at flat -110 (one pick
+    per game), the same convention as the CFB dashboard's portfolio record."""
+    tally = pick_record.build(repository, season)["ats"]
     return {
-        "wins": wins, "losses": losses, "pushes": pushes, "n": n,
-        "record": f"{wins}-{losses}" + (f"-{pushes}" if pushes else ""),
-        "net_units": round(net_units, 2),
-        "roi": round((net_units / n) * 100.0, 1) if n else None,
+        "wins": tally["wins"], "losses": tally["losses"], "pushes": tally["pushes"],
+        "n": tally["n"], "record": tally["record"], "net_units": tally["units"],
+        "roi": round(tally["roi"] * 100.0, 1) if tally["roi"] is not None else None,
         "price": "-110",
     }
 
@@ -604,6 +598,24 @@ def engine_picks():
     )
 
 
+@nfl_pages.get("/nfl/picks/record/")
+@cached_page
+def picks_record():
+    season = _season()
+    record = pick_record.build(_repository(), season)
+    return render_template(
+        "nfl_picks_record.html", league=get_league("nfl"), season=season,
+        record=record, tables=pick_record.tables(record),
+    )
+
+
+@nfl_pages.get("/api/v1/nfl/picks/record")
+def picks_record_api():
+    packet = pick_record.build(_repository(), _season())
+    return jsonify({key: value for key, value in packet.items()
+                    if key not in ("units_chart", "error_chart", "calibration_chart")})
+
+
 @nfl_pages.get("/api/v1/nfl/picks")
 def engine_picks_api():
     season = _season()
@@ -711,6 +723,7 @@ def _explorer_packet() -> dict:
 
 
 @nfl_pages.get("/nfl/explorer/")
+@cached_page
 def stat_explorer():
     return render_template("nfl_explorer.html", league=get_league("nfl"), **_explorer_packet())
 
@@ -1280,7 +1293,29 @@ def _game_packet(game_id: str) -> dict:
                 "error": str(exc),
             }
 
+    lab = (football_lab or {}).get("football_lab") or {}
+    line_movement = odds_history.movement_packet(
+        repository, game, model_margin=lab.get("margin"), model_total=lab.get("total"))
+
+    impact = (injury_impact.game_impact(
+                  repository, game, model_margin=lab.get("margin_pre_injury", lab.get("margin")))
+              if not game["completed"] else {"available": False})
+    if impact.get("available"):
+        # Football Lab owns the adjusted margin and probabilities; show exactly what it used.
+        status = lab.get("injury_status")
+        impact["applied_status"] = status
+        if impact.get("adjusted") and status == "applied":
+            pre, post = (lab.get("home_win_probability_pre_injury"), lab.get("home_win_probability"))
+            if pre is not None and post is not None:
+                impact["adjusted"]["home_win_probability"] = pre
+                impact["adjusted"]["adjusted_home_win_probability"] = post
+        elif status != "applied":
+            impact["adjusted"] = None
+
     return {"game": game, "situational": situational, "discipline": discipline,
+            "line_movement": line_movement, "injury_impact": impact,
+            "injury_impact_tables": (injury_impact.tables(impact, game["season"])
+                                     if impact["available"] else {}),
             "away_identity": identities.get(game["away_team"], {}),
             "home_identity": identities.get(game["home_team"], {}),
             "stats": game_stats_table(player_rows),
@@ -1354,6 +1389,9 @@ def game_api(game_id: str):
         "trenches": packet["trenches"],
         "availability": packet["availability"],
         "football_lab": packet["football_lab"],
+        "injury_impact": packet["injury_impact"],
+        "line_movement": {key: value for key, value in packet["line_movement"].items()
+                          if key not in ("table", "spread_chart", "total_chart")},
         "football_lab_status": packet["football_lab_status"],
         "postgame": packet["postgame"],
         "opponent_mode": packet["opponent_mode"],

@@ -473,3 +473,5 @@ main{padding:24px 24px 64px}
   .nfl-nav-shell .primary-nav::-webkit-scrollbar{display:none}
   .primary-nav a{flex:0 0 auto;min-height:40px;display:inline-flex;align-items:center;padding:8px 11px;font-size:.72rem}
 }
+
+.nfl-pick-move{margin:0;padding:7px 11px;border-top:1px solid #2b3e49;color:#8298a6;font-size:.64rem;font-variant-numeric:tabular-nums}

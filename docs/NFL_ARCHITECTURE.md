@@ -1491,3 +1491,31 @@ method, arguments and the season's counter in `stat_versions`. `replace_weekly_s
 counter, so a weekly refresh of the current season leaves earlier seasons' league-wide scans cached (a cold game page went
 from ~25 s to ~3 s). Any new writer of `player_weekly_stats` must call `_bump_stat_versions`, and any new method wrapped
 this way must read only `player_weekly_stats` rows of its `season` argument.
+
+
+## 2026-10-03 pick record, line movement and injury impact
+
+**Pick record** (`nfl/pick_record.py`, `/nfl/picks/record/`, `/api/v1/nfl/picks/record`). Reads the immutable forecast
+ledger (`forecast_ledger.py`). Each game counts once, at its first stored pick of that kind (the price a reader could
+have taken), at flat -110. Rates, units and charts stay hidden until `MIN_GRADED` (20) picks settle. Calibration buckets
+picks by model-minus-market gap with Wilson intervals; CLV compares the stored price with `games.spread_line` /
+`total_line`; the drift chart is weekly margin MAE, model vs market. The ledger was never populated in production: the
+freeze now runs in `refresh_cli._freeze_forecasts`, after the model-cache warm in the `core-pbp` segment (every 3 h), and
+`freeze_dashboard` refuses any forecast issued at or after kickoff. Nothing is back-filled.
+
+**Line movement** (`nfl/odds_history.py`). nflverse carries one line per game (effectively the close). ESPN's event odds
+resource (DraftKings) keeps the opener and the latest line, including after the game, so it is stored in
+`espn_market_lines` (opener + latest) and appended to `market_line_snapshots` with `source='espn'` when it changes.
+Spreads use the nflverse sign (positive = home favoured = numerically the away-team line). `refresh_cli._sync_market_lines`
+runs in `core-foundation` (hourly): the current and next week every run, earlier weeks only while a finished game lacks its
+final line. Shown on the game page (table + spread/total charts with Football Lab as a dashed reference) and as a line on
+each pick card. The endpoint is unofficial; failures log a skip and never fail the refresh.
+
+**Injury impact** (`nfl/injury_impact.py`; game page "Injury impact"). Index = sum over non-QB Out / Doubtful /
+Questionable players of (1.0 / 0.85 / 0.2) x mean snap share over the previous six games, i.e. "starters out". QBs (modelled
+separately) and IR/PUP/SUSP (already in recent form) are excluded and listed. Points use one pooled slope from
+`projection_cli injury-calibrate`: 0.76 pts per starter-equivalent (t = 4.2, same sign in 8 of 10 seasons, 2013-2025,
+against the walk-forward QB-aware stack's residual). Against the closing spread the slope is 0.28 (t = 1.6): the market
+already prices ~63%. The adjusted margin and win probability are context only; they do not feed picks or the ledger. Group
+splits are shown but never converted to points (the earlier ablation found them worse). Re-run the calibration after a
+season of new data and update `CALIBRATION`.

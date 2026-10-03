@@ -121,7 +121,9 @@ def cached_page(view):
         key = page_key()
         cached = cache.get(key)
         if cached is not None:
+            g.page_cache = "hit"
             return cached
+        g.page_cache = "miss"
         rendered = view(*args, **kwargs)
         if isinstance(rendered, str):
             cache.set(key, rendered, timeout=page_cache_seconds())

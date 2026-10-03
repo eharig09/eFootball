@@ -63,6 +63,7 @@ from sports_aggregator.table_render import render_rows
 from sports_aggregator.tables import format_value
 from sports_aggregator.client_cache import install_client_caching
 from sports_aggregator.compression import install_compression
+from sports_aggregator.request_timing import install_request_timing
 from sports_aggregator.page_cache import cache
 from sports_aggregator.scheduled_refresh import REFRESH_PROFILES
 from sports_aggregator.tracked_refresh import SEGMENTS
@@ -95,6 +96,27 @@ def _cache_dir(app: Flask) -> str:
         return configured
     database = Path(os.getenv("CFB_DATABASE_PATH") or os.path.join(app.instance_path, "cfb.sqlite3"))
     return str(database.parent / "page_cache")
+
+
+def _install_template_bytecode_cache(app: Flask) -> None:
+    """Keep compiled templates on disk so a worker restart does not recompile them.
+
+    Compiling the ~50 templates cost 1.2 s of CPU per fresh process locally and
+    every worker recycle (gunicorn --max-requests) pays it again on the first
+    renders. Entries are keyed by template name and a checksum of its source, so a
+    deploy that changes a template simply writes a new entry. Any failure leaves
+    Jinja's in-memory behaviour untouched.
+    """
+    directory = os.getenv("JINJA_BYTECODE_CACHE_DIR") or (
+        None if app.config.get("TESTING") else os.path.join(app.instance_path, "jinja_cache"))
+    if not directory:
+        return
+    try:
+        os.makedirs(directory, exist_ok=True)
+        from jinja2 import FileSystemBytecodeCache
+        app.jinja_env.bytecode_cache = FileSystemBytecodeCache(directory)
+    except OSError:
+        app.logger.warning("template bytecode cache disabled: cannot use %s", directory)
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -152,6 +174,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     # them: Flask walks that list in reverse.
     install_compression(app)
     install_client_caching(app)
+    install_request_timing(app)
+    _install_template_bytecode_cache(app)
     cache.init_app(app)
     app.extensions["league_aggregation_service"] = app.config.get(
         "LEAGUE_AGGREGATION_SERVICE"

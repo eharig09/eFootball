@@ -5,8 +5,28 @@ from contextlib import closing
 from datetime import datetime, timezone
 import json
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sports_aggregator.nfl.repository import NFLRepository
+
+
+def _kickoff_passed(row, issued: datetime) -> bool:
+    """True when the stored kickoff is at or before the issuance moment.
+
+    The ledger exists to prove a pick predates the game, so a forecast
+    generated after kickoff (a late refresh, a manual rerun on a finished
+    week) must never be stored. Unknown kickoff times are given the benefit of
+    the doubt only when the date is still ahead.
+    """
+    if row is None or not row["game_date"]:
+        return False
+    try:
+        kickoff = datetime.fromisoformat(
+            f"{row['game_date']}T{(row['game_time'] or '12:00').strip()}"
+        ).replace(tzinfo=ZoneInfo("America/New_York"))
+    except ValueError:
+        return False
+    return kickoff.astimezone(timezone.utc) <= issued
 
 
 def freeze_dashboard(repository: NFLRepository, dashboard: dict[str, Any],
@@ -14,6 +34,9 @@ def freeze_dashboard(repository: NFLRepository, dashboard: dict[str, Any],
     """Store only forecasts that changed since the prior issuance."""
     repository.initialize()
     issued = generated_at or datetime.now(timezone.utc).isoformat()
+    issued_at = datetime.fromisoformat(issued.replace("Z", "+00:00"))
+    if issued_at.tzinfo is None:
+        issued_at = issued_at.replace(tzinfo=timezone.utc)
     version = str(dashboard.get("version") or "unknown")
     stored = 0
     with closing(repository._connect()) as connection:
@@ -21,6 +44,11 @@ def freeze_dashboard(repository: NFLRepository, dashboard: dict[str, Any],
         for game in dashboard.get("games", []):
             model = game.get("football_lab")
             if not model:
+                continue
+            schedule_row = connection.execute(
+                "SELECT game_date,game_time FROM games WHERE game_id=?", (game["game_id"],)
+            ).fetchone()
+            if _kickoff_passed(schedule_row, issued_at):
                 continue
             market = game.get("market_anchor") or {}
             ats_pick = game.get("ats_pick") or ""
@@ -67,7 +95,8 @@ def grading_report(repository: NFLRepository, *, season: int | None = None) -> d
     params = (int(season),) if season is not None else ()
     with closing(repository._connect()) as connection:
         rows = [dict(row) for row in connection.execute(
-            f"""SELECT f.*,g.away_score,g.home_score,g.completed
+            f"""SELECT f.*,g.away_score,g.home_score,g.completed,
+                       g.spread_line AS close_spread,g.total_line AS close_total
                 FROM nfl_engine_forecasts f JOIN games g ON g.game_id=f.game_id
                 {where} ORDER BY f.generated_at,f.forecast_id""", params)]
     graded = []

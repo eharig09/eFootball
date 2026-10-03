@@ -15,6 +15,7 @@ from contextlib import closing
 from collections import defaultdict
 from typing import Any
 
+from sports_aggregator.nfl import injury_impact
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.drive_projection import (
     TeamHistory, STATE_SEASON_DECAY, MIN_PRIOR_GAMES,
@@ -46,7 +47,7 @@ from sports_aggregator.nfl.uncertainty_calibration import (
     TOTAL_SCALE_FEATURES, MARGIN_SCALE_FEATURES,
 )
 
-MODEL_VERSION = "nfl-live-forecast-diagnostics-v2"
+MODEL_VERSION = "nfl-live-forecast-diagnostics-v3"
 
 
 def _update_history(history: dict[str, TeamHistory], game: dict[str, Any]) -> None:
@@ -254,6 +255,11 @@ def _report(repository: NFLRepository, *, season: int, week: int):
     except Exception:
         live_total = None
 
+    try:  # one snap-history query for the whole slate, not one per injured player per game
+        injury_history = injury_impact.SnapHistory(repository, season, week) if games else None
+    except Exception:
+        injury_history = None
+
     output = []
     for game in games:
         away = _team_row(game, "away", history, league)
@@ -331,7 +337,12 @@ def _report(repository: NFLRepository, *, season: int, week: int):
         cal_total = wx_total["total"] if wx_total else core_total
         core_margin = _predict_cal(margin_model, game_row)
         qb_margin = live_margin.margin(game, game_row) if live_margin else None
-        cal_margin = qb_margin["margin"] if qb_margin else core_margin
+        pre_injury_margin = qb_margin["margin"] if qb_margin else core_margin
+        try:
+            injury = injury_impact.forecast_swing(repository, game, history=injury_history)
+        except Exception as exc:  # an injury lookup must never take the forecast down
+            injury = {"swing": 0.0, "status": f"error: {exc.__class__.__name__}"}
+        cal_margin = pre_injury_margin + injury["swing"]
         fl_home = (cal_total + cal_margin) / 2.0
         fl_away = (cal_total - cal_margin) / 2.0
 
@@ -372,12 +383,18 @@ def _report(repository: NFLRepository, *, season: int, week: int):
                 "home_points": fl_home,
                 "away_points": fl_away,
                 "margin_core": core_margin,
+                "margin_pre_injury": pre_injury_margin,
+                "injury_swing": injury["swing"],
+                "injury_status": injury["status"],
+                "home_win_probability_pre_injury": (
+                    live_margin.home_win_probability(pre_injury_margin) if qb_margin else None),
                 "total_core": core_total,
                 "total_model": wx_total["model"] if wx_total else "core",
                 "weather": wx_total["weather"] if wx_total else None,
                 "weather_status": wx_status,
                 "margin_sigma": qb_margin["margin_sigma"] if qb_margin else None,
-                "home_win_probability": qb_margin["home_win_probability"] if qb_margin else None,
+                "home_win_probability": (
+                    live_margin.home_win_probability(cal_margin) if qb_margin else None),
                 "margin_model": qb_margin["model"] if qb_margin else "core",
                 "quarterbacks": qb_margin["quarterbacks"] if qb_margin else None,
             },
