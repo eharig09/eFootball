@@ -27,6 +27,27 @@ class AggregationServiceTests(unittest.TestCase):
         self.league = get_league("college-football")
         assert self.league is not None
 
+    def test_max_workers_bounds_how_many_feeds_are_fetched_at_once(self):
+        import threading
+        import time
+        lock, state = threading.Lock(), {"now": 0, "peak": 0}
+
+        class Slow(FakeProvider):
+            def fetch(self):
+                with lock:
+                    state["now"] += 1
+                    state["peak"] = max(state["peak"], state["now"])
+                time.sleep(0.05)
+                with lock:
+                    state["now"] -= 1
+                return []
+
+        for workers, expected_peak in ((2, 2), (1, 1)):
+            state.update(now=0, peak=0)
+            service = AggregationService({self.league.slug: tuple(Slow(str(i)) for i in range(6))}, max_workers=workers)
+            service.aggregate(self.league, force_refresh=True)
+            self.assertLessEqual(state["peak"], expected_peak)
+
     def test_deduplicates_sorts_and_isolates_provider_failures(self):
         older = Article(
             title="Older story", url="https://example.com/older", source="One",

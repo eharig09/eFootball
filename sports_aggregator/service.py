@@ -70,7 +70,9 @@ class AggregationService:
         providers: Mapping[str, Iterable[NewsProvider]],
         cache_ttl_seconds: int = 300,
         clock: Callable[[], float] = time.monotonic,
+        max_workers: int = 8,
     ) -> None:
+        self._max_workers = max(1, int(max_workers))
         self._providers = {slug: tuple(items) for slug, items in providers.items()}
         self._cache_ttl_seconds = cache_ttl_seconds
         self._clock = clock
@@ -89,7 +91,7 @@ class AggregationService:
         indexed_errors: dict[int, SourceError] = {}
 
         if providers:
-            with ThreadPoolExecutor(max_workers=min(len(providers), 8)) as executor:
+            with ThreadPoolExecutor(max_workers=min(len(providers), self._max_workers)) as executor:
                 futures = {
                     executor.submit(provider.fetch): (index, provider)
                     for index, provider in enumerate(providers)
@@ -120,7 +122,7 @@ class AggregationService:
         return result
 
 
-def build_default_service() -> AggregationService:
+def build_default_service(max_workers: int = 8) -> AggregationService:
     """Build request-time RSS aggregation only when explicitly useful.
 
     The CFB production site already ingests reporting into SQLite on scheduled
@@ -137,4 +139,4 @@ def build_default_service() -> AggregationService:
         }
     else:
         providers = {}
-    return AggregationService(providers, cache_ttl_seconds=_cache_ttl())
+    return AggregationService(providers, cache_ttl_seconds=_cache_ttl(), max_workers=max_workers)

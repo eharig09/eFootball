@@ -75,6 +75,44 @@ class HistoryTests(unittest.TestCase):
         self.assertTrue(all(row["game_url"].endswith("/box-score/")
                             for row in packet["away_recent"]))
 
+    def test_series_ats_uses_the_closing_line_from_each_teams_side(self):
+        from contextlib import closing
+        from sports_aggregator.cfb import lines
+        lines.initialize(self.repository)
+        with closing(self.repository._connect()) as connection:
+            for game_id, season, provider, spread in (
+                    (91, 2023, "consensus", -3.0),     # Michigan home, -3, won 24-17: covers by 4
+                    (91, 2023, "Bovada", -9.0),        # ignored: the consensus line wins
+                    (92, 2024, "Bovada", 1.0),         # Wisconsin home +1 (no consensus), lost... 21-20 win, covers
+                    (92, 2024, "ESPN Bet", 2.0)):      # mean 1.5 rounds to the half point: Wisconsin +1.5
+                connection.execute(
+                    "INSERT INTO game_lines(game_id,season,provider,spread,fetched_at) VALUES(?,?,?,?,?)",
+                    (game_id, season, provider, spread, "2026-01-01T00:00:00+00:00"))
+            connection.commit()
+        target = game(100, 2026, "2026-09-05T23:30:00+00:00", 1, "Michigan", "Big Ten", None,
+                      2, "Wisconsin", "Big Ten", None)
+        target = {name: getattr(target, name) for name in target.__dataclass_fields__}
+        target["start_date"] = target["start_date"].isoformat()
+        packet = matchup_history(self.repository, target)
+        # game 91: Michigan -3, won by 7 -> Michigan covers, Wisconsin does not.
+        # game 92: Wisconsin +1.5 at home, won by 1 -> Wisconsin covers, Michigan (-1.5 away) does not.
+        self.assertEqual(packet["home_record"]["ats"]["record"], "1-1")      # Michigan
+        self.assertEqual(packet["away_record"]["ats"]["record"], "1-1")      # Wisconsin
+        self.assertEqual(packet["home_record"]["ats"]["games"], 2)
+        by_game = {row["game_id"]: row for row in packet["recent"]}           # Wisconsin's side
+        self.assertEqual((by_game[91]["ats"], by_game[91]["line"]), ("L", 3.0))
+        self.assertEqual((by_game[92]["ats"], by_game[92]["line"]), ("W", 1.5))
+        self.assertEqual(packet["home_context"]["site"]["ats"]["record"], "1-0")   # Michigan at home: game 91 cover
+
+    def test_series_ats_is_blank_when_no_lines_are_stored(self):
+        target = game(100, 2026, "2026-09-05T23:30:00+00:00", 1, "Michigan", "Big Ten", None,
+                      2, "Wisconsin", "Big Ten", None)
+        target = {name: getattr(target, name) for name in target.__dataclass_fields__}
+        target["start_date"] = target["start_date"].isoformat()
+        packet = matchup_history(self.repository, target)
+        self.assertIsNone(packet["home_record"]["ats"]["record"])
+        self.assertEqual(packet["home_record"]["ats"]["games"], 0)
+
     def test_team_game_log_and_position_production(self):
         self.repository.replace_player_stats(2024, (
             {"playerId": "rb", "player": "Runner", "team": "Michigan",
