@@ -102,14 +102,42 @@ def upcoming_by_team(repository: CFBRepository, season: int) -> dict[int, dict[s
     return upcoming
 
 
+_OFFENSIVE_LINE = {"T", "G", "C"}
+_DEFENDERS = {"ED", "DI", "LB", "CB", "S"}
+
+
+def _unit_dataset(codes: tuple[str, ...]) -> str:
+    """The one PFF dataset whose grade describes this unit.
+
+    pff_matchup_rows carries a row per player *per dataset*, so a defensive
+    lineman appears under defense, pass rush and run defense. Averaging across
+    rows counted him three times and mixed grades that mean different things.
+    """
+    if _OFFENSIVE_LINE & set(codes):
+        return "blocking"
+    return "defense" if set(codes) <= _DEFENDERS else "receiving"
+
+
 def _unit_grade(rows: Iterable[dict[str, Any]], codes: tuple[str, ...]) -> tuple[float | None, int]:
-    """Average PFF grade across one position group, and how many players it saw."""
-    grades = [float(row["primary_grade"]) for row in rows
-              if row.get("primary_grade") is not None
-              and str(row.get("position") or "").upper() in codes]
-    if not grades:
+    """Snap-weighted grade across a position group, and how many players it averaged.
+
+    Every player counts in proportion to his snaps, the way PFF's own team grades are
+    built: against the 2026 team grades, weighting all players by snaps tracked PFF
+    (r = 0.79-0.98 across seven college units) better than keeping only the top few
+    players by snaps (0.75-0.93), so no starter cutoff is applied.
+    """
+    dataset = _unit_dataset(codes)
+    wanted = {code.upper() for code in codes}
+    graded = [(float(row["primary_grade"]), float(row.get("usage_count") or 0))
+              for row in rows
+              if row.get("dataset") == dataset and row.get("primary_grade") is not None
+              and str(row.get("position") or "").upper() in wanted]
+    if not graded:
         return None, 0
-    return sum(grades) / len(grades), len(grades)
+    snaps = sum(weight for _, weight in graded)
+    grade = (sum(g * w for g, w in graded) / snaps if snaps
+             else sum(g for g, _ in graded) / len(graded))
+    return grade, len(graded)
 
 
 def board_context(repository: CFBRepository, *, season: int,

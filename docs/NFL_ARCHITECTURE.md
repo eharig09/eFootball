@@ -1519,3 +1519,27 @@ against the walk-forward QB-aware stack's residual). Against the closing spread 
 already prices ~63%. The adjusted margin and win probability are context only; they do not feed picks or the ledger. Group
 splits are shown but never converted to points (the earlier ablation found them worse). Re-run the calibration after a
 season of new data and update `CALIBRATION`.
+
+
+## 2026-10-03 PFF team grades, and why unit grades read low
+
+**Team grades** (`sports_aggregator/pff_team_grades.py`; tables `nfl_pff_team_grades`, `pff_team_grades`). The "Team PFF
+Grades" sheet is a paste of two side-by-side tables with no header row: per column, team names first, then one block per
+team, `W - L, PF, PA, 13 grades, "Team Reports"`. The grade order (overall, offense, passing, pass block, receiving,
+rushing, run block, defense, run defense, tackling, pass rush, coverage, special teams) was checked against our own stats and
+matches PFF's order in `PFF/pff_team_grades_20xx.csv`. Parsing refuses anything off-shape, and import refuses a sheet whose
+records and points disagree with stored results (a shifted sheet cannot match). Upload on `/nfl/data-import/`, or
+`python -m sports_aggregator.pff_team_grades FILE --season S --nfl-week N --cfb-week N`. Shown on both team pages.
+
+**Why player-based unit grades sit in the 60s.** Compared with PFF's 2026 team grades (NFL n=32, college n=138), the
+snap-weighted average of player grades tracks them closely (r = 0.79-0.98) but with a *compressed spread*: PFF's team
+grades vary 1.5-3x as much as averaged player grades (college defense: sd 9.4 vs 3.2; coverage 12.8 vs 3.8). Levels match in
+the NFL and for the college line and quarterbacks; college defense, coverage and receiving sit 5-12 points under PFF's
+scale. This is scale, not weighting.
+
+**A starter cutoff made it worse.** Keeping only the busiest 5 linemen / 2 edge / 2 interior / 2 LB / 5 DB lowered
+agreement with PFF in every unit (college pass rush 0.92 -> 0.80, coverage 0.94 -> 0.86, defense 0.97 -> 0.89; letting more
+players in moved it back toward 0.95). Restricting NFL blocking to linemen lowered it too (run block 0.98 -> 0.94), because
+PFF's team blocking grades include tight ends and backs. So unit grades stay snap-weighted over every player in the family.
+The only grade-averaging bug fixed: the draft board's opposing-unit grade was an unweighted mean that counted each player
+once per dataset.

@@ -15,10 +15,17 @@ def test_responses_carry_server_timing(tmp_path):
 
 
 def test_page_cache_state_is_reported(tmp_path, monkeypatch):
+    from sports_aggregator.page_cache import cached_page
+
     monkeypatch.setenv("CFB_PAGE_CACHE_SECONDS", "600")
-    app, client = _client(tmp_path, TESTING=False, CACHE_TYPE="SimpleCache")
-    first = client.get("/nfl/picks/").headers["Server-Timing"]
-    second = client.get("/nfl/picks/").headers["Server-Timing"]
+    app, _ = _client(tmp_path, TESTING=False, CACHE_TYPE="SimpleCache")
+    app.debug = False
+    app.add_url_rule("/_cache-probe", "cache_probe", cached_page(lambda: "<p>probe</p>"))
+    client = app.test_client()
+
+    first = client.get("/_cache-probe").headers["Server-Timing"]
+    second = client.get("/_cache-probe").headers["Server-Timing"]
+
     assert 'cache;desc="miss"' in first and 'cache;desc="hit"' in second
 
 

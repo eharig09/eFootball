@@ -442,6 +442,16 @@ CREATE TABLE IF NOT EXISTS nfl_pff_players (
  source_path TEXT NOT NULL, updated_at TEXT NOT NULL,
  PRIMARY KEY(season,pff_id,team)
 );
+CREATE TABLE IF NOT EXISTS nfl_pff_team_grades (
+ season INTEGER NOT NULL, week INTEGER NOT NULL, team TEXT NOT NULL,
+ wins INTEGER NOT NULL, losses INTEGER NOT NULL,
+ points_for INTEGER NOT NULL, points_against INTEGER NOT NULL,
+ overall REAL NOT NULL, offense REAL NOT NULL, passing REAL NOT NULL, pass_block REAL NOT NULL,
+ receiving REAL NOT NULL, rushing REAL NOT NULL, run_block REAL NOT NULL, defense REAL NOT NULL,
+ run_defense REAL NOT NULL, tackling REAL NOT NULL, pass_rush REAL NOT NULL,
+ coverage REAL NOT NULL, special_teams REAL NOT NULL, imported_at TEXT NOT NULL,
+ PRIMARY KEY(season,week,team)
+);
 CREATE INDEX IF NOT EXISTS idx_nfl_pff_player_gsis ON nfl_pff_players(season,gsis_id);
 CREATE INDEX IF NOT EXISTS idx_nfl_pff_player_team ON nfl_pff_players(season,team);
 CREATE TABLE IF NOT EXISTS nfl_pff_player_metrics (

@@ -21,6 +21,7 @@ from sports_aggregator.nfl.engine_picks import (
     build_dashboard as build_engine_picks_dashboard,
     default_week as default_engine_pick_week,
 )
+from sports_aggregator import pff_team_grades
 from sports_aggregator.nfl import injury_impact, odds_history, pick_record
 from sports_aggregator.nfl.explorer import (
     METRICS, METRIC_CATEGORIES, METRIC_LABELS, SUM_METRICS,
@@ -997,6 +998,8 @@ def team_page(abbreviation: str):
             caption=f"{context['usage']['season']} opportunity leaders",
         ),
         pff=_team_pff(code, season),
+        pff_team_grades=pff_team_grades.team_grades_table(
+            pff_team_grades.latest_nfl_team_grades(_repository(), season), code, "team"),
         position_rooms=rooms, availability=availability,
         staff=staff_packet["staff"], staff_packet=staff_packet,
         efficiency=context["efficiency"], team_context=context, defense_profile=defense,

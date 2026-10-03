@@ -20,6 +20,7 @@ from sports_aggregator.cfb.models import Game, PollRanking, Team, normalize_alia
 from sports_aggregator.cfb.statlines import (
     CATEGORY_ORDER, category_columns, category_label, qualifier, sort_stat)
 from sports_aggregator.nfl.ranking import rank_within
+from sports_aggregator.ranked_panels import percentile_in
 
 
 SCHEMA = """
@@ -339,6 +340,20 @@ CREATE TABLE IF NOT EXISTS pff_position_groups (
     usage_count REAL NOT NULL,
     PRIMARY KEY (season, pff_team_name, position_group, dataset)
 );
+CREATE TABLE IF NOT EXISTS pff_team_grades (
+    season INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    cfbd_team_id INTEGER NOT NULL,
+    team_name TEXT NOT NULL,
+    wins INTEGER NOT NULL, losses INTEGER NOT NULL,
+    points_for INTEGER NOT NULL, points_against INTEGER NOT NULL,
+    overall REAL NOT NULL, offense REAL NOT NULL, passing REAL NOT NULL, pass_block REAL NOT NULL,
+    receiving REAL NOT NULL, rushing REAL NOT NULL, run_block REAL NOT NULL, defense REAL NOT NULL,
+    run_defense REAL NOT NULL, tackling REAL NOT NULL, pass_rush REAL NOT NULL,
+    coverage REAL NOT NULL, special_teams REAL NOT NULL, imported_at TEXT NOT NULL,
+    PRIMARY KEY (season, week, cfbd_team_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_pff_groups_grade
     ON pff_position_groups(season, dataset, weighted_grade DESC);
 
@@ -3294,12 +3309,16 @@ class CFBRepository:
               WHERE season=? AND cfbd_team_id IN (?,?) AND weighted_grade IS NOT NULL""",
               (season,home_team_id,away_team_id)).fetchall()]
         by_key={(row["cfbd_team_id"],row["position_group"],row["dataset"]):row for row in rows}
+        populations=self.pff_unit_populations(season)
         result=[]
         for label,group,dataset in self.PFF_UNIT_SPECS:
             home=by_key.get((home_team_id,group,dataset)); away=by_key.get((away_team_id,group,dataset))
+            pool=populations.get((group,dataset),[])
             if home or away: result.append({"label":label,"position_group":group,"dataset":dataset,
                 "home_grade":home["weighted_grade"] if home else None,
                 "away_grade":away["weighted_grade"] if away else None,
+                "home_percentile":percentile_in(home["weighted_grade"],pool) if home else None,
+                "away_percentile":percentile_in(away["weighted_grade"],pool) if away else None,
                 "home_usage":home["usage_count"] if home else None,"away_usage":away["usage_count"] if away else None})
         return result
 
@@ -3317,14 +3336,37 @@ class CFBRepository:
                    WHERE season=? AND cfbd_team_id=? AND weighted_grade IS NOT NULL""",
                 (season, team_id)).fetchall()]
         by_key = {(row["position_group"], row["dataset"]): row for row in rows}
+        populations = self.pff_unit_populations(season)
         result = []
         for label, group, dataset in self.PFF_UNIT_SPECS:
             row = by_key.get((group, dataset))
             if row:
                 result.append({"label": label, "grade": row["weighted_grade"],
+                               "percentile": percentile_in(row["weighted_grade"],
+                                                           populations.get((group, dataset), [])),
                                "player_count": row["player_count"], "usage": row["usage_count"]})
-        result.sort(key=lambda item: -item["grade"])
+        # Percentiles, not raw grades, are comparable across units: a 64 at one
+        # position can be elite while a 64 at another is average.
+        result.sort(key=lambda item: (-(item["percentile"] if item["percentile"] is not None else -1),
+                                      -item["grade"]))
         return result
+
+    def pff_unit_populations(self, season: int) -> dict[tuple[str, str], list[float]]:
+        """Every team's grade for each (position group, dataset), the field a unit is ranked in.
+
+        Averaged player grades are squeezed into a narrow band (college defensive
+        units vary ~3 points while PFF's own team grades vary ~9), so a raw grade
+        says little; where it stands among FBS teams says more.
+        """
+        self.initialize()
+        with self._reader() as connection:
+            rows = connection.execute(
+                """SELECT position_group,dataset,weighted_grade FROM pff_position_groups
+                   WHERE season=? AND weighted_grade IS NOT NULL""", (season,)).fetchall()
+        populations: dict[tuple[str, str], list[float]] = {}
+        for row in rows:
+            populations.setdefault((row["position_group"], row["dataset"]), []).append(row["weighted_grade"])
+        return populations
 
     def pff_matchup_rows(self, team_ids: Iterable[int],
                          season: int = 2025) -> dict[int, list[dict[str, Any]]]:

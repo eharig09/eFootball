@@ -518,3 +518,4 @@ a.ui-chip{text-decoration:none}
 @media(max-width:620px){.ui-overall-row{flex-direction:column;align-items:flex-start;gap:6px}}
 .ui-summary td.num,.ui-signals td.num{font-variant-numeric:tabular-nums}
 .ui-signals th small{display:block;margin:2px 0 0;font-size:.62rem;font-weight:500}
+.ui-unit-compare td b em{font-style:normal;font-weight:400;font-size:.7em;color:var(--muted)}

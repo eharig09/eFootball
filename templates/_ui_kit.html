@@ -349,9 +349,9 @@
     <table class="ui-mini ui-compare ui-unit-compare">
         <thead><tr><th class="side">{{ away }}</th><th>Unit</th><th>{{ home }}</th></tr></thead>
         <tbody>{% for row in rows %}<tr>
-            <td class="side away{{ ' is-lead' if row.lead == 'away' }}"><b>{{ row.away.grade|cell('f1') }}</b><small>{% if row.away.returning is not none %}{{ row.away.returning|round|int }}% back{% endif %}{% if row.away.usage %} &middot; {{ row.away.usage|round|int }} snaps{% endif %}</small></td>
+            <td class="side away{{ ' is-lead' if row.lead == 'away' }}"><b>{% if row.away.percentile is not none %}{{ ordinal(row.away.percentile) }}<em> pctl</em>{% else %}{{ row.away.grade|cell('f1') }}{% endif %}</b><small>{% if row.away.percentile is not none %}grade {{ row.away.grade|cell('f1') }}{% if row.away.returning is not none or row.away.usage %} &middot; {% endif %}{% endif %}{% if row.away.returning is not none %}{{ row.away.returning|round|int }}% back{% endif %}{% if row.away.usage %} &middot; {{ row.away.usage|round|int }} snaps{% endif %}</small></td>
             <td class="mid">{{ row.unit }}</td>
-            <td class="home{{ ' is-lead' if row.lead == 'home' }}"><b>{{ row.home.grade|cell('f1') }}</b><small>{% if row.home.returning is not none %}{{ row.home.returning|round|int }}% back{% endif %}{% if row.home.usage %} &middot; {{ row.home.usage|round|int }} snaps{% endif %}</small></td>
+            <td class="home{{ ' is-lead' if row.lead == 'home' }}"><b>{% if row.home.percentile is not none %}{{ ordinal(row.home.percentile) }}<em> pctl</em>{% else %}{{ row.home.grade|cell('f1') }}{% endif %}</b><small>{% if row.home.percentile is not none %}grade {{ row.home.grade|cell('f1') }}{% if row.home.returning is not none or row.home.usage %} &middot; {% endif %}{% endif %}{% if row.home.returning is not none %}{{ row.home.returning|round|int }}% back{% endif %}{% if row.home.usage %} &middot; {{ row.home.usage|round|int }} snaps{% endif %}</small></td>
         </tr>{% else %}<tr><td colspan="3" class="ctx">No unit grades are stored for these teams.</td></tr>{% endfor %}</tbody>
     </table>
 </article>

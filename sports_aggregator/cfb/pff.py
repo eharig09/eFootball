@@ -72,6 +72,11 @@ DATASET_POSITION_GROUPS = {
 # PFF's export uses compact display names. These are deterministic aliases, not
 # fuzzy guesses. Unlisted names must resolve through a CFBD alias or remain open.
 PFF_TEAM_OVERRIDES = {
+    # Full names, as PFF's team grades table writes them (the player exports abbreviate).
+    "LOUISIANA-MONROE": "UL Monroe", "MISSISSIPPI": "Ole Miss",
+    "NORTH CAROLINA STATE": "NC State", "SAN JOSE STATE": "San José State",
+    # The 2026 player exports write Sacramento State this way; it was left unlinked.
+    "SACRAMENTO": "Sacramento State",
     "ARIZONA ST": "Arizona State", "ARK STATE": "Arkansas State",
     "BALL ST": "Ball State", "BOISE ST": "Boise State",
     "BOSTON COL": "Boston College", "BOWL GREEN": "Bowling Green",

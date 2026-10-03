@@ -22,6 +22,7 @@ from flask import Blueprint, current_app, render_template, request, session
 from sports_aggregator.nfl.nflverse import current_season
 from sports_aggregator.nfl.pff import PFF_FAMILIES, NFLPFFService
 from sports_aggregator.page_cache import cache
+from sports_aggregator.pff_team_grades import TeamGradesError, import_all
 
 
 nfl_data_import_pages = Blueprint("nfl_data_import", __name__)
@@ -193,3 +194,36 @@ def import_pff():
         + (f" · {report['unresolved']} unresolved to a roster" if report["unresolved"] else ""),
         preflight_rows,
     ))
+
+
+@nfl_data_import_pages.post("/nfl/data-import/team-grades")
+def import_team_grades():
+    """The "Team PFF Grades" sheet: NFL and college team grades in one file."""
+    season = request.form.get("season", type=int) or current_season()
+    if not _authorized():
+        return _page(season=season, result=_result(
+            False, "Authorization failed.", "Nothing was uploaded or changed.")), 401
+    nfl_week, cfb_week = request.form.get("nfl_week", type=int), request.form.get("cfb_week", type=int)
+    upload = request.files.get("sheet")
+    if not upload or not upload.filename or not nfl_week or not cfb_week:
+        return _page(season=season, result=_result(
+            False, "A sheet and both week numbers are required.")), 400
+    raw = upload.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        return _page(season=season, result=_result(False, "That file is too large.")), 400
+    try:
+        reports = import_all(
+            raw.decode("utf-8-sig"), season=season, nfl_week=nfl_week, cfb_week=cfb_week,
+            nfl=_repository(), cfb=current_app.extensions["cfb_repository"])
+    except (TeamGradesError, UnicodeDecodeError) as error:
+        return _page(season=season, result=_result(
+            False, "The team grades sheet was not imported.", str(error))), 400
+    cache.clear()
+    return _page(season=season, result=_result(
+        True, f"Stored {sum(r['teams'] for r in reports)} team-grade rows for {season}.",
+        "Records and points for/against were checked against the stored game results.",
+        [{"file": "NFL" if r["league"] == "nfl" else "College",
+          "detail": f"{r['teams']} teams · through week {r['week']} · "
+                    f"{r['matched']} of {r['compared']} match our results"
+                    + (f" · differ: {', '.join(r['mismatched'][:5])}" if r["mismatched"] else "")}
+         for r in reports]))

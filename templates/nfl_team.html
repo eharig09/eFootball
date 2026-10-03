@@ -145,6 +145,13 @@
     </section>
     {% endif %}
 
+    {% if pff_team_grades %}
+    <section class="section" id="pff-team-grades" data-nfl-panel="performance">
+        <div class="section-head"><div><p class="eyebrow">{{ season }} PFF &middot; through week {{ pff_team_grades.week }} ({{ pff_team_grades.record }})</p><h2>PFF team grades</h2></div></div>
+        <details class="ui-note"><summary>Method</summary><p>PFF's own team-level grades, on a wider scale than the player-based unit grades elsewhere on this page. They describe the games played so far this season and are noisy until more are in.</p></details>
+        {{ table_panel('Team grades', pff_team_grades.table, note='rank among all 32 teams') }}
+    </section>
+    {% endif %}
     <section class="section" id="pff" data-nfl-panel="performance">
         <div class="section-head"><div><p class="eyebrow">{{ pff.season or season }} PFF grades{% if pff.season and pff.season != season %} &middot; current-roster baseline{% endif %}</p><h2>Player grading leaders</h2></div><a class="section-action" href="{{ url_for('nfl.pff_explorer', season=pff.season or season, team=team.abbreviation) }}">Open explorer &rarr;</a></div>
         <details class="ui-note"><summary>Method</summary><p>Prior-season cards include only players on the current {{ season }} organization roster. Grades are season aggregates sourced read-only from scouting_report.</p></details>

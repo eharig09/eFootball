@@ -190,7 +190,7 @@
 /* Ranked PFF unit grade bars */
 .prod-unit-bars { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px;
     background: var(--paper); box-shadow: var(--shadow-soft); }
-.prod-unit-row { display: grid; grid-template-columns: 110px 1fr 48px; gap: 10px;
+.prod-unit-row { display: grid; grid-template-columns: 110px 1fr 128px; gap: 10px;
     align-items: center; min-height: 30px; border-top: 1px solid var(--cell-line); font-size: .68rem; }
 .prod-unit-row:first-child { border-top: 0; }
 .prod-unit-label { color: var(--muted); }
@@ -271,3 +271,4 @@
         background: transparent; box-shadow: none;
     }
 }
+.prod-unit-row b small { font-weight: 400; font-size: .72em; color: var(--muted, #8b95a1); margin-left: 4px; }
