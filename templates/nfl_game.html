@@ -149,8 +149,6 @@
         </table>
     </section>
     {{ style_clash(style_clash_data, game) }}
-    {{ playcalling_lens(playcalling_data, game) }}
-    {{ comparable_games(comparables_data, game) }}
     <section class="section" id="matchups" data-nfl-panel="matchups">
         <div class="section-head"><div><p class="eyebrow">Strength against resistance</p><h2>Offense versus defense</h2></div></div>
         <details class="ui-note"><summary>Method</summary><p>{{ baseline_season }} offensive results are set directly against what the opposing defense allowed{% if baseline_season != game.season %}; the prior-season baseline is used until both teams have a {{ game.season }} pregame sample{% endif %}. Traditional, efficiency, Next Gen, and available PFF evidence remain source-labeled. An advantage requires at least a five-rank separation and is descriptive, not a projection.</p></details>
@@ -163,6 +161,13 @@
             {% for card in defense_matchups %}{% if card.has_data %}{{ rank_gap_panel(card, away_identity if card.offense == game.away_team else home_identity, away_identity if card.defense == game.away_team else home_identity, ('Efficiency', 'Next Gen Stats')) }}{% endif %}{% endfor %}
         </div>
     </section>
+    {% if position_group_matchups|selectattr('profile.has_data')|list %}
+    <section class="section" id="position-groups" data-nfl-panel="matchups">
+        <div class="section-head"><div><p class="eyebrow">Observed roles against adjusted allowance</p><h2>Position-group matchup ledger</h2></div></div>
+        <details class="ui-note"><summary>Method</summary><p>The player name under each role is the upcoming offense's observed workload leader at that slot before this game. Quarterback carries and yards are included in the backfield total and isolated in the QB rush row. Allowed production and opponent-quality baselines use only games before kickoff; 100 is league average or opponent-adjusted expectation.</p></details>
+        <div class="ui-deep-grid">{% for card in position_group_matchups %}{% if card.profile.has_data %}<article class="ui-panel"><header class="ui-panel-head"><h3>{{ card.offense }} offense vs {{ card.defense }} defense</h3><span class="ui-median-key">allowed by {{ card.defense }} &middot; {{ card.profile.games }} games</span></header>{{ position_group_compact(card.profile) }}</article>{% endif %}{% endfor %}</div>
+    </section>
+    {% endif %}
     <section class="section" id="trenches" data-nfl-panel="matchups">
         <div class="section-head"><div><p class="eyebrow">Protection against pressure</p><h2>Trench analysis</h2></div></div>
 
@@ -337,13 +342,6 @@
         <details class="ui-note"><summary>Method</summary><p>Per-game production from the comparison window. Lower is better for points allowed, sacks allowed, and turnovers.</p></details>
         <div class="production-compare"><header><b>{{ game.away_team }}</b><span>Metric</span><b>{{ game.home_team }}</b></header>{% for row in production %}<div class="{% if row.lean %}production-lean-{{ 'away' if row.lean == game.away_team else 'home' }}{% endif %}"><strong>{{ row.away|cell(row.format) }}{% if row.away_rank %}<small>#{{ row.away_rank }}</small>{% endif %}</strong><span>{{ row.label }}{% if row.lean %}<small>{{ row.lean }} edge</small>{% endif %}</span><strong>{{ row.home|cell(row.format) }}{% if row.home_rank %}<small>#{{ row.home_rank }}</small>{% endif %}</strong></div>{% endfor %}</div>
     </section>
-    {% if position_group_matchups|selectattr('profile.has_data')|list %}
-    <section class="section" id="position-groups" data-nfl-panel="stats">
-        <div class="section-head"><div><p class="eyebrow">Observed roles against adjusted allowance</p><h2>Position-group matchup ledger</h2></div></div>
-        <details class="ui-note"><summary>Method</summary><p>The player name under each role is the upcoming offense's observed workload leader at that slot before this game. Quarterback carries and yards are included in the backfield total and isolated in the QB rush row. Allowed production and opponent-quality baselines use only games before kickoff; 100 is league average or opponent-adjusted expectation.</p></details>
-        <div class="ui-deep-grid">{% for card in position_group_matchups %}{% if card.profile.has_data %}<article class="ui-panel"><header class="ui-panel-head"><h3>{{ card.offense }} offense vs {{ card.defense }} defense</h3><span class="ui-median-key">allowed by {{ card.defense }} &middot; {{ card.profile.games }} games</span></header>{{ position_group_compact(card.profile) }}</article>{% endif %}{% endfor %}</div>
-    </section>
-    {% endif %}
     <section class="section" id="shape" data-nfl-panel="stats">
         <div class="section-head"><div><p class="eyebrow">Transparent descriptive read</p><h2>Projected game shape</h2></div></div>
 
@@ -430,6 +428,8 @@
         </div>
         {% endif %}
     </section>
+    {{ playcalling_lens(playcalling_data, game) }}
+    {{ comparable_games(comparables_data, game) }}
     <section class="section" id="players" data-nfl-panel="players">
         <div class="section-head"><div><p class="eyebrow">Season production + workload</p><h2>Player production</h2></div></div>
         <h3 class="subsection-title">Production leaders entering the game</h3>

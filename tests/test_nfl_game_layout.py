@@ -17,11 +17,11 @@ class GameLayoutTests(unittest.TestCase):
         return match.group(1)
 
     def test_tables_and_stats_live_on_the_stats_tab(self):
-        for section_id in ("production", "position-groups", "shape", "market"):
+        for section_id in ("production", "shape", "market"):
             self.assertEqual(self.panel(section_id), "stats", section_id)
 
     def test_charts_and_unit_matchups_live_on_the_matchups_tab(self):
-        for section_id in ("player-watches", "matchups", "trenches", "pass-defense",
+        for section_id in ("player-watches", "matchups", "position-groups", "trenches", "pass-defense",
                            "rush-defense", "high-volume-interactions", "run-interactions"):
             self.assertEqual(self.panel(section_id), "matchups", section_id)
 
@@ -37,6 +37,18 @@ class GameLayoutTests(unittest.TestCase):
         market = self.html[self.html.index('id="market"'):self.html.index('id="players"')]
         self.assertIn("ui-coach", market)
         self.assertNotIn("<th>Coach</th>", market)
+
+    def test_the_position_group_ledger_sits_just_below_offense_versus_defense(self):
+        order = re.findall(r'id="([a-z-]+)" data-nfl-panel="matchups"', self.html)
+        self.assertEqual(order[order.index("matchups") + 1], "position-groups")
+
+    def test_play_calling_then_comparable_games_close_out_the_stats_tab(self):
+        market = self.html.index('id="market"')
+        play_calling = self.html.index("playcalling_lens(playcalling_data")
+        comparable = self.html.index("comparable_games(comparables_data")
+        self.assertLess(market, play_calling)
+        self.assertLess(play_calling, comparable)
+        self.assertLess(comparable, self.html.index('id="players"'))      # still before the next tab's first section
 
     def test_the_redundant_unit_by_unit_table_is_gone(self):
         self.assertNotIn("expanded-matchup", self.html)

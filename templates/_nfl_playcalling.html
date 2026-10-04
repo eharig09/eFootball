@@ -1,5 +1,5 @@
 {% macro playcalling_lens(pc, game) %}
-<section class="section" id="playcalling-lens" data-nfl-panel="matchups">
+<section class="section" id="playcalling-lens" data-nfl-panel="stats">
     <div class="section-head"><div><p class="eyebrow">How each side chooses to attack</p><h2>Play-calling lens</h2></div></div>
     {% if not pc or not pc.available %}
     <p class="ctx">{{ (pc.reason if pc else None) or 'Play-calling measures are not available for this matchup.' }}</p>

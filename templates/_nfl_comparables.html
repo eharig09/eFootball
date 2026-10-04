@@ -1,5 +1,5 @@
 {% macro comparable_games(cp, game) %}
-<section class="section" id="comparable-games" data-nfl-panel="matchups">
+<section class="section" id="comparable-games" data-nfl-panel="stats">
     <div class="section-head"><div><p class="eyebrow">Games with the same shape</p><h2>Closest comparable games</h2></div></div>
     {% if not cp or not cp.available %}
     <p class="ctx">{{ (cp.reason if cp else None) or 'Comparable games are not available for this matchup.' }}</p>
