@@ -94,6 +94,7 @@ class Game:
     away_coach: str | None = None
     home_coach: str | None = None
     weekday: str | None = None
+    neutral_site: bool = False
 
     @property
     def completed(self) -> bool:
@@ -121,6 +122,7 @@ class Game:
             under_odds=optional_float(row.get("under_odds")), over_odds=optional_float(row.get("over_odds")),
             away_coach=optional_text(row.get("away_coach")), home_coach=optional_text(row.get("home_coach")),
             weekday=optional_text(row.get("weekday")),
+            neutral_site=str(row.get("location") or "").casefold() == "neutral",
         )
 
 

@@ -40,10 +40,15 @@ PRIOR_K = 4.0
 PRIOR_SHRINK = 0.5
 
 
+def _home_field(game: dict[str, Any]) -> float:
+    """The home-field points for this game; none at a neutral site (international games, the Super Bowl)."""
+    return 0.0 if game.get("neutral_site") else HOME_FIELD
+
+
 def _neutral_edges(games: list[dict[str, Any]]) -> dict[str, list[tuple[str, float]]]:
     team_games: dict[str, list[tuple[str, float]]] = defaultdict(list)
     for g in games:
-        neutral = float(g["home_score"]) - float(g["away_score"]) - HOME_FIELD
+        neutral = float(g["home_score"]) - float(g["away_score"]) - _home_field(g)
         team_games[g["home_team"]].append((g["away_team"], neutral))
         team_games[g["away_team"]].append((g["home_team"], -neutral))
     return team_games
@@ -113,7 +118,7 @@ def _games(repository: NFLRepository, start: int, end: int) -> list[dict[str, An
     with closing(repository._connect()) as connection:
         return [{**dict(r), "home_team": canon_team(r["home_team"]), "away_team": canon_team(r["away_team"])}
                 for r in connection.execute(
-                    """SELECT game_id,season,week,home_team,away_team,home_score,away_score FROM games
+                    """SELECT game_id,season,week,home_team,away_team,home_score,away_score,neutral_site FROM games
                        WHERE season BETWEEN ? AND ? AND season_type='REG' AND completed=1
                          AND home_score IS NOT NULL AND away_score IS NOT NULL
                        ORDER BY season,week,game_date,game_id""", (int(start), int(end)))]
@@ -145,7 +150,7 @@ def snapshots(repository: NFLRepository, start: int, end: int, mode: str = "carr
                         continue
                     out[str(g["game_id"])] = {"home_rating": ratings[h], "away_rating": ratings[a],
                                               "srs_diff": ratings[h] - ratings[a],
-                                              "srs_margin": ratings[h] - ratings[a] + HOME_FIELD,
+                                              "srs_margin": ratings[h] - ratings[a] + _home_field(g),
                                               "games": min(counts.get(h, 0), counts.get(a, 0))}
             done.extend(current)
         final, _ = solver(season_games)

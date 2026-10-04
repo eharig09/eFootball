@@ -90,3 +90,22 @@ def test_ats_scoring_backs_the_side_the_rating_favours_and_drops_pushes_and_smal
     # with a floor of 1, only the three decided games with |edge| >= 1 remain, two of them wins
     big = mp._ats(rows, "edge", "line", "y", floor=1.0)
     assert (big["n"], big["win_rate"]) == (3, round(2 / 3, 4))
+
+
+def test_a_neutral_site_game_gets_no_home_field_credit_or_penalty():
+    # a 3-0 home "win" at a neutral site is a true 3-point margin, not 3 - HOME_FIELD
+    neutral = {**g(1, 2020, 1, "A", "B", 3, 0), "neutral_site": 1}
+    ratings, _ = mp.solve_srs([neutral])
+    home, _ = mp.solve_srs([g(1, 2020, 1, "A", "B", 3, 0)])
+    assert ratings["A"] - ratings["B"] == pytest.approx(home["A"] - home["B"] + mp.HOME_FIELD)
+    assert mp._home_field(neutral) == 0.0
+    assert mp._home_field(g(1, 2020, 1, "A", "B", 3, 0)) == mp.HOME_FIELD
+
+
+def test_game_from_nflverse_reads_the_neutral_flag():
+    from sports_aggregator.nfl.models import Game
+    row = {"game_id": "x", "season": 2026, "game_type": "REG", "week": 6, "gameday": "2026-10-11",
+           "away_team": "HOU", "home_team": "JAX", "stadium": "Wembley Stadium"}
+    assert Game.from_nflverse({**row, "location": "Neutral"}).neutral_site is True
+    assert Game.from_nflverse({**row, "location": "Home"}).neutral_site is False
+    assert Game.from_nflverse(row).neutral_site is False

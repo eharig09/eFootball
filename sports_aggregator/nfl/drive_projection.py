@@ -20,7 +20,7 @@ import numpy as np
 from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.model_cache import history_cached
 
-MODEL_VERSION = "nfl-drive-v2"
+MODEL_VERSION = "nfl-drive-v3"
 MIN_PRIOR_GAMES = 3
 RIDGE_ALPHA = 8.0
 STATE_SEASON_DECAY = 0.25
@@ -153,7 +153,7 @@ def _raw_games(repository: NFLRepository, start_season: int, end_season: int) ->
         rows = connection.execute(
             """SELECT g.game_id,g.season,g.week,g.game_date,g.away_team,g.home_team,
                       g.completed,g.division_game,g.spread_line,g.total_line,
-                      g.away_rest,g.home_rest,
+                      g.away_rest,g.home_rest,g.neutral_site,
                       hs.drives AS home_drives,hs.plays AS home_plays,
                       hs.neutral_plays AS home_neutral_plays,
                       hs.neutral_passes AS home_neutral_passes,
@@ -260,7 +260,7 @@ def _feature_row(
             float(rest) - float(opp_rest)
             if rest is not None and opp_rest is not None else 0.0
         ),
-        "home": 1.0 if home else 0.0,
+        "home": 0.5 if game.get("neutral_site") else (1.0 if home else 0.0),
         "division_game": float(game.get("division_game") or 0),
     }
     # Market fields can be absent historically. Use league/sample-neutral imputation,

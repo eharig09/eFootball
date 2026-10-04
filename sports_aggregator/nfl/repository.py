@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS games (
  temperature REAL, wind REAL, spread_line REAL, total_line REAL,
  away_rest INTEGER, home_rest INTEGER, away_moneyline REAL, home_moneyline REAL,
  away_spread_odds REAL, home_spread_odds REAL, under_odds REAL, over_odds REAL,
- away_coach TEXT, home_coach TEXT, weekday TEXT,
+ away_coach TEXT, home_coach TEXT, weekday TEXT, neutral_site INTEGER NOT NULL DEFAULT 0,
  updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_games_season_week ON games(season, week, game_date);
@@ -808,6 +808,7 @@ class NFLRepository:
                 "away_spread_odds": "REAL", "home_spread_odds": "REAL",
                 "under_odds": "REAL", "over_odds": "REAL",
                 "away_coach": "TEXT", "home_coach": "TEXT", "weekday": "TEXT",
+                "neutral_site": "INTEGER NOT NULL DEFAULT 0",
             }
             for name, definition in game_migrations.items():
                 if name not in game_columns:
@@ -862,8 +863,8 @@ class NFLRepository:
                     away_score,home_score,completed,overtime,division_game,stadium,roof,surface,
                     temperature,wind,spread_line,total_line,away_rest,home_rest,away_moneyline,
                     home_moneyline,away_spread_odds,home_spread_odds,under_odds,over_odds,
-                    away_coach,home_coach,weekday,updated_at
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    away_coach,home_coach,weekday,neutral_site,updated_at
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [(game.game_id, game.season, game.season_type, game.week, game.game_date,
                   game.game_time, game.away_team, game.home_team, game.away_score, game.home_score,
                   int(game.completed), int(game.overtime), int(game.division_game), game.stadium,
@@ -871,7 +872,7 @@ class NFLRepository:
                   game.total_line, game.away_rest, game.home_rest, game.away_moneyline,
                   game.home_moneyline, game.away_spread_odds, game.home_spread_odds,
                   game.under_odds, game.over_odds, game.away_coach, game.home_coach,
-                  game.weekday, now) for game in rows],
+                  game.weekday, int(game.neutral_site), now) for game in rows],
             )
             # nflverse exposes one market state per schedule refresh. Preserve
             # each changed state before the canonical row is replaced so the
