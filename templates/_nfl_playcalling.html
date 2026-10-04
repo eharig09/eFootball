@@ -1,0 +1,28 @@
+{% macro playcalling_lens(pc, game) %}
+<section class="section" id="playcalling-lens" data-nfl-panel="matchups">
+    <div class="section-head"><div><p class="eyebrow">How each side chooses to attack</p><h2>Play-calling lens</h2></div></div>
+    {% if not pc or not pc.available %}
+    <p class="ctx">{{ (pc.reason if pc else None) or 'Play-calling measures are not available for this matchup.' }}</p>
+    {% else %}
+    {% set a = pc.sides.away %}{% set h = pc.sides.home %}
+    <details class="ui-note"><summary>Method</summary><p>From play-by-play. "Over expected" compares each early-down play with what the league does in the same spot (down, distance, field zone, win-probability state), so a team that trails a lot is not mistaken for a pass-happy one. Ranks run highest value first, among all teams that season. These describe choices; they are not a forecast, and they belong to the team's play-calling, which is the head coach's unless the staff table says another coordinator calls the plays. A coach's results against his opponent-adjusted ratings did not predict his next games, so nothing here moves a number.</p></details>
+    {% if a.carried or h.carried %}<p class="ctx">{% if a.carried %}{{ a.team }}{% endif %}{% if a.carried and h.carried %} and {% endif %}{% if h.carried %}{{ h.team }}{% endif %} shown from {{ (a.season if a.carried else h.season) }}: fewer than 4 games so far this season. Last season's tendencies can reflect a different staff.</p>{% endif %}
+    <article class="ui-panel">
+        <header class="ui-panel-head"><h3>Play-calling compared</h3><span class="ui-median-key">1 = highest of 32</span></header>
+        <table class="ui-mini ui-compare">
+            <thead><tr><th class="side">{{ a.coach or a.team }} <small>{{ a.team }} &middot; {{ a.season }}</small></th><th>Measure</th><th>{{ h.coach or h.team }} <small>{{ h.team }} &middot; {{ h.season }}</small></th></tr></thead>
+            <tbody>
+                {% for key, label, kind, note in pc.rows %}
+                {% set av = a.profile[key] %}{% set hv = h.profile[key] %}
+                <tr>
+                    <td class="side away">{% if av is none %}<span class="ctx">&mdash;</span>{% else %}<b>{% if kind == 'signed_rate' %}{{ '%+.1f'|format(av * 100) }} pts{% elif kind == 'rate' %}{{ av|cell('rate') }}{% else %}{{ av|cell(kind) }}{% endif %}</b><small>#{{ a.profile[key ~ '_rank'] }}</small>{% endif %}</td>
+                    <td class="mid">{{ label }}{% if note %}<small>{{ note }}</small>{% endif %}</td>
+                    <td class="home">{% if hv is none %}<span class="ctx">&mdash;</span>{% else %}<b>{% if kind == 'signed_rate' %}{{ '%+.1f'|format(hv * 100) }} pts{% elif kind == 'rate' %}{{ hv|cell('rate') }}{% else %}{{ hv|cell(kind) }}{% endif %}</b><small>#{{ h.profile[key ~ '_rank'] }}</small>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+    {% endif %}
+</section>
+{% endmacro %}

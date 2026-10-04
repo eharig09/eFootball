@@ -6,6 +6,8 @@
 {% from '_nfl_position_groups.html' import position_group_compact %}
 {% from '_nfl_injury.html' import injury_popover %}
 {% from '_nfl_style_clash.html' import style_clash %}
+{% from '_nfl_comparables.html' import comparable_games %}
+{% from '_nfl_playcalling.html' import playcalling_lens %}
 {% from '_ui_kit.html' import ordinal, line_panel, table_panel, rank_gap_panel, wp_chart, swing_table, drive_chart, play_table, tendency_compare, penalty_compare %}
 <!DOCTYPE html>
 <html lang="en">
@@ -147,6 +149,8 @@
         </table>
     </section>
     {{ style_clash(style_clash_data, game) }}
+    {{ playcalling_lens(playcalling_data, game) }}
+    {{ comparable_games(comparables_data, game) }}
     <section class="section" id="matchups" data-nfl-panel="matchups">
         <div class="section-head"><div><p class="eyebrow">Strength against resistance</p><h2>Offense versus defense</h2></div></div>
         <details class="ui-note"><summary>Method</summary><p>{{ baseline_season }} offensive results are set directly against what the opposing defense allowed{% if baseline_season != game.season %}; the prior-season baseline is used until both teams have a {{ game.season }} pregame sample{% endif %}. Traditional, efficiency, Next Gen, and available PFF evidence remain source-labeled. An advantage requires at least a five-rank separation and is descriptive, not a projection.</p></details>

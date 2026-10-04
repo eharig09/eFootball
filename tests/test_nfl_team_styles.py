@@ -125,3 +125,69 @@ def test_team_profile_panel_renders_its_unavailable_state():
         html = render_template_string(template, tp={"available": False, "reason": "No rows yet."},
                                       team={"abbreviation": "X"})
     assert 'id="adjusted-profile"' in html and "No rows yet." in html
+
+
+def test_nearest_returns_the_closest_shapes_first_and_outcome_reads_from_the_favourite():
+    from sports_aggregator.nfl import comparable_games as cg
+    base = {"total": 44.0, "closeness": 3.0, "pace": 29.0, "pass_rate": 0.6, "explosive": 0.18, "air_edge": 0.1}
+    pool = [{"game_id": str(i), "shape": {**base, "total": 44.0 + i}} for i in range(1, 6)]
+    near = cg.nearest(base, pool, k=2)
+    assert [r["game_id"] for r in near] == ["1", "2"] and near[0]["distance"] < near[1]["distance"]
+    # home favoured by 3 wins by 7: the favourite covers; the total of 41 against 38 is an over
+    row = {"home_score": 24, "away_score": 17, "spread": 3.0, "total_line": 38.0}
+    out = cg.outcome(row)
+    assert out["fav_cover"] is True and out["over"] is True and out["fav_margin"] == 7
+    # road favourite (spread < 0) that loses outright does not cover
+    away_fav = {"home_score": 20, "away_score": 17, "spread": -3.0, "total_line": 37.0}
+    assert cg.outcome(away_fav)["fav_cover"] is False and cg.outcome(away_fav)["over"] is None   # exact total is a push
+
+
+def test_comparables_panel_renders_its_unavailable_state():
+    from flask import Flask, render_template_string
+    template = "{% from '_nfl_comparables.html' import comparable_games %}{{ comparable_games(cp, game) }}"
+    app = Flask(__name__, template_folder="../templates")
+    app.jinja_env.filters["cell"] = lambda v, f="text": "—" if v is None else str(v)
+    with app.app_context():
+        html = render_template_string(template, cp={"available": False, "reason": "Too early."},
+                                      game={"away_team": "A", "home_team": "B"})
+    assert 'id="comparable-games"' in html and "Too early." in html
+
+
+def _plays_repo(tmp_path, plays):
+    """A repository with a handful of nfl_plays rows: (team, down, ydstogo, yardline, wp, is_pass)."""
+    from sports_aggregator.nfl.repository import NFLRepository
+    repo = NFLRepository(tmp_path / "nfl.sqlite3")
+    repo.initialize()
+    from contextlib import closing
+    with closing(repo._connect()) as connection:
+        for i, (team, down, ydstogo, yardline, wp, is_pass) in enumerate(plays):
+            connection.execute(
+                """INSERT INTO nfl_plays (season,week,game_id,play_id,posteam,defteam,down,ydstogo,yardline_100,wp,
+                                          game_seconds,is_pass,is_rush,is_penalty,play_action,motion,no_huddle)
+                   VALUES (2024,1,?,?,?,?,?,?,?,?,2000,?,?,0,0,0,0)""",
+                (f"g-{team}", i, team, "OPP", down, ydstogo, yardline, wp, int(is_pass), int(not is_pass)))
+        connection.commit()
+    return repo
+
+
+def test_pass_rate_over_expected_compares_each_play_with_the_league_in_the_same_spot(tmp_path):
+    from sports_aggregator.nfl import playcalling_lens as pl
+    pl._CACHE.clear()
+    spot = (1, 10, 40.0, 0.5)             # 1st and 10, midfield, even game: every team's plays are in one bucket
+    plays = ([("AAA", *spot, True)] * 8 + [("AAA", *spot, False)] * 2          # AAA passes 80%
+             + [("BBB", *spot, True)] * 4 + [("BBB", *spot, False)] * 6)       # BBB passes 40%; league rate is 60%
+    repo = _plays_repo(tmp_path, plays)
+    profiles = pl.league_profiles(repo, 2024)
+    assert profiles["AAA"]["proe"] == pytest.approx(0.2) and profiles["BBB"]["proe"] == pytest.approx(-0.2)
+    assert profiles["AAA"]["proe_rank"] == 1 and profiles["BBB"]["proe_rank"] == 2
+
+
+def test_a_team_that_trails_is_not_mistaken_for_a_pass_happy_one(tmp_path):
+    from sports_aggregator.nfl import playcalling_lens as pl
+    pl._CACHE.clear()
+    trailing, even = (1, 10, 40.0, 0.1), (1, 10, 40.0, 0.5)
+    # CCC passes 100% only while trailing, where the whole league passes 100%; DDD passes only in even games
+    plays = [("CCC", *trailing, True)] * 10 + [("CCC", *even, False)] * 10 + \
+            [("DDD", *trailing, True)] * 10 + [("DDD", *even, False)] * 10
+    profiles = pl.league_profiles(_plays_repo(tmp_path, plays), 2024)
+    assert profiles["CCC"]["proe"] == pytest.approx(0.0) and profiles["DDD"]["proe"] == pytest.approx(0.0)
