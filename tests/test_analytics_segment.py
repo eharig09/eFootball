@@ -171,7 +171,7 @@ def test_render_has_a_projection_refresh_trigger():
     render = Path("render.yaml").read_text(encoding="utf-8")
     assert "name: cfb-projection-refresh-trigger" in render
     assert "value: projections" in render
-    assert 'schedule: "15 */2 * * *"' in render
+    assert 'schedule: "20 */2 * * *"' in render
 
 
 def test_the_hook_passes_a_requested_segment_through():
@@ -186,6 +186,22 @@ def test_the_hook_passes_a_requested_segment_through():
     assert response.get_json()["segment"] == "analytics"
     command = popen.call_args.args[0]
     assert "--segment" in command and "analytics" in command
+
+
+def test_the_hook_runs_results_and_scores_as_profiles():
+    """The status page offers "Re-run results"; those are profiles, not segments."""
+    from app import create_app
+    app = create_app({"TESTING": True, "REGISTER_LEGACY_DASHBOARDS": False,
+                      "CFB_REFRESH_TOKEN": "t", "CFB_DEFAULT_SEASON": 2026})
+    for name in ("results", "scores"):
+        with patch("app.subprocess.Popen") as popen:
+            response = app.test_client().post(
+                f"/internal/cfb-refresh?profile=light&segment={name}",
+                headers={"Authorization": "Bearer t"})
+        assert response.status_code == 202
+        command = popen.call_args.args[0]
+        assert command[command.index("--profile") + 1] == name
+        assert "--segment" not in command
 
 
 def test_the_hook_refuses_a_segment_it_does_not_have():

@@ -280,6 +280,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         # analytics segment in particular exists to be backfilled on demand:
         # its steps are the expensive ones and they only have an hour a day.
         segment = (request.args.get("segment") or "").strip().casefold() or None
+        # "results" and "scores" show up as segments on the status page but are
+        # run as profiles, so a re-run request for one maps onto its profile.
+        if segment in {"results", "scores"}:
+            profile, segment = segment, None
         if segment and segment not in SEGMENTS:
             abort(400, description="segment must be one of " + ", ".join(sorted(SEGMENTS)))
 
