@@ -5,6 +5,7 @@
 {% from '_nfl_rushing.html' import run_matchup_grid %}
 {% from '_nfl_position_groups.html' import position_group_compact %}
 {% from '_nfl_injury.html' import injury_popover %}
+{% from '_nfl_style_clash.html' import style_clash %}
 {% from '_ui_kit.html' import ordinal, line_panel, table_panel, rank_gap_panel, wp_chart, swing_table, drive_chart, play_table, tendency_compare, penalty_compare %}
 <!DOCTYPE html>
 <html lang="en">
@@ -145,6 +146,7 @@
             <tbody>{% for watch in matchup_watches %}<tr><th scope="row">{{ watch.label }}<small>{{ watch.offense }} offense vs {{ watch.defense }} defense</small></th><td class="num">#{{ watch.offense_rank }}</td><td class="num">#{{ watch.defense_rank }}</td><td>{{ watch.lean }}{% if watch.lean != 'Even' %}<small>lean</small>{% endif %}</td></tr>{% else %}<tr><td colspan="4" class="ctx">Matchup watches will populate when both unit profiles are available.</td></tr>{% endfor %}</tbody>
         </table>
     </section>
+    {{ style_clash(style_clash_data, game) }}
     <section class="section" id="matchups" data-nfl-panel="matchups">
         <div class="section-head"><div><p class="eyebrow">Strength against resistance</p><h2>Offense versus defense</h2></div></div>
         <details class="ui-note"><summary>Method</summary><p>{{ baseline_season }} offensive results are set directly against what the opposing defense allowed{% if baseline_season != game.season %}; the prior-season baseline is used until both teams have a {{ game.season }} pregame sample{% endif %}. Traditional, efficiency, Next Gen, and available PFF evidence remain source-labeled. An advantage requires at least a five-rank separation and is descriptive, not a projection.</p></details>

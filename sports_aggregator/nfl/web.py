@@ -22,7 +22,7 @@ from sports_aggregator.nfl.engine_picks import (
     default_week as default_engine_pick_week,
 )
 from sports_aggregator import pff_team_grades
-from sports_aggregator.nfl import injury_impact, odds_history, pick_record
+from sports_aggregator.nfl import injury_impact, odds_history, pick_record, style_clash
 from sports_aggregator.nfl.explorer import (
     METRICS, METRIC_CATEGORIES, METRIC_LABELS, SUM_METRICS,
     player_stat_table, scatter_plot, with_rates,
@@ -1315,7 +1315,13 @@ def _game_packet(game_id: str) -> dict:
         elif status != "applied":
             impact["adjusted"] = None
 
+    try:
+        style_clash_data = style_clash.packet(repository, game)
+    except Exception as exc:          # a panel must never take the matchup page down
+        style_clash_data = {"available": False, "reason": f"Style ratings failed to load ({exc.__class__.__name__})."}
+
     return {"game": game, "situational": situational, "discipline": discipline,
+            "style_clash_data": style_clash_data,
             "line_movement": line_movement, "injury_impact": impact,
             "injury_impact_tables": (injury_impact.tables(impact, game["season"])
                                      if impact["available"] else {}),
