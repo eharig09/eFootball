@@ -22,7 +22,7 @@ from sports_aggregator.nfl.engine_picks import (
     default_week as default_engine_pick_week,
 )
 from sports_aggregator import pff_team_grades
-from sports_aggregator.nfl import injury_impact, odds_history, pick_record, style_clash
+from sports_aggregator.nfl import injury_impact, odds_history, pick_record, style_clash, team_profile as team_profile_analysis
 from sports_aggregator.nfl.explorer import (
     METRICS, METRIC_CATEGORIES, METRIC_LABELS, SUM_METRICS,
     player_stat_table, scatter_plot, with_rates,
@@ -964,8 +964,12 @@ def team_page(abbreviation: str):
         _repository(), context["performance_season"], code,
     )
     history_tables = team_history_tables(_repository(), code, season)
+    try:
+        profile = team_profile_analysis.packet(_repository(), season, code)
+    except Exception as exc:          # a panel must never take the team page down
+        profile = {"available": False, "reason": f"Style ratings failed to load ({exc.__class__.__name__})."}
     return render_template(
-        "nfl_team.html", league=get_league("nfl"), season=season, team=team,
+        "nfl_team.html", league=get_league("nfl"), season=season, team=team, team_profile=profile,
         scheme_rate=scheme_rate,
         offense_panel=offense_panel(
             _repository(), _pff(), context["performance_season"], code, pff_season=pff_season),

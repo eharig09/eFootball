@@ -84,3 +84,44 @@ def test_style_clash_panel_renders_on_a_game_without_ratings_and_never_breaks_th
         html = render_template_string(template, sc={"available": False, "reason": "No rows."},
                                       game={"away_team": "A", "home_team": "B"})
     assert 'id="style-clash"' in html and "No rows." in html
+
+
+def _snap(values):
+    """metric -> ratings for teams X and Y; `values` is {metric: (mu, off_x, off_y, def_x, def_y)}."""
+    out = {"points": {"mu": 22.0, "home": 0.0, "off": {"X": 0.0, "Y": 0.0}, "def": {"X": 0.0, "Y": 0.0}}}
+    for metric, (mu, ox, oy, dx, dy) in values.items():
+        out[metric] = {"mu": mu, "home": 0.0, "off": {"X": ox, "Y": oy}, "def": {"X": dx, "Y": dy}}
+    return out
+
+
+def test_scoring_path_contributions_add_up_to_the_gap_to_the_league():
+    from sports_aggregator.nfl import team_profile as tp
+    snap = _snap({"drives": (10.0, -0.7, 0.7, 0.2, -0.2), "plays_per_drive": (6.0, 0.5, -0.5, -0.1, 0.1),
+                  "points_per_play": (0.36, 0.03, -0.03, -0.02, 0.02)})
+    paths = tp.paths_table(snap, "X")
+    for side in ("off", "def"):
+        d = paths[side]
+        assert sum(r["points"] for r in d["rows"]) == pytest.approx(d["gap"])
+        assert d["estimate"] - d["league_estimate"] == pytest.approx(d["gap"])
+    # X holds the ball less often but longer and cashes in more per play: the three contributions disagree in sign
+    signs = [r["points"] > 0 for r in paths["off"]["rows"]]
+    assert signs == [False, True, True]
+    assert paths["off"]["rows"][0]["rank"] == 2          # fewest drives of two teams, offence ranks high-is-first
+
+
+def test_a_team_with_no_gap_to_the_league_gets_zero_contributions():
+    from sports_aggregator.nfl import team_profile as tp
+    snap = _snap({"drives": (10.0, 0.0, 0.0, 0.0, 0.0), "plays_per_drive": (6.0, 0.0, 0.0, 0.0, 0.0),
+                  "points_per_play": (0.36, 0.0, 0.0, 0.0, 0.0)})
+    assert all(r["points"] == 0.0 for r in tp.paths_table(snap, "X")["off"]["rows"])
+
+
+def test_team_profile_panel_renders_its_unavailable_state():
+    from flask import Flask, render_template_string
+    template = "{% from '_nfl_team_profile.html' import profile_sections %}{{ profile_sections(tp, team) }}"
+    app = Flask(__name__, template_folder="../templates")
+    app.jinja_env.filters["cell"] = lambda v, f="text": "—" if v is None else str(v)
+    with app.app_context():
+        html = render_template_string(template, tp={"available": False, "reason": "No rows yet."},
+                                      team={"abbreviation": "X"})
+    assert 'id="adjusted-profile"' in html and "No rows yet." in html

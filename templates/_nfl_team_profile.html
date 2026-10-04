@@ -1,0 +1,97 @@
+{% macro profile_sections(tp, team) %}
+{% if not tp or not tp.available %}
+<section class="section" id="adjusted-profile" data-nfl-panel="performance"><div class="section-head"><div><p class="eyebrow">Opponent-adjusted</p><h2>Schedule-adjusted profile</h2></div></div><p class="ctx">{{ (tp.reason if tp else None) or 'Style ratings are not available for this team.' }}</p></section>
+{% else %}
+{% set sides = (('Offense', 'off'), ('Defense', 'def')) %}
+<section class="section" id="adjusted-profile" data-nfl-panel="performance">
+    <div class="section-head"><div><p class="eyebrow">{{ tp.season }} &middot; {{ tp.games }} game{{ '' if tp.games == 1 else 's' }} &middot; opponent-adjusted</p><h2>Schedule-adjusted profile</h2></div></div>
+    <details class="ui-note"><summary>Method</summary><p>Each offense and defense is rated separately on every measure from the games played so far, adjusted for the opposition it faced (the Margin Power construction, applied to the pieces a margin is made of). "Adjusted" is what the unit would do against an average opponent; "Schedule" is adjusted minus raw, so a positive number on offense means the schedule held the raw number down. Ranks run best first on quality measures; on pass rate and seconds per play, 1 is the most pass-heavy and the fastest.</p></details>
+    {% if not tp.settled %}<p class="ctx">Early-season sample ({{ tp.games }} games): ratings lean on last season. Treat gaps as soft.</p>{% endif %}
+    <div class="ui-chips"><span class="ui-chip">{{ tp.labels.approach }}</span><span class="ui-chip">{{ tp.labels.tempo }}</span><span class="ui-chip">{{ tp.labels.explosive }} offense</span><span class="ui-chip">{{ tp.labels.vulnerability }}</span><span class="ui-chip">{{ 'Big-play prone' if tp.labels.big_plays == 'Big-play prone' else ('Contains big plays' if tp.labels.big_plays == 'Contains' else 'Average big plays') }}</span></div>
+    <div class="ui-side-by-side">
+        {% for title, side in sides %}
+        <article class="ui-panel">
+            <header class="ui-panel-head"><h3>{{ title }}</h3><span class="ui-median-key">{{ 'what it does' if side == 'off' else 'what it allows' }}</span></header>
+            <table class="ui-mini">
+                <thead><tr><th>Measure</th><th class="num">Raw</th><th class="num">Adjusted</th><th class="num">Schedule</th><th class="num">Rank</th></tr></thead>
+                <tbody>
+                {% for r in tp.adjusted %}
+                {% set raw = r[side ~ '_raw'] %}{% set adj = r[side ~ '_adj'] %}{% set sched = r[side ~ '_schedule'] %}{% set tone = r[side ~ '_tone'] %}
+                <tr>
+                    <th scope="row">{{ r.label }}</th>
+                    <td class="num">{{ raw|cell(r.format) }}</td>
+                    <td class="num{{ ' is-good' if tone == 'good' }}{{ ' is-poor' if tone == 'poor' }}"><b>{{ adj|cell(r.format) }}</b></td>
+                    <td class="num ctx">{% if sched is none %}&mdash;{% elif r.format == 'rate' %}{{ '%+.1f'|format(sched * 100) }} pts{% elif r.format == 'f1' %}{{ '%+.1f'|format(sched) }}{% else %}{{ '%+.2f'|format(sched) }}{% endif %}</td>
+                    <td class="num">#{{ r[side ~ '_rank'] }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="section" id="scoring-paths" data-nfl-panel="performance">
+    <div class="section-head"><div><p class="eyebrow">{{ tp.season }} &middot; opponent-adjusted</p><h2>Where the points come from</h2></div></div>
+    <details class="ui-note"><summary>Method</summary><p>Points per game are possessions &times; plays per possession &times; points per play. Each factor is the schedule-adjusted rating, set against the league average; the gap to the league is shared across the three in proportion to their log gaps, so the contributions add up to the whole gap. Special teams and turnovers are inside points per play, not separated out. On defense a negative contribution means fewer points allowed than the league.</p></details>
+    <div class="ui-side-by-side">
+        {% for title, side in sides %}
+        {% set d = tp.paths[side] %}
+        <article class="ui-panel">
+            <header class="ui-panel-head"><h3>{{ title }}</h3><span class="ui-median-key">{{ d.estimate|cell('f1') }} vs league {{ d.league_estimate|cell('f1') }}</span></header>
+            <table class="ui-mini">
+                <thead><tr><th>Factor</th><th class="num">{{ team.abbreviation }}</th><th class="num">League</th><th class="num">vs league</th><th class="num">Points</th><th class="num">Rank</th></tr></thead>
+                <tbody>
+                {% for r in d.rows %}
+                {% set good = (r.points > 0) if side == 'off' else (r.points < 0) %}
+                <tr>
+                    <th scope="row">{{ r.label }}</th>
+                    <td class="num"><b>{{ r.team|cell(r.format) }}</b></td>
+                    <td class="num ctx">{{ r.league|cell(r.format) }}</td>
+                    <td class="num">{{ '%+.1f'|format(r.pct * 100) }}%</td>
+                    <td class="num{{ ' is-good' if good and r.points|abs >= 0.05 }}{{ ' is-poor' if (not good) and r.points|abs >= 0.05 }}"><b>{{ '%+.1f'|format(r.points) }}</b></td>
+                    <td class="num">#{{ r.rank }}</td>
+                </tr>
+                {% endfor %}
+                <tr><th scope="row">Total vs league</th><td></td><td></td><td></td><td class="num"><b>{{ '%+.1f'|format(d.gap) }}</b></td><td></td></tr>
+                </tbody>
+            </table>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="section" id="opponent-types" data-nfl-panel="performance">
+    <div class="section-head"><div><p class="eyebrow">{{ tp.season }} &middot; results by opponent style</p><h2>Against different styles</h2></div></div>
+    <details class="ui-note"><summary>Method</summary><p>The games already played, grouped by the style of the opposing defense (for the offense) or offense (for the defense), using the same league terciles as the rest of the page. "Vs rating" is points scored (or allowed) minus what the team's own opponent-adjusted rating predicted for those games, so it shows where results ran ahead of or behind the rating. Groups hold a handful of games each; read the G column before the numbers.</p></details>
+    <div class="ui-side-by-side">
+        {% for title, key in (('Offense vs the defenses it faced', 'offence'), ('Defense vs the offenses it faced', 'defence')) %}
+        <article class="ui-panel">
+            <header class="ui-panel-head"><h3>{{ title }}</h3></header>
+            <table class="ui-mini">
+                <thead><tr><th>Opponent type</th><th class="num">G</th><th class="num">Pts</th><th class="num">Pass EPA</th><th class="num">Rush EPA</th><th class="num">Vs rating</th></tr></thead>
+                {% for group in tp.splits[key] %}
+                <tbody>
+                <tr><th colspan="6" class="ctx">{{ group.title }}</th></tr>
+                {% for c in group.cells %}
+                {% set better = (c.vs_rating is not none and ((c.vs_rating > 0) if key == 'offence' else (c.vs_rating < 0))) %}
+                {% set worse = (c.vs_rating is not none and ((c.vs_rating < 0) if key == 'offence' else (c.vs_rating > 0))) %}
+                <tr{% if c.games < 3 %} class="ctx"{% endif %}>
+                    <th scope="row">{{ c.bucket }}</th>
+                    <td class="num">{{ c.games }}</td>
+                    <td class="num">{{ c.points|cell('f1') }}</td>
+                    <td class="num">{{ c.pass_epa|cell('signed2') }}</td>
+                    <td class="num">{{ c.rush_epa|cell('signed2') }}</td>
+                    <td class="num{{ ' is-good' if better and c.games >= 3 and c.vs_rating|abs >= 1 }}{{ ' is-poor' if worse and c.games >= 3 and c.vs_rating|abs >= 1 }}">{{ c.vs_rating|cell('signed1') }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+                {% endfor %}
+            </table>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endmacro %}

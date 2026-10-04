@@ -43,6 +43,10 @@ METRICS = {
     "pass_rate": ("neutral_passes", "neutral_plays"),
     "pace": ("seconds_sum", "clocked_plays"),          # seconds per play: lower is faster
     "points": ("points", None),
+    # the three factors a game's points are the product of (see team_profile): possessions, length, yield
+    "drives": ("drives", None),
+    "plays_per_drive": ("plays", "drives"),
+    "points_per_play": ("points", "plays"),
 }
 
 _SQL = """
@@ -50,7 +54,7 @@ SELECT g.game_id,g.season,g.week,g.neutral_site,
        e.team,e.opponent_team AS opp,(e.team=g.home_team) AS is_home,
        CASE WHEN e.team=g.home_team THEN g.home_score ELSE g.away_score END AS points,
        e.plays,e.pass_plays,e.pass_epa,e.rush_plays,e.rush_epa,e.explosive_plays,
-       s.neutral_plays,s.neutral_passes,s.seconds_sum,s.clocked_plays
+       s.neutral_plays,s.neutral_passes,s.seconds_sum,s.clocked_plays,s.drives
 FROM games g
 JOIN game_team_efficiency e ON e.game_id=g.game_id
 JOIN game_team_situational s ON s.game_id=g.game_id AND s.team=e.team
