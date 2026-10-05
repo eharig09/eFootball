@@ -1,0 +1,147 @@
+{% extends "_layout.html" %}
+{% from "_tables.html" import data_table %}
+
+{% block title %}{{ season }} College Football Playoff projection | Sports News Aggregator{% endblock %}
+
+{% block head %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='pages/cfb_playoff.css') }}">
+{% endblock %}
+
+{% macro team_chip(team) %}
+<a class="po-team" href="{{ team.url or '#' }}" style="--team-light:{{ team.accent }};--team-dark:{{ team.accent_dark }}">
+    <span class="po-mark">{% if team.logo %}<img src="{{ team.logo }}" alt="" loading="lazy">{% endif %}</span>
+    <span class="po-name"><b>{{ team.team }}</b><small>{{ team.record }} &middot; {{ team.conference }}</small></span>
+</a>
+{% endmacro %}
+
+{% block content %}
+<section class="po-hero">
+    <div>
+        <div class="eyebrow">Season simulation</div>
+        <h1>{{ season }} Playoff projection</h1>
+        <p class="dek">The rest of the season played out {{ '{:,}'.format(summary.n_sims) }} times: every remaining game, conference standings and tiebreakers, championship games, then the committee's ranking, the 12-team field and the bracket.</p>
+    </div>
+</section>
+
+{% if not forecast.rows %}
+<p class="po-empty po-nodata">There is no {{ season }} schedule stored yet, so there is nothing to simulate. This page fills in once the season's teams and games are synced.</p>
+{% else %}
+<div class="po-facts" aria-label="Projection summary">
+    <div><span>Through</span><b>Week {{ summary.as_of_week }}</b><small>{{ summary.games_remaining }} games left to play</small></div>
+    <div><span>Title favorite</span><b>{{ summary.favourite or '—' }}</b>{% if summary.favourite_pct is not none %}<small>{{ summary.favourite_pct }}% to win it all</small>{% endif %}</div>
+    <div><span>Near locks</span><b>{{ summary.locks }}</b><small>99%+ to make the field</small></div>
+    <div><span>Live contenders</span><b>{{ summary.contenders }}</b><small>5%+ to make the field</small></div>
+</div>
+
+<section class="section po-bracket" aria-labelledby="po-bracket-title">
+    <div class="po-head">
+        <div><div class="eyebrow">Projected field</div><h2 id="po-bracket-title">Projected bracket</h2></div>
+        <span>Seeded by average projected committee rank. Percentages are each team's chance to make the field.</span>
+    </div>
+    {% if bracket.first_round %}
+    <div class="po-bracket-grid">
+        <div class="po-round">
+            <h3>First round <small>campus sites</small></h3>
+            {% for high, low in bracket.first_round %}
+            <div class="po-game">
+                {% for team in (high, low) %}
+                <div class="po-slot">
+                    <span class="po-seed">{{ team.seed }}</span>
+                    {{ team_chip(team) }}
+                    <b class="po-prob">{{ team.playoff }}%</b>
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+        <div class="po-round">
+            <h3>Quarterfinals <small>byes enter here</small></h3>
+            {% for team, opponent in bracket.byes %}
+            <div class="po-game">
+                <div class="po-slot">
+                    <span class="po-seed">{{ team.seed }}</span>
+                    {{ team_chip(team) }}
+                    <b class="po-prob">{{ team.bye }}% bye</b>
+                </div>
+                <div class="po-slot po-tbd"><span class="po-seed">&nbsp;</span><span class="po-name"><b>Winner {{ opponent }}</b></span></div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="po-round po-notes">
+            <h3>Semifinals &amp; final</h3>
+            <p>Quarterfinal winners meet on a fixed path: the 1-seed's side plays the 4-seed's side, and the 2-seed's side plays the 3-seed's. Every game after round one is on a neutral field.</p>
+            <p>This bracket takes the twelve teams with the best individual odds of making the field, ordered by projected committee rank. It is a summary, not a prediction of one exact bracket: the odds below are what the {{ '{:,}'.format(summary.n_sims) }} simulations actually say.</p>
+        </div>
+    </div>
+    {% else %}
+    <p class="po-empty">There are not yet enough projected playoff teams to draw a bracket.</p>
+    {% endif %}
+</section>
+
+<section class="section po-odds">
+    <div class="po-head">
+        <div><div class="eyebrow">Every contender</div><h2>Playoff odds</h2></div>
+        <span>Teams with at least a 0.5% chance at the field or a conference title.</span>
+    </div>
+    {{ data_table(odds_table, 'po-table') }}
+</section>
+
+<section class="section po-seeds">
+    <div class="po-head">
+        <div><div class="eyebrow">Where they land</div><h2>Seed probabilities</h2></div>
+        <span>Chance to finish at each seed. Seeds 1&ndash;4 get a first-round bye.</span>
+    </div>
+    <div class="table-wrap mobile-scroll" role="region" tabindex="0" aria-label="Seed probability heat map">
+        <table class="data dense po-heat">
+            <thead>
+                <tr><th scope="col">Team</th><th scope="col" class="num">Make</th>
+                    {% for seed in range(1, 13) %}<th scope="col" class="num{{ ' po-bye-col' if seed <= 4 }}">{{ seed }}</th>{% endfor %}</tr>
+            </thead>
+            <tbody>
+                {% for team in heatmap %}
+                <tr>
+                    <th scope="row">{{ team_chip(team) }}</th>
+                    <td class="num"><b>{{ team.playoff }}%</b></td>
+                    {% for cell in team.cells %}<td class="num po-cell" style="--level:{{ cell.level }}">{{ cell.pct if cell.pct >= 0.5 else '' }}</td>{% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="section po-conf">
+    <div class="po-head">
+        <div><div class="eyebrow">Automatic bids</div><h2>Conference championships</h2></div>
+        <span>The ACC, Big 12, Big Ten and SEC champions are guaranteed a spot, plus the best-ranked champion from the other six conferences.</span>
+    </div>
+    <div class="po-conf-grid">
+        {% for panel in conferences %}
+        <article class="po-conf-card" style="--conference-mark-light:{{ panel.identity.color }};--conference-mark-dark:{{ panel.identity.color_dark }}">
+            <header><b>{{ panel.conference }}</b><span>Title game</span></header>
+            <table>
+                <thead><tr><th scope="col">Team</th><th scope="col" class="num">In game</th><th scope="col" class="num">Champion</th><th scope="col" class="num">Make</th></tr></thead>
+                <tbody>
+                    {% for team in panel.teams %}
+                    <tr><th scope="row"><a href="{{ team.url or '#' }}">{{ team.team }}</a><small>{{ team.record }}</small></th>
+                        <td class="num">{{ team.title_game }}%</td><td class="num"><b>{{ team.conf_champion }}%</b></td><td class="num">{{ team.playoff }}%</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+{% endif %}
+
+<section class="po-method" aria-labelledby="po-method-title">
+    <div><div class="eyebrow">How to read this</div><h2 id="po-method-title">What the model assumes</h2></div>
+    <div class="po-method-grid">
+        <p><strong>Games.</strong> Each remaining game uses the market line when one is posted, otherwise team ratings built from Elo, results and market lines. Teams also get a season-long strength error, so one team being better (or worse) than rated carries across all its games.</p>
+        <p><strong>Standings.</strong> Conference records, then head-to-head among tied teams, then committee strength. The top two teams play for the title in each conference ({{ forecast.params.title_game_conferences | length }} hold a championship game); the Sun Belt sends its two division winners. The Pac-12, American, Conference USA and Mountain West games are played on the higher seed's campus.</p>
+        <p><strong>Committee.</strong> There is no published formula, so ranking is learned from the final committee rankings of 2023&ndash;25 using rating, strength of record, losses and conference titles. On seasons it was not trained on, it picked 10&ndash;11 of the 12 playoff teams each year.</p>
+        <p><strong>Field and bracket.</strong> Under the 2026-27 rules the four Power 4 champions and the top-ranked Group of 6 champion get automatic bids, as does Notre Dame if it is ranked in the top 12. The rest are at-large. The top four ranked teams get byes, and an automatic qualifier ranked outside the top 12 is the bottom seed.</p>
+    </div>
+</section>
+{% endblock %}

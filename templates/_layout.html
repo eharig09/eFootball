@@ -50,6 +50,7 @@
                                     ('cfb.scoreboard', 'Scoreboard'),
                                     ('cfb.engine_picks', 'Engine Picks'),
                                     ('cfb.elo_ratings', 'Elo'),
+                                    ('cfb.playoff_projection', 'Playoff'),
                                     ('cfb.draft_watch', 'Draft')] %}
         <a href="{{ url_for(endpoint) }}"{% if request.endpoint == endpoint %} aria-current="page"{% endif %}>{{ label }}</a>
         {%- endfor %}
