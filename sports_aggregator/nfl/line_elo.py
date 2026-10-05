@@ -45,7 +45,7 @@ def _games(repository: NFLRepository, start: int, end: int,
     parameters: list[Any] = [int(start), int(end)] + ([int(include_week[0]), int(include_week[1])] if include_week else [])
     with closing(repository._connect()) as connection:
         return [dict(r) for r in connection.execute(
-            f"""SELECT game_id,season,week,home_team,away_team,home_score,away_score,spread_line,completed
+            f"""SELECT game_id,season,week,home_team,away_team,home_score,away_score,spread_line,completed,neutral_site
                FROM games WHERE season BETWEEN ? AND ? AND season_type='REG' AND spread_line IS NOT NULL
                  AND ((completed=1 AND home_score IS NOT NULL AND away_score IS NOT NULL) {extra})
                ORDER BY season,week,game_date,game_id""", parameters)]
@@ -72,7 +72,8 @@ def build(repository: NFLRepository, start: int = 2010, end: int = 2025, *, lear
         batch = by_week[(season, week)]
         for g in batch:
             h, a = g["home_team"], g["away_team"]
-            expected = (rating[h] - rating[a]) / ELO_PER_POINT + home_field
+            field = 0.0 if g.get("neutral_site") else home_field
+            expected = (rating[h] - rating[a]) / ELO_PER_POINT + field
             spread = float(g["spread_line"])
             h_old = trail[h][0] if len(trail[h]) > MOMENTUM_GAMES else None
             a_old = trail[a][0] if len(trail[a]) > MOMENTUM_GAMES else None
@@ -90,7 +91,7 @@ def build(repository: NFLRepository, start: int = 2010, end: int = 2025, *, lear
             if g["home_score"] is None:       # a game still to be played has a line but nothing to learn from yet
                 continue
             h, a = g["home_team"], g["away_team"]
-            target = ELO_PER_POINT * (float(g["spread_line"]) - home_field)
+            target = ELO_PER_POINT * (float(g["spread_line"]) - (0.0 if g.get("neutral_site") else home_field))
             half = learning_rate * (target - (rating[h] - rating[a])) / 2.0
             rating[h] += half
             rating[a] -= half

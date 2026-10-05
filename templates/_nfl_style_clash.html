@@ -1,0 +1,49 @@
+{% macro style_clash(sc, game) %}
+<section class="section" id="style-clash" data-nfl-panel="matchups">
+    <div class="section-head"><div><p class="eyebrow">Style against style</p><h2>Style clash</h2></div></div>
+    {% if not sc or not sc.available %}
+    <p class="ctx">{{ (sc.reason if sc else None) or 'Style ratings are not available for this game.' }}</p>
+    {% else %}
+    <details class="ui-note"><summary>Method</summary><p>Every team's offense and defense is rated separately on each measure, adjusted for the opposition it has faced, using only games before this one. "This matchup" is what the offense's rating predicts against this defense's rating. Labels are league terciles on the same ratings. This is description and an opponent-adjusted projection, not a pick: in a 2013&ndash;2025 backtest, adjusting for category-versus-category matchups added nothing beyond the ratings themselves.</p></details>
+    {% if not sc.settled %}<p class="ctx">Early-season sample: {{ sc.games_played }} game{{ '' if sc.games_played == 1 else 's' }} played by the less-experienced team, so ratings lean on last season. Treat gaps as soft.</p>{% endif %}
+    <div class="ui-side-by-side">
+        {% for d in sc.directions %}
+        <article class="ui-panel">
+            <header class="ui-panel-head"><h3>{{ d.offence }} offense vs {{ d.defence }} defense</h3><span class="ui-median-key">{{ d.alignment }}</span></header>
+            <div class="ui-chips">
+                <span class="ui-chip">{{ d.offence_labels.approach }}</span><span class="ui-chip">{{ d.offence_labels.tempo }}</span><span class="ui-chip">{{ d.offence_labels.explosive }}</span>
+                <em>vs</em>
+                <span class="ui-chip">{{ d.defence_labels.vulnerability }}</span><span class="ui-chip">{{ 'Big-play prone' if d.defence_labels.big_plays == 'Big-play prone' else ('Contains big plays' if d.defence_labels.big_plays == 'Contains' else 'Average big plays') }}</span>
+            </div>
+            <table class="ui-mini">
+                <thead><tr><th>Measure</th><th class="num">{{ d.offence }} off</th><th class="num">{{ d.defence }} def</th><th class="num">This matchup</th><th class="num">vs league</th></tr></thead>
+                <tbody>
+                {% for r in d.rows %}
+                <tr>
+                    <th scope="row">{{ r.label }}{% if r.note %}<small>{{ r.note }}</small>{% endif %}</th>
+                    <td class="num">{{ r.off_value|cell(r.format) }}<small>#{{ r.off_rank }}</small></td>
+                    <td class="num">{{ r.def_value|cell(r.format) }}<small>#{{ r.def_rank }}</small></td>
+                    <td class="num"><b>{{ r.expected|cell(r.format) }}</b></td>
+                    <td class="num{{ ' is-good' if r.tone == 'good' }}{{ ' is-poor' if r.tone == 'poor' }}">{% if r.format == 'rate' %}{{ '%+.1f'|format(r.edge * 100) }} pts{% elif r.format == 'f1' %}{{ '%+.1f'|format(r.edge) }}{% else %}{{ '%+.2f'|format(r.edge) }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </article>
+        {% endfor %}
+    </div>
+    <article class="ui-panel">
+        <header class="ui-panel-head"><h3>Opponent-adjusted projection</h3><span class="ui-median-key">{% if sc.neutral %}neutral site, no home edge{% else %}includes home edge{% endif %}</span></header>
+        <table class="ui-mini">
+            <thead><tr><th></th><th class="num">{{ game.away_team }}</th><th class="num">{{ game.home_team }}</th><th class="num">Margin ({{ game.home_team }})</th><th class="num">Total</th><th class="ctx">Market</th></tr></thead>
+            <tbody><tr>
+                <th scope="row">Expected points</th>
+                <td class="num"><b>{{ sc.expected.away|cell('f1') }}</b></td><td class="num"><b>{{ sc.expected.home|cell('f1') }}</b></td>
+                <td class="num">{{ sc.expected.margin|cell('signed1') }}</td><td class="num">{{ sc.expected.total|cell('f1') }}</td>
+                <td class="ctx">{% if game.spread_line is not none %}{{ game.home_team }} margin {{ game.spread_line|cell('signed1') }}{% endif %}{% if game.total_line is not none %} &middot; total {{ game.total_line|cell('f1') }}{% endif %}</td>
+            </tr></tbody>
+        </table>
+    </article>
+    {% endif %}
+</section>
+{% endmacro %}

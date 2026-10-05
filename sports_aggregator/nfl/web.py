@@ -22,7 +22,7 @@ from sports_aggregator.nfl.engine_picks import (
     default_week as default_engine_pick_week,
 )
 from sports_aggregator import pff_team_grades
-from sports_aggregator.nfl import injury_impact, odds_history, pick_record
+from sports_aggregator.nfl import injury_impact, odds_history, pick_record, style_clash, team_profile as team_profile_analysis, comparable_games, playcalling_lens
 from sports_aggregator.nfl.explorer import (
     METRICS, METRIC_CATEGORIES, METRIC_LABELS, SUM_METRICS,
     player_stat_table, scatter_plot, with_rates,
@@ -964,8 +964,12 @@ def team_page(abbreviation: str):
         _repository(), context["performance_season"], code,
     )
     history_tables = team_history_tables(_repository(), code, season)
+    try:
+        profile = team_profile_analysis.packet(_repository(), season, code)
+    except Exception as exc:          # a panel must never take the team page down
+        profile = {"available": False, "reason": f"Style ratings failed to load ({exc.__class__.__name__})."}
     return render_template(
-        "nfl_team.html", league=get_league("nfl"), season=season, team=team,
+        "nfl_team.html", league=get_league("nfl"), season=season, team=team, team_profile=profile,
         scheme_rate=scheme_rate,
         offense_panel=offense_panel(
             _repository(), _pff(), context["performance_season"], code, pff_season=pff_season),
@@ -1315,7 +1319,24 @@ def _game_packet(game_id: str) -> dict:
         elif status != "applied":
             impact["adjusted"] = None
 
+    try:
+        style_clash_data = style_clash.packet(repository, game)
+    except Exception as exc:          # a panel must never take the matchup page down
+        style_clash_data = {"available": False, "reason": f"Style ratings failed to load ({exc.__class__.__name__})."}
+
+    try:
+        comparables_data = comparable_games.packet(repository, game)
+    except Exception as exc:          # a panel must never take the matchup page down
+        comparables_data = {"available": False, "reason": f"Comparable games failed to load ({exc.__class__.__name__})."}
+
+    try:
+        playcalling_data = playcalling_lens.packet(repository, game)
+    except Exception as exc:          # a panel must never take the matchup page down
+        playcalling_data = {"available": False, "reason": f"Play-calling measures failed to load ({exc.__class__.__name__})."}
+
     return {"game": game, "situational": situational, "discipline": discipline,
+            "style_clash_data": style_clash_data, "comparables_data": comparables_data,
+            "playcalling_data": playcalling_data,
             "line_movement": line_movement, "injury_impact": impact,
             "injury_impact_tables": (injury_impact.tables(impact, game["season"])
                                      if impact["available"] else {}),

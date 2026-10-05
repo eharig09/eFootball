@@ -3,6 +3,7 @@
 {% from '_nfl_content.html' import nfl_content_grid, nfl_reporting_streams %}
 {% from '_nfl_charts.html' import chart_workbench, nfl_chart_scripts %}
 {% from '_nfl_injury.html' import injury_popover %}
+{% from '_nfl_team_profile.html' import profile_sections %}
 {% from '_nfl_position_groups.html' import position_group_profile %}
 {% from '_ui_kit.html' import pctl_panel, filter_bar, schedule_strip, epa_week_chart, bar_table, table_panel, side_panel, tendency_grid, penalty_panels %}
 <!DOCTYPE html>
@@ -125,9 +126,11 @@
 
     <section class="section" id="performance" data-nfl-panel="performance">
         <div class="section-head"><div><p class="eyebrow">{{ team_context.performance_season }} team quality{% if team_context.performance_season != season %} &middot; prior-season baseline{% endif %}</p><h2>Performance analytics</h2></div></div>
-        <nav class="team-panel-jumps" aria-label="Analytics sections">{% if form_charts %}<a href="#form">Weekly form</a>{% endif %}{% if position_allowed.has_data %}<a href="#position-allowed">Vs positions</a>{% endif %}<a href="#pff">PFF grades</a><a href="#leaders">Leaders</a></nav>
+        <nav class="team-panel-jumps" aria-label="Analytics sections"><a href="#adjusted-profile">Adjusted</a><a href="#scoring-paths">Scoring paths</a><a href="#opponent-types">Vs styles</a>{% if form_charts %}<a href="#form">Weekly form</a>{% endif %}{% if position_allowed.has_data %}<a href="#position-allowed">Vs positions</a>{% endif %}<a href="#pff">PFF grades</a><a href="#leaders">Leaders</a></nav>
         <details class="ui-note"><summary>Method</summary><p>One comparison window throughout this view. Efficiency is play-by-play based; production uses {{ team_context.production_season }} team totals; tracking rates are volume weighted. The percentile panels on the Overview tab carry the full offense and defense profile.</p></details>
     </section>
+
+    {{ profile_sections(team_profile, team) }}
 
     {% if form_charts %}
     <section class="section" id="form" data-nfl-panel="performance">

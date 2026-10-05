@@ -1,0 +1,40 @@
+{% macro comparable_games(cp, game) %}
+<section class="section" id="comparable-games" data-nfl-panel="stats">
+    <div class="section-head"><div><p class="eyebrow">Games with the same shape</p><h2>Closest comparable games</h2></div></div>
+    {% if not cp or not cp.available %}
+    <p class="ctx">{{ (cp.reason if cp else None) or 'Comparable games are not available for this matchup.' }}</p>
+    {% else %}
+    {% set s = cp.summary %}
+    <details class="ui-note"><summary>Method</summary><p>Every regular-season game since 2011 has a pregame shape built from both teams' opponent-adjusted ratings as they stood that week: expected total, expected margin, tempo, neutral pass rate, explosive rate, and how much better the air game should be than the ground game. These are the {{ s.n }} nearest games from earlier seasons by standardised distance. They are context, not a forecast: across 2016&ndash;2025 the over/under and cover record of a game's neighbours did not predict how it went against the number.</p></details>
+    <article class="ui-panel">
+        <header class="ui-panel-head"><h3>{{ game.away_team }} @ {{ game.home_team }}</h3><span class="ui-median-key">{{ cp.pool }} earlier rated games searched</span></header>
+        <table class="ui-mini">
+            <thead><tr><th>Game</th><th>Final</th><th class="num">Final total</th><th>Covered</th><th>Went</th>{% for f in cp.features if f != 'closeness' %}<th class="num">{{ cp.labels[f] }}</th>{% endfor %}<th class="num">Exp. margin</th></tr></thead>
+            <tbody>
+                <tr class="ui-compare-self">
+                    <th scope="row">This game<small>pregame shape</small></th><td class="ctx">&mdash;</td><td class="ctx">&mdash;</td><td class="ctx">&mdash;</td><td class="ctx">&mdash;</td>
+                    <td class="num"><b>{{ cp.target.total|cell('f1') }}</b></td><td class="num"><b>{{ cp.target.pace|cell('f1') }}</b></td><td class="num"><b>{{ cp.target.pass_rate|cell('rate') }}</b></td><td class="num"><b>{{ cp.target.explosive|cell('rate') }}</b></td><td class="num"><b>{{ cp.target.air_edge|cell('signed2') }}</b></td><td class="num"><b>{{ cp.target.closeness|cell('f1') }}</b></td>
+                </tr>
+                {% for c in cp.comps %}
+                {% set o = c.outcome %}
+                <tr>
+                    <th scope="row"><a href="{{ url_for('nfl.game_page', game_id=c.game_id) }}">{{ c.season }} wk {{ c.week }}</a><small>{{ c.away }} @ {{ c.home }}</small></th>
+                    <td>{{ c.away_score }}&ndash;{{ c.home_score }}</td>
+                    <td class="num">{{ o.total }}</td>
+                    <td>{% if o.fav_cover is none %}<span class="ctx">{% if c.spread is not none %}push{% else %}&mdash;{% endif %}</span>{% else %}{{ 'Favorite' if o.fav_cover else 'Underdog' }}{% endif %}</td>
+                    <td>{% if o.over is none %}<span class="ctx">{% if c.total_line is not none %}push{% else %}&mdash;{% endif %}</span>{% else %}{{ 'Over' if o.over else 'Under' }}{% endif %}</td>
+                    <td class="num">{{ c.shape.total|cell('f1') }}</td><td class="num">{{ c.shape.pace|cell('f1') }}</td><td class="num">{{ c.shape.pass_rate|cell('rate') }}</td><td class="num">{{ c.shape.explosive|cell('rate') }}</td><td class="num">{{ c.shape.air_edge|cell('signed2') }}</td><td class="num">{{ c.shape.closeness|cell('f1') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <table class="ui-mini">
+            <tbody>
+                <tr><th scope="row">How they played</th>
+                    <td class="ctx">average total <b>{{ s.avg_total|cell('f1') }}</b> (shape said {{ s.avg_expected_total|cell('f1') }}) &middot; average margin {{ s.avg_margin|cell('f1') }} &middot; {{ s.one_score }} of {{ s.n }} within one score{% if s.fav_covers %} &middot; favorites {{ s.fav_covers }} against the spread{% endif %}{% if s.overs %} &middot; over/under {{ s.overs }}{% endif %}</td></tr>
+            </tbody>
+        </table>
+    </article>
+    {% endif %}
+</section>
+{% endmacro %}

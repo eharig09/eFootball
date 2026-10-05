@@ -50,12 +50,13 @@
 .ui-panel-head h3{margin:0;color:var(--ui-accent,#d50a0a);font-size:.8rem;letter-spacing:.2em}
 .ui-median-key{color:var(--muted);font-size:.68rem}
 .ui-median-key i{display:inline-block;width:2px;height:11px;margin-right:4px;vertical-align:-2px;background:var(--ink)}
-.ui-pctl-cols,.ui-pctl-row{display:grid;grid-template-columns:minmax(120px,1.15fr) 62px minmax(90px,2.2fr) 44px 36px;align-items:center;gap:10px}
+.ui-pctl-cols,.ui-pctl-row{display:grid;grid-template-columns:minmax(150px,1.9fr) 62px minmax(80px,1.5fr) 44px 36px;align-items:center;gap:10px}
 .ui-pctl-cols{padding-bottom:6px;border-bottom:1px solid var(--ui-line);color:var(--muted);font-size:.58rem}
 .ui-pctl-cols span:nth-child(2),.ui-pctl-cols span:nth-child(4),.ui-pctl-cols span:nth-child(5){text-align:right}
 .ui-pctl-group{margin-top:12px}
 .ui-pctl-group h4{margin:0 0 4px;color:var(--ink);font-size:.62rem}
 .ui-pctl-row{min-height:26px;font-size:.8rem}
+.ui-pctl-row .ui-lbl{padding:2px 0;line-height:1.15;white-space:normal;text-overflow:clip}
 .ui-lbl{overflow:hidden;color:var(--ink);text-overflow:ellipsis;white-space:nowrap}
 .ui-val{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
 .ui-bar{position:relative;display:block;height:9px;border-radius:5px;background:var(--ui-track)}

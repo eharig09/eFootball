@@ -36,6 +36,8 @@ from sports_aggregator.cfb.engine_picks import (
     default_week as default_engine_pick_week,
     filter_dashboard as filter_engine_picks_dashboard,
 )
+from sports_aggregator.cfb import playoff_view
+from sports_aggregator.cfb.playoff_service import build_forecast as build_playoff_forecast
 from sports_aggregator.cfb.matchup_research import (
     matchup_research_packet, TOTALS_RESEARCH_OVERALL, TOTALS_TRACKED_OVERALL,
     TOTALS_TRACKED_MIN_WIN_RATE)
@@ -659,6 +661,31 @@ def engine_picks():
         selected_status=request.args.get("status", "all"),
         query=request.args.get("q", ""),
     )
+
+
+@cfb_pages.get("/college-football/playoff/")
+@cached_page
+def playoff_projection():
+    season = _season()
+    repository = _repository()
+    forecast = build_playoff_forecast(repository, season)
+    by_school = playoff_view.brand_index(repository.team_brands())
+    return render_template(
+        "cfb_playoff.html",
+        meta=page_meta_for.playoff_meta(season),
+        season=season,
+        summary=playoff_view.summary(forecast),
+        bracket=playoff_view.projected_bracket(forecast, by_school),
+        odds_table=playoff_view.main_table(forecast, by_school, season),
+        heatmap=playoff_view.seed_heatmap(forecast, by_school),
+        conferences=playoff_view.conference_panels(forecast, by_school),
+        forecast=forecast,
+    )
+
+
+@cfb_pages.get("/api/v1/cfb/playoff")
+def api_playoff_projection():
+    return jsonify(build_playoff_forecast(_repository(), _season()))
 
 
 @cfb_pages.get("/college-football/elo/")

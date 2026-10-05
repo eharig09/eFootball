@@ -47,7 +47,7 @@ from sports_aggregator.nfl.uncertainty_calibration import (
     TOTAL_SCALE_FEATURES, MARGIN_SCALE_FEATURES,
 )
 
-MODEL_VERSION = "nfl-live-forecast-diagnostics-v3"
+MODEL_VERSION = "nfl-live-forecast-diagnostics-v4"
 
 
 def _update_history(history: dict[str, TeamHistory], game: dict[str, Any]) -> None:
@@ -106,7 +106,7 @@ def _target_games(repository: NFLRepository, season: int, week: int):
     with closing(repository._connect()) as connection:
         rows = connection.execute(
             """SELECT game_id,season,week,game_date,away_team,home_team,completed,
-                      division_game,spread_line,total_line,away_rest,home_rest,stadium,roof
+                      division_game,spread_line,total_line,away_rest,home_rest,stadium,roof,neutral_site
                FROM games
                WHERE season=? AND week=?
                ORDER BY game_date,game_id""",
@@ -171,7 +171,7 @@ def _team_row(game: dict[str, Any], side: str, history, league):
         "team_explosive_rate": own.get("explosive_rate"),
         "opponent_explosive_allowed_rate": opp.get("explosive_allowed_rate"),
         "rest_diff": float(rest or 0) - float(opp_rest or 0),
-        "home": 1.0 if home else 0.0,
+        "home": 0.5 if game.get("neutral_site") else (1.0 if home else 0.0),
         "division_game": float(game.get("division_game") or 0),
     }
     fallback = {

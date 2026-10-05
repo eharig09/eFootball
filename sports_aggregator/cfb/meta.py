@@ -216,6 +216,16 @@ def today_meta(season: int, *, game_count: int = 0, story_count: int = 0) -> dic
     )
 
 
+def playoff_meta(season: int) -> dict[str, Any]:
+    return page_meta(
+        f"{season} College Football Playoff projection | College Football",
+        f"Simulated {season} season: odds to make the 12-team College Football Playoff, "
+        "win a conference title, earn a bye, and win the national championship.",
+        path=f"/college-football/playoff/?season={season}",
+        kind="website",
+    )
+
+
 def elo_meta(season: int, *, rated_teams: int = 0) -> dict[str, Any]:
     count = f"{_count(rated_teams, 'rated FBS team')}." if rated_teams else ""
     return page_meta(
