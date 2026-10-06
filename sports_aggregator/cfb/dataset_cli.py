@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 import os
+import time
+from typing import Callable
 
 from dotenv import load_dotenv
 
@@ -62,6 +65,68 @@ def _replace_team_players(
     return len(items)
 
 
+def _sync_team_roster(repository: CFBRepository, client: CFBDClient, season: int,
+                      team: str, force: bool = False) -> int:
+    payload = client.get(
+        "/roster",
+        {"year": season, "team": team},
+        cache_ttl_seconds=21600,
+        force=force,
+    )
+    if not isinstance(payload, list):
+        raise ValueError("CFBD roster returned a non-list payload")
+    return _replace_team_players(repository, season, team, payload)
+
+
+def sync_all_team_rosters(
+    season: int,
+    *,
+    force: bool = False,
+    retry_after: float = 60.0,
+    sleep: Callable[[float], None] | None = None,
+    emit: Callable[[str], None] = print,
+) -> tuple[int, list[str]]:
+    """Sync every FBS team's roster in this one process; returns (players stored, failed teams).
+
+    The scheduler used to launch one interpreter per team: 138 starts at about half a second each
+    is over a minute of pure process overhead on every run, even when every response is cached.
+    The per-team calls, the per-team replace, and the failure isolation are unchanged -- one
+    team failing does not stop the rest -- and teams that failed (CFBD answers HTTP 429 once it
+    starts refusing) get one more pass after `retry_after` seconds, when the window has usually
+    closed. Output lines match the single-team command so the logs read the same.
+    """
+    database = os.getenv("CFB_DATABASE_PATH", "instance/cfb.sqlite3")
+    repository = CFBRepository(database)
+    repository.initialize()
+    client = CFBDClient(raw_cache_path=os.getenv("CFBD_RAW_CACHE_PATH", "instance/cfbd_raw"))
+    if not client.configured:
+        raise CFBDConfigurationError("CFBD_API_KEY is required for sync")
+    with closing(repository._connect()) as connection:
+        teams = [row[0] for row in connection.execute(
+            "SELECT school FROM teams WHERE lower(classification)='fbs' ORDER BY school") if row[0]]
+    stored = 0
+    pending = list(teams)
+    for attempt in (1, 2):
+        failed: list[str] = []
+        for index, team in enumerate(pending, start=1):
+            started = time.monotonic()
+            try:
+                count = _sync_team_roster(repository, client, season, team, force)
+            except Exception as exc:  # one team failing must not stop the others
+                failed.append(team)
+                emit(f"players team={team}: failed ({str(exc)[:200]}) in {time.monotonic() - started:.1f}s")
+                continue
+            stored += count
+            emit(f"players team={team}: success ({count}) in {time.monotonic() - started:.1f}s")
+        pending = failed
+        if attempt == 1 and pending and retry_after > 0:
+            emit(f"{len(pending)} of {len(teams)} teams failed; waiting {retry_after:.0f}s before one retry")
+            (sleep or time.sleep)(retry_after)
+            continue
+        break
+    return stored, pending
+
+
 def sync_dataset(
     name: str,
     season: int,
@@ -80,15 +145,7 @@ def sync_dataset(
         return repository.replace_teams(Team.from_cfbd(item) for item in client.teams(season, force))
     if name == "players":
         if team:
-            payload = client.get(
-                "/roster",
-                {"year": season, "team": team},
-                cache_ttl_seconds=21600,
-                force=force,
-            )
-            if not isinstance(payload, list):
-                raise ValueError("CFBD roster returned a non-list payload")
-            return _replace_team_players(repository, season, team, payload)
+            return _sync_team_roster(repository, client, season, team, force)
         return repository.replace_players(
             season, (Player.from_cfbd(item, season) for item in client.roster(season, force))
         )
@@ -132,8 +189,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--team", default=None,
                         help="Limit supported datasets (currently roster) to one team")
+    parser.add_argument("--all-teams", action="store_true",
+                        help="players: sync every FBS team's roster in this one process")
     args = parser.parse_args(argv)
     started = datetime.now(timezone.utc)
+    if args.all_teams:
+        if args.dataset != "players":
+            parser.error("--all-teams applies to the players dataset only")
+        stored, failed = sync_all_team_rosters(args.year, force=args.force)
+        seconds = (datetime.now(timezone.utc) - started).total_seconds()
+        if failed:
+            print(f"players: failed teams: {', '.join(failed[:8])} ({stored} players stored) in {seconds:.1f}s")
+            return 1
+        print(f"players: success ({stored}) in {seconds:.1f}s")
+        return 0
     count = sync_dataset(args.dataset, args.year, force=args.force, team=args.team)
     seconds = (datetime.now(timezone.utc) - started).total_seconds()
     scope = f" team={args.team}" if args.team else ""

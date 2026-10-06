@@ -326,19 +326,11 @@ def _run_cfbd_split(season: int, *, root: Path, timeout: int, log,
             heartbeat()
         print(f"    [cfbd] {dataset} start parent_rss_mb={_rss_mb()} child_peak_rss_mb={_children_rss_mb()}", file=log, flush=True)
         if dataset == "players":
-            teams = _fbs_teams(root)
-            if teams:
-                scoped = _run_scoped_commands(
-                    "roster", teams,
-                    lambda team: ["sports_aggregator.cfb.dataset_cli", "players", "--year", str(season), "--team", team],
-                    timeout=timeout, log=log, heartbeat=heartbeat,
-                )
-                status = "failed" if scoped else "success"
-                message = f"failed teams: {', '.join(scoped[:8])}" if scoped else f"{len(teams)} team rosters complete"
-                seconds = 0.0
-            else:
-                status, message, seconds = _run_command(
-                    ["sports_aggregator.cfb.dataset_cli", "players", "--year", str(season)], timeout=timeout, log=log)
+            # One process for every team (see dataset_cli.sync_all_team_rosters): the per-team
+            # interpreter launches cost over a minute per run even when every response was cached.
+            status, message, seconds = _run_command(
+                ["sports_aggregator.cfb.dataset_cli", "players", "--year", str(season), "--all-teams"],
+                timeout=timeout, log=log)
             if status != "success":
                 failures.append(dataset)
         else:
