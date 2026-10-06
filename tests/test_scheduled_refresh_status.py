@@ -102,9 +102,6 @@ def test_a_lock_whose_owner_is_gone_is_reclaimed_immediately(tmp_path, monkeypat
     assert json.loads(lock.read_text(encoding="utf-8"))["pid"] == os.getpid()
 
 
-@pytest.mark.skipif(sys.platform == "win32",
-                    reason="Windows raises a bare OSError for an absent pid, so "
-                           "liveness cannot be probed; Render is Linux")
 def test_a_departed_process_is_actually_detected_as_gone():
     """The probe itself, on the platform this runs on in production."""
     process = subprocess.Popen([sys.executable, "-c", "pass"])

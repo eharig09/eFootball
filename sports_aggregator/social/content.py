@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+import functools
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -27,7 +29,69 @@ from sports_aggregator.social.sport import CLASSIFIER_VERSION, classify_cfb_elig
 from sports_aggregator.social.unified import UnifiedSourceRegistry
 
 
+#: Retag policy. Ingestion tags an item from a truncated description; `retag` re-resolves it from
+#: the full stored text ("canonical" tags) so that an improved rule or alias reaches stored
+#: content and tags that depend on drifting context (rosters, the schedule) stay current while
+#: that context matters. Re-resolving the whole archive on every refresh did none of that well:
+#: 44,890 items, 389 s and growing. Measured on a real database, a full retag changed the tags of
+#: *zero* items that had been settled and not re-ingested since; the only differences were items
+#: re-seen by ingestion, which re-tagged them from truncated text and overwrote the canonical
+#: tags every run -- so retag was repairing damage ingestion had just done.
+#:
+#: Each item now records (in `content_tag_state`) the rules fingerprint and content hash it was
+#: tagged under and who tagged it. Ingestion leaves an item alone when its content is unchanged
+#: and its tags are already canonical. `retag` then only needs to handle:
+#:   * items ingestion tagged (new, or content changed): their first canonical pass;
+#:   * items last tagged under different rules (fingerprint changed), if published within
+#:     RETAG_ARCHIVE_DAYS -- older ones are frozen, a rule change is not worth re-reading them;
+#:   * items published within RETAG_ACTIVE_DAYS whose tags are older than
+#:     RETAG_CONTEXT_REFRESH_HOURS, so a roster or schedule change reaches them about daily.
+#: `retag --all` forces everything.
+RETAG_ACTIVE_DAYS = 7
+RETAG_ARCHIVE_DAYS = 120
+RETAG_CONTEXT_REFRESH_HOURS = 20
+RETAG_RESOLVE_REASONS = frozenset({"forced", "untracked", "unsettled", "changed", "rules", "context"})
+#: Source files whose logic decides tags; editing any of them changes the fingerprint, so a rule
+#: improvement reaches the archive without anyone remembering to bump a version.
+_TAGGING_SOURCES = ("content.py", "sport.py", "context.py")
+
+
+@functools.lru_cache(maxsize=1)
+def _tagging_source_digest() -> str:
+    digest = hashlib.sha256()
+    for name in _TAGGING_SOURCES:
+        try:
+            digest.update((Path(__file__).with_name(name)).read_bytes())
+        except OSError:
+            digest.update(name.encode())
+    return digest.hexdigest()
+
+
+def _content_hash(title: object, body: object, summary: object) -> str:
+    """Identifies the stored text an item's tags were resolved from."""
+    digest = hashlib.sha1()
+    for part in (title, body, summary):
+        digest.update(str(part or "").encode("utf-8", "replace"))
+        digest.update(b"\x1f")
+    return digest.hexdigest()
+
+
+def _parse_moment(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
 CONTENT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS content_tag_state (
+ content_id INTEGER PRIMARY KEY, fingerprint TEXT NOT NULL, content_hash TEXT NOT NULL,
+ source TEXT NOT NULL, tagged_at TEXT NOT NULL,
+ FOREIGN KEY(content_id) REFERENCES content_items(content_id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS content_items (
  content_id INTEGER PRIMARY KEY AUTOINCREMENT,
  platform TEXT NOT NULL, platform_content_id TEXT NOT NULL,
@@ -741,15 +805,36 @@ class ContentRepository:
                        published_at: str | datetime | None = None,
                        provider_team_ids: tuple[int, ...] = (),
                        provider_player_ids: tuple[str, ...] = (),
-                       provider_game_ids: tuple[int, ...] = ()) -> set[int]:
+                       provider_game_ids: tuple[int, ...] = (),
+                       canonical: bool = False) -> set[int]:
         """Attach topic, team, player, and game candidates to one content row.
 
         Every ingestion path uses this, so a Reddit submission and a Bluesky post
         resolve entities by the same conservative rules and record the same
         confidence and method for review.
+
+        `canonical` is set by `retag`, which resolves from the full stored text. Ingestion passes a
+        truncated description, so when it meets an item whose tags are already canonical, under the
+        current rules, for identical content, it leaves them alone rather than overwriting them with
+        a lesser pass that the next retag would have to undo.
         """
+        fingerprint = self.tagging_fingerprint(connection)
+        stored = connection.execute(
+            "SELECT title,body_text,summary FROM content_items WHERE content_id=?", (content_id,)).fetchone()
+        content_hash = _content_hash(*stored) if stored else ""
+        if not canonical:
+            state = connection.execute(
+                "SELECT fingerprint,content_hash,source FROM content_tag_state WHERE content_id=?",
+                (content_id,)).fetchone()
+            if state and state[2] == "retag" and state[0] == fingerprint and state[1] == content_hash:
+                return {row[0] for row in connection.execute(
+                    "SELECT team_id FROM content_teams WHERE content_id=?", (content_id,))}
         for table in ("content_topics", "content_teams", "content_players", "content_games"):
             connection.execute(f"DELETE FROM {table} WHERE content_id=?", (content_id,))
+        connection.execute(
+            "INSERT OR REPLACE INTO content_tag_state VALUES(?,?,?,?,?)",
+            (content_id, fingerprint, content_hash, "retag" if canonical else "ingest",
+             datetime.now(timezone.utc).isoformat()))
         topics = classify_topics(text)
         connection.executemany("INSERT INTO content_topics VALUES(?,?,?,?)",
                                [(content_id, *item) for item in topics])
@@ -844,26 +929,104 @@ class ContentRepository:
                     found.setdefault(name, (0.5, "source_conference_scope"))
         return [(name, *values) for name, values in found.items()]
 
-    def retag(self, season: int) -> dict[str, Any]:
+    @staticmethod
+    def _retag_reason(row, published: datetime | None, fingerprint: str, *, force_all: bool,
+                      active_cutoff: datetime, archive_cutoff: datetime,
+                      refresh_cutoff: datetime) -> str:
+        """Why an item is (or is not) re-resolved: one of RETAG_RESOLVE_REASONS or a skip reason."""
+        if force_all:
+            return "forced"
+        if row["tagged_with"] is None:                      # tagged before state was tracked
+            if published is None or published >= active_cutoff:
+                return "untracked"
+            return "untracked" if published >= archive_cutoff else "frozen"
+        if row["tagged_by"] != "retag":
+            return "unsettled"                              # only ever tagged from truncated text
+        if row["tagged_hash"] != _content_hash(row["title"], row["body_text"], row["summary"]):
+            return "changed"
+        if row["tagged_with"] != fingerprint:
+            return "rules" if published is None or published >= archive_cutoff else "frozen"
+        if published is None or published >= active_cutoff:
+            tagged = _parse_moment(row["tagged_at"])
+            if tagged is None or tagged <= refresh_cutoff:
+                return "context"
+        return "current"
+
+    def tagging_fingerprint(self, connection: sqlite3.Connection) -> str:
+        """Identifies the rules and data an item's tags were resolved with.
+
+        Covers the classifier version, the source of the modules that decide tags, and the
+        team-alias table. Rosters and the schedule are deliberately left out: they change every
+        day, and the recency window in `retag` is what keeps recent items current against them.
+        Cached for the life of this repository object; `retag` resets it.
+        """
+        cached = getattr(self, "_fingerprint", None)
+        if cached:
+            return cached
+        digest = hashlib.sha256()
+        digest.update(CLASSIFIER_VERSION.encode())
+        digest.update(_tagging_source_digest().encode())
+        try:
+            for row in connection.execute(
+                    "SELECT team_id,normalized_alias FROM team_aliases ORDER BY team_id,normalized_alias"):
+                digest.update(f"{row[0]}:{row[1]};".encode())
+        except sqlite3.OperationalError:
+            digest.update(b"no-aliases")
+        self._fingerprint = digest.hexdigest()[:32]
+        return self._fingerprint
+
+    def retag(self, season: int, *, active_days: int = RETAG_ACTIVE_DAYS,
+              archive_days: int = RETAG_ARCHIVE_DAYS,
+              context_refresh_hours: float = RETAG_CONTEXT_REFRESH_HOURS,
+              force_all: bool = False, now: datetime | None = None) -> dict[str, Any]:
         """Re-resolve topics and entities for stored content from its saved text.
 
         Tagging rules change more often than the content does. Re-running the
         resolvers over what is already stored lets a rule improvement reach the
-        whole archive without re-fetching any source, and keeps the confidence
-        and method columns consistent across ingestion dates.
+        archive without re-fetching any source, and keeps the confidence and
+        method columns consistent across ingestion dates.
+
+        Only items that need it are re-resolved (see the RETAG_* notes): ones ingestion tagged and
+        no retag has settled, ones whose content changed, ones tagged under older rules (if
+        published within `archive_days`), and recent ones (published within `active_days`) whose
+        tags are older than `context_refresh_hours`. Items with no recorded state, from before this
+        tracking existed, are treated the same way by age. `force_all` re-resolves everything.
+        `items` in the report counts what was re-resolved; the rest say why items were skipped.
         """
         self.initialize()
         self._team_aliases = None
         self._short_aliases = None
         self._players_by_season = {}
         self._games_by_season = {}
+        self._fingerprint = None
+        moment = now or datetime.now(timezone.utc)
+        active_cutoff = moment - timedelta(days=active_days)
+        archive_cutoff = moment - timedelta(days=archive_days)
+        refresh_cutoff = moment - timedelta(hours=context_refresh_hours)
         with closing(self._connect()) as connection:
-            rows = connection.execute(
-                """SELECT content_id,source_entity_id,title,body_text,summary,publisher_name,
-                          published_at
-                   FROM content_items ORDER BY content_id""").fetchall()
+            fingerprint = self.tagging_fingerprint(connection)
+            candidates = connection.execute(
+                """SELECT c.content_id,c.source_entity_id,c.title,c.body_text,c.summary,
+                          c.publisher_name,c.published_at,c.ingested_at,
+                          s.fingerprint AS tagged_with,s.content_hash AS tagged_hash,
+                          s.source AS tagged_by,s.tagged_at
+                   FROM content_items c LEFT JOIN content_tag_state s USING(content_id)
+                   ORDER BY c.content_id""").fetchall()
+            rows = []
+            reasons: dict[str, int] = defaultdict(int)
+            for row in candidates:
+                # Age is when the item was published. `ingested_at` is "last seen" -- every refresh
+                # re-stores the items still in a feed -- so it says nothing about how old an item is.
+                published = _parse_moment(row["published_at"]) or _parse_moment(row["ingested_at"])
+                reason = self._retag_reason(row, published, fingerprint, force_all=force_all,
+                                            active_cutoff=active_cutoff, archive_cutoff=archive_cutoff,
+                                            refresh_cutoff=refresh_cutoff)
+                reasons[reason] += 1
+                if reason in RETAG_RESOLVE_REASONS:
+                    rows.append(row)
             counts = {"items": 0, "eligible": 0, "review": 0, "rejected": 0,
-                      "teams": 0, "players": 0, "games": 0, "conferences": 0}
+                      "teams": 0, "players": 0, "games": 0, "conferences": 0,
+                      **{f"why_{key}": value for key, value in sorted(reasons.items())}}
             for row in rows:
                 provider_teams = tuple(inner[0] for inner in connection.execute(
                     "SELECT team_id FROM content_teams WHERE content_id=? AND method='provider_entity'",
@@ -885,7 +1048,7 @@ class ContentRepository:
                                     title=title, published_at=row["published_at"],
                                     provider_team_ids=provider_teams,
                                     provider_player_ids=provider_players,
-                                    provider_game_ids=provider_games)
+                                    provider_game_ids=provider_games, canonical=True)
                 counts["items"] += 1
             connection.commit()
             counts["eligible"] = connection.execute(

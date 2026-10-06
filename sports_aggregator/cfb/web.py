@@ -1627,7 +1627,23 @@ def status_api():
     payload["cfbd_configured"] = bool(os.getenv("CFBD_API_KEY", "").strip())
     payload["stat_coverage"] = repository.stat_coverage()
     payload["content"] = _content_repository().summary()
+    # `last_sync` is only written by the monolithic sync, which production does not run: the
+    # per-dataset refresh never records there, so it sat on the one day a full sync happened
+    # (Aug 27) while the data was current. The refresh roll-up is what actually tracks the runs.
+    payload["refresh"] = _refresh_rollup()
     return jsonify(payload)
+
+
+def _refresh_rollup() -> dict:
+    from pathlib import Path
+    from sports_aggregator.refresh_health import read_health
+    try:
+        health = read_health(Path(_repository().path).parent)
+    except Exception:
+        return {}
+    return {segment: {key: entry.get(key) for key in (
+                "last_run_at", "last_status", "last_success_at", "consecutive_degraded", "seconds")}
+            for segment, entry in health.items() if isinstance(entry, dict)}
 
 
 @cfb_pages.get("/api/v1/cfb/sources")

@@ -1,0 +1,126 @@
+{% from '_tables.html' import data_table %}
+{% from '_nfl_nav.html' import nfl_nav with context %}
+{% macro chip(team) %}
+<a class="po-team" href="{{ team.url }}" style="--team-color:{{ team.color }}">
+    <span class="po-mark">{% if team.logo %}<img src="{{ team.logo }}" alt="" loading="lazy">{% endif %}</span>
+    <span class="po-name"><b>{{ team.name }}</b><small>{{ team.record }} &middot; {{ team.division }}</small></span>
+</a>
+{% endmacro %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101820">
+    <title>{{ season }} NFL playoff projection</title>
+    <meta name="description" content="Simulated {{ season }} NFL season: odds to win the division, make the playoffs, earn a bye, and win the Super Bowl, with real tiebreakers.">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='cfb_table_windows.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_neutral.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_kit.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='nfl_playoffs.css') }}">
+</head>
+<body class="nfl-playoffs-page">
+{{ nfl_nav('playoffs', season, 'Playoff projection') }}
+<main>
+    <section class="nfl-hero compact-hero">
+        <p class="eyebrow">Season simulation &middot; {{ season }}</p>
+        <h1>Playoff projection</h1>
+        <p>The rest of the season played out {{ '{:,}'.format(summary.n_sims) }} times: every remaining game, the NFL's real tiebreakers for division titles and seeds, then a re-seeded bracket through the Super Bowl.</p>
+    </section>
+
+    {% if not forecast.rows %}
+    <section class="section"><p class="empty">There is no {{ season }} schedule stored yet, so there is nothing to simulate. This page fills in once the season's games are synced.</p></section>
+    {% else %}
+    <div class="po-facts" aria-label="Projection summary">
+        <div><span>Through</span><b>Week {{ summary.as_of_week }}</b><small>{{ summary.games_remaining }} games left to play</small></div>
+        <div><span>Title favorite</span><b>{{ summary.favourite or '—' }}</b>{% if summary.favourite_pct is not none %}<small>{{ summary.favourite_pct }}% to win the Super Bowl</small>{% endif %}</div>
+        <div><span>Near locks</span><b>{{ summary.locks }}</b><small>99%+ to make the playoffs</small></div>
+        <div><span>Live contenders</span><b>{{ summary.contenders }}</b><small>5%+ to make the playoffs</small></div>
+    </div>
+
+    <section class="section po-bracket" aria-labelledby="po-bracket-title">
+        <div class="po-head"><div><p class="eyebrow">Projected field</p><h2 id="po-bracket-title">Projected seeds</h2></div>
+            <span>The {{ forecast.format.teams_per_conference }} teams per conference with the best odds, ordered by expected seed. Percentages are each team's chance to make the playoffs.</span></div>
+        <div class="po-conf-grid">
+            {% for panel in bracket %}
+            <article class="po-conf">
+                <header><h3>{{ panel.conference }}</h3><span>Wild card round at the higher seed</span></header>
+                <ol class="po-seeds">
+                    {% for team in panel.seeds %}
+                    <li class="{{ 'is-bye' if team.seed <= forecast.format.byes_per_conference }}">
+                        <span class="po-seed">{{ team.seed }}</span>{{ chip(team) }}
+                        <b class="po-prob">{{ team.playoff }}%</b>
+                        <small>{% if team.seed <= forecast.format.byes_per_conference %}{{ team.bye }}% bye{% else %}{{ team.division_title }}% div{% endif %}</small>
+                    </li>
+                    {% endfor %}
+                </ol>
+                {% if panel.wild_card %}
+                <p class="po-matchups"><b>Wild card:</b> {% for high, low in panel.wild_card %}({{ high.seed }}) {{ high.name }} v ({{ low.seed }}) {{ low.name }}{{ '; ' if not loop.last }}{% endfor %}</p>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="section po-divisions" aria-labelledby="po-div-title">
+        <div class="po-head"><div><p class="eyebrow">Division races</p><h2 id="po-div-title">Division odds</h2></div>
+            <span>Chance to win each division, with the playoff chance for the rest.</span></div>
+        <div class="po-div-grid">
+            {% for div in divisions %}
+            <article class="po-div">
+                <header><b>{{ div.name }}</b></header>
+                <table>
+                    <thead><tr><th scope="col">Team</th><th scope="col" class="num">Rec</th><th scope="col" class="num">Proj W</th><th scope="col" class="num">Division</th><th scope="col" class="num">Playoffs</th></tr></thead>
+                    <tbody>
+                        {% for team in div.teams %}
+                        <tr><th scope="row"><a href="{{ team.url }}" style="--team-color:{{ team.color }}">{% if team.logo %}<img src="{{ team.logo }}" alt="" loading="lazy">{% endif %}{{ team.name }}</a></th>
+                            <td class="num">{{ team.record }}</td><td class="num">{{ '%.1f'|format(team.projected_wins) }}</td>
+                            <td class="num"><b>{{ team.division_title }}%</b></td><td class="num">{{ team.playoff }}%</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="section po-odds">
+        <div class="po-head"><div><p class="eyebrow">Every team</p><h2>Playoff odds</h2></div></div>
+        {{ data_table(odds_table, 'po-table') }}
+    </section>
+
+    <section class="section po-seedmap">
+        <div class="po-head"><div><p class="eyebrow">Where they land</p><h2>Seed probabilities</h2></div>
+            <span>Chance to finish at each seed. Seed 1 is the only first-round bye{% if forecast.format.byes_per_conference == 2 %} (seeds 1&ndash;2 before 2020){% endif %}.</span></div>
+        <div class="po-heat-grid">
+            {% for panel in heatmap %}
+            <div class="table-wrap mobile-scroll" role="region" tabindex="0" aria-label="{{ panel.conference }} seed probability heat map">
+                <table class="data dense po-heat">
+                    <thead><tr><th scope="col">{{ panel.conference }}</th>{% for seed in panel.seeds %}<th scope="col" class="num">{{ seed }}</th>{% endfor %}</tr></thead>
+                    <tbody>
+                        {% for team in panel.teams %}
+                        <tr><th scope="row">{{ chip(team) }}</th>
+                            {% for cell in team.cells %}<td class="num po-cell" style="--level:{{ cell.level }}">{{ cell.pct if cell.pct >= 0.5 else '' }}</td>{% endfor %}</tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="section po-method" aria-labelledby="po-method-title">
+        <div class="po-head"><div><p class="eyebrow">How to read this</p><h2 id="po-method-title">What the model assumes</h2></div></div>
+        <div class="po-method-grid">
+            <p><strong>Games.</strong> Each remaining game uses the market line when one is posted, otherwise team ratings built from Elo, results and market lines. Totals use the posted total or the league average, so simulated games produce real scores. Overtime ties are rare but possible.</p>
+            <p><strong>Tiebreakers.</strong> Division and wild-card ties follow the NFL procedures: head-to-head, division and conference records, common games, strength of victory and schedule, points rankings, then net points. Net touchdowns is not modelled; a coin toss settles anything still level. The same code reproduces the real 2010&ndash;2025 playoff fields, byes and home teams exactly.</p>
+            <p><strong>Seeding and bracket.</strong> Division winners take seeds 1&ndash;4 by record, the next three by record are wild cards, the top seed gets the bye, and the bracket re-seeds each round with the Super Bowl at a neutral site.</p>
+            <p><strong>Accuracy.</strong> Tested on 2015&ndash;2025 from weeks 4, 8 and 12, playoff probabilities are well calibrated: teams given 30&ndash;50% made it about 43% of the time and teams given 90%+ made it about 96% of the time. Early-season odds are necessarily wide.</p>
+        </div>
+    </section>
+</main>
+</body>
+</html>

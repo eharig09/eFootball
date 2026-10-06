@@ -22,6 +22,7 @@ import click
 from flask import Flask, abort, jsonify, render_template, request, session
 from dotenv import load_dotenv
 
+from sports_aggregator.process_probe import lock_is_held
 from sports_aggregator.cfb.refresh_window import profile_for
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.nfl.repository import NFLRepository
@@ -286,6 +287,15 @@ def create_app(test_config: dict | None = None) -> Flask:
             profile, segment = segment, None
         if segment and segment not in SEGMENTS:
             abort(400, description="segment must be one of " + ", ".join(sorted(SEGMENTS)))
+
+        # Every trigger used to spawn a full interpreter that imported the refresh stack just to
+        # find the lock held and exit "skipped". On this instance that is a memory spike per busy
+        # tick, and the ticks arrive every fifteen minutes. Look at the lock first.
+        refresh_lock = Path(app.config["CFB_DATABASE_PATH"]).parent / "scheduled_refresh.lock"
+        if lock_is_held(refresh_lock, stale_seconds=3600):
+            return jsonify({"status": "skipped", "reason": "refresh_already_running",
+                            "season": season, "profile": profile,
+                            **({"segment": segment} if segment else {})}), 200
 
         root = Path(__file__).resolve().parent
         command = [sys.executable, "-m", "sports_aggregator.tracked_refresh",

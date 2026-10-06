@@ -26,6 +26,12 @@ def _import_team_reddit(unified, database):
     promoted=unified.seed_team_reddit_communities(entries)
     return {"registered": registered, "promoted": promoted}
 
+def _label(resolution) -> str:
+    """What to call an endpoint in a log line. `EndpointResolution` only carries `endpoint_key`."""
+    return str(getattr(resolution, "requested_handle", None)
+               or getattr(resolution, "endpoint_key", None) or "unknown")
+
+
 def _endpoint_exit(results, *, kind: str) -> int:
     """Fail when resolution stopped working, not when one account is gone.
 
@@ -52,9 +58,9 @@ def _endpoint_exit(results, *, kind: str) -> int:
     unreachable = [r for r in failed if not getattr(r, "permanent", False)]
 
     print(f"{kind}: {total - len(failed)}/{total} verified"
-          + (f", gone: {', '.join(r.requested_handle for r in gone[:5])}"
+          + (f", gone: {', '.join(_label(r) for r in gone[:5])}"
              f"{'...' if len(gone) > 5 else ''}" if gone else "")
-          + (f", unreachable: {', '.join(r.requested_handle for r in unreachable[:5])}"
+          + (f", unreachable: {', '.join(_label(r) for r in unreachable[:5])}"
              f"{'...' if len(unreachable) > 5 else ''}" if unreachable else ""))
     if gone:
         print(f"{kind}: {len(gone)} handle{'s' if len(gone) != 1 else ''} no longer "

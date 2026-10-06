@@ -37,6 +37,10 @@ _MESSAGE_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("resource", (
         "can't start new thread", "cannot allocate memory", "memoryerror",
         "out of memory", "killed", "signal 9",
+        # numpy's BLAS reports an address-space ceiling this way, which is what
+        # production's nfl-core-pbp step failed with while the status page called
+        # it "unknown".
+        "memory allocation", "openblas error",
     )),
     ("timeout", ("exceeded ", "timed out", "read timed out", "timeout")),
     ("empty_result", (

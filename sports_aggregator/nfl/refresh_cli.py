@@ -315,8 +315,44 @@ def _sync_availability(season: int, *, now: datetime | None = None) -> dict:
 _CORE_SEGMENTS = ("core-foundation", "core-stats", "core-depth", "core-pbp")
 
 
+#: History kept on disk. Without a bound the file grew by ~220 rows a day and is re-read by the
+#: status page; this keeps roughly two months of real runs.
+HISTORY_MAX_BYTES = 1_500_000
+HISTORY_KEEP_ROWS = 4000
+#: Segments queue behind each other rather than overlapping: the cron triggers fire
+#: independently, a content run takes minutes, and two pandas-heavy children on one small
+#: instance is how the whole service got OOM-killed before. A segment that cannot get the
+#: lock within the wait is recorded as skipped and the next tick picks it up.
+LOCK_WAIT_SECONDS = 180.0
+LOCK_STALE_SECONDS = 2 * 3600
+
+
+def _state_dir() -> Path:
+    """Where the history and lock live: beside the NFL database unless NFL_REFRESH_STATE_DIR
+    says otherwise (the test suite points it at a temp directory so a test run cannot write
+    fake runs into the real history)."""
+    override = os.getenv("NFL_REFRESH_STATE_DIR", "").strip()
+    return Path(override) if override else Path(_nfl_repository().path).parent
+
+
 def _history_path() -> Path:
-    return Path(_nfl_repository().path).parent / "nfl_refresh_history.jsonl"
+    return _state_dir() / "nfl_refresh_history.jsonl"
+
+
+def _lock_path() -> Path:
+    return _state_dir() / "nfl_refresh.lock"
+
+
+def _trim_history(path: Path) -> None:
+    try:
+        if path.stat().st_size <= HISTORY_MAX_BYTES:
+            return
+        lines = path.read_text(encoding="utf-8").splitlines()[-HISTORY_KEEP_ROWS:]
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        os.replace(temporary, path)
+    except OSError:
+        pass
 
 
 def _append_history(record: dict) -> None:
@@ -324,6 +360,7 @@ def _append_history(record: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
+    _trim_history(path)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -333,6 +370,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--season", type=int, required=True)
     args = parser.parse_args(argv)
+    from sports_aggregator.process_probe import lock_with_wait
     started = datetime.now(timezone.utc)
     record = {
         "segment": args.segment,
@@ -342,6 +380,20 @@ def main(argv: list[str] | None = None) -> int:
         "pid": os.getpid(),
         "database_path": str(_nfl_repository().path),
     }
+    lock = _lock_path()
+    if not lock_with_wait(lock, stale_seconds=LOCK_STALE_SECONDS, wait_seconds=LOCK_WAIT_SECONDS):
+        _append_history({**record, "status": "skipped", "reason": "another_nfl_refresh_running",
+                         "finished_at": datetime.now(timezone.utc).isoformat(),
+                         "seconds": round((datetime.now(timezone.utc) - started).total_seconds(), 1)})
+        print(f"{args.segment}: skipped, another NFL refresh holds {lock.name}")
+        return 0
+    try:
+        return _run_segment(args, record, started)
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def _run_segment(args, record: dict, started: datetime) -> int:
     _append_history(record)
     try:
         if args.segment == "rosters":
