@@ -102,14 +102,37 @@ publication date, not `ingested_at`. Editing `content.py`, `sport.py` or `contex
 fingerprint, so the archive is re-resolved once after any tagging change without anyone bumping a
 version (and once after this change ships, to build the new per-item state).
 
+## Roster sync (addressed 2026-10-06)
+
+`cfbd-sync` launched one interpreter per team (138). Runs alternated between real fetches (230-530 s)
+and cache hits (65-85 s), and even a pure cache hit spent 60-80 s on process start-up. Rosters now sync
+in one process (`dataset_cli players --all-teams`) with the same per-team calls and failure isolation,
+and rate-limited teams are retried once after a cool-down.
+
+## Planner statistics (addressed 2026-10-06)
+
+`build-tendencies` went from 15-30 s to ~200 s on every run since Sept 28, and five other steps from
+~3 s to ~20 s, while production (one season of plays) stayed at 20 s. Every one of them starts from
+`cfb_play_metrics` via `idx_cfb_play_metrics_version`: the planner scans all 1.77M plays of every season
+and filters to the requested one afterwards. Cause: `optimize()` runs `ANALYZE` with
+`analysis_limit=400`, and sampling an index whose column has a single value records "401 rows per key",
+so the planner believes the index is selective. The true figure is every row.
+
+- `optimize()` now fully re-analyzes any table whose statistics carry that signature (19 tables, ~16 s
+  once per data change). On a copy of the live database the unchanged steps dropped from 10.3 / 4.1 /
+  3.3 s to 1.3 s each.
+- `build-tendencies` additionally pins its join order (plays first), which does not depend on statistics:
+  46.7 s -> 4.2 s on the copy with an identical result (digest of all 17,551 rows unchanged).
+- Local only in effect: production holds one season, so the scan is cheap there. The fix is harmless
+  there and keeps it so as history is added.
+- Other queries that begin `WHERE <version column> = ?` joined to a large table are exposed to the same
+  trap if statistics ever regress; `tests/test_planner_statistics.py` pins the repair.
+
 ## Not fixed: recommendations
 
 - **Local runs are slowing down: average 741 s in August, 1,426 s in September, 1,908 s in October.**
-  The main cause was `retag` (157 s -> 389 s) -- see "Retag" below, now addressed. The next costs are
-  `build-tendencies` (110 -> 201 s) and `bluesky` (29 -> 115 s, more endpoints).
-- **`cfbd-sync` spawns 138 subprocesses for rosters (~265 s),** one interpreter start per team. One
-  `/roster` call is already cached for 6 hours in `CFBDClient.roster`; rosters also do not need to refresh
-  four times a day.
+  Three causes, all addressed below ("Retag", "Roster sync", "Planner statistics"); the remaining
+  visible cost is `bluesky` (29 -> 115 s, more endpoints) and the content fetches themselves.
 - **Production OpenBLAS failures in `nfl-core-pbp`.** The thread env vars are already forced in
   `refresh_cli`. The remaining candidate is the address-space ceiling: `RLIMIT_AS` (1,200 MB for NFL steps)
   bounds virtual memory, which pandas/pyarrow reserve far beyond what they use. I could not read the

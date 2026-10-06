@@ -823,6 +823,34 @@ class CFBRepository:
                 parts.append("0")
         return "-".join(parts)
 
+    def _repair_sampled_statistics(self, connection: sqlite3.Connection) -> list[str]:
+        """Fully re-analyze tables whose sampled statistics are known to mislead the planner.
+
+        Sampling rows per index is what makes `ANALYZE` cheap, but on an index whose leading
+        column has only a handful of values (a `metric_version` that is the same on every row) it
+        records "about `analysis_limit` + 1 rows per key": an index that looks highly selective and
+        is in fact the whole table. The planner then starts from it and walks every row of every
+        season before reaching the filter that would have kept 4% of them; five refresh steps
+        went from ~3 s to ~20 s each, and `build-tendencies` from 4 s to 200 s, once the database
+        held ten seasons of plays. A full `ANALYZE` of the affected tables is a few seconds.
+        Returns the tables repaired.
+        """
+        limit = int(self.ANALYSIS_LIMIT)
+        suspect: set[str] = set()
+        for table, stat in connection.execute("SELECT tbl, stat FROM sqlite_stat1"):
+            numbers = str(stat).split()
+            if len(numbers) > 1 and numbers[0].isdigit() and numbers[1].isdigit():
+                rows, per_key = int(numbers[0]), int(numbers[1])
+                if per_key == limit + 1 and rows > 20 * per_key:
+                    suspect.add(table)
+        if not suspect:
+            return []
+        connection.execute("PRAGMA analysis_limit=0")
+        for table in sorted(suspect):
+            connection.execute('ANALYZE "' + table.replace('"', '""') + '"')
+        connection.commit()
+        return sorted(suspect)
+
     def optimize(self) -> None:
         """Refresh planner statistics, but only once per change to the data.
 
@@ -857,6 +885,7 @@ class CFBRepository:
                 connection.execute(f"PRAGMA analysis_limit={self.ANALYSIS_LIMIT}")
                 connection.execute("ANALYZE")
                 connection.commit()
+                self._repair_sampled_statistics(connection)
         except sqlite3.Error:
             return
         try:

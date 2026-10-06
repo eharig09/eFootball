@@ -49,6 +49,10 @@ def _scope(from_season: int | None, to_season: int | None) -> tuple[list[str], l
     return clauses, params
 
 
+# The joins below are CROSS JOINs on purpose: that is SQLite's way of fixing the join order, plays first. Left
+# to itself the planner starts from cfb_play_metrics via its metric_version index -- every play of every
+# season, 1.77M rows -- and only filters to the requested season after looking each one up in cfb_plays:
+# 46 s for a one-season build instead of about a second. The results are identical; only the order differs.
 def build(repository, *, from_season: int | None = DEFAULT_MIN_SEASON,
           to_season: int | None = None, parser_version: str = PARSER_VERSION,
           model_version: str = MODEL_VERSION, metric_version: str = METRIC_VERSION) -> dict[str, Any]:
@@ -66,9 +70,9 @@ def build(repository, *, from_season: int | None = DEFAULT_MIN_SEASON,
             column=str(spec["column"]); base=["e.model_version=?","m.metric_version='pbp-v1'","m.rush_pass IN ('rush','pass')"]; params=[model_version]
             if spec["rush_pass"]: base.append("m.rush_pass=?"); params.append(spec["rush_pass"])
             base.extend(scope_clauses); params.extend(scope_params); where=" AND ".join(base)
-            eligible_sql=f"""SELECT p.game_id,p.offense AS team,p.defense AS opponent,COUNT(*) AS eligible_plays,SUM(CASE WHEN d.{column} IS NOT NULL THEN 1 ELSE 0 END) AS classified_plays FROM cfb_plays p JOIN cfb_play_metrics m ON m.play_id=p.play_id JOIN cfb_play_epa e ON e.play_id=p.play_id LEFT JOIN cfb_play_detail d ON d.play_id=p.play_id AND d.parser_version=? WHERE {where} GROUP BY p.game_id,p.offense,p.defense"""
+            eligible_sql=f"""SELECT p.game_id,p.offense AS team,p.defense AS opponent,COUNT(*) AS eligible_plays,SUM(CASE WHEN d.{column} IS NOT NULL THEN 1 ELSE 0 END) AS classified_plays FROM cfb_plays p CROSS JOIN cfb_play_metrics m ON m.play_id=p.play_id CROSS JOIN cfb_play_epa e ON e.play_id=p.play_id LEFT JOIN cfb_play_detail d ON d.play_id=p.play_id AND d.parser_version=? WHERE {where} GROUP BY p.game_id,p.offense,p.defense"""
             eligible={(int(r["game_id"]),str(r["team"])):dict(r) for r in connection.execute(eligible_sql,[parser_version,*params]).fetchall()}
-            grouped_sql=f"""SELECT p.game_id,p.offense AS team,p.defense AS opponent,d.{column} AS value,COUNT(*) AS plays,SUM(e.epa) AS total_epa,AVG(e.epa) AS epa_per_play,AVG(CASE WHEN m.success IS NOT NULL THEN m.success END) AS success_rate FROM cfb_plays p JOIN cfb_play_metrics m ON m.play_id=p.play_id JOIN cfb_play_epa e ON e.play_id=p.play_id JOIN cfb_play_detail d ON d.play_id=p.play_id AND d.parser_version=? WHERE {where} AND d.{column} IS NOT NULL GROUP BY p.game_id,p.offense,p.defense,d.{column}"""
+            grouped_sql=f"""SELECT p.game_id,p.offense AS team,p.defense AS opponent,d.{column} AS value,COUNT(*) AS plays,SUM(e.epa) AS total_epa,AVG(e.epa) AS epa_per_play,AVG(CASE WHEN m.success IS NOT NULL THEN m.success END) AS success_rate FROM cfb_plays p CROSS JOIN cfb_play_metrics m ON m.play_id=p.play_id CROSS JOIN cfb_play_epa e ON e.play_id=p.play_id CROSS JOIN cfb_play_detail d ON d.play_id=p.play_id AND d.parser_version=? WHERE {where} AND d.{column} IS NOT NULL GROUP BY p.game_id,p.offense,p.defense,d.{column}"""
             rows=connection.execute(grouped_sql,[parser_version,*params]).fetchall(); dimension_counts[dimension]=len(rows)
             for row in rows:
                 denom=eligible.get((int(row["game_id"]),str(row["team"]))) or {}; eligible_plays=int(denom.get("eligible_plays") or 0); classified_plays=int(denom.get("classified_plays") or 0); coverage=classified_plays/eligible_plays if eligible_plays else 0.0
