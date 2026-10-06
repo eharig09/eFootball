@@ -47,6 +47,9 @@ from sports_aggregator.nfl.repository import NFLRepository
 from sports_aggregator.nfl.search import search_entities
 from sports_aggregator.nfl.storage_audit import storage_status
 from sports_aggregator.nfl.staff import staff_tendencies
+from sports_aggregator.nfl import playoff_view as nfl_playoff_view
+from sports_aggregator.nfl import refresh_status as nfl_refresh_status
+from sports_aggregator.nfl.playoff_service import build_forecast as build_playoff_forecast
 from sports_aggregator.nfl.team_panels import defense_panel, offense_panel, ranked_stats_panel, scoring_ranks, share_rows
 from sports_aggregator.nfl.enhanced_tables import player_enhanced, team_enhanced, to_json
 from sports_aggregator.nfl.play_story import play_story
@@ -599,6 +602,28 @@ def engine_picks():
     )
 
 
+@nfl_pages.get("/nfl/playoffs/")
+@cached_page
+def playoff_projection():
+    season = _season()
+    repository = _repository()
+    forecast = build_playoff_forecast(repository, season)
+    identities = {row["abbreviation"]: row for row in repository.list_teams()}
+    return render_template(
+        "nfl_playoffs.html", league=get_league("nfl"), season=season, forecast=forecast,
+        summary=nfl_playoff_view.summary(forecast),
+        bracket=nfl_playoff_view.projected_bracket(forecast, identities),
+        divisions=nfl_playoff_view.division_panels(forecast, identities),
+        odds_table=nfl_playoff_view.odds_table(forecast, identities, season),
+        heatmap=nfl_playoff_view.seed_heatmap(forecast, identities),
+    )
+
+
+@nfl_pages.get("/api/v1/nfl/playoffs")
+def playoff_projection_api():
+    return jsonify(build_playoff_forecast(_repository(), _season()))
+
+
 @nfl_pages.get("/nfl/picks/record/")
 @cached_page
 def picks_record():
@@ -823,18 +848,10 @@ def _data_status_packet() -> dict:
 
     segments = ("availability", "core-foundation", "core-stats", "core-depth",
                 "core-pbp", "content", "weather", "pff")
-    segment_health = []
-    for segment in segments:
-        row = next((item for item in refresh_history if item.get("segment") == segment
-                    and item.get("status") != "running"), None)
-        segment_health.append({
-            "segment": segment,
-            "status": row.get("status") if row else "unknown",
-            "relative": row.get("relative") if row else None,
-            "seconds": row.get("seconds") if row else None,
-            "error": ("Refresh failed; inspect authenticated logs."
-                      if row and row.get("status") == "failed" else None),
-        })
+    # Health comes from the whole history, not the 20 rows shown below: a 3-12 hour segment is
+    # long gone from the last 20 rows of a file that gets a row every 15 minutes.
+    segment_health = nfl_refresh_status.segment_health(
+        nfl_refresh_status.read_history(history_path), segments, relative=_relative_time)
 
     upload_root = Path(current_app.config["NFL_PFF_UPLOAD_ROOT"])
     pff_upload_files = list(upload_root.rglob("*.csv")) if upload_root.exists() else []

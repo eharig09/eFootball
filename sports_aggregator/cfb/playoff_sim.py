@@ -28,6 +28,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from sports_aggregator.cfb import playoff_rules as rules
+from sports_aggregator.normal import ndtr
 from sports_aggregator.cfb.playoff_state import (
     RatingParams, SeasonState, fcs_rating, ridge_system,
 )
@@ -60,17 +61,6 @@ COMMITTEE = CommitteeModel({
     "rating": 0.402, "sor": 1.141, "losses": -0.680, "champion": 1.843,
     "sos": 0.318, "win_pct": 8.525,
 })
-
-
-def ndtr(x: np.ndarray | float) -> np.ndarray:
-    """Standard normal CDF via the Abramowitz-Stegun erf fit (|err| < 1.5e-7); numpy only."""
-    z = np.asarray(x, dtype=float) / math.sqrt(2.0)
-    sign = np.sign(z)
-    a = np.abs(z)
-    t = 1.0 / (1.0 + 0.3275911 * a)
-    poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))))
-    erf = sign * (1.0 - poly * np.exp(-a * a))
-    return 0.5 * (1.0 + erf)
 
 
 class Prepared:
