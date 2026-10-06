@@ -42,6 +42,7 @@ from sports_aggregator.cfb.matchup_research import (
     matchup_research_packet, TOTALS_RESEARCH_OVERALL, TOTALS_TRACKED_OVERALL,
     TOTALS_TRACKED_MIN_WIN_RATE)
 from sports_aggregator.cfb.lines import game_lines, lines_by_game
+from sports_aggregator.cfb.scoreboard_projection import projections_for_games
 from sports_aggregator import pff_team_grades
 from sports_aggregator.cfb import meta as page_meta_for
 from sports_aggregator.cfb import syndication
@@ -1375,7 +1376,9 @@ def scoreboard():
         games=views.scoreboard_games(games, previews, repository.team_brands(),
                                      timezone_name=zone, conference=selected_name,
                                      lines=lines_by_game(repository, season),
-                                     weather=forecasts),
+                                     weather=forecasts,
+                                     projections=projections_for_games(
+                                         repository, [game["game_id"] for game in games])),
         total_games=len(games),
     )
 

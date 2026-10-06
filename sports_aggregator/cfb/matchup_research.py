@@ -561,6 +561,36 @@ def _edge_bucket(value: float) -> str:
     return mat._bucket(abs(float(value)), mat.EDGE_BUCKETS)
 
 
+def engine_display_score(repository: CFBRepository, game: dict[str, Any],
+                         projection: dict[str, Any]) -> dict[str, Any] | None:
+    """The engine's projected score for one game, as the matchup page shows it.
+
+    The final score combines two independently calibrated targets: the total from prior-season
+    total calibration and the margin from frozen margin-v2, with the score reconstructed from the
+    two. Shared by the matchup page and the scoreboard so the two cannot disagree. None when the
+    projection has no expected points (not enough data for one of the teams).
+    """
+    away_points = (projection.get("away") or {}).get("expected_points")
+    home_points = (projection.get("home") or {}).get("expected_points")
+    if away_points is None or home_points is None:
+        return None
+    raw_total = float(away_points) + float(home_points)
+    raw_margin = float(home_points) - float(away_points)
+    margin_calibration = predict_live_margin(
+        repository, target_season=int(game["season"]), projection=projection, game=game)
+    margin = (float(margin_calibration["value"]) if margin_calibration.get("value") is not None
+              else raw_margin)
+    total_calibration = _calibrated_live_total(
+        repository, season=int(game["season"]), raw_total=raw_total)
+    total = float(total_calibration["value"])
+    return {
+        "away": (total - margin) / 2.0, "home": (total + margin) / 2.0,
+        "total": total, "margin": margin,
+        "raw_total": raw_total, "raw_margin": raw_margin,
+        "margin_calibration": margin_calibration, "total_calibration": total_calibration,
+    }
+
+
 def matchup_research_packet(
     repository: CFBRepository,
     game: dict[str, Any],
@@ -577,19 +607,11 @@ def matchup_research_packet(
             "total_research": TOTAL_RESEARCH,
         }
 
-    raw_total = float(away_points) + float(home_points)
-    raw_projected_home_margin = float(home_points) - float(away_points)
-    margin_calibration = predict_live_margin(
-        repository,
-        target_season=int(game["season"]),
-        projection=projection,
-        game=game,
-    )
-    projected_home_margin = (
-        float(margin_calibration["value"])
-        if margin_calibration.get("value") is not None
-        else raw_projected_home_margin
-    )
+    score = engine_display_score(repository, game, projection)
+    raw_total = score["raw_total"]
+    raw_projected_home_margin = score["raw_margin"]
+    margin_calibration = score["margin_calibration"]
+    projected_home_margin = score["margin"]
     spread = lines.get("consensus_spread")
     market_home_margin = -float(spread) if spread is not None else None
     spread_edge_home = (
@@ -602,13 +624,10 @@ def matchup_research_packet(
         else None
     )
 
-    calibration = _calibrated_live_total(
-        repository, season=int(game["season"]), raw_total=raw_total)
-    projected_total = float(calibration["value"])
-    # Final score now combines two independently calibrated targets:
-    # total from prior-season total calibration and margin from frozen margin-v2.
-    display_home_points = (projected_total + projected_home_margin) / 2.0
-    display_away_points = (projected_total - projected_home_margin) / 2.0
+    calibration = score["total_calibration"]
+    projected_total = score["total"]
+    display_home_points = score["home"]
+    display_away_points = score["away"]
     open_total, close_total = _market_totals(lines)
 
     open_edge = (

@@ -75,6 +75,13 @@
         font: 800 1.05rem/1 var(--display-font); font-variant-numeric: tabular-nums;
         color: var(--muted);
     }
+    /* The engine's projected score: the same shape as a score, but italic, lighter and tinted so it can
+       never be read as a result. It takes the score's place before kickoff and sits beside it after. */
+    .proj { color: color-mix(in srgb, var(--accent, #2f6fb2) 62%, var(--muted)); font-style: italic; opacity: .78; }
+    .game-side .proj { font: italic 600 .95rem/1 var(--display-font); font-variant-numeric: tabular-nums; min-width: 1.4em; text-align: right; }
+    .game-side .proj + .score { margin-left: 2px; }
+    .board-legend { margin: 0 0 10px; color: var(--muted); font-size: .72rem; }
+    .game-card-foot .proj { margin-left: auto; font-size: .64rem; font-weight: 700; }
     .game-side.is-winner .score, .game-side.is-winner .name { color: var(--ink); }
     .game-side.is-winner .score { color: var(--green); }
     .game-card-foot {

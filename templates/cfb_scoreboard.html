@@ -51,6 +51,7 @@
 {% endif %}
 
 {% if games %}
+<p class="board-legend">Spread and total are the market&rsquo;s. <span class="proj">Faded italic</span> is the engine&rsquo;s projected score{% if games | selectattr('completed') | list %}, shown beside the result for finished games{% endif %}.</p>
 <div class="board">
     {% for game in games %}
     <a class="game-card" data-identity
@@ -81,11 +82,13 @@
                 name to say who it belongs to, and the total takes the other. -#}
             {% if side.market %}<span class="market{{ ' is-spread' if side.market_is_spread }}"
                   title="{{ side.market_title }}">{{ side.market }}</span>{% endif %}
+            {% if side.projected is defined %}<span class="proj" title="{{ game.projection.title }}">{{ side.projected }}</span>{% endif %}
             {% if side.points is not none %}<span class="score">{{ side.points }}</span>{% endif %}
         </div>
         {% endfor %}
         <div class="game-card-foot">
             <span>{{ game.venue or '' }}{% if game.neutral_site %} &middot; neutral{% endif %}</span>
+            {%- if game.projection %}<span class="proj" title="{{ game.projection.title }}">Engine {{ game.projection.total }} total</span>{% endif %}
         </div>
     </a>
     {% endfor %}

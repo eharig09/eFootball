@@ -518,28 +518,64 @@ def current_games(games: list[dict], *, today: date | None = None, limit: int = 
     return [game for game in games if game["week"] == last_week][:limit]
 
 
+def _market_line(game: dict) -> dict | None:
+    """The posted line as a card shows it. `spread_line` is the home team's expected margin, so a
+    positive number means the home side is favoured; a pick'em has no favourite."""
+    spread, total = game.get("spread_line"), game.get("total_line")
+    if spread is None and total is None:
+        return None
+    label = None
+    if spread is not None:
+        spread = float(spread)
+        favourite = game["home_team"] if spread > 0 else game["away_team"] if spread < 0 else None
+        label = f"{favourite} -{abs(spread):g}" if favourite else "PK"
+    return {"spread": label, "total": f"O/U {float(total):g}" if total is not None else None}
+
+
 def matchup_cards(games: list[dict], identities: dict[str, dict], records: dict[str, dict],
-                  efficiency: dict[str, dict], elo: dict[str, float]) -> list[dict]:
+                  efficiency: dict[str, dict], elo: dict[str, float],
+                  projections: dict[str, dict] | None = None) -> list[dict]:
     """Shape a week's games into the away/home side cards the dashboard and
-    scoreboard both render: logo, record, live score, EPA, and Elo."""
+    scoreboard both render: logo, record, live score, EPA, and Elo.
+
+    With `projections` each side also carries the engine's projected points, and the card the
+    market line, so the scoreboard can show forecast, line and result together."""
     matchups = []
     for game in games:
+        projection = (projections or {}).get(str(game["game_id"]))
         sides = []
         for role in ("away", "home"):
             code = game[f"{role}_team"]
             identity = identities.get(code, {})
-            sides.append({
+            side = {
                 "role": role, "team": code, "name": identity.get("name", code),
                 "logo_url": identity.get("logo_url"), "color": identity.get("color", "#0b5aa5"),
                 "record": records.get(code, {}).get("record", "0-0"),
                 "score": game.get(f"{role}_score"),
                 "epa_per_play": efficiency.get(code, {}).get("epa_per_play"),
                 "elo": round(elo.get(code, 1500)),
-            })
-        matchups.append({"game_id": game["game_id"], "week": game["week"],
-                         "date": game["game_date"], "time": game["game_time"],
-                         "completed": bool(game["completed"]), "sides": sides,
-                         "destination": "review" if game["completed"] else "overview"})
+            }
+            if projection:
+                side["projected"] = int(projection[role] + 0.5)
+                side["projected_exact"] = round(projection[role], 1)
+            sides.append(side)
+        card = {"game_id": game["game_id"], "week": game["week"],
+                "date": game["game_date"], "time": game["game_time"],
+                "completed": bool(game["completed"]), "sides": sides,
+                "destination": "review" if game["completed"] else "overview"}
+        if projections is not None:
+            card["line"] = _market_line(game)
+            if projection:
+                margin = round(projection["margin"], 1)
+                favourite = game["home_team"] if margin > 0 else game["away_team"]
+                card["projection"] = {
+                    "margin": margin, "total": round(projection["total"], 1),
+                    # worded like the market line beside it: the favoured team and its margin
+                    "spread": f"{favourite} -{abs(margin):g}" if abs(margin) >= 0.05 else "PK",
+                    "title": (f"Engine projection{' (pre-game)' if projection.get('frozen') else ''}: "
+                              f"{sides[0]['team']} {sides[0]['projected_exact']:g}, "
+                              f"{sides[1]['team']} {sides[1]['projected_exact']:g}")}
+        matchups.append(card)
     return matchups
 
 

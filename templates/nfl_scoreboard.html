@@ -16,7 +16,7 @@
     <section class="nfl-hero compact-hero">
         <p class="eyebrow">{{ season }} season</p>
         <h1>Scoreboard</h1>
-        <p>Every game for the selected week, with live and final scores.</p>
+        <p>Every game for the selected week, with live and final scores. The market&rsquo;s spread and total sit under each matchup; <span class="proj-score">faded italic</span> is the engine&rsquo;s projected score (the pre-game forecast, for finished games).</p>
     </section>
 
     <section class="section">
@@ -46,8 +46,14 @@
             {% for side in matchup.sides %}<div class="matchup-team" style="--club:{{ side.color }}">
                 {% if side.logo_url %}<img src="{{ side.logo_url }}" alt="" loading="lazy">{% endif %}
                 <span><b>{{ side.team }}</b><small>{{ side.record }} · {{ side.epa_per_play|cell('signed2') }} EPA/play</small></span>
-                <strong>{{ side.score if side.score is not none else '—' }}</strong>
+                {% if side.projected is defined %}<em class="proj-score" title="{{ matchup.projection.title }}">{{ side.projected }}</em>{% endif %}
+                {% if side.score is not none %}<strong>{{ side.score }}</strong>{% elif side.projected is not defined %}<strong>—</strong>{% endif %}
             </div>{% endfor %}
+            {% if matchup.line or matchup.projection %}<div class="matchup-line">
+                {%- if matchup.line and matchup.line.spread %}<span>{{ matchup.line.spread }}</span>{% endif %}
+                {%- if matchup.line and matchup.line.total %}<span>{{ matchup.line.total }}</span>{% endif %}
+                {%- if matchup.projection %}<span class="proj-score" title="{{ matchup.projection.title }}">Engine {{ matchup.projection.spread }} · {{ matchup.projection.total }} total</span>{% endif %}
+            </div>{% endif %}
         </a>{% else %}<div class="empty">No games are scheduled for this week.</div>{% endfor %}
         </div>
     </section>

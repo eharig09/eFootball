@@ -50,6 +50,7 @@ from sports_aggregator.nfl.staff import staff_tendencies
 from sports_aggregator.nfl import playoff_view as nfl_playoff_view
 from sports_aggregator.nfl import refresh_status as nfl_refresh_status
 from sports_aggregator.nfl.playoff_service import build_forecast as build_playoff_forecast
+from sports_aggregator.nfl.scoreboard_projection import week_projections
 from sports_aggregator.nfl.team_panels import defense_panel, offense_panel, ranked_stats_panel, scoring_ranks, share_rows
 from sports_aggregator.nfl.enhanced_tables import player_enhanced, team_enhanced, to_json
 from sports_aggregator.nfl.play_story import play_story
@@ -581,7 +582,8 @@ def scoreboard():
         "nfl_scoreboard.html", league=get_league("nfl"), season=season, week=requested,
         weeks=weeks, previous_week=weeks[index - 1] if index > 0 else None,
         next_week=weeks[index + 1] if index < len(weeks) - 1 else None,
-        games=matchup_cards(week_games, identities, records, efficiency, elo),
+        games=matchup_cards(week_games, identities, records, efficiency, elo,
+                            projections=week_projections(repository, season, requested, week_games)),
     )
 
 
