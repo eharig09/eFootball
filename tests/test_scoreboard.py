@@ -324,12 +324,13 @@ class ScoreboardExtrasTests(unittest.TestCase):
     def test_the_spread_says_which_books_agreed(self):
         self.assertIn('title="Consensus of 2 books"', self._body("2026-09-04"))
 
-    def test_a_completed_game_shows_the_score_instead_of_the_line(self):
-        """The line is a forecast; once there are points it is not the news."""
+    def test_a_completed_game_shows_the_score_and_keeps_the_line(self):
+        """The line used to come off the card at the final. It now stays: beside the engine's
+        projection and the result it is the third number worth comparing."""
         body = self._body("2026-09-05")
         self.assertIn(">31<", body)
-        self.assertNotIn("-3.5", body)
-        self.assertNotIn('class="market"', body)
+        self.assertIn("-3.5", body)
+        self.assertIn('class="market', body)
 
     def test_the_line_never_appears_in_the_card_foot(self):
         """It belongs beside a team, not in the footnote with the venue."""

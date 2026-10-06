@@ -79,7 +79,7 @@ ANALYTICS_STEPS = [
 #: inputs throughout the day without also rerunning EPA/WP/NFL analytics.
 PROJECTION_STEPS = [
     "pbp", "pbp-derive", "team-pace", "team-scoring",
-    "team-special-teams", "team-drive-outcomes",
+    "team-special-teams", "team-drive-outcomes", "scoreboard-projections",
 ]
 
 

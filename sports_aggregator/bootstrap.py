@@ -375,6 +375,11 @@ def steps(season: int, *, history_from: int | None = None,
              ["sports_aggregator.cfb.pbp_cli", "build-team-drive-outcomes",
               "--from-year", year, "--to-year", year],
              ("initial", "refresh"), optional=True, timeout_seconds=900),
+        # The engine's projected score per game, stored for the scoreboard. It reads the
+        # team-game tables above, so it has to land after them.
+        Step("scoreboard-projections", "Engine projected scores for the scoreboard",
+             ["sports_aggregator.cfb.scoreboard_projection", "--season", year],
+             ("initial", "refresh"), optional=True, timeout_seconds=900),
         # Scored against the stored ep-v2 model rather than refitted: a fit
         # wants several seasons and does not change week to week.
         Step("epa", "Score plays with the event-aligned ep-v2 model",

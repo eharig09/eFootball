@@ -2773,7 +2773,7 @@ def _market_line(game, line):
 
 
 def scoreboard_games(games, previews, brands, *, timezone_name, conference=None,
-                     lines=None, weather=None):
+                     lines=None, weather=None, projections=None):
     """One day's games, ready to render, filtered to a conference if asked.
 
     Not a table: a scoreboard row is two teams and a result, and forcing that
@@ -2813,10 +2813,21 @@ def scoreboard_games(games, previews, brands, *, timezone_name, conference=None,
             winner = "away" if away["points"] > home["points"] else (
                 "home" if home["points"] > away["points"] else None)
         forecast = (weather or {}).get(game["game_id"]) or {}
-        # The line is what there is to say before kickoff; once points exist
-        # the score says it better, so the numbers come off the card.
-        line = None if game.get("completed") else _market_line(
-            game, (lines or {}).get(game["game_id"]))
+        # The market line stays on the card after the game: beside the engine's projection and the
+        # result it is the third number worth comparing.
+        line = _market_line(game, (lines or {}).get(game["game_id"]))
+        projection = (projections or {}).get(game["game_id"])
+        if projection:
+            for side in sides:
+                exact = float(projection[side["prefix"]])
+                side["projected"] = int(exact + 0.5)
+                side["projected_exact"] = round(exact, 1)
+            projection = {
+                "margin": round(float(projection["margin"]), 1),
+                "total": round(float(projection["total"]), 1),
+                "title": (f"Engine projection{' (pre-game)' if projection.get('frozen') else ''}: "
+                          f"{away['team']} {away['projected_exact']:g}, {home['team']} {home['projected_exact']:g}"),
+            }
         if line:
             # A pick'em has no favourite, so the "PK" goes on the home row for
             # want of a truer place, and the total keeps the other one.
@@ -2830,6 +2841,7 @@ def scoreboard_games(games, previews, brands, *, timezone_name, conference=None,
             "game_id": game["game_id"],
             "kickoff": local.strftime("%I:%M %p").lstrip("0"),
             "line": line,
+            "projection": projection or None,
             "weather": forecast or None,
             "television": game.get("television"),
             "venue": game.get("venue"),

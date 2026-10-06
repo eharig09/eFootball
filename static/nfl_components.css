@@ -475,3 +475,7 @@ main{padding:24px 24px 64px}
 }
 
 .nfl-pick-move{margin:0;padding:7px 11px;border-top:1px solid #2b3e49;color:#8298a6;font-size:.64rem;font-variant-numeric:tabular-nums}
+/* Scoreboard: market line and engine projection. The projected score is italic, lighter and tinted
+   so it cannot be read as a result; it takes the score's place before kickoff and sits beside it after. */
+.matchup-team>.proj-score{font:italic 700 1.15rem/1 "Arial Narrow",sans-serif;font-variant-numeric:tabular-nums}.proj-score{color:color-mix(in srgb,#8dc8fb 55%,var(--muted));font-style:italic;opacity:.8}.matchup-line{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 7px 2px;border-top:1px solid #263846;color:var(--muted);font-size:.7rem;font-weight:700;font-variant-numeric:tabular-nums}.matchup-line .proj-score{margin-left:auto;font-weight:600}
+.matchup-team{grid-template-columns:38px 1fr auto auto}
