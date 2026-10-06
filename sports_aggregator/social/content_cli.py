@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from sports_aggregator.social.bluesky import BlueskyIdentityClient
 from sports_aggregator.social.media import MediaRegistry
 from sports_aggregator.social.reddit import RedditContentClient
-from sports_aggregator.social.content import ContentRepository
+from sports_aggregator.social.content import ContentRepository, RETAG_ACTIVE_DAYS, RETAG_ARCHIVE_DAYS
 from sports_aggregator.social.stories import StoryRepository
 from sports_aggregator.catalog import get_league
 from sports_aggregator.service import build_default_service
@@ -121,6 +121,12 @@ def main(argv=None) -> int:
                                           "retag","roles","score","status","cluster",
                                           "review-export","review-import","review-report")); parser.add_argument("--season",type=int,default=datetime.now().year)
     parser.add_argument("--limit",type=int,default=15)
+    parser.add_argument("--all",action="store_true",
+                        help="retag: re-resolve every item regardless of age or fingerprint")
+    parser.add_argument("--active-days",type=int,default=RETAG_ACTIVE_DAYS,
+                        help="retag: items published this recently are re-resolved every run")
+    parser.add_argument("--archive-days",type=int,default=RETAG_ARCHIVE_DAYS,
+                        help="retag: older items are re-resolved only when the rules changed, up to this age")
     parser.add_argument(
         "--workers", type=int, default=LOCAL_REPORTING_WORKERS,
         help="ingest-local-reporting: feeds to fetch at once. Fewer is slower "
@@ -151,7 +157,8 @@ def main(argv=None) -> int:
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
     if args.command=="retag":
-        report=repository.retag(args.season)
+        report=repository.retag(args.season, force_all=args.all,
+                                active_days=args.active_days, archive_days=args.archive_days)
         print(" ".join(f"{key}={value}" for key,value in report.items()))
         print(" ".join(f"{key}={value}" for key,value in repository.rescore().items()))
         return 0
