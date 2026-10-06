@@ -8,14 +8,17 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import subprocess
 import sys
+import time
 from typing import Any, Callable
 
 from dotenv import load_dotenv
 
 from sports_aggregator.bootstrap import _env_satisfied, steps
+from sports_aggregator.process_probe import process_alive
 from sports_aggregator.refresh_health import classify_step_rows, summarize_segment
 
 try:
@@ -71,16 +74,7 @@ def _memory_limiter(memory_mb: int | None = None):
     return apply
 
 
-def _process_alive(pid: int) -> bool:
-    if pid <= 0:
-        return True
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except (PermissionError, OSError):
-        return True
-    return True
+_process_alive = process_alive
 
 
 def _lock_holder(path: Path) -> dict[str, Any]:
@@ -220,7 +214,12 @@ def _log_end(log) -> int:
         return -1
 
 
-def _last_line(log, mark: int) -> str:
+_ERROR_LINE = re.compile(
+    r"error|exception|traceback|failed|cannot|can't|refused|denied|timed out|timeout|"
+    r"\b4\d\d\b|\b5\d\d\b|memory allocation|killed", re.IGNORECASE)
+
+
+def _last_line(log, mark: int, *, failed: bool = False) -> str:
     """The step's own last line of output, which is usually its summary.
 
     Steps write straight into the shared log rather than through a pipe, so
@@ -229,6 +228,12 @@ def _last_line(log, mark: int) -> str:
     what changed. Reading back from where this step started costs one seek and
     keeps the subprocess's output unbuffered, which is why it goes to the file
     in the first place.
+
+    For a step that failed the last line is often not the cause: a step that
+    prints a coverage summary after it dies, or a library that logs a version
+    notice after the traceback, leaves the status page saying "unknown" with
+    nothing to act on. A failure therefore reports the last line that looks like
+    an error, and falls back to the last line when none does.
     """
     if mark < 0:
         return ""
@@ -239,10 +244,12 @@ def _last_line(log, mark: int) -> str:
             lines = [line.strip() for line in source.read().splitlines()]
     except (OSError, ValueError):
         return ""
-    for line in reversed(lines):
-        if line:
-            return line[:240]
-    return ""
+    lines = [line for line in lines if line]
+    if failed:
+        for line in reversed(lines):
+            if _ERROR_LINE.search(line):
+                return line[:240]
+    return lines[-1][:240] if lines else ""
 
 
 def _run_command(command: list[str], *, timeout: int, log, memory_mb: int | None = None) -> tuple[str, str, float]:
@@ -255,7 +262,8 @@ def _run_command(command: list[str], *, timeout: int, log, memory_mb: int | None
         )
         elapsed = (datetime.now(timezone.utc) - started).total_seconds()
         return ("success" if completed.returncode == 0 else "failed",
-                _last_line(log, mark) or f"exit code {completed.returncode}",
+                _last_line(log, mark, failed=completed.returncode != 0)
+                or f"exit code {completed.returncode}",
                 round(elapsed, 1))
     except subprocess.TimeoutExpired:
         return "timeout", f"exceeded {timeout}s", float(timeout)
@@ -263,19 +271,48 @@ def _run_command(command: list[str], *, timeout: int, log, memory_mb: int | None
         return "failed", str(exc)[:240], 0.0
 
 
+RETRY_COOLDOWN_SECONDS = 90.0
+
+
 def _run_scoped_commands(label: str, scopes: list[str], command_for: Callable[[str], list[str]],
-                         *, timeout: int, log, heartbeat: Callable[[], None] | None = None) -> list[str]:
-    failures: list[str] = []
+                         *, timeout: int, log, heartbeat: Callable[[], None] | None = None,
+                         retry_failed_after: float = 0.0,
+                         reasons: dict[str, str] | None = None,
+                         sleep: Callable[[float], None] = time.sleep) -> list[str]:
+    """Run one command per scope and return the scopes that never succeeded.
+
+    A provider that rate-limits (CFBD answers HTTP 429) refuses every call for a while, so the
+    scopes that fail are the ones unlucky enough to run inside that window -- the same three
+    conferences failed in a third of all runs. With `retry_failed_after`, the failed scopes get
+    one more pass after that cool-down, by which time the window has usually closed. `reasons`
+    receives each failed scope's final message.
+    """
     total = len(scopes)
-    for index, scope in enumerate(scopes, start=1):
-        if heartbeat:
-            heartbeat()
-        print(f"        [{label}] {index}/{total} {scope} start parent_rss_mb={_rss_mb()} child_peak_rss_mb={_children_rss_mb()}", file=log, flush=True)
-        status, message, seconds = _run_command(command_for(scope), timeout=timeout, log=log)
-        print(f"        [{label}] {index}/{total} {scope} {status} ({seconds}s) parent_rss_mb={_rss_mb()} child_peak_rss_mb={_children_rss_mb()} {message}", file=log, flush=True)
-        if status != "success":
-            failures.append(scope)
-    return failures
+    pending = list(scopes)
+    for attempt in (1, 2):
+        failures: list[str] = []
+        for index, scope in enumerate(pending, start=1):
+            if heartbeat:
+                heartbeat()
+            tag = f"{index}/{total}" if attempt == 1 else f"retry {index}/{len(pending)}"
+            print(f"        [{label}] {tag} {scope} start parent_rss_mb={_rss_mb()} child_peak_rss_mb={_children_rss_mb()}", file=log, flush=True)
+            status, message, seconds = _run_command(command_for(scope), timeout=timeout, log=log)
+            print(f"        [{label}] {tag} {scope} {status} ({seconds}s) parent_rss_mb={_rss_mb()} child_peak_rss_mb={_children_rss_mb()} {message}", file=log, flush=True)
+            if status != "success":
+                failures.append(scope)
+                if reasons is not None:
+                    reasons[scope] = message
+            elif reasons is not None:
+                reasons.pop(scope, None)
+        pending = failures
+        if attempt == 1 and pending and retry_failed_after > 0:
+            print(f"        [{label}] {len(pending)} of {total} failed; waiting {retry_failed_after:.0f}s before one retry", file=log, flush=True)
+            if heartbeat:
+                heartbeat()
+            sleep(retry_failed_after)
+            continue
+        break
+    return pending
 
 
 def _run_cfbd_split(season: int, *, root: Path, timeout: int, log,
@@ -320,17 +357,25 @@ def _run_cfbd_split(season: int, *, root: Path, timeout: int, log,
 
 
 def _run_player_stats_split(season: int, *, root: Path, timeout: int, log,
-                            optional: bool, heartbeat: Callable[[], None] | None = None) -> dict[str, Any]:
+                            optional: bool, heartbeat: Callable[[], None] | None = None,
+                            retry_after: float | None = None) -> dict[str, Any]:
     started = datetime.now(timezone.utc)
     conferences = _conferences(root)
     if conferences:
+        reasons: dict[str, str] = {}
         failures = _run_scoped_commands(
             "player-stats", conferences,
             lambda conference: ["sports_aggregator.cfb.cli", "sync-player-stats", "--year", str(season), "--conference", conference],
-            timeout=timeout, log=log, heartbeat=heartbeat,
+            timeout=timeout, log=log, heartbeat=heartbeat, reasons=reasons,
+            retry_failed_after=RETRY_COOLDOWN_SECONDS if retry_after is None else retry_after,
         )
         status = "failed" if failures else "success"
-        message = f"failed conferences: {', '.join(failures[:8])}" if failures else f"{len(conferences)} conferences complete"
+        message = f"{len(conferences)} conferences complete"
+        if failures:
+            # Name the cause, not only the casualties: "failed conferences: X" gave the status
+            # page nothing to classify, so a rate limit read as "unknown".
+            cause = reasons.get(failures[0], "")
+            message = f"failed conferences: {', '.join(failures[:8])}" + (f" -- {cause[:150]}" if cause else "")
         seconds = round((datetime.now(timezone.utc) - started).total_seconds(), 1)
     else:
         status, message, seconds = _run_command(

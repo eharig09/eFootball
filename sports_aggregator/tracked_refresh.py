@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
-from sports_aggregator.refresh_health import classify_step_rows, summarize_segment
+from sports_aggregator.refresh_health import classify_step_rows, read_health, summarize_segment
 from sports_aggregator.scheduled_refresh import (
     REFRESH_PROFILES,
     _acquire_lock,
@@ -152,9 +152,46 @@ def _hours(name: str, default: str) -> set[int]:
     }
 
 
-def _segment_for_light(now: datetime | None = None) -> str:
+#: How long a segment may go without running before a later tick should run it instead of the
+#: segment that owns that hour. Roughly one scheduled interval plus slack.
+SEGMENT_MAX_AGE_HOURS = {
+    "core": 14.0, "content": 14.0, "rosters": 30.0, "stats": 30.0, "models": 30.0,
+    "analytics": 30.0,
+}
+
+
+def _hours_since_last_run(entry: object, now: datetime) -> float:
+    """Hours since the segment last finished a run of any outcome; infinite if it never has.
+
+    A degraded run counts: the segment ran, and a segment that degrades every day must not turn
+    into one that is always "overdue" and starves everything else.
+    """
+    if not isinstance(entry, dict):
+        return float("inf")
+    raw = entry.get("last_run_at") or entry.get("last_success_at")
+    try:
+        last = datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return float("inf")
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return max(0.0, (now - last).total_seconds() / 3600.0)
+
+
+def _segment_for_light(now: datetime | None = None, health: dict | None = None) -> str:
+    """The segment this tick should run.
+
+    The clock names the segment that owns the hour. But a tick that finds the shared refresh lock
+    held exits without running anything, and with one hour per day per segment that meant a
+    skipped slot was not retried until the same hour the next day -- `projections` went three
+    days and `models` four without a completed run while their crons fired on time. When the
+    roll-up of past runs (`health`) shows some other segment is overdue and the one that owns
+    this hour is not, the overdue one runs instead, most overdue first. A skipped run records
+    nothing, so it stays overdue until a tick actually gets the lock.
+    """
     zone = ZoneInfo(os.getenv("CFB_REFRESH_TIMEZONE", "America/New_York"))
-    moment = (now or datetime.now(timezone.utc)).astimezone(zone)
+    current = now or datetime.now(timezone.utc)
+    moment = current.astimezone(zone)
     schedule = (
         ("core", _hours("CFB_REFRESH_CORE_HOURS", "6,18")),
         ("content", _hours("CFB_REFRESH_CONTENT_HOURS", "10,16")),
@@ -163,10 +200,20 @@ def _segment_for_light(now: datetime | None = None) -> str:
         ("models", _hours("CFB_REFRESH_MODEL_HOURS", "23")),
         ("analytics", _hours("CFB_REFRESH_ANALYTICS_HOURS", "2")),
     )
+    scheduled = "core"
     for name, hours in schedule:
         if moment.hour in hours:
-            return name
-    return "core"
+            scheduled = name
+            break
+    if health is None:
+        return scheduled
+
+    ratio = {name: _hours_since_last_run(health.get(name), current) / limit
+             for name, limit in SEGMENT_MAX_AGE_HOURS.items()}
+    if ratio.get(scheduled, 0.0) > 1.0:
+        return scheduled
+    overdue = {name: value for name, value in ratio.items() if value > 1.0}
+    return max(overdue, key=overdue.__getitem__) if overdue else scheduled
 
 
 def _segment_results(segment: str, season: int, *, root: Path, log, heartbeat) -> list[dict]:
@@ -469,7 +516,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.profile == "heavy":
         report = _run_heavy(args.season, root=root, instance=instance)
     else:
-        segment = "news" if args.profile == "news" else _segment_for_light()
+        segment = ("news" if args.profile == "news"
+                   else _segment_for_light(health=read_health(instance)))
         report = _run_segment(segment, args.season, root=root, instance=instance)
 
     print(json.dumps(report, sort_keys=True))
