@@ -510,6 +510,15 @@ class NFLContentRepository:
     def latest(self, limit: int = 30) -> list[dict]:
         return self._items(limit=limit)
 
+    def latest_for_handles(self, handles: list[str], limit: int = 10) -> list[dict]:
+        """Top items from specific source handles, so a section is not starved by a global top-N."""
+        cleaned = sorted({str(handle).casefold() for handle in handles if handle})
+        if not cleaned:
+            return []
+        marks = ",".join("?" for _ in cleaned)
+        return self._items(where=f"WHERE LOWER(i.source_handle) IN ({marks})",
+                           parameters=tuple(cleaned), limit=limit)
+
     def search(self, query: str, limit: int = 20) -> list[dict]:
         pattern = f"%{str(query).strip().casefold()}%"
         return self._items(
