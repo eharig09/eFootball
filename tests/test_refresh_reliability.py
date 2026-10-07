@@ -595,3 +595,53 @@ def test_faulthandler_is_armed_for_the_run_and_disarmed_after(nfl_state, monkeyp
     assert refresh_cli.main(["weather", "--season", "2026"]) == 0
     assert calls[0][0] == "arm" and calls[0][1] == (refresh_cli.FAULT_DUMP_SECONDS,) and calls[0][2] == {"repeat": True}
     assert calls[-1] == ("cancel",)
+
+
+# -- a core segment whose dataset failed is recorded as failed, with the reason (it used to leave 'running') --
+def test_a_failed_dataset_writes_a_failed_row_with_the_reason(nfl_state, monkeypatch, capsys):
+    from sports_aggregator.nfl import sync as sync_module
+    from sports_aggregator.nfl import data_health
+    from sports_aggregator.nfl.models import SyncDatasetResult, SyncReport
+
+    report = SyncReport(2026, _dt.now(_tz.utc), _dt.now(_tz.utc), (
+        SyncDatasetResult("depth_charts", 0, "failed", "NflverseError: could not fetch depth_charts: HTTP 403"),))
+
+    class FakeSync:
+        def __init__(self, *a, **k): ...
+        def sync(self, *a, **k): return report
+
+    monkeypatch.setattr(sync_module, "NFLDataSync", FakeSync)
+    monkeypatch.setattr(refresh_cli, "_nflverse_client", lambda: None)
+    monkeypatch.setattr(data_health, "season_coverage", lambda repository, season: {"healthy": True})
+    assert refresh_cli.main(["core-depth", "--season", "2026"]) == 1
+    rows = _history(nfl_state)
+    assert [r["status"] for r in rows] == ["running", "failed"]
+    assert rows[-1]["error_type"] == "DatasetFailed" and "HTTP 403" in rows[-1]["error"]
+    assert rows[-1]["started_at"] == rows[0]["started_at"]                # pairs with its running row
+    shown = refresh_status.display_rows(list(reversed(rows)), now=_dt.now(_tz.utc))
+    assert len(shown) == 1 and shown[0]["status"] == "failed"
+
+
+def test_a_clean_core_run_still_writes_success(nfl_state, monkeypatch):
+    monkeypatch.setattr(refresh_cli, "_sync_core", lambda season, **k: True)
+    assert refresh_cli.main(["core-stats", "--season", "2026"]) == 0
+    assert [r["status"] for r in _history(nfl_state)] == ["running", "success"]
+
+
+def test_the_supervisor_does_not_double_record_a_failure_the_cli_already_reported(nfl_state):
+    refresh_cli._append_history(_running_row(4321))
+    refresh_cli._append_history({**_running_row(4321), "status": "failed", "error_type": "DatasetFailed", "error": "x"})
+    assert run_segment.record_if_unreported(["core-depth", "--season", "2026"], 4321, 1, supervised_at=NOW) is False
+
+
+def test_a_stderr_that_cannot_take_stack_dumps_does_not_stop_the_refresh(nfl_state, monkeypatch):
+    import faulthandler
+    import io
+
+    def unsupported(*a, **k):
+        raise io.UnsupportedOperation("fileno")
+
+    monkeypatch.setattr(faulthandler, "enable", unsupported)
+    monkeypatch.setattr(refresh_cli, "_sync_weather", lambda season, **k: None)
+    assert refresh_cli._arm_faulthandler() is False
+    assert refresh_cli.main(["weather", "--season", "2026"]) == 0

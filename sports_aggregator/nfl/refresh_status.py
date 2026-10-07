@@ -118,8 +118,8 @@ def segment_health(rows: Iterable[dict[str, Any]], segments: Sequence[str], *,
             elif status == "crashed":
                 tile["error"] = f"Process ended without a result: {latest.get('exit') or 'unknown exit'}."
             elif status == "interrupted":
-                tile["error"] = ("Started but never finished; the process was killed, usually "
-                                 "by running out of memory.")
+                tile["error"] = ("Started but never finished; the process was killed, most often by a "
+                                 "deploy or restart. A failed dataset is recorded as failed, not here.")
             elif status == "skipped":
                 tile["error"] = "Yielded to another refresh that was already running."
         tiles.append(tile)

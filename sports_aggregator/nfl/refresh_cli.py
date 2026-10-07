@@ -80,6 +80,10 @@ def _sync_rosters(season: int, *, force: bool = False) -> None:
     _sync_espn_context(repository, season, force=force)
 
 
+#: (dataset, message) for each dataset the most recent `_sync_core` reported as failed.
+_LAST_DATASET_FAILURES: list[tuple[str, str]] = []
+
+
 def _sync_core(season: int, *, include_pbp: bool, only: "frozenset[str] | None" = None,
                include_extras: bool = True, force: bool = False) -> bool:
     """`only` scopes this to one of the four subprocess-sized groups in
@@ -93,6 +97,8 @@ def _sync_core(season: int, *, include_pbp: bool, only: "frozenset[str] | None" 
     report = NFLDataSync(_nflverse_client(), repository).sync(
         season, force=force, include_pbp=include_pbp, only=only,
     )
+    _LAST_DATASET_FAILURES[:] = [(item.dataset, str(getattr(item, "message", "") or "failed")[:300])
+                                 for item in report.datasets if item.status == "failed"]
     for dataset in report.datasets:
         # The reason a dataset failed used to be dropped here, leaving the status page with "failed
         # (0)" and a coverage line and no way to tell a memory error from bad data.
@@ -368,6 +374,17 @@ def _append_history(record: dict) -> None:
     _trim_history(path)
 
 
+def _arm_faulthandler() -> bool:
+    """Turn on stack dumps, unless stderr cannot take them. A diagnostic must never stop a refresh:
+    faulthandler needs a real file descriptor and raises where there is none (a captured stream)."""
+    try:
+        faulthandler.enable()
+        faulthandler.dump_traceback_later(FAULT_DUMP_SECONDS, repeat=True)
+    except (OSError, ValueError, RuntimeError, AttributeError):   # io.UnsupportedOperation is an OSError
+        return False
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -378,12 +395,12 @@ def main(argv: list[str] | None = None) -> int:
     # A fatal signal (segfault, abort) prints the Python stack of every thread into the log, and a
     # run still going after FAULT_DUMP_SECONDS prints where it is, repeatedly: a hang names the line
     # it is stuck on instead of staying a bare "running".
-    faulthandler.enable()
-    faulthandler.dump_traceback_later(FAULT_DUMP_SECONDS, repeat=True)
+    armed = _arm_faulthandler()
     try:
         return _main(args)
     finally:
-        faulthandler.cancel_dump_traceback_later()
+        if armed:
+            faulthandler.cancel_dump_traceback_later()
 
 
 def _main(args) -> int:
@@ -430,6 +447,18 @@ def _run_segment(args, record: dict, started: datetime) -> int:
                 include_extras=(args.segment == "core-foundation"),
             )
             if not succeeded:
+                # Returning here used to skip the history row altogether: only a raised exception
+                # reached the handler that records "failed". Every core segment whose dataset failed
+                # therefore left a bare "running" row, which the status page then labelled
+                # "interrupted ... killed, usually by running out of memory".
+                finished = datetime.now(timezone.utc)
+                reasons = "; ".join(f"{name}: {message}" for name, message in _LAST_DATASET_FAILURES)
+                _append_history({
+                    **record, "status": "failed", "finished_at": finished.isoformat(),
+                    "seconds": round((finished - started).total_seconds(), 1),
+                    "error_type": "DatasetFailed",
+                    "error": (reasons or "the dataset sync reported a failure")[:500],
+                })
                 return 1
         elif args.segment == "content":
             _sync_content(args.season)
