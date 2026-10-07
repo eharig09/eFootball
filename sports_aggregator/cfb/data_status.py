@@ -9,7 +9,9 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import sqlite3
+import time
 from typing import Any
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -664,6 +666,71 @@ def host_resources(root: Path = Path("/sys/fs/cgroup")) -> dict[str, Any] | None
             "oom_kills": oom_kills, "cpus": os.cpu_count()}
 
 
+DISK_WALK_SECONDS = 4.0
+DISK_CACHE_SECONDS = 300
+_DISK_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _tree_bytes(path: Path, deadline: float) -> tuple[int, bool]:
+    """Total size of everything under `path`, and whether the walk finished before the deadline."""
+    total = 0
+    for current, _dirs, files in os.walk(path, onerror=lambda _e: None):
+        if time.monotonic() > deadline:
+            return total, False
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(current, name)).st_size
+            except OSError:
+                continue
+    return total, True
+
+
+def disk_report(directory: Path, *, top: int = 10, cache_seconds: float = DISK_CACHE_SECONDS,
+                walk_seconds: float = DISK_WALK_SECONDS) -> dict[str, Any] | None:
+    """How full the disk holding `directory` is, and which entries in it use the space.
+
+    The NFL steps that rewrite large tables were failing with "database or disk is full" while the
+    database was 758 MB and capped at nothing, and there was no way to see what else shared the
+    disk. Sizes come from `shutil.disk_usage` (the filesystem, not the sum of files) plus one level
+    of entries with their recursive sizes, largest first. The walk has a time budget and the result is
+    cached for a few minutes so a page view never pays for it twice. None when the directory is not
+    readable.
+    """
+    key = str(directory)
+    cached = _DISK_CACHE.get(key)
+    if cached and time.monotonic() - cached[0] < cache_seconds:
+        return cached[1]
+    try:
+        usage = shutil.disk_usage(directory)
+        entries = list(os.scandir(directory))
+    except OSError:
+        return None
+    deadline = time.monotonic() + walk_seconds
+    sizes: list[dict[str, Any]] = []
+    complete = True
+    for entry in entries:
+        try:
+            if entry.is_dir(follow_symlinks=False):
+                size, finished = _tree_bytes(Path(entry.path), deadline)
+                complete = complete and finished
+            else:
+                size, finished = entry.stat(follow_symlinks=False).st_size, True
+        except OSError:
+            continue
+        sizes.append({"name": entry.name + ("/" if entry.is_dir(follow_symlinks=False) else ""),
+                      "mb": round(size / 2**20, 1), "partial": not finished})
+    sizes.sort(key=lambda item: -item["mb"])
+    mb = lambda value: round(value / 2**20)
+    report = {
+        "total_mb": mb(usage.total), "used_mb": mb(usage.used), "free_mb": mb(usage.free),
+        "percent_used": round(100 * usage.used / usage.total, 1) if usage.total else None,
+        "listed_mb": round(sum(item["mb"] for item in sizes)),
+        "entries": sizes[:top], "complete": complete,
+    }
+    _DISK_CACHE[key] = (time.monotonic(), report)
+    return report
+
+
 def deployed_build() -> dict[str, str] | None:
     """The commit this process is running, when the platform says (Render sets RENDER_GIT_COMMIT).
 
@@ -697,6 +764,7 @@ def inject_data_freshness() -> dict[str, Any]:
         runs = [str(e.get("last_run_at") or "") for e in refresh_health.read_health(instance).values()
                 if isinstance(e, dict)]
         latest_finished = max(runs) if runs else None
+    # The disk report walks directories, so it is NOT built here: this runs on every page of the site.
     return {"deploy_build": deployed_build(), "host_resources": host_resources(), "data_freshness": {
         "running": running,
         "status": status,
@@ -724,7 +792,7 @@ def data_status():
         model = _status_model(include_audit=True, audit_options=options)
     except Exception:
         model = _status_model(include_audit=False)
-    return render_template("cfb_data_status.html", status=model)
+    return render_template("cfb_data_status.html", status=model, host_disk=disk_report(_instance_dir()))
 
 
 @data_status_pages.get("/college-football/data-status/log-tail")

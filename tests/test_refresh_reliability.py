@@ -645,3 +645,66 @@ def test_a_stderr_that_cannot_take_stack_dumps_does_not_stop_the_refresh(nfl_sta
     monkeypatch.setattr(refresh_cli, "_sync_weather", lambda season, **k: None)
     assert refresh_cli._arm_faulthandler() is False
     assert refresh_cli.main(["weather", "--season", "2026"]) == 0
+
+
+# -- the disk report: how full the disk is and what is using it -------------------------------------------
+def _fill(tmp_path):
+    (tmp_path / "cfb.sqlite3").write_bytes(b"x" * 3_000_000)
+    (tmp_path / "nfl.sqlite3").write_bytes(b"x" * 1_000_000)
+    (tmp_path / "cfbd_raw").mkdir()
+    for i in range(5):
+        (tmp_path / "cfbd_raw" / f"r{i}.json").write_bytes(b"x" * 500_000)
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "a.log").write_bytes(b"x" * 10_000)
+    return tmp_path
+
+
+def test_disk_report_lists_the_largest_items_first_with_recursive_folder_sizes(tmp_path):
+    from sports_aggregator.cfb.data_status import disk_report
+    report = disk_report(_fill(tmp_path), cache_seconds=0)
+    names = [item["name"] for item in report["entries"]]
+    assert names == ["cfb.sqlite3", "cfbd_raw/", "nfl.sqlite3", "logs/"]
+    sizes = {item["name"]: item["mb"] for item in report["entries"]}
+    assert sizes["cfbd_raw/"] == 2.4 and sizes["cfb.sqlite3"] == 2.9          # 2.5e6 and 3e6 bytes in MiB
+    assert report["complete"] is True and report["total_mb"] > 0 and 0 <= report["percent_used"] <= 100
+
+
+def test_disk_report_is_cached_between_calls(tmp_path):
+    from sports_aggregator.cfb.data_status import disk_report
+    _fill(tmp_path)
+    first = disk_report(tmp_path, cache_seconds=300)
+    (tmp_path / "new.bin").write_bytes(b"x" * 9_000_000)
+    assert disk_report(tmp_path, cache_seconds=300) is first                  # no second walk inside the window
+    assert any(item["name"] == "new.bin" for item in disk_report(tmp_path, cache_seconds=0)["entries"])
+
+
+def test_disk_report_stops_walking_at_its_time_budget(tmp_path):
+    from sports_aggregator.cfb.data_status import disk_report
+    _fill(tmp_path)
+    report = disk_report(tmp_path, cache_seconds=0, walk_seconds=-1)
+    assert report["complete"] is False and any(item["partial"] for item in report["entries"] if item["name"].endswith("/"))
+
+
+def test_disk_report_for_a_missing_directory_is_none(tmp_path):
+    from sports_aggregator.cfb.data_status import disk_report
+    assert disk_report(tmp_path / "nowhere", cache_seconds=0) is None
+
+
+def test_the_disk_report_is_built_by_the_status_page_not_by_every_page(monkeypatch, tmp_path):
+    from app import create_app
+    from sports_aggregator.cfb import data_status
+    calls = []
+    monkeypatch.setattr(data_status, "disk_report", lambda directory, **k: calls.append(str(directory)) or
+                        {"total_mb": 5000, "used_mb": 4800, "free_mb": 200, "percent_used": 96.0, "listed_mb": 4700,
+                         "entries": [{"name": "cfbd_raw/", "mb": 3100.0, "partial": False}], "complete": True})
+    app = create_app({"TESTING": True, "REGISTER_LEGACY_DASHBOARDS": False,
+                      "CFB_DATABASE_PATH": str(tmp_path / "cfb.sqlite3")})
+    client = app.test_client()
+    client.get("/college-football/scoreboard/")
+    client.get("/college-football/")
+    assert calls == []                                                          # ordinary pages never walk the disk
+    page = client.get("/college-football/data-status/").get_data(as_text=True)
+    assert len(calls) == 1
+    assert "disk <strong class=\"data-status-bad\">4800 of 5000 MB used (96.0%)" in page
+    assert "cfbd_raw/" in page and "nearly full" in page
+    assert client.get("/api/v1/cfb/status").get_json()["disk"]["free_mb"] == 200
