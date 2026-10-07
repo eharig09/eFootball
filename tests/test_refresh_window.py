@@ -90,11 +90,35 @@ class RefreshWindowTests(unittest.TestCase):
         self.assertEqual(decision["reason"], "hourly_live_results")
 
     @patch.dict(os.environ, {"CFB_REFRESH_HOURS": "6,12,18,23", "CFB_REFRESH_HEAVY_HOURS": "6,23", "CFB_REFRESH_NEWS_HOURS": "8,10"}, clear=False)
-    def test_scheduled_profiles_fire_only_on_minute_zero(self):
+    def test_scheduled_profiles_fire_in_the_first_minutes_of_the_hour(self):
         self.assertEqual(profile_for(self.repository, now=datetime(2026, 7, 1, 6, 0, tzinfo=EASTERN))["profile"], "heavy")
         self.assertEqual(profile_for(self.repository, now=datetime(2026, 7, 1, 12, 0, tzinfo=EASTERN))["profile"], "light")
         self.assertEqual(profile_for(self.repository, now=datetime(2026, 7, 1, 8, 0, tzinfo=EASTERN))["profile"], "news")
         self.assertIsNone(profile_for(self.repository, now=datetime(2026, 7, 1, 6, 15, tzinfo=EASTERN))["profile"])
+
+    @patch.dict(os.environ, {"CFB_REFRESH_HOURS": "2,6", "CFB_REFRESH_HEAVY_HOURS": "", "CFB_REFRESH_NEWS_HOURS": "8"}, clear=False)
+    def test_a_cron_tick_that_starts_a_little_late_still_counts(self):
+        """Render's ticks landed at 02:01:37 and 06:01:17 and were refused as 'between ticks', so
+        the 2 AM analytics and 6 AM core runs were skipped depending on cron jitter."""
+        for hour, minute, second in ((2, 1, 37), (6, 1, 17), (2, 0, 5), (6, 9, 59)):
+            decision = profile_for(self.repository, now=datetime(2026, 7, 1, hour, minute, second, tzinfo=EASTERN))
+            self.assertEqual(decision["profile"], "light", (hour, minute))
+        decision = profile_for(self.repository, now=datetime(2026, 7, 1, 8, 1, 3, tzinfo=EASTERN))
+        self.assertEqual(decision["profile"], "news")
+
+    @patch.dict(os.environ, {"CFB_REFRESH_HOURS": "2,6", "CFB_REFRESH_HEAVY_HOURS": "", "CFB_REFRESH_NEWS_HOURS": "8"}, clear=False)
+    def test_later_ticks_in_the_hour_do_not_start_a_second_scheduled_run(self):
+        for minute in (10, 15, 31, 45, 59):
+            decision = profile_for(self.repository, now=datetime(2026, 7, 1, 2, minute, tzinfo=EASTERN))
+            self.assertIsNone(decision["profile"], minute)
+            self.assertEqual(decision["reason"], "between_scheduled_ticks")
+
+    def test_during_games_the_hourly_results_pass_also_tolerates_a_late_tick(self):
+        self._schedule(_game(1, "2026-09-05T16:00:00.000Z"))
+        late = profile_for(self.repository, now=self._at(hours=2, minutes=1))
+        self.assertEqual((late["profile"], late["reason"]), ("results", "hourly_live_results"))
+        quarter = profile_for(self.repository, now=self._at(hours=2, minutes=16))
+        self.assertEqual(quarter["profile"], "scores")
 
 
 class ScoresProfileTests(unittest.TestCase):

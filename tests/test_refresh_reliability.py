@@ -397,3 +397,26 @@ def test_children_default_to_the_system_allocator_and_few_arenas(monkeypatch):
     assert env["ARROW_DEFAULT_MEMORY_POOL"] == "system" and env["MALLOC_ARENA_MAX"] == "2"
     monkeypatch.setenv("MALLOC_ARENA_MAX", "8")                     # an explicit choice wins
     assert scheduled_refresh._child_env()["MALLOC_ARENA_MAX"] == "8"
+
+
+# -- the deployed commit is visible, so "is the fix live?" has an answer -----------------------------
+def test_the_deployed_commit_is_reported_when_the_platform_provides_it(monkeypatch):
+    from sports_aggregator.cfb.data_status import deployed_build
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "eee4332a1b2c3d4e5f60718293a4b5c6d7e8f901")
+    monkeypatch.setenv("RENDER_GIT_BRANCH", "main")
+    assert deployed_build() == {"commit": "eee4332", "branch": "main"}
+    monkeypatch.delenv("RENDER_GIT_COMMIT")
+    assert deployed_build() is None
+
+
+def test_the_status_page_and_api_show_the_build(monkeypatch, tmp_path):
+    from app import create_app
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "abc1234def")
+    app = create_app({"TESTING": True, "REGISTER_LEGACY_DASHBOARDS": False,
+                      "CFB_DATABASE_PATH": str(tmp_path / "cfb.sqlite3")})
+    client = app.test_client()
+    assert "deployed build <code>abc1234</code>" in client.get("/college-football/data-status/").get_data(as_text=True)
+    assert client.get("/api/v1/cfb/status").get_json()["deploy"]["commit"] == "abc1234"
+    monkeypatch.delenv("RENDER_GIT_COMMIT")
+    assert "deployed build" not in client.get("/college-football/data-status/").get_data(as_text=True)
+    assert client.get("/api/v1/cfb/status").get_json()["deploy"] is None
