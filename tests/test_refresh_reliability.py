@@ -420,3 +420,87 @@ def test_the_status_page_and_api_show_the_build(monkeypatch, tmp_path):
     monkeypatch.delenv("RENDER_GIT_COMMIT")
     assert "deployed build" not in client.get("/college-football/data-status/").get_data(as_text=True)
     assert client.get("/api/v1/cfb/status").get_json()["deploy"] is None
+
+
+# -- the NFL "Recent refreshes" table: one row per run, unfinished runs labelled honestly ------------
+def _hist(segment, status, minutes_ago, **extra):
+    started = (NOW - timedelta(minutes=minutes_ago)).isoformat()
+    row = {"segment": segment, "status": status, "started_at": started, "seconds": None, **extra}
+    if status in ("success", "failed"):
+        row["finished_at"] = started
+    return row
+
+
+def test_a_finished_run_appears_once_not_as_running_and_success():
+    rows = [_hist("content", "success", 60, seconds=140.4), _hist("content", "running", 60)]
+    shown = refresh_status.display_rows(rows, now=NOW)
+    assert [(r["segment"], r["status"]) for r in shown] == [("content", "success")]
+
+
+def test_a_young_unfinished_run_is_in_progress_and_an_old_one_is_interrupted():
+    shown = refresh_status.display_rows([_hist("core-stats", "running", 9), _hist("core-depth", "running", 600)], now=NOW)
+    assert (shown[0]["status"], shown[0]["note"]) == ("running", "In progress")
+    assert shown[1]["status"] == "interrupted" and "killed" in shown[1]["note"]
+
+
+def test_display_rows_does_not_modify_its_input():
+    rows = [_hist("core-stats", "running", 600)]
+    refresh_status.display_rows(rows, now=NOW)
+    assert rows[0]["status"] == "running" and "note" not in rows[0]
+
+
+def test_the_table_template_never_prints_none_or_completed_for_an_unfinished_run():
+    html = open("templates/nfl_data_status.html", encoding="utf-8").read()
+    assert "run.seconds is not none" in html and "run.note" in html
+    assert "run.seconds is defined" not in html
+
+
+# -- the container's own memory limit and OOM-kill count, readable without the Render dashboard ---------
+def _cgroup_v2(tmp_path, *, limit="536870912", current="301989888", peak="480000000", oom=3):
+    (tmp_path / "memory.max").write_text(limit)
+    (tmp_path / "memory.current").write_text(current)
+    (tmp_path / "memory.peak").write_text(peak)
+    (tmp_path / "memory.events").write_text(f"low 0\nhigh 0\nmax 12\noom 3\noom_kill {oom}\n")
+    return tmp_path
+
+
+def test_host_resources_reads_a_cgroup_v2_container(tmp_path):
+    from sports_aggregator.cfb.data_status import host_resources
+    info = host_resources(_cgroup_v2(tmp_path))
+    assert (info["memory_limit_mb"], info["memory_used_mb"], info["memory_peak_mb"], info["oom_kills"]) == (512, 288, 458, 3)
+
+
+def test_an_unlimited_container_reports_no_limit(tmp_path):
+    from sports_aggregator.cfb.data_status import host_resources
+    info = host_resources(_cgroup_v2(tmp_path, limit="max"))
+    assert info["memory_limit_mb"] is None and info["memory_used_mb"] == 288
+
+
+def test_host_resources_reads_a_cgroup_v1_container(tmp_path):
+    from sports_aggregator.cfb.data_status import host_resources
+    legacy = tmp_path / "memory"
+    legacy.mkdir()
+    (legacy / "memory.limit_in_bytes").write_text("2147483648")
+    (legacy / "memory.usage_in_bytes").write_text("1073741824")
+    (legacy / "memory.oom_control").write_text("oom_kill_disable 0\nunder_oom 0\noom_kill 2\n")
+    info = host_resources(tmp_path)
+    assert (info["memory_limit_mb"], info["memory_used_mb"], info["oom_kills"]) == (2048, 1024, 2)
+
+
+def test_no_cgroup_means_no_report(tmp_path):
+    from sports_aggregator.cfb.data_status import host_resources
+    assert host_resources(tmp_path / "missing") is None
+    assert host_resources(tmp_path) is None                       # a directory with nothing readable in it
+
+
+def test_the_status_page_and_api_show_memory_and_kills(monkeypatch, tmp_path):
+    from app import create_app
+    from sports_aggregator.cfb import data_status
+    monkeypatch.setattr(data_status, "host_resources",
+                        lambda root=None: {"memory_limit_mb": 512, "memory_used_mb": 288, "memory_peak_mb": 458,
+                                           "oom_kills": 3, "cpus": 1})
+    app = create_app({"TESTING": True, "REGISTER_LEGACY_DASHBOARDS": False,
+                      "CFB_DATABASE_PATH": str(tmp_path / "cfb.sqlite3")})
+    client = app.test_client()
+    page = client.get("/college-football/data-status/").get_data(as_text=True)
+    assert "memory 288 of 512 MB" in page and "3 killed for memory" in page

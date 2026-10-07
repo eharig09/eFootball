@@ -156,9 +156,9 @@
     <section class="section" id="refresh-history">
         <div class="section-head"><div><p class="eyebrow">Core + content + maintenance</p><h2>Recent NFL refreshes</h2></div></div>
         {% if refresh_history %}
-        <table class="data-status-table"><thead><tr><th>Segment</th><th>Status</th><th>Finished</th><th>Duration</th><th>Result</th></tr></thead><tbody>
+        <table class="data-status-table"><thead><tr><th>Segment</th><th>Status</th><th>When</th><th>Duration</th><th>Result</th></tr></thead><tbody>
         {% for run in refresh_history %}
-        <tr><td><strong>{{ run.segment }}</strong></td><td>{{ run.status|title }}</td><td>{{ run.relative or '—' }}</td><td>{{ run.seconds ~ 's' if run.seconds is defined else '—' }}</td><td>{{ run.error or run.error_type or 'Completed' }}</td></tr>
+        <tr><td><strong>{{ run.segment }}</strong></td><td>{{ run.status|title }}</td><td>{{ run.relative or '—' }}</td><td>{{ (run.seconds ~ 's') if run.seconds is not none else '—' }}</td><td>{{ run.note or run.error or run.error_type or ('Completed' if run.status == 'success' else run.status|title) }}</td></tr>
         {% endfor %}
         </tbody></table>
         {% else %}<p class="empty">No NFL refresh history has been recorded yet.</p>{% endif %}

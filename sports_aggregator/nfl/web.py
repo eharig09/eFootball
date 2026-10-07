@@ -826,7 +826,7 @@ def _data_status_packet() -> dict:
     refresh_history = []
     if history_path.exists():
         try:
-            for line in history_path.read_text(encoding="utf-8", errors="replace").splitlines()[-20:]:
+            for line in history_path.read_text(encoding="utf-8", errors="replace").splitlines()[-60:]:
                 try:
                     row = json.loads(line)
                 except json.JSONDecodeError:
@@ -847,6 +847,7 @@ def _data_status_packet() -> dict:
         except OSError:
             pass
     refresh_history.reverse()
+    refresh_history = nfl_refresh_status.display_rows(refresh_history)[:20]
 
     segments = ("availability", "core-foundation", "core-stats", "core-depth",
                 "core-pbp", "content", "weather", "pff")
