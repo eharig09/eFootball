@@ -79,6 +79,7 @@ def _issue_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
                 "severity": severity,
                 "category": category,
                 "self_heals": bool(row.get("self_heals", self_heals(category))),
+                "detail": str(row.get("detail") or "")[:1500],
             })
     return rows
 
@@ -123,6 +124,8 @@ def classify_step_rows(
             "category": category, "self_heals": self_heals(category),
             "segment": owning,
         }
+        if row.get("detail"):
+            item["detail"] = str(row["detail"])[:1500]
         (degraded if row.get("optional", False) else required).append(item)
     return required, degraded, skipped
 
@@ -229,6 +232,7 @@ def attention_items(instance: Path) -> list[dict[str, Any]]:
                 "category": fix["category"],
                 "self_heals": bool(issue.get("self_heals", fix["self_heals"])),
                 "message": str(issue.get("message") or "")[:240],
+                "detail": str(issue.get("detail") or "")[:1500],
                 "since": str(issue.get("since") or entry.get("last_run_at") or ""),
                 "last_success_at": str(entry.get("last_success_at") or ""),
                 "consecutive_degraded": int(entry.get("consecutive_degraded") or 0),

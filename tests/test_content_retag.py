@@ -63,8 +63,14 @@ def _three(repository):
 
 
 def _settle(repository, **kwargs):
-    """One retag, so every stored item is canonical, with its tags stamped at NOW."""
-    return repository.retag(2026, now=NOW, **kwargs)
+    """One retag, so every stored item is canonical, with its tags stamped at NOW.
+
+    `retag` stamps `tagged_at` from the real clock; the tests pin "now", so the stamp is rewritten
+    to the pinned instant. Left alone, they pass or fail depending on what time the suite runs."""
+    report = repository.retag(2026, now=NOW, **kwargs)
+    with sqlite3.connect(repository.path) as connection:
+        connection.execute("UPDATE content_tag_state SET tagged_at=?", (NOW.isoformat(),))
+    return report
 
 
 def _why(report):

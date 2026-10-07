@@ -93,6 +93,31 @@ def _records(dataset: str, frame) -> list[dict]:
     return frame.to_dict("records")
 
 
+RECORD_CHUNK = 20_000
+DEPTH_CHART_COLUMNS = ("dt", "team", "player_name", "gsis_id", "espn_id", "pos_grp", "pos_id",
+                       "pos_name", "pos_abb", "pos_slot", "pos_rank")
+
+
+def _iter_records(dataset: str, frame, *, columns=None, chunk: int = RECORD_CHUNK):
+    """The frame's rows as dicts, `chunk` at a time, for datasets too big to hold as dicts at once.
+
+    `frame.to_dict("records")` turns each cell into a Python object: the 2026 depth charts are
+    613,196 rows and 99 MB as a frame, ~650 MB as a list of dicts, and the insert then built a
+    second full copy. That step's peak was ~1 GB on a service that kills processes for memory, and
+    `core-depth` was among the ones that died. Yielding chunks keeps the peak near one chunk.
+    """
+    missing = REQUIRED_COLUMNS[dataset] - set(frame.columns)
+    if missing:
+        raise ValueError(f"nflverse {dataset} missing required columns {sorted(missing)}")
+    if not hasattr(frame, "iloc"):                  # not a pandas frame: nothing to slice
+        yield from frame.to_dict("records")
+        return
+    if columns is not None:
+        frame = frame[[name for name in columns if name in frame.columns]]
+    for start in range(0, len(frame), chunk):
+        yield from frame.iloc[start:start + chunk].to_dict("records")
+
+
 def _weekly_game_lookup(weekly_rows: list[dict]) -> dict[tuple[int, str, str], dict]:
     """(week, season_type, player_id) -> the game context Next Gen Stats
     itself does not carry, so its rows can still land in player_weekly_stats,
@@ -282,8 +307,9 @@ class NFLDataSync:
             return self.repository.replace_snap_counts(season, rows)
 
         def store_depth_charts() -> int:
-            rows = _records("depth_charts", self.client.load_depth_charts([season], force=force))
-            return self.repository.replace_depth_charts(season, rows)
+            frame = self.client.load_depth_charts([season], force=force)
+            return self.repository.replace_depth_charts(
+                season, _iter_records("depth_charts", frame, columns=DEPTH_CHART_COLUMNS))
 
         def store_player_master() -> int:
             return self.repository.replace_player_master(

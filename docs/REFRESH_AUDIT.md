@@ -128,6 +128,35 @@ so the planner believes the index is selective. The true figure is every row.
 - Other queries that begin `WHERE <version column> = ?` joined to a large table are exposed to the same
   trap if statistics ever regress; `tests/test_planner_statistics.py` pins the repair.
 
+## NFL core steps dying in production (investigated 2026-10-06)
+
+Production showed `nfl-core-stats`, `nfl-core-depth` and `nfl-core-pbp` as "unknown" failures for four
+runs. Its NFL refresh history shows each step writing a "running" row and never a result, repeatedly:
+the process was killed, not failed (a Python exception would have been recorded). Findings:
+
+- **`core-depth` was the memory hog.** The 2026 depth charts are 613,196 rows: 99 MB as a table, but
+  `frame.to_dict("records")` makes ~650 MB of Python dicts and the insert built a second copy, so the
+  step peaked at ~1 GB (measured). The table grows every week, which fits steps that worked until
+  about four days ago and then started dying. They are now streamed in 20,000-row chunks and inserted
+  per chunk: peak **1,018 MB -> 267 MB** with an identical stored result (612,495 rows, same digest).
+  The other datasets are a few thousand rows each (under 110 MB to convert) and were not changed.
+- **Children get allocator settings that bound virtual reservations** (`ARROW_DEFAULT_MEMORY_POOL=system`,
+  `MALLOC_ARENA_MAX=2`, single-threaded BLAS/OpenMP). The address-space ceiling counts virtual memory,
+  and pandas/pyarrow reserve far more than they use; glibc arenas can only be capped from the
+  environment the process starts with, which is why this is set where the child is launched.
+- **A failed step now explains itself.** The NFL CLI printed `weekly_stats: failed (0)` and dropped the
+  exception text, and the status page showed whatever the log said last (a coverage summary). Dataset
+  failure reasons are now printed, each failed step's own last 20 lines are stored with the issue, and the
+  Needs-attention card shows them under "Step output".
+- **Not established:** why `core-stats` (225 MB peak locally) and `core-pbp` fail. They succeed locally with
+  fresh nflverse data, so it is not the data. The next production failure will carry its own output.
+- **The NFL cron segments may not be running.** `core-stats` / `core-depth` last succeeded 3 days ago and
+  `core-pbp` 44 hours ago, although their crons are every 3 hours; the only recent starts are the clustered
+  trio the CFB `analytics` segment launches. If the Render dashboard has no `nfl-core-stats`,
+  `nfl-core-depth` or `nfl-core-pbp` refresh-trigger services (the Blueprint does not always sync new
+  services to an existing deployment), the daily analytics pass is the only thing updating NFL stats.
+  That is also why those steps must not be removed from `ANALYTICS_STEPS` yet.
+
 ## Not fixed: recommendations
 
 - **Local runs are slowing down: average 741 s in August, 1,426 s in September, 1,908 s in October.**

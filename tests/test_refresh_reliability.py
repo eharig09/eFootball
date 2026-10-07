@@ -321,3 +321,79 @@ def test_a_stale_lock_does_not_block_the_hook(tmp_path):
     old = lock.stat().st_mtime - 2 * 3600
     os.utime(lock, (old, old))
     assert not process_probe.lock_is_held(lock, stale_seconds=3600)
+
+
+# -- a failing step explains itself: its own output is kept and shown --------------------------------
+from datetime import datetime as _dt, timezone as _tz
+
+from sports_aggregator import refresh_health
+
+
+def test_the_excerpt_is_the_end_of_that_steps_output_only(tmp_path):
+    handle, mark = _log_with(tmp_path, "".join(f"line {i}\n" for i in range(40)) + "\nlast one\n")
+    try:
+        excerpt = scheduled_refresh._step_excerpt(handle, mark, lines=5)
+        assert excerpt.splitlines() == ["line 36", "line 37", "line 38", "line 39", "last one"]
+        assert "earlier output" not in scheduled_refresh._step_excerpt(handle, mark, lines=500)
+        assert len(scheduled_refresh._step_excerpt(handle, mark, chars=30)) == 30
+    finally:
+        handle.close()
+
+
+def test_the_detail_travels_from_a_failed_step_to_the_attention_item(tmp_path):
+    results = [{"step": "nfl-core-stats", "status": "failed", "message": "exit code 1", "optional": True,
+                "detail": "weekly_stats: failed (0) -- Unable to allocate 310 MiB for an array"}]
+    required, degraded, _ = refresh_health.classify_step_rows(results, segment="analytics")
+    assert degraded[0]["detail"].startswith("weekly_stats: failed")
+    refresh_health.summarize_segment(tmp_path, {
+        "profile": "analytics", "status": "degraded", "finished_at": _dt.now(_tz.utc).isoformat(),
+        "degraded_steps": degraded, "required_failures": [], "skipped_steps": [], "seconds": 5, "step_count": 1})
+    [item] = refresh_health.attention_items(tmp_path)
+    assert "Unable to allocate" in item["detail"]
+
+
+def test_a_step_that_succeeded_carries_no_detail():
+    required, degraded, _ = refresh_health.classify_step_rows(
+        [{"step": "x", "status": "success", "message": "ok", "detail": "noise"}])
+    assert required == [] and degraded == []
+
+
+def test_the_status_page_shows_the_step_output(tmp_path):
+    from flask import render_template_string
+    from app import create_app
+    app = create_app({"TESTING": True, "REGISTER_LEGACY_DASHBOARDS": False})
+    html = open("templates/cfb_data_status.html", encoding="utf-8").read()
+    assert "item.detail" in html and "Step output" in html
+
+
+# -- the NFL CLI no longer drops the reason a dataset failed ------------------------------------------
+def test_a_failed_nfl_dataset_prints_its_reason(nfl_state, monkeypatch, capsys):
+    from sports_aggregator.nfl import sync as sync_module
+    from sports_aggregator.nfl import data_health
+    from sports_aggregator.nfl.models import SyncDatasetResult, SyncReport
+
+    report = SyncReport(2026, _dt.now(_tz.utc), _dt.now(_tz.utc), (
+        SyncDatasetResult("weekly_stats", 0, "failed", "MemoryError: Unable to allocate 310 MiB"),
+        SyncDatasetResult("snap_counts", 5970, "success")))
+
+    class FakeSync:
+        def __init__(self, *a, **k): ...
+        def sync(self, *a, **k): return report
+
+    monkeypatch.setattr(sync_module, "NFLDataSync", FakeSync)
+    monkeypatch.setattr(refresh_cli, "_nflverse_client", lambda: None)
+    monkeypatch.setattr(data_health, "season_coverage", lambda repository, season: {"healthy": True})
+    assert refresh_cli._sync_core(2026, include_pbp=False, only=frozenset({"weekly_stats"}), include_extras=False) is False
+    out = capsys.readouterr().out
+    assert "weekly_stats: failed (0) -- MemoryError: Unable to allocate 310 MiB" in out
+    assert "snap_counts: success (5970)" in out and " -- " not in out.split("snap_counts")[1].splitlines()[0]
+
+
+# -- children get allocator settings that keep virtual reservations near real use ------------------------
+def test_children_default_to_the_system_allocator_and_few_arenas(monkeypatch):
+    for key in scheduled_refresh.CHILD_ENV_DEFAULTS:
+        monkeypatch.delenv(key, raising=False)
+    env = scheduled_refresh._child_env()
+    assert env["ARROW_DEFAULT_MEMORY_POOL"] == "system" and env["MALLOC_ARENA_MAX"] == "2"
+    monkeypatch.setenv("MALLOC_ARENA_MAX", "8")                     # an explicit choice wins
+    assert scheduled_refresh._child_env()["MALLOC_ARENA_MAX"] == "8"
