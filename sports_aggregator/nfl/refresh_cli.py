@@ -93,7 +93,10 @@ def _sync_core(season: int, *, include_pbp: bool, only: "frozenset[str] | None" 
         season, force=force, include_pbp=include_pbp, only=only,
     )
     for dataset in report.datasets:
-        print(f"{dataset.dataset}: {dataset.status} ({dataset.count})")
+        # The reason a dataset failed used to be dropped here, leaving the status page with "failed
+        # (0)" and a coverage line and no way to tell a memory error from bad data.
+        reason = f" -- {dataset.message[:300]}" if dataset.status == "failed" and getattr(dataset, "message", "") else ""
+        print(f"{dataset.dataset}: {dataset.status} ({dataset.count}){reason}")
     if include_extras:
         from sports_aggregator.nfl.source_directory import DEFAULT_PATH, import_directory
         _sync_espn_context(repository, season, force=force)

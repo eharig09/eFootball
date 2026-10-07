@@ -1114,29 +1114,53 @@ class NFLRepository:
         return len(values)
 
     def replace_depth_charts(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
-        values = []
-        for row in rows:
-            snapshot = str(row.get("dt") or "").strip()
-            team = canon_team(row.get("team"))
-            name = str(row.get("player_name") or "").strip()
-            gsis_id = str(row.get("gsis_id") or "").strip() or None
-            espn_id = str(row.get("espn_id") or "").strip() or None
-            if not snapshot or not team or not name:
-                continue
-            values.append((
-                season, snapshot, team, gsis_id or espn_id or normalize_name(name), name,
-                gsis_id, espn_id, str(row.get("pos_grp") or "").strip() or None,
-                str(row.get("pos_id") or "").strip() or None,
-                str(row.get("pos_name") or "").strip() or None,
-                str(row.get("pos_abb") or "").strip() or None,
-                optional_int(row.get("pos_slot")), optional_int(row.get("pos_rank")),
-            ))
-        with closing(self._connect()) as connection:
+        """Replace a season's depth-chart snapshots. `rows` may be a generator: they are converted and
+        inserted in batches, so the whole season is never held in memory at once."""
+        batch_size = 20_000
+        stored = 0
+        values: list[tuple] = []
+        insert = "INSERT OR REPLACE INTO depth_chart_snapshots VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        connection = self._connect()
+        try:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM depth_chart_snapshots WHERE season=?", (season,))
-            connection.executemany("INSERT OR REPLACE INTO depth_chart_snapshots VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", values)
+            for row in rows:
+                value = self._depth_chart_value(season, row)
+                if value is None:
+                    continue
+                values.append(value)
+                if len(values) >= batch_size:
+                    connection.executemany(insert, values)
+                    stored += len(values)
+                    values = []
+            if values:
+                connection.executemany(insert, values)
+                stored += len(values)
             connection.commit()
-        return len(values)
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        return stored
+
+    @staticmethod
+    def _depth_chart_value(season: int, row: Mapping[str, Any]) -> tuple | None:
+        snapshot = str(row.get("dt") or "").strip()
+        team = canon_team(row.get("team"))
+        name = str(row.get("player_name") or "").strip()
+        gsis_id = str(row.get("gsis_id") or "").strip() or None
+        espn_id = str(row.get("espn_id") or "").strip() or None
+        if not snapshot or not team or not name:
+            return None
+        return (
+            season, snapshot, team, gsis_id or espn_id or normalize_name(name), name,
+            gsis_id, espn_id, str(row.get("pos_grp") or "").strip() or None,
+            str(row.get("pos_id") or "").strip() or None,
+            str(row.get("pos_name") or "").strip() or None,
+            str(row.get("pos_abb") or "").strip() or None,
+            optional_int(row.get("pos_slot")), optional_int(row.get("pos_rank")),
+        )
 
     def replace_team_staff(self, season: int, rows: Iterable[Mapping[str, Any]]) -> int:
         self.initialize()

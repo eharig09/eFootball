@@ -26,6 +26,7 @@
       <div class="attn-head"><span class="attn-step">{{ item.step }}</span><span class="attn-pill attn-pill-{{ tone }}">{{ 'failed' if item.severity == 'failed' else ('self-heals' if item.self_heals else item.category_label) }}</span><span class="attn-pill attn-pill-seg">{{ item.segment }} segment</span></div>
       <div class="attn-meta">last clean run {{ item.last_success_label }}{% if item.consecutive_degraded > 1 %} · {{ item.consecutive_degraded }} runs in a row{% endif %} · first seen {{ item.since_label }} · {{ item.category_label }}</div>
       {% if item.message %}<div class="attn-msg">{{ item.message }}</div>{% endif %}
+      {% if item.detail %}<details class="attn-detail"><summary>Step output</summary><pre class="attn-log">{{ item.detail }}</pre></details>{% endif %}
       <div class="attn-cause">{{ item.cause }}</div>
       <div class="attn-next"><span class="attn-next-label">Next step</span><span>{{ item.action }}</span>{% if item.rerun_segment %}<code class="attn-cmd">curl -X POST -H "Authorization: Bearer $CFB_REFRESH_TOKEN" "{{ request.url_root }}internal/cfb-refresh?profile=light&amp;segment={{ item.rerun_segment }}"</code>{% endif %}</div>
       <div class="attn-actions">{% if item.rerun_segment %}<button class="attn-btn" type="button" data-rerun="{{ item.rerun_segment }}">Re-run {{ item.rerun_segment }}</button>{% endif %}<button class="attn-btn" type="button" data-logtail="{{ item.segment }}">View log tail</button></div>

@@ -252,13 +252,43 @@ def _last_line(log, mark: int, *, failed: bool = False) -> str:
     return lines[-1][:240] if lines else ""
 
 
+def _step_excerpt(log, mark: int, *, lines: int = 20, chars: int = 1500) -> str:
+    """The end of one step's own output, kept with a failure so the status page can show why it
+    failed. The shared log holds every step, and its tail is whatever ran last."""
+    if mark < 0:
+        return ""
+    try:
+        log.flush()
+        with open(log.name, "r", encoding="utf-8", errors="replace") as source:
+            source.seek(mark)
+            text = [line.rstrip() for line in source.read().splitlines() if line.strip()]
+    except (OSError, ValueError):
+        return ""
+    return "\n".join(text[-lines:])[-chars:]
+
+
+#: Memory-related settings every refresh child gets unless the environment already chose. The
+#: address-space ceiling counts *virtual* memory, which pandas/pyarrow reserve far beyond what
+#: they use: pyarrow's default allocator (jemalloc/mimalloc) reserves large arenas up front, and
+#: glibc makes one malloc arena per thread, so a step that needs ~225 MB resident can still hit a
+#: 1.2 GB ceiling. The system allocator and two arenas keep the reservation close to real use.
+CHILD_ENV_DEFAULTS = {
+    "ARROW_DEFAULT_MEMORY_POOL": "system", "MALLOC_ARENA_MAX": "2",
+    "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1",
+}
+
+
+def _child_env() -> dict[str, str]:
+    return {**CHILD_ENV_DEFAULTS, **os.environ}
+
+
 def _run_command(command: list[str], *, timeout: int, log, memory_mb: int | None = None) -> tuple[str, str, float]:
     started = datetime.now(timezone.utc)
     mark = _log_end(log)
     try:
         completed = subprocess.run(
             [sys.executable, "-m", *command], stdout=log, stderr=subprocess.STDOUT,
-            text=True, timeout=timeout, preexec_fn=_memory_limiter(memory_mb),
+            text=True, timeout=timeout, preexec_fn=_memory_limiter(memory_mb), env=_child_env(),
         )
         elapsed = (datetime.now(timezone.utc) - started).total_seconds()
         return ("success" if completed.returncode == 0 else "failed",
@@ -423,10 +453,13 @@ def _run_low_memory_phase(phase: str, season: int, *, root: Path,
             result = _run_player_stats_split(season, root=root, timeout=timeout, log=log,
                                              optional=step.optional, heartbeat=heartbeat)
         else:
+            mark = _log_end(log)
             status, message, seconds = _run_command(
                 step.command, timeout=int(step.timeout_seconds or timeout), log=log, memory_mb=step.memory_mb)
             result = {"step": step.name, "status": status, "message": message, "seconds": seconds,
                       "optional": step.optional, "parent_rss_mb": _rss_mb(), "child_peak_rss_mb": _children_rss_mb()}
+            if status not in ("success", "skipped"):
+                result["detail"] = _step_excerpt(log, mark)
         marker = {"success": "[ok]", "skipped": "[--]"}.get(result["status"], "[!!]")
         print(f"{marker} {result['status']} ({result['seconds']}s) parent_rss_mb={result['parent_rss_mb']} child_peak_rss_mb={result['child_peak_rss_mb']} {result['message']}", file=log, flush=True)
         results.append(result)
