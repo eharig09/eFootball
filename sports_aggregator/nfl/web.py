@@ -842,6 +842,9 @@ def _data_status_packet() -> dict:
                         "finished_at": row.get("finished_at"),
                         "seconds": row.get("seconds"),
                         "error_type": row.get("error_type"),
+                        # how a process that died without a result ended ("killed by SIGSEGV"):
+                        # a signal name or exit code, nothing host-specific
+                        "exit": row.get("exit"),
                         "relative": _relative_time(row.get("finished_at") or row.get("started_at")),
                     })
         except OSError:

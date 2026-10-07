@@ -504,3 +504,94 @@ def test_the_status_page_and_api_show_memory_and_kills(monkeypatch, tmp_path):
     client = app.test_client()
     page = client.get("/college-football/data-status/").get_data(as_text=True)
     assert "memory 288 of 512 MB" in page and "3 killed for memory" in page
+
+
+# -- the supervisor: a refresh that dies without a result is recorded, with how it died -------------------
+from sports_aggregator.nfl import run_segment
+
+
+def _running_row(pid, started="2026-10-06T12:00:00+00:00", segment="core-depth"):
+    return {"segment": segment, "season": 2026, "pid": pid, "started_at": started, "status": "running"}
+
+
+def test_exit_descriptions_name_the_signal_or_the_code():
+    assert run_segment.describe_exit(-11) == "killed by SIGSEGV"
+    assert run_segment.describe_exit(-999).startswith("killed by signal")
+    assert run_segment.describe_exit(1) == "exit code 1"
+
+
+def test_a_child_that_died_without_a_result_is_recorded_as_crashed(nfl_state):
+    refresh_cli._append_history(_running_row(4321))
+    wrote = run_segment.record_if_unreported(["core-depth", "--season", "2026"], 4321, -11,
+                                             supervised_at=NOW)
+    assert wrote is True
+    row = _history(nfl_state)[-1]
+    assert (row["status"], row["exit"], row["segment"], row["season"]) == ("crashed", "killed by SIGSEGV", "core-depth", 2026)
+    assert row["started_at"] == "2026-10-06T12:00:00+00:00" and row["pid"] == 4321      # pairs with its running row
+
+
+def test_a_child_that_reported_its_own_outcome_is_left_alone(nfl_state):
+    refresh_cli._append_history(_running_row(4321))
+    refresh_cli._append_history({**_running_row(4321), "status": "failed", "error": "boom"})
+    assert run_segment.record_if_unreported(["core-depth", "--season", "2026"], 4321, 1, supervised_at=NOW) is False
+    assert [r["status"] for r in _history(nfl_state)] == ["running", "failed"]
+
+
+def test_a_clean_exit_records_nothing(nfl_state):
+    assert run_segment.record_if_unreported(["weather", "--season", "2026"], 99, 0, supervised_at=NOW) is False
+    assert not (nfl_state / "nfl_refresh_history.jsonl").exists()
+
+
+def test_a_child_that_died_before_even_starting_is_still_recorded(nfl_state):
+    run_segment.record_if_unreported(["core-stats", "--season", "2026"], 77, 3, supervised_at=NOW)
+    row = _history(nfl_state)[-1]
+    assert row["status"] == "crashed" and row["exit"] == "exit code 3" and row["reported_start"] is False
+
+
+def test_the_supervisor_runs_the_cli_and_records_a_crash(nfl_state, monkeypatch):
+    refresh_cli._append_history(_running_row(555, segment="core-stats"))
+
+    class DeadChild:
+        pid = 555
+        def wait(self): return -11
+        def send_signal(self, signum): ...
+
+    seen = {}
+    monkeypatch.setattr(run_segment.subprocess, "Popen", lambda cmd, **k: seen.setdefault("cmd", cmd) and DeadChild())
+    assert run_segment.main(["core-stats", "--season", "2026"]) != 0
+    assert seen["cmd"][1:4] == ["-m", "sports_aggregator.nfl.refresh_cli", "core-stats"]
+    assert _history(nfl_state)[-1]["status"] == "crashed"
+
+
+def test_the_web_hook_launches_refreshes_through_the_supervisor(tmp_path):
+    from unittest.mock import patch
+    from app import create_app
+    app = create_app({"TESTING": True, "REGISTER_LEGACY_DASHBOARDS": False, "CFB_REFRESH_TOKEN": "t",
+                      "CFB_DEFAULT_SEASON": 2026, "NFL_DATABASE_PATH": str(tmp_path / "nfl.sqlite3"),
+                      "CFB_DATABASE_PATH": str(tmp_path / "cfb.sqlite3")})
+    with patch("app.subprocess.Popen") as popen:
+        response = app.test_client().post("/internal/nfl-refresh?segment=core-depth",
+                                          headers={"Authorization": "Bearer t"})
+    assert response.status_code == 202
+    assert popen.call_args.args[0][1:3] == ["-m", "sports_aggregator.nfl.run_segment"]
+
+
+def test_a_crash_shows_on_the_tile_and_in_the_table(nfl_state):
+    rows = [{**_running_row(9), "started_at": (NOW - timedelta(minutes=30)).isoformat()},
+            {**_running_row(9), "started_at": (NOW - timedelta(minutes=30)).isoformat(), "status": "crashed",
+             "exit": "killed by SIGSEGV", "seconds": 12.0, "finished_at": (NOW - timedelta(minutes=29)).isoformat()}]
+    tile = refresh_status.segment_health(rows, ["core-depth"], now=NOW, relative=lambda v: "ago")[0]
+    assert tile["status"] == "crashed" and "killed by SIGSEGV" in tile["error"]
+    shown = refresh_status.display_rows(list(reversed(rows)), now=NOW)
+    assert len(shown) == 1 and shown[0]["note"] == "Crashed: killed by SIGSEGV"
+
+
+def test_faulthandler_is_armed_for_the_run_and_disarmed_after(nfl_state, monkeypatch):
+    import faulthandler
+    calls = []
+    monkeypatch.setattr(faulthandler, "dump_traceback_later", lambda *a, **k: calls.append(("arm", a, k)))
+    monkeypatch.setattr(faulthandler, "cancel_dump_traceback_later", lambda: calls.append(("cancel",)))
+    monkeypatch.setattr(refresh_cli, "_sync_weather", lambda season, **k: None)
+    assert refresh_cli.main(["weather", "--season", "2026"]) == 0
+    assert calls[0][0] == "arm" and calls[0][1] == (refresh_cli.FAULT_DUMP_SECONDS,) and calls[0][2] == {"repeat": True}
+    assert calls[-1] == ("cancel",)

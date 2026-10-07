@@ -58,7 +58,7 @@
         <div class="seg-grid">
         {% for tile in segment_health %}
             <div class="seg-tile">
-                <div class="seg-tile-name"><span class="seg-dot seg-dot-{{ 'ok' if tile.status == 'success' else 'bad' if tile.status in ('failed', 'interrupted') else 'muted' }}"></span>{{ tile.segment }}</div>
+                <div class="seg-tile-name"><span class="seg-dot seg-dot-{{ 'ok' if tile.status == 'success' else 'bad' if tile.status in ('failed', 'interrupted', 'crashed') else 'muted' }}"></span>{{ tile.segment }}</div>
                 <div class="seg-tile-line">{{ tile.status|title }}{% if tile.relative %} · {{ tile.relative }}{% endif %}</div>
                 <div class="seg-tile-sub">{% if tile.error %}{{ tile.error }}{% elif tile.seconds is not none %}{{ tile.seconds }}s{% else %}No completed run recorded{% endif %}{% if tile.last_success and tile.status != 'success' %} &middot; last success {{ tile.last_success }}{% endif %}</div>
             </div>
