@@ -9,6 +9,14 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 GAME_WINDOW_HOURS = 6.0
+#: A cron tick counts as "the top of the hour" for its first this-many minutes. Render starts cron
+#: jobs a little after the minute, by an amount that varies (the production log shows ticks at
+#: 02:01:37 and 06:01:17 as well as 01:00:13 and 08:00:21), and this used to require minute 0
+#: exactly: a tick that landed on :01 was refused as "between scheduled ticks", so whether a
+#: scheduled segment ran depended on cron jitter -- the 2 AM analytics and 6 AM core runs were both
+#: skipped that way. The cron fires every 15 minutes, so only the first tick of an hour falls in
+#: this window and each hour still yields one scheduled run.
+TICK_WINDOW_MINUTES = 10
 PREGAME_WINDOW_HOURS = 1.0
 
 
@@ -22,6 +30,10 @@ def _positive_int(name: str, default: int) -> int:
         return max(1, int(os.getenv(name, str(default))))
     except ValueError:
         return default
+
+
+def _on_tick(moment: datetime) -> bool:
+    return moment.minute < TICK_WINDOW_MINUTES
 
 
 def games_in_progress(repository, *, now: datetime | None = None,
@@ -64,7 +76,7 @@ def profile_for(repository, *, now: datetime | None = None,
         # Preserve the old minute-level behavior when interval=1 so local
         # development and existing tests continue to get tiny score pulses.
         if interval == 1:
-            profile = "results" if moment.minute == 0 else "scores"
+            profile = "results" if _on_tick(moment) else "scores"
             return {
                 "profile": profile,
                 "reason": "hourly_live_results" if profile == "results" else "games_in_progress",
@@ -74,7 +86,7 @@ def profile_for(repository, *, now: datetime | None = None,
 
         # Production cron wakes on the hour. Only every Nth hour launches the
         # heavier games + box scores + lines pass; intervening checks are free.
-        if moment.minute != 0 or moment.hour % interval != 0:
+        if not _on_tick(moment) or moment.hour % interval != 0:
             return {
                 "profile": None,
                 "reason": "between_live_refreshes",
@@ -88,7 +100,7 @@ def profile_for(repository, *, now: datetime | None = None,
             "local_time": moment.isoformat(),
         }
 
-    if moment.minute != 0:
+    if not _on_tick(moment):
         return {"profile": None, "reason": "between_scheduled_ticks", "games": 0,
                 "local_time": moment.isoformat()}
 

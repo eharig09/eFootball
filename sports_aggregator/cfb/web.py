@@ -1634,6 +1634,8 @@ def status_api():
     # per-dataset refresh never records there, so it sat on the one day a full sync happened
     # (Aug 27) while the data was current. The refresh roll-up is what actually tracks the runs.
     payload["refresh"] = _refresh_rollup()
+    from sports_aggregator.cfb.data_status import deployed_build
+    payload["deploy"] = deployed_build()
     return jsonify(payload)
 
 

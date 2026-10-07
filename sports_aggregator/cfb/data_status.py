@@ -610,6 +610,19 @@ _PILL_STATUS = {"failed": "failed", "degraded": "degraded",
                 "self_healing": "success", "healthy": "success"}
 
 
+def deployed_build() -> dict[str, str] | None:
+    """The commit this process is running, when the platform says (Render sets RENDER_GIT_COMMIT).
+
+    Whether a merged fix is actually live was not answerable from outside the dashboard, and
+    "still failing" after a merge could mean either that the fix did not work or that it was never
+    deployed. None when running anywhere that does not report it.
+    """
+    commit = (os.getenv("RENDER_GIT_COMMIT") or "").strip()
+    if not commit:
+        return None
+    return {"commit": commit[:7], "branch": (os.getenv("RENDER_GIT_BRANCH") or "").strip()}
+
+
 @data_status_pages.app_context_processor
 def inject_data_freshness() -> dict[str, Any]:
     instance = _instance_dir()
@@ -630,7 +643,7 @@ def inject_data_freshness() -> dict[str, Any]:
         runs = [str(e.get("last_run_at") or "") for e in refresh_health.read_health(instance).values()
                 if isinstance(e, dict)]
         latest_finished = max(runs) if runs else None
-    return {"data_freshness": {
+    return {"deploy_build": deployed_build(), "data_freshness": {
         "running": running,
         "status": status,
         "relative": _relative_time(latest_finished) if latest_finished else "",
