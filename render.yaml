@@ -123,7 +123,7 @@ services:
     disk:
       name: cfb-data
       mountPath: /var/data
-      sizeGB: 5
+      sizeGB: 10
 
   - type: cron
     name: cfb-refresh-trigger
