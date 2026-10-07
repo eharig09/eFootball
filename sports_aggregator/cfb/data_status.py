@@ -610,6 +610,60 @@ _PILL_STATUS = {"failed": "failed", "degraded": "degraded",
                 "self_healing": "success", "healthy": "success"}
 
 
+def _read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+
+
+def _megabytes(raw: str | None) -> int | None:
+    """Bytes as megabytes; None for "max" (no limit) or anything unreadable."""
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return round(value / 2**20) if value < 2**60 else None
+
+
+def host_resources(root: Path = Path("/sys/fs/cgroup")) -> dict[str, Any] | None:
+    """The memory this container is allowed, what it is using, and how many times the kernel has
+    killed something in it for memory -- read from the container's own cgroup.
+
+    The refresh steps that die leave no trace of why, and what the instance's memory *is* could not
+    be told from the code (render.yaml says one thing, a comment another). `oom_kill` is a count of
+    processes the kernel killed because the container hit its limit, which is the direct answer to
+    "were these killed for memory?". Counters are per container, so a deploy resets them. None when
+    not running in a Linux container that exposes a cgroup.
+    """
+    if not root.exists():
+        return None
+    v2 = (root / "memory.max").exists()
+    if v2:
+        limit = _megabytes(_read_text(root / "memory.max"))
+        used = _megabytes(_read_text(root / "memory.current"))
+        peak = _megabytes(_read_text(root / "memory.peak"))
+        events = {}
+        for line in (_read_text(root / "memory.events") or "").splitlines():
+            key, _, value = line.partition(" ")
+            if value.isdigit():
+                events[key] = int(value)
+        oom_kills = events.get("oom_kill")
+    else:
+        legacy = root / "memory"
+        limit = _megabytes(_read_text(legacy / "memory.limit_in_bytes"))
+        used = _megabytes(_read_text(legacy / "memory.usage_in_bytes"))
+        peak = _megabytes(_read_text(legacy / "memory.max_usage_in_bytes"))
+        oom_kills = None
+        for line in (_read_text(legacy / "memory.oom_control") or "").splitlines():
+            if line.startswith("oom_kill "):
+                oom_kills = int(line.split()[1])
+    if limit is None and used is None:
+        return None
+    return {"memory_limit_mb": limit, "memory_used_mb": used, "memory_peak_mb": peak,
+            "oom_kills": oom_kills, "cpus": os.cpu_count()}
+
+
 def deployed_build() -> dict[str, str] | None:
     """The commit this process is running, when the platform says (Render sets RENDER_GIT_COMMIT).
 
@@ -643,7 +697,7 @@ def inject_data_freshness() -> dict[str, Any]:
         runs = [str(e.get("last_run_at") or "") for e in refresh_health.read_health(instance).values()
                 if isinstance(e, dict)]
         latest_finished = max(runs) if runs else None
-    return {"deploy_build": deployed_build(), "data_freshness": {
+    return {"deploy_build": deployed_build(), "host_resources": host_resources(), "data_freshness": {
         "running": running,
         "status": status,
         "relative": _relative_time(latest_finished) if latest_finished else "",

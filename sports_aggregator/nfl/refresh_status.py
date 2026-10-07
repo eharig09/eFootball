@@ -47,6 +47,31 @@ def _when(value: object) -> datetime | None:
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
+def display_rows(rows: Iterable[dict[str, Any]], *, now: datetime | None = None) -> list[dict[str, Any]]:
+    """History rows for the "Recent refreshes" table: one row per run, honestly labelled.
+
+    Every run writes a "running" row when it starts and a result row when it ends, so the raw
+    list showed each finished run twice. A run that never wrote a result is shown as `running`
+    while it is young and `interrupted` once it is past `INTERRUPTED_AFTER`; the table used to
+    print "Completed" next to both. Input and output are newest first.
+    """
+    moment = now or datetime.now(timezone.utc)
+    resolved = {(r.get("segment"), r.get("started_at")) for r in rows if r.get("status") != "running"}
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if row.get("status") == "running" and (row.get("segment"), row.get("started_at")) in resolved:
+            continue
+        row = dict(row)
+        if row.get("status") == "running":
+            started = _when(row.get("started_at"))
+            dead = started is not None and moment - started >= INTERRUPTED_AFTER
+            row["status"] = "interrupted" if dead else "running"
+            row["note"] = ("No result recorded: the process was killed" if dead
+                           else "In progress")
+        out.append(row)
+    return out
+
+
 def segment_health(rows: Iterable[dict[str, Any]], segments: Sequence[str], *,
                    now: datetime | None = None,
                    relative: Callable[[object], str | None] = lambda value: None
