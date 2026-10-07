@@ -332,7 +332,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         nfl_log_path.parent.mkdir(parents=True, exist_ok=True)
         with nfl_log_path.open("a", encoding="utf-8") as nfl_log:
             subprocess.Popen(
-                [sys.executable, "-m", "sports_aggregator.nfl.refresh_cli", segment,
+                # Through the supervisor, which records how the refresh ended if it dies without
+                # a result (a signal, a native-code exit) -- see nfl/run_segment.py.
+                [sys.executable, "-m", "sports_aggregator.nfl.run_segment", segment,
                  "--season", str(season)],
                 cwd=str(root), stdout=nfl_log, stderr=subprocess.STDOUT, close_fds=True,
             )

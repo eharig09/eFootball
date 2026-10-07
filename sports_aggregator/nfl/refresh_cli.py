@@ -31,6 +31,7 @@ for _threads_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS
 
 import argparse
 from datetime import datetime, timezone
+import faulthandler
 import json
 from pathlib import Path
 import sys
@@ -326,6 +327,7 @@ HISTORY_KEEP_ROWS = 4000
 #: independently, a content run takes minutes, and two pandas-heavy children on one small
 #: instance is how the whole service got OOM-killed before. A segment that cannot get the
 #: lock within the wait is recorded as skipped and the next tick picks it up.
+FAULT_DUMP_SECONDS = 300
 LOCK_WAIT_SECONDS = 180.0
 LOCK_STALE_SECONDS = 2 * 3600
 
@@ -373,6 +375,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--season", type=int, required=True)
     args = parser.parse_args(argv)
+    # A fatal signal (segfault, abort) prints the Python stack of every thread into the log, and a
+    # run still going after FAULT_DUMP_SECONDS prints where it is, repeatedly: a hang names the line
+    # it is stuck on instead of staying a bare "running".
+    faulthandler.enable()
+    faulthandler.dump_traceback_later(FAULT_DUMP_SECONDS, repeat=True)
+    try:
+        return _main(args)
+    finally:
+        faulthandler.cancel_dump_traceback_later()
+
+
+def _main(args) -> int:
     from sports_aggregator.process_probe import lock_with_wait
     started = datetime.now(timezone.utc)
     record = {

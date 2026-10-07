@@ -20,7 +20,7 @@ from typing import Any, Callable, Iterable, Sequence
 #: A run with no result this long after it started is treated as dead. The longest NFL segment
 #: budget is 30 minutes; anything past two hours was killed rather than slow.
 INTERRUPTED_AFTER = timedelta(hours=2)
-FINISHED = frozenset({"success", "failed"})
+FINISHED = frozenset({"success", "failed", "crashed"})
 
 
 def read_history(path: Path) -> list[dict[str, Any]]:
@@ -62,6 +62,8 @@ def display_rows(rows: Iterable[dict[str, Any]], *, now: datetime | None = None)
         if row.get("status") == "running" and (row.get("segment"), row.get("started_at")) in resolved:
             continue
         row = dict(row)
+        if row.get("status") == "crashed":
+            row["note"] = f"Crashed: {row.get('exit') or 'unknown exit'}"
         if row.get("status") == "running":
             started = _when(row.get("started_at"))
             dead = started is not None and moment - started >= INTERRUPTED_AFTER
@@ -113,6 +115,8 @@ def segment_health(rows: Iterable[dict[str, Any]], segments: Sequence[str], *,
                 relative=relative(latest.get("finished_at") or latest.get("started_at")))
             if status == "failed":
                 tile["error"] = "Refresh failed; inspect authenticated logs."
+            elif status == "crashed":
+                tile["error"] = f"Process ended without a result: {latest.get('exit') or 'unknown exit'}."
             elif status == "interrupted":
                 tile["error"] = ("Started but never finished; the process was killed, usually "
                                  "by running out of memory.")
