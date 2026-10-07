@@ -336,6 +336,22 @@ def _reporting_streams(items: list[dict], *, include_empty: bool = False) -> lis
     return streams
 
 
+def _stream_pool(latest: list[dict], per_section: int = 10) -> list[dict]:
+    """`latest` plus each Bluesky section's own top items.
+
+    The streams are cut from one pool by source tag. A single global top-N is filled by articles
+    and the highest-scoring wire/analysis posts, leaving personnel, players and team beats empty,
+    so each section contributes its own newest items."""
+    pool = {item["content_id"]: item for item in latest}
+    directory = _directory_sources()
+    for key, _label in SOURCE_SECTIONS:
+        handles = [row["handle"] for row in directory
+                   if any(tag["section"] == key for tag in row.get("tags", []))]
+        for item in _content().latest_for_handles(handles, per_section):
+            pool.setdefault(item["content_id"], item)
+    return list(pool.values())
+
+
 def _picks_of_week_record(repository: NFLRepository, season: int) -> dict:
     """Football Lab's frozen against-the-spread record at flat -110 (one pick
     per game), the same convention as the CFB dashboard's portfolio record."""
@@ -524,7 +540,8 @@ def _dashboard_packet(season: int, week: int | None = None) -> dict:
                        for table in pff_features.values()],
         "sources": _sources(), "source_sections": SOURCE_SECTIONS,
         "content": content_items,
-        "content_streams": _reporting_streams(content_items, include_empty=True),
+        "content_streams": _reporting_streams(
+            _stream_pool(content_items), include_empty=True),
         "content_counts": _content().counts(), "source_coverage": source_coverage,
         "picks_week": picks_week,
         "weekly_engine_picks": weekly_engine_picks,

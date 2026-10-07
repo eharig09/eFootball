@@ -2822,8 +2822,12 @@ def scoreboard_games(games, previews, brands, *, timezone_name, conference=None,
                 exact = float(projection[side["prefix"]])
                 side["projected"] = int(exact + 0.5)
                 side["projected_exact"] = round(exact, 1)
+            margin = round(float(projection["margin"]), 1)
+            # worded like the NFL card and the market line: the favoured team and its margin
+            favourite = home["team"] if margin > 0 else away["team"]
             projection = {
-                "margin": round(float(projection["margin"]), 1),
+                "spread": f"{favourite} -{abs(margin):g}" if abs(margin) >= 0.05 else "PK",
+                "margin": margin,
                 "total": round(float(projection["total"]), 1),
                 "title": (f"Engine projection{' (pre-game)' if projection.get('frozen') else ''}: "
                           f"{away['team']} {away['projected_exact']:g}, {home['team']} {home['projected_exact']:g}"),
