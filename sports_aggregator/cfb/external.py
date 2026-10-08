@@ -304,7 +304,7 @@ def weather_summary_by_game(repository: CFBRepository, game_ids) -> dict[int, di
     with closing(repository._connect()) as connection:
         rows = connection.execute(
             f"""SELECT game_id, weather_code, condition, temperature, indoor,
-                       forecast_generated_at
+                       flags_json, forecast_generated_at
                 FROM game_weather WHERE game_id IN ({placeholders})
                 ORDER BY game_id, forecast_generated_at DESC""", wanted).fetchall()
     summary: dict[int, dict] = {}
@@ -325,6 +325,8 @@ def weather_summary_by_game(repository: CFBRepository, game_ids) -> dict[int, di
             "condition": "Indoors" if indoor else condition,
             "temperature": (None if indoor or row["temperature"] is None
                             else round(float(row["temperature"]))),
+            # Indoors there is no weather to matter, whatever an old row's flags say.
+            "flags": [] if indoor else json.loads(row["flags_json"] or "[]"),
         }
     return summary
 

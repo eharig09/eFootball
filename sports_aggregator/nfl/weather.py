@@ -13,6 +13,7 @@ from __future__ import annotations
 from contextlib import closing
 from datetime import date, datetime, time, timezone
 import json
+import sqlite3
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -104,6 +105,29 @@ def weather_for_game(repository: NFLRepository, game_id: str) -> dict[str, Any]:
         "flags": latest["flags"], "indoor": bool(latest.get("indoor")),
         "movement": movement, "first_forecast_at": first["forecast_generated_at"],
     }
+
+
+def flags_for_games(repository: NFLRepository, game_ids: list[str]) -> dict[str, list[dict[str, str]]]:
+    """Latest weather flags per game, for slate views. Read-only: a database that has never stored a
+    forecast simply has none. Indoor games carry no weather impact, whatever an old row says."""
+    if not game_ids:
+        return {}
+    marks = ",".join("?" for _ in game_ids)
+    try:
+        with closing(repository._connect()) as connection:
+            rows = connection.execute(
+                f"""SELECT game_id,flags_json,indoor FROM nfl_game_weather
+                    WHERE game_id IN ({marks}) ORDER BY game_id,forecast_generated_at DESC""",
+                [str(game_id) for game_id in game_ids]).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    flags: dict[str, list[dict[str, str]]] = {}
+    for row in rows:
+        game_id = str(row["game_id"])
+        if game_id in flags:
+            continue
+        flags[game_id] = [] if row["indoor"] else json.loads(row["flags_json"] or "[]")
+    return {game_id: value for game_id, value in flags.items() if value}
 
 
 def _store_window(repository: NFLRepository, game: dict[str, Any], payload: dict[str, Any],

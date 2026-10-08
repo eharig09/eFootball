@@ -42,7 +42,8 @@
         </div>
         <div class="matchup-grid">
         {% for matchup in games %}<a class="matchup-card" href="{{ url_for('nfl.game_page', game_id=matchup.game_id) }}#tab-{{ matchup.destination }}">
-            <header><span>Week {{ matchup.week }}</span><time>{{ 'Final' if matchup.completed else matchup.date ~ (' · ' ~ matchup.time if matchup.time else '') }}</time></header>
+            <header><span>Week {{ matchup.week }}</span><time>{{ 'Final' if matchup.completed else matchup.date ~ (' · ' ~ matchup.time if matchup.time else '') }}</time>
+                {%- if matchup.weather_flags %}<span class="wx-impact" role="img" title="Weather impact: {% for flag in matchup.weather_flags %}{{ {'HIGH_WIND':'Wind','HEAVY_GUSTS':'Gusts','EXTREME_HEAT':'Heat','EXTREME_COLD':'Cold','RAIN_RISK':'Rain'}.get(flag.flag, flag.flag) }}: {{ flag.detail }}{{ '; ' if not loop.last }}{% endfor %}" aria-label="Weather impact: {% for flag in matchup.weather_flags %}{{ {'HIGH_WIND':'Wind','HEAVY_GUSTS':'Gusts','EXTREME_HEAT':'Heat','EXTREME_COLD':'Cold','RAIN_RISK':'Rain'}.get(flag.flag, flag.flag) }}: {{ flag.detail }}{{ '; ' if not loop.last }}{% endfor %}">&#9888;</span>{% endif %}</header>
             {% for side in matchup.sides %}<div class="matchup-team" style="--club:{{ side.color }}">
                 {% if side.logo_url %}<img src="{{ side.logo_url }}" alt="" loading="lazy">{% endif %}
                 <span><b>{{ side.team }}</b><small>{{ side.record }} · {{ side.epa_per_play|cell('signed2') }} EPA/play</small></span>
