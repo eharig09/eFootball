@@ -696,6 +696,28 @@
         <div>{{ recent_form(game.away_team, away_recent_form) }}</div>
         <div>{{ recent_form(game.home_team, home_recent_form) }}</div>
     </div>
+    {% if common_opponents %}
+    <h3>Common opponents</h3>
+    <div class="section-note">
+        Teams both have already played this season. Margin is points scored minus allowed; the
+        last column is {{ game.home_team }}'s margin minus {{ game.away_team }}'s. It is context,
+        not a prediction: venue, injuries and timing differ between the two games.
+    </div>
+    <div class="table-wrap"><table class="data-table common-opponents">
+        <thead><tr><th>Opponent</th><th>{{ game.away_team }}</th><th>{{ game.home_team }}</th><th class="num">Edge</th></tr></thead>
+        <tbody>
+        {% for row in common_opponents %}
+        <tr>
+            <td>{{ row.opponent }}</td>
+            {% for side in (row.away, row.home) %}
+            <td>{% for g in side %}<a href="/college-football/games/{{ g.game_id }}/box-score/">{{ g.result }} {{ g.score }}</a> <small>{{ g.site }} &middot; {{ g.date_label }}</small>{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+            {% endfor %}
+            <td class="num">{{ row.edge | cell('signed') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+    {% endif %}
 </section>
 
 <section class="section" data-mobile-tab-panel="overview">

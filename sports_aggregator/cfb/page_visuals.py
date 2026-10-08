@@ -182,6 +182,51 @@ def recent_form_rows(games: list[dict[str, Any]], *,
     return rows
 
 
+def _played(schedule: list[dict[str, Any]], team_id: int, before_date: str) -> dict[int, list[dict[str, Any]]]:
+    """This team's completed, scored games before `before_date`, keyed by opponent team id."""
+    by_opponent: dict[int, list[dict[str, Any]]] = {}
+    for game in schedule:
+        start = game.get("start_date")
+        if (not start or start >= before_date or not game.get("completed")
+                or game.get("home_points") is None or game.get("away_points") is None):
+            continue
+        home = game.get("home_team_id") == team_id
+        opponent_id = game.get("away_team_id") if home else game.get("home_team_id")
+        points_for = game["home_points"] if home else game["away_points"]
+        points_against = game["away_points"] if home else game["home_points"]
+        by_opponent.setdefault(opponent_id, []).append({
+            "opponent": game.get("away_team") if home else game.get("home_team"),
+            "result": "W" if points_for > points_against else "L" if points_for < points_against else "T",
+            "score": f"{int(points_for)}-{int(points_against)}",
+            "margin": int(points_for - points_against),
+            "site": "Neutral" if game.get("neutral_site") else ("Home" if home else "Away"),
+            "game_id": game.get("game_id"), "date_label": game.get("date_label"),
+        })
+    return by_opponent
+
+
+def common_opponent_rows(away_schedule: list[dict[str, Any]], home_schedule: list[dict[str, Any]], *,
+                         away_id: int, home_id: int, before_date: str) -> list[dict[str, Any]]:
+    """Opponents both teams have already played this season, with each side's result(s).
+
+    The two teams' meeting is not a common opponent. A repeat opponent keeps every game; `margin` is
+    the mean across a side's games with that opponent."""
+    away_played = _played(away_schedule, away_id, before_date)
+    home_played = _played(home_schedule, home_id, before_date)
+    rows = []
+    for opponent_id in away_played.keys() & home_played.keys():
+        if opponent_id in (away_id, home_id):
+            continue
+        away_games, home_games = away_played[opponent_id], home_played[opponent_id]
+        away_margin = sum(g["margin"] for g in away_games) / len(away_games)
+        home_margin = sum(g["margin"] for g in home_games) / len(home_games)
+        rows.append({"opponent": away_games[0]["opponent"], "away": away_games, "home": home_games,
+                     "away_margin": away_margin, "home_margin": home_margin,
+                     "edge": home_margin - away_margin})
+    rows.sort(key=lambda row: (row["away"][0]["game_id"] or 0))
+    return rows
+
+
 def _elo_win_prob(home_elo: float | None, away_elo: float | None) -> float | None:
     """Standard Elo win-probability curve, not an invented one."""
     if not home_elo or not away_elo:
