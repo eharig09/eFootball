@@ -67,6 +67,10 @@
                     <span aria-hidden="true">{{ game.weather.emoji }}</span>
                     {%- if game.weather.temperature %} {{ game.weather.temperature }}°{% endif %}
                 </span>
+                {%- if game.weather.flags %}
+                <span class="wx-impact" role="img" title="Weather impact: {% for flag in game.weather.flags %}{{ {'HIGH_WIND':'Wind','HEAVY_GUSTS':'Gusts','EXTREME_HEAT':'Heat','EXTREME_COLD':'Cold','RAIN_RISK':'Rain'}.get(flag.flag, flag.flag) }}: {{ flag.detail }}{{ '; ' if not loop.last }}{% endfor %}"
+                      aria-label="Weather impact: {% for flag in game.weather.flags %}{{ {'HIGH_WIND':'Wind','HEAVY_GUSTS':'Gusts','EXTREME_HEAT':'Heat','EXTREME_COLD':'Cold','RAIN_RISK':'Rain'}.get(flag.flag, flag.flag) }}: {{ flag.detail }}{{ '; ' if not loop.last }}{% endfor %}">&#9888;</span>
+                {%- endif %}
                 {%- endif %}
                 {%- if game.television %}<span class="tv">{{ game.television }}</span>{% endif %}
             </span>

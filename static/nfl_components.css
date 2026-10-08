@@ -479,3 +479,4 @@ main{padding:24px 24px 64px}
    so it cannot be read as a result; it takes the score's place before kickoff and sits beside it after. */
 .matchup-team>.proj-score{font:italic 700 1.15rem/1 "Arial Narrow",sans-serif;font-variant-numeric:tabular-nums}.proj-score{color:color-mix(in srgb,#8dc8fb 55%,var(--muted));font-style:italic;opacity:.8}.matchup-line{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 7px 2px;border-top:1px solid #263846;color:var(--muted);font-size:.7rem;font-weight:700;font-variant-numeric:tabular-nums}.matchup-line .proj-score{margin-left:auto;font-weight:600}
 .matchup-team{grid-template-columns:38px 1fr auto auto}
+.matchup-card>header .wx-impact{color:#f6b73c;cursor:help;margin-left:6px}

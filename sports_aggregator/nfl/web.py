@@ -51,6 +51,7 @@ from sports_aggregator.nfl import playoff_view as nfl_playoff_view
 from sports_aggregator.nfl import refresh_status as nfl_refresh_status
 from sports_aggregator.nfl.playoff_service import build_forecast as build_playoff_forecast
 from sports_aggregator.nfl.scoreboard_projection import week_projections
+from sports_aggregator.nfl.weather import flags_for_games as weather_flags_for_games
 from sports_aggregator.nfl.team_panels import defense_panel, offense_panel, ranked_stats_panel, scoring_ranks, share_rows
 from sports_aggregator.nfl.enhanced_tables import player_enhanced, team_enhanced, to_json
 from sports_aggregator.nfl.play_story import play_story
@@ -573,6 +574,14 @@ def search_api():
     return jsonify(search_entities(_repository(), _content(), query, season=season, limit=limit))
 
 
+def _with_weather_flags(cards: list[dict], repository: NFLRepository) -> list[dict]:
+    """Mark cards whose latest forecast carries a weather flag (wind, gusts, heat, cold, rain)."""
+    flags = weather_flags_for_games(repository, [card["game_id"] for card in cards])
+    for card in cards:
+        card["weather_flags"] = flags.get(str(card["game_id"]))
+    return cards
+
+
 @nfl_pages.get("/nfl/scoreboard/")
 def scoreboard():
     season = _season()
@@ -599,8 +608,10 @@ def scoreboard():
         "nfl_scoreboard.html", league=get_league("nfl"), season=season, week=requested,
         weeks=weeks, previous_week=weeks[index - 1] if index > 0 else None,
         next_week=weeks[index + 1] if index < len(weeks) - 1 else None,
-        games=matchup_cards(week_games, identities, records, efficiency, elo,
-                            projections=week_projections(repository, season, requested, week_games)),
+        games=_with_weather_flags(
+            matchup_cards(week_games, identities, records, efficiency, elo,
+                          projections=week_projections(repository, season, requested, week_games)),
+            repository),
     )
 
 

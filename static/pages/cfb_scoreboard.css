@@ -63,6 +63,7 @@
     }
     .card-meta { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
     .card-meta .weather { white-space: nowrap; text-transform: none; }
+    .card-meta .wx-impact { color: var(--gold); cursor: help; text-transform: none; }
     .card-meta .tv { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* The spread sits against its own team; the total is context, so it is
        quieter than the number it sits under. */
