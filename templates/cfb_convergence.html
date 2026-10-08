@@ -1,0 +1,37 @@
+{% extends "_layout.html" %}
+{% from "_tables.html" import data_table %}
+
+{% block title %}Convergence Diagnostics | Sports News Aggregator{% endblock %}
+{% block breadcrumb %}
+<a href="{{ url_for('cfb.engine_picks') }}">&larr; Engine Picks</a>
+<span class="tagline">Convergence diagnostics</span>
+{% endblock %}
+
+{% block content %}
+<div class="eyebrow">Engine A evidence</div>
+<h1>Full Convergence track record</h1>
+{% if panel.available %}
+{% set s = panel.summary %}
+<p class="meta">
+    Margin Power, the structural cluster and Line Elo all agreeing: {{ s.record }} over {{ s.n }} games,
+    {{ (s.hit_rate * 100) | round(1) }}% against the closing spread
+    (95% interval {{ s.interval }}). {{ s.verdict }}.
+</p>
+<section class="section">
+    <h2>By season</h2>
+    {{ data_table(panel.seasons_table, 'convergence-seasons') }}
+</section>
+<section class="section">
+    <h2>What the action-policy study found</h2>
+    <p class="section-note">
+        The study asks whether passing on, or fading, certain Full Convergence games would have done
+        better. These policies were written after the results were visible, and every interval
+        includes 50%. They are shown so the evidence can be judged, and none of them changes which
+        picks are issued.
+    </p>
+    {{ data_table(panel.policies_table, 'convergence-policies') }}
+</section>
+{% else %}
+<div class="empty">The action-policy study is not stored on this deployment.</div>
+{% endif %}
+{% endblock %}

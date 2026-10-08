@@ -27,7 +27,7 @@
 
 {% block content %}
 <section class="picks-hero">
-  <div><div class="eyebrow">Full-slate model audit</div><h1>Engine Picks</h1><p class="dek">Every game in the selected week stays visible—including inputs pending and analyzed no-picks—while qualified selections update through kickoff.</p></div>
+  <div><div class="eyebrow">Full-slate model audit</div><h1>Engine Picks</h1><p class="dek">Every game in the selected week stays visible—including inputs pending and analyzed no-picks—while qualified selections update through kickoff. <a href="{{ url_for('cfb.convergence_diagnostics') }}">Convergence track record &rarr;</a></p></div>
   <form class="picks-filters" method="get">
     <label>Season<input type="number" name="season" value="{{ season }}" min="1869" max="{{ season + 2 }}"></label>
     <label>Week<select name="week">{% for week in weeks %}<option value="{{ week }}"{{ ' selected' if week == selected_week }}>{{ week }}</option>{% endfor %}</select></label>
