@@ -67,7 +67,7 @@ from sports_aggregator.cfb.player_matchups import player_matchups
 from sports_aggregator.cfb.page_visuals import (
     depth_formations, drive_outcome_bars, game_shape, model_probability_track,
     pff_unit_grade_bars, player_share_chart_series, player_trend_chart_data, recent_form_rows,
-    common_opponent_rows,
+    common_opponent_cards,
     skill_player_trend_chart_data, team_rank_trend_chart_data, team_scoring_chart_series,
     team_trend_chart_data, upcoming_games_rows)
 from sports_aggregator.cfb.team_game_drive_outcomes import season_summary as drive_outcome_summary
@@ -1309,8 +1309,8 @@ def game_preview(game_id: int):
         home_recent_form=recent_form_rows(
             _with_win_prob(repository, history["home_recent"]),
             upcoming=upcoming_games_rows(home_schedule, game["home_team_id"], game["start_date"])),
-        common_opponents=common_opponent_rows(
-            away_schedule, home_schedule, away_id=game["away_team_id"],
+        common_opponents=common_opponent_cards(
+            away_schedule, home_schedule, repository, away_id=game["away_team_id"],
             home_id=game["home_team_id"], before_date=game["start_date"]),
         ats=matchup_ats(repository, game, total=market.get("consensus_total")),
         prior_player_games=prior_player_games,

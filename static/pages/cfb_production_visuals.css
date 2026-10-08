@@ -272,3 +272,18 @@
     }
 }
 .prod-unit-row b small { font-weight: 400; font-size: .72em; color: var(--muted, #8b95a1); margin-left: 4px; }
+
+/* Common opponents: one block per shared opponent, a recent-form card per team, For/Allowed under each. */
+.common-opp { margin-top: 14px; }
+.common-opp-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+    gap: 6px 12px; margin-bottom: 8px; }
+.common-opp-head > strong { font: 800 .9rem var(--display-font); }
+.common-opp-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.common-opp-chips .chip { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font-size: .64rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.prod-form a .common-opp-stats { grid-column: 1 / -1; width: 100%; margin-top: 6px; border-collapse: collapse;
+    font-size: .66rem; font-variant-numeric: tabular-nums; }
+.common-opp-stats th, .common-opp-stats td { padding: 2px 0; text-align: right; font-weight: 600; }
+.common-opp-stats thead th { color: var(--muted); font-size: .58rem; text-transform: uppercase; letter-spacing: .04em; }
+.common-opp-stats tbody th { text-align: left; color: var(--muted); font-weight: 500; }
+.common-opp-stats tbody tr { border-top: 1px solid var(--line); }

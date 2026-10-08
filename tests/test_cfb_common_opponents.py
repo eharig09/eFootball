@@ -41,5 +41,31 @@ class CommonOpponentTests(unittest.TestCase):
         self.assertEqual(row["edge"], 7 - 15)
 
 
+
+class CommonOpponentStatsTests(unittest.TestCase):
+    def test_stats_are_attached_from_each_sides_point_of_view(self):
+        away = [game(1, "2026-09-05T16:00:00Z", A, X, 30, 20)]
+        home = [game(3, "2026-09-06T16:00:00Z", X, H, 27, 24)]
+        stats = {
+            (1, "A"): {"pass_yards": 300, "rush_yards": 100, "epa_per_play": 0.2, "success_rate": .5, "giveaways": 1},
+            (1, "X"): {"pass_yards": 150, "rush_yards": 90, "epa_per_play": -0.1, "success_rate": .4, "giveaways": 2},
+            (3, "H"): {"pass_yards": 200, "rush_yards": 120, "epa_per_play": 0.0, "success_rate": .45, "giveaways": 0},
+            (3, "X"): {"pass_yards": 250, "rush_yards": 80, "epa_per_play": 0.1, "success_rate": .5, "giveaways": 1},
+        }
+        row = common_opponent_rows(away, home, away_id=1, home_id=2, before_date=THIS, stats=stats)[0]
+        pass_line = next(l for l in row["away"][0]["stat_lines"] if l["label"] == "Pass yds")
+        self.assertEqual((pass_line["for"], pass_line["against"]), (300, 150))
+        home_pass = next(l for l in row["home"][0]["stat_lines"] if l["label"] == "Pass yds")
+        self.assertEqual((home_pass["for"], home_pass["against"]), (200, 250))
+        self.assertAlmostEqual(row["epa_edge"], (0.0 - 0.1) - (0.2 - -0.1))
+
+    def test_a_game_without_charted_stats_still_shows_the_result(self):
+        away = [game(1, "2026-09-05T16:00:00Z", A, X, 30, 20)]
+        home = [game(3, "2026-09-06T16:00:00Z", X, H, 27, 24)]
+        row = common_opponent_rows(away, home, away_id=1, home_id=2, before_date=THIS)[0]
+        self.assertIsNone(row["away"][0]["stat_lines"])
+        self.assertIsNone(row["epa_edge"])
+
+
 if __name__ == "__main__":
     unittest.main()
