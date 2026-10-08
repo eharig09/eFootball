@@ -67,6 +67,7 @@ from sports_aggregator.cfb.player_matchups import player_matchups
 from sports_aggregator.cfb.page_visuals import (
     depth_formations, drive_outcome_bars, game_shape, model_probability_track,
     pff_unit_grade_bars, player_share_chart_series, player_trend_chart_data, recent_form_rows,
+    common_opponent_rows,
     skill_player_trend_chart_data, team_rank_trend_chart_data, team_scoring_chart_series,
     team_trend_chart_data, upcoming_games_rows)
 from sports_aggregator.cfb.team_game_drive_outcomes import season_summary as drive_outcome_summary
@@ -1156,6 +1157,8 @@ def game_preview(game_id: int):
     season_record = two_engine_season_record(repository, season)
     season_record_first_appearance = two_engine_season_record_first_appearance(repository, season)
     two_engine_history = manifest_history_for_game(repository, game_id)
+    away_schedule = _label_games(repository.team_schedule(game["away_team_id"], season))
+    home_schedule = _label_games(repository.team_schedule(game["home_team_id"], season))
     return render_template(
         "cfb_game.html",
         meta=page_meta_for.game_meta(
@@ -1302,14 +1305,13 @@ def game_preview(game_id: int):
             history["recent"], caption=f"Recent meetings — {game['away_team']} perspective"),
         away_recent_form=recent_form_rows(
             _with_win_prob(repository, history["away_recent"]),
-            upcoming=upcoming_games_rows(
-                _label_games(repository.team_schedule(game["away_team_id"], season)),
-                game["away_team_id"], game["start_date"])),
+            upcoming=upcoming_games_rows(away_schedule, game["away_team_id"], game["start_date"])),
         home_recent_form=recent_form_rows(
             _with_win_prob(repository, history["home_recent"]),
-            upcoming=upcoming_games_rows(
-                _label_games(repository.team_schedule(game["home_team_id"], season)),
-                game["home_team_id"], game["start_date"])),
+            upcoming=upcoming_games_rows(home_schedule, game["home_team_id"], game["start_date"])),
+        common_opponents=common_opponent_rows(
+            away_schedule, home_schedule, away_id=game["away_team_id"],
+            home_id=game["home_team_id"], before_date=game["start_date"]),
         ats=matchup_ats(repository, game, total=market.get("consensus_total")),
         prior_player_games=prior_player_games,
         prior_player_games_table=views.opponent_performance_table(prior_player_games),
