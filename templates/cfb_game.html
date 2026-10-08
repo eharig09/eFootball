@@ -699,24 +699,54 @@
     {% if common_opponents %}
     <h3>Common opponents</h3>
     <div class="section-note">
-        Teams both have already played this season. Margin is points scored minus allowed; the
-        last column is {{ game.home_team }}'s margin minus {{ game.away_team }}'s. It is context,
-        not a prediction: venue, injuries and timing differ between the two games.
+        Teams both have already played this season, with the same For / Allowed lines for each game.
+        Edge is {{ game.home_team }}'s margin minus {{ game.away_team }}'s, so a positive edge favors
+        {{ game.home_team }}. It is context, not a prediction: venue, injuries and timing differ
+        between the two games.
     </div>
-    <div class="table-wrap"><table class="data-table common-opponents">
-        <thead><tr><th>Opponent</th><th>{{ game.away_team }}</th><th>{{ game.home_team }}</th><th class="num">Edge</th></tr></thead>
-        <tbody>
-        {% for row in common_opponents %}
-        <tr>
-            <td>{{ row.opponent }}</td>
-            {% for side in (row.away, row.home) %}
-            <td>{% for g in side %}<a href="/college-football/games/{{ g.game_id }}/box-score/">{{ g.result }} {{ g.score }}</a> <small>{{ g.site }} &middot; {{ g.date_label }}</small>{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+    {% for row in common_opponents %}
+    <div class="common-opp">
+        <div class="common-opp-head">
+            <strong>vs {{ row.opponent }}</strong>
+            <span class="common-opp-chips">
+                {% set favored = game.home_team if row.edge > 0 else game.away_team if row.edge < 0 else none %}
+                <span class="chip" title="Home team's average margin minus away team's against this opponent">
+                    Margin {{ row.edge | cell('signed') }}{% if favored %} &middot; {{ favored }}{% endif %}</span>
+                {% if row.epa_edge is not none %}
+                {% set epa_favored = game.home_team if row.epa_edge > 0 else game.away_team if row.epa_edge < 0 else none %}
+                <span class="chip" title="Difference in EPA-per-play margin (offense minus defense) against this opponent">
+                    EPA / play {{ row.epa_edge | cell('signed2') }}{% if epa_favored %} &middot; {{ epa_favored }}{% endif %}</span>
+                {% endif %}
+            </span>
+        </div>
+        <div class="split common-opp-sides">
+            {% for team, side in ((game.away_team, row.away), (game.home_team, row.home)) %}
+            <div class="prod-form">
+                <h3>{{ team }}</h3>
+                {% for g in side %}
+                <a href="/college-football/games/{{ g.game_id }}/box-score/" class="{{ 'loss' if g.result == 'L' else 'win' if g.result == 'W' else '' }}">
+                    <b>{{ g.result }}</b>
+                    <strong>{{ g.score }}</strong>
+                    <span>{{ g.site }} &middot; {{ g.date_label }}</span>
+                    <small>margin {{ g.margin | cell('signed') }}</small>
+                    {% if g.stat_lines %}
+                    <table class="common-opp-stats">
+                        <thead><tr><th></th><th>For</th><th>Allowed</th></tr></thead>
+                        <tbody>
+                        {% for line in g.stat_lines %}
+                        <tr><th scope="row">{{ line.label }}</th>
+                            <td>{{ line.for | cell(line.format) }}</td><td>{{ line.against | cell(line.format) }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
+                </a>
+                {% endfor %}
+            </div>
             {% endfor %}
-            <td class="num">{{ row.edge | cell('signed') }}</td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table></div>
+        </div>
+    </div>
+    {% endfor %}
     {% endif %}
 </section>
 

@@ -182,8 +182,63 @@ def recent_form_rows(games: list[dict[str, Any]], *,
     return rows
 
 
-def _played(schedule: list[dict[str, Any]], team_id: int, before_date: str) -> dict[int, list[dict[str, Any]]]:
+def game_team_stats(repository, game_ids: list[int]) -> dict[tuple[int, str], dict[str, Any]]:
+    """Per team-game pass/rush yards, EPA per play, success rate and giveaways, keyed (game_id, team).
+
+    Read-only; a database without the charted tables yields nothing, and the cards simply omit stats."""
+    ids = sorted({int(game_id) for game_id in game_ids if game_id})
+    if not ids:
+        return {}
+    from sports_aggregator.cfb.team_game_advanced import METRIC_VERSION as ADVANCED_VERSION
+    from sports_aggregator.cfb.team_game_pace import METRIC_VERSION as PACE_VERSION
+    from sports_aggregator.cfb.team_game_scoring import METRIC_VERSION as SCORING_VERSION
+    marks = ",".join("?" for _ in ids)
+    stats: dict[tuple[int, str], dict[str, Any]] = {}
+    queries = (
+        (f"SELECT game_id,team,pass_yards,rush_yards FROM cfb_team_game_pace "
+         f"WHERE metric_version=? AND game_id IN ({marks})", PACE_VERSION),
+        (f"SELECT game_id,team,epa_per_play,success_rate FROM cfb_team_game_advanced "
+         f"WHERE metric_version=? AND game_id IN ({marks})", ADVANCED_VERSION),
+        (f"SELECT game_id,team,giveaways FROM cfb_team_game_scoring "
+         f"WHERE metric_version=? AND game_id IN ({marks})", SCORING_VERSION),
+    )
+    for sql, version in queries:
+        try:
+            with repository._reader() as connection:
+                rows = connection.execute(sql, [version, *ids]).fetchall()
+        except Exception:  # a table that was never built is the same as no stats
+            continue
+        for row in rows:
+            record = dict(row)
+            stats.setdefault((int(record.pop("game_id")), record.pop("team")), {}).update(record)
+    return stats
+
+
+def _stat_lines(own: dict[str, Any], opponent: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """For/against pairs for one game from one side's point of view."""
+    if not own or not opponent:
+        return None
+    lines = [
+        ("Pass yds", own.get("pass_yards"), opponent.get("pass_yards"), "int"),
+        ("Rush yds", own.get("rush_yards"), opponent.get("rush_yards"), "int"),
+        ("EPA / play", own.get("epa_per_play"), opponent.get("epa_per_play"), "signed2"),
+        ("Success rate", own.get("success_rate"), opponent.get("success_rate"), "rate"),
+        ("Turnovers lost / forced", own.get("giveaways"), opponent.get("giveaways"), "int"),
+    ]
+    return [{"label": label, "for": mine, "against": theirs, "format": fmt}
+            for label, mine, theirs, fmt in lines if mine is not None or theirs is not None]
+
+
+def _epa_margin(own: dict[str, Any] | None, opponent: dict[str, Any] | None) -> float | None:
+    mine = (own or {}).get("epa_per_play")
+    theirs = (opponent or {}).get("epa_per_play")
+    return mine - theirs if mine is not None and theirs is not None else None
+
+
+def _played(schedule: list[dict[str, Any]], team_id: int, before_date: str,
+            stats: dict[tuple[int, str], dict[str, Any]] | None = None) -> dict[int, list[dict[str, Any]]]:
     """This team's completed, scored games before `before_date`, keyed by opponent team id."""
+    stats = stats or {}
     by_opponent: dict[int, list[dict[str, Any]]] = {}
     for game in schedule:
         start = game.get("start_date")
@@ -192,27 +247,40 @@ def _played(schedule: list[dict[str, Any]], team_id: int, before_date: str) -> d
             continue
         home = game.get("home_team_id") == team_id
         opponent_id = game.get("away_team_id") if home else game.get("home_team_id")
+        team = game.get("home_team") if home else game.get("away_team")
+        opponent = game.get("away_team") if home else game.get("home_team")
         points_for = game["home_points"] if home else game["away_points"]
         points_against = game["away_points"] if home else game["home_points"]
+        own = stats.get((game.get("game_id"), team), {})
+        theirs = stats.get((game.get("game_id"), opponent), {})
         by_opponent.setdefault(opponent_id, []).append({
-            "opponent": game.get("away_team") if home else game.get("home_team"),
+            "opponent": opponent,
             "result": "W" if points_for > points_against else "L" if points_for < points_against else "T",
             "score": f"{int(points_for)}-{int(points_against)}",
             "margin": int(points_for - points_against),
             "site": "Neutral" if game.get("neutral_site") else ("Home" if home else "Away"),
             "game_id": game.get("game_id"), "date_label": game.get("date_label"),
+            "stat_lines": _stat_lines(own, theirs),
+            "epa_margin": _epa_margin(own, theirs),
         })
     return by_opponent
 
 
+def _mean(values: list[float | None]) -> float | None:
+    present = [value for value in values if value is not None]
+    return sum(present) / len(present) if present else None
+
+
 def common_opponent_rows(away_schedule: list[dict[str, Any]], home_schedule: list[dict[str, Any]], *,
-                         away_id: int, home_id: int, before_date: str) -> list[dict[str, Any]]:
+                         away_id: int, home_id: int, before_date: str,
+                         stats: dict[tuple[int, str], dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Opponents both teams have already played this season, with each side's result(s).
 
     The two teams' meeting is not a common opponent. A repeat opponent keeps every game; `margin` is
-    the mean across a side's games with that opponent."""
-    away_played = _played(away_schedule, away_id, before_date)
-    home_played = _played(home_schedule, home_id, before_date)
+    the mean across a side's games with that opponent. `edge` is home minus away, so positive favours
+    the home team; `epa_edge` is the same comparison on EPA-per-play margin."""
+    away_played = _played(away_schedule, away_id, before_date, stats)
+    home_played = _played(home_schedule, home_id, before_date, stats)
     rows = []
     for opponent_id in away_played.keys() & home_played.keys():
         if opponent_id in (away_id, home_id):
@@ -220,11 +288,25 @@ def common_opponent_rows(away_schedule: list[dict[str, Any]], home_schedule: lis
         away_games, home_games = away_played[opponent_id], home_played[opponent_id]
         away_margin = sum(g["margin"] for g in away_games) / len(away_games)
         home_margin = sum(g["margin"] for g in home_games) / len(home_games)
+        away_epa = _mean([g["epa_margin"] for g in away_games])
+        home_epa = _mean([g["epa_margin"] for g in home_games])
         rows.append({"opponent": away_games[0]["opponent"], "away": away_games, "home": home_games,
                      "away_margin": away_margin, "home_margin": home_margin,
-                     "edge": home_margin - away_margin})
+                     "edge": home_margin - away_margin,
+                     "epa_edge": (home_epa - away_epa
+                                  if home_epa is not None and away_epa is not None else None)})
     rows.sort(key=lambda row: (row["away"][0]["game_id"] or 0))
     return rows
+
+
+def common_opponent_cards(away_schedule: list[dict[str, Any]], home_schedule: list[dict[str, Any]], repository, *,
+                          away_id: int, home_id: int, before_date: str) -> list[dict[str, Any]]:
+    """`common_opponent_rows` with each game's charted stats attached, fetched only for the games shown."""
+    shared = dict(away_id=away_id, home_id=home_id, before_date=before_date)
+    rows = common_opponent_rows(away_schedule, home_schedule, **shared)
+    ids = [g["game_id"] for row in rows for side in (row["away"], row["home"]) for g in side]
+    return common_opponent_rows(away_schedule, home_schedule, **shared,
+                                stats=game_team_stats(repository, ids)) if ids else rows
 
 
 def _elo_win_prob(home_elo: float | None, away_elo: float | None) -> float | None:
