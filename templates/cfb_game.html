@@ -176,6 +176,14 @@
                         {% else %}PK{% endif %})
                     {% endif %}
                 </span>
+                {% set unc = research_intelligence.display_score.uncertainty %}
+                {% if unc %}
+                {% set home_win = unc.home_win_probability %}
+                <span class="lab-badge" title="Gaussian on the calibrated margin; residual scale {{ unc.margin_residual_scale }} pts from {{ unc.scale_games }} out-of-fold games. Not a cover probability.">
+                    {% if home_win >= 0.5 %}{{ game.home_team }} {{ (home_win * 100) | round | int }}%{% else %}{{ game.away_team }} {{ ((1 - home_win) * 100) | round | int }}%{% endif %} win
+                    &middot; 80% range for {{ game.home_team }}'s margin {{ unc.intervals['80%'][0] }} to {{ unc.intervals['80%'][1] }}
+                </span>
+                {% endif %}
                 <span class="lab-badge lab-badge-gold">
                     Total {{ (research_intelligence.totals.model_direction or '—') | capitalize }}
                     {{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}

@@ -18,6 +18,7 @@ from sports_aggregator.cfb import narrative_shapes as ns
 from sports_aggregator.cfb.projection_backtest import BACKTEST_VERSION
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb.live_margin_calibration import predict_live as predict_live_margin
+from sports_aggregator.cfb.uncertainty_calibration import live_packet as margin_uncertainty
 
 
 SPREAD_RESEARCH = {
@@ -705,6 +706,13 @@ def matchup_research_packet(
             "method": "Independent total + margin-v2 calibration; score reconstructed from T and M.",
             "raw_margin": raw_projected_home_margin,
             "margin_calibration": margin_calibration,
+            # Only a margin-v2 model output carries a calibrated scale: the raw fallback is not the
+            # thing the residuals were measured on.
+            "uncertainty": (
+                margin_uncertainty(repository, target_season=int(game["season"]),
+                                   margin=projected_home_margin)
+                if margin_calibration.get("value") is not None
+                and margin_calibration.get("variant") != "raw_fallback" else None),
         },
         "actionable_2026": actionable_2026,
         "convergence": {

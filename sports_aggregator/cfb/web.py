@@ -43,6 +43,7 @@ from sports_aggregator.cfb.matchup_research import (
     TOTALS_TRACKED_MIN_WIN_RATE)
 from sports_aggregator.cfb.lines import game_lines, lines_by_game
 from sports_aggregator.cfb.scoreboard_projection import projections_for_games
+from sports_aggregator.cfb import convergence_panel
 from sports_aggregator import pff_team_grades
 from sports_aggregator.cfb import meta as page_meta_for
 from sports_aggregator.cfb import syndication
@@ -662,6 +663,12 @@ def engine_picks():
         selected_status=request.args.get("status", "all"),
         query=request.args.get("q", ""),
     )
+
+
+@cfb_pages.get("/college-football/convergence/")
+@cached_page
+def convergence_diagnostics():
+    return render_template("cfb_convergence.html", panel=convergence_panel.build())
 
 
 @cfb_pages.get("/college-football/playoff/")
