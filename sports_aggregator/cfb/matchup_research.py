@@ -25,60 +25,70 @@ from sports_aggregator.cfb import total_anchor
 LOGGER = logging.getLogger(__name__)
 
 
+#: Re-scored 2026-10-09 on the corrected engine (CORE look-ahead and Vegas-in-blend removed), with the same
+#: methodology as before: market_ats_totals.report / convergence_validation. The previous figures (Full Convergence
+#: 77-64-2, 54.61%; totals vs close 53.40% over 2,643 games) came from the pre-correction pipeline.
 SPREAD_RESEARCH = {
     "full_convergence": {
         "label": "Full Convergence",
-        "record": "77-64-2",
-        "win_rate": 54.61,
-        "n": 143,
-        "mean_residual": 4.300,
-        "note": "Frozen 2021-2025 Full Convergence: Margin Power >=1σ plus structural and Line Elo confirmation.",
+        "record": "68-51-2",
+        "win_rate": 57.14,
+        "n": 121,
+        "mean_residual": 4.331,
+        "note": "Frozen Full Convergence re-scored on 2022-2025 after the engine fixes: Margin Power >=1σ plus structural and Line Elo confirmation. By season 53.9 / 57.7 / 54.3 / 62.5%. Was 77-64-2 (54.61%) over 2021-2025 on the pre-correction pipeline.",
     },
     "full_convergence_lt14": {
         "label": "Full Convergence · market spread <14",
-        "record": "64-45-2",
-        "win_rate": 58.72,
-        "n": 111,
-        "mean_residual": None,
-        "note": "2021-2025 applicability subset. The 14+ region underperformed, so it remains a caution boundary rather than a fade rule.",
+        "record": "57-35-2",
+        "win_rate": 61.96,
+        "n": 94,
+        "mean_residual": 5.093,
+        "note": "2022-2025 applicability subset. The 14+ region went 11-16 (40.7%, n=27), so it remains a caution boundary rather than a fade rule.",
     },
 }
 
+#: The totals record is NOT an edge: break-even at -110 is 52.38% and ROI at -110 is -0.7%. The corrected
+#: engine's closing-line win rate by season is 50.0 / 53.2 / 52.7 / 52.2%. The record that used to sit beside this
+#: ("narrative-adjusted totals") came from the pre-correction pipeline and has no generator in the repository, so
+#: it was removed rather than carried forward unverified.
 TOTAL_RESEARCH = {
     "overall": {
         "label": "Football Lab totals vs close",
-        "record": "1405-1226-12",
-        "win_rate": 53.40,
-        "n": 2643,
-        "mean_residual": 1.419,
-        "note": "Pooled closing-line result. 2025 weakened to 51.30%, so treat the pooled edge as non-stationary.",
-    },
-    "narrative_adjusted": {
-        "label": "Narrative-adjusted totals",
-        "record": "1403-1228-12",
-        "win_rate": 53.33,
-        "n": 2643,
-        "mean_residual": 1.637,
-        "note": "Direct additive narrative adjustment did not improve win rate or MAE; narrative remains context only.",
+        "record": "1880-1733-19",
+        "win_rate": 52.03,
+        "n": 3632,
+        "mean_residual": 0.983,
+        "note": "Pooled closing-line result on the corrected engine, 2022-2025. Break-even at -110 is 52.38%, so this is not a demonstrated edge (ROI -0.7%). Was 53.40% over 2,643 games on the pre-correction pipeline.",
     },
 }
 
+#: Recomputed 2026-10-09 by totals_regime_audit.regime_table on the corrected engine (2022-2025; the
+#: opening-edge bucket x market-movement cells, win rate vs the close, games, mean aligned residual). These are
+#: IN-SAMPLE: with 15 cells the best few clear 55% by chance. See TOTALS_WALK_FORWARD for the test that matters.
 TOTAL_REGIME_BENCHMARKS = {
-    ("3-4.99", "away_lt1"): (60.71, 85, 3.539),
-    ("3-4.99", "unchanged"): (55.13, 78, 3.309),
-    ("3-4.99", "toward_lt1"): (54.93, 71, 3.461),
-    ("3-4.99", "toward_1_plus"): (53.55, 156, 1.193),
-    ("3-4.99", "away_1_plus"): (53.66, 205, 0.609),
-    ("5-7.99", "toward_1_plus"): (57.32, 157, 2.377),
-    ("5-7.99", "toward_lt1"): (56.96, 79, 3.922),
-    ("5-7.99", "unchanged"): (55.17, 87, 1.117),
-    ("5-7.99", "away_lt1"): (51.14, 88, -0.695),
-    ("5-7.99", "away_1_plus"): (51.14, 176, 2.040),
-    ("8+", "away_1_plus"): (61.74, 115, 3.302),
-    ("8+", "away_lt1"): (59.46, 37, 3.171),
-    ("8+", "unchanged"): (53.70, 54, 2.060),
-    ("8+", "toward_1_plus"): (50.54, 93, 0.149),
-    ("8+", "toward_lt1"): (40.38, 52, 0.076),
+    ("3-4.99", "unchanged"): (56.57, 99, 2.511),
+    ("3-4.99", "away_lt1"): (54.95, 91, 1.956),
+    ("3-4.99", "away_1_plus"): (53.62, 277, 1.232),
+    ("3-4.99", "toward_1_plus"): (53.14, 208, 0.593),
+    ("3-4.99", "toward_lt1"): (48.19, 83, 1.878),
+    ("5-7.99", "toward_1_plus"): (55.45, 211, 2.117),
+    ("5-7.99", "unchanged"): (54.95, 111, 2.227),
+    ("5-7.99", "toward_lt1"): (53.12, 96, 2.905),
+    ("5-7.99", "away_1_plus"): (51.15, 262, 1.057),
+    ("5-7.99", "away_lt1"): (51.00, 101, -0.278),
+    ("8+", "away_lt1"): (57.45, 47, 1.521),
+    ("8+", "unchanged"): (57.35, 68, 2.262),
+    ("8+", "toward_1_plus"): (56.10, 125, 1.819),
+    ("8+", "away_1_plus"): (55.06, 159, 1.966),
+    ("8+", "toward_lt1"): (40.62, 64, -1.286),
+}
+
+#: What following these regimes would actually have done: cells chosen on EARLIER seasons only (win rate >= 55%,
+#: >= 30 games, edge 3+), followed in the next season (totals_regime_audit.walk_forward, 2023-2025). 209-214 is a
+#: coin flip and below the 52.38% needed at -110, so the regimes label a total's context; they do not predict it.
+TOTALS_WALK_FORWARD = {
+    "picks": 423, "wins": 209, "losses": 214, "win_rate": 49.4, "break_even": 52.38,
+    "by_season": {2023: 50.8, 2024: 47.2, 2025: 50.0},
 }
 
 
@@ -101,12 +111,8 @@ def _pooled_regime_record(benchmarks: dict) -> dict:
     }
 
 
-#: Follow the model's total lean whenever a regime match exists (any cell
-#: in TOTAL_REGIME_BENCHMARKS), pooled across all of them: 54.5% hit rate,
-#: n=1,533, +1.84 pts mean residual. Real signal, not nothing -- but weaker
-#: than any of Engine A's five frozen routes (63-73%) and not vetted the
-#: same walk-forward way those were, which is exactly why this stays a
-#: measured research number rather than a sixth frozen action rule.
+#: In-sample pool of every cell in TOTAL_REGIME_BENCHMARKS (the record following the model's total lean whenever a
+#: regime match existed). Not a forecast: the walk-forward version of the same idea is TOTALS_WALK_FORWARD.
 TOTALS_RESEARCH_OVERALL = _pooled_regime_record(TOTAL_REGIME_BENCHMARKS)
 
 #: About half of TOTAL_REGIME_BENCHMARKS' cells clear this; the rest are
@@ -691,7 +697,8 @@ def matchup_research_packet(
         "label": "RESEARCH WATCH" if tracked_pick else "NO QUALIFIED TOTAL RULE",
         "qualified": False,
         "note": (
-            "Historical totals regime match only; no frozen actionable totals rule exists."
+            "Historical totals regime match only; regimes chosen on earlier seasons went "
+            f"{TOTALS_WALK_FORWARD['win_rate']}% the next season, so this is context, not an edge."
             if tracked_pick else
             "Model-market disagreement is shown, but no validated totals action rule is frozen."
         ),
@@ -784,8 +791,9 @@ def matchup_research_packet(
             "Spread Full Convergence is a historical research architecture; the live page does not label the current game Full Convergence unless all frozen component lenses are available.",
             "The live Football Lab spread uses margin-v2, fit without Vegas; missing external ratings fall back through validated nested variants.",
             "The <14 spread condition is shown as an applicability boundary, not a standalone signal.",
-            "Totals regime benchmarks are descriptive historical cells, not confidence scores.",
-            "Direct totals narrative adjustment did not improve the pooled model and is not applied to the live projection.",
+            "Totals regime benchmarks are descriptive in-sample cells, not confidence scores: regimes chosen on earlier seasons went 49.4% (209-214) the next season, below the 52.38% needed at -110.",
+            "The displayed total is the calibrated xPoints total pulled part-way toward a market-free anchor; the regime cells, tracked totals and Engine A/B keep reading the unadjusted values they were measured on.",
+            "A direct narrative adjustment to totals is not applied to the live projection.",
             "Benchmark ROI figures are omitted here because historical spread/total price was not stored; records and hit rates are line-settlement metrics.",
         ],
     }

@@ -218,7 +218,7 @@
                 convergence signals below. The total's edge ({{ research_intelligence.totals.closing_edge | cell('signed') }}
                 pts vs. the closing line, before the anchor pull)
                 {% if research_intelligence.totals.regime_benchmark and research_intelligence.totals.regime_benchmark.tracked %}
-                matches a regime with a real historical edge (see below) &mdash; tracked, still research-only, not a frozen pick.
+                matches a regime that cleared {{ totals_tracked_min_win_rate | cell('f1') }}% in-sample, but regimes chosen on earlier seasons won only {{ totals_walk_forward.win_rate | cell('f1') }}% the next season ({{ totals_walk_forward.wins }}-{{ totals_walk_forward.losses }}) &mdash; context only, not a pick and not an edge.
                 {% elif research_intelligence.totals.regime_benchmark %}
                 matches a regime, but that regime's win rate is too thin to track as a pick.
                 {% else %}
@@ -485,8 +485,8 @@
                     {% else %}<div class="lab-record-figure"><b>&mdash;</b></div>{% endif %}
                 </div>
                 <div class="lab-record-row">
-                    <div><b>Totals <span class="lab-badge lab-badge-gold lab-badge-inline">research only</span></b><i>tracked regimes &ge;{{ totals_tracked_min_win_rate | cell('f1') }}% win rate</i></div>
-                    <div class="lab-record-figure"><b class="lab-gold">{{ (totals_tracked_overall.hit_rate * 100) | cell('f1') }}%</b><i>n={{ totals_tracked_overall.n }} &middot; {{ totals_tracked_overall.mean_residual | cell('signed') }} pts &middot; all regimes {{ (totals_overall.hit_rate * 100) | cell('f1') }}%</i></div>
+                    <div><b>Totals <span class="lab-badge lab-badge-gold lab-badge-inline">research only</span></b><i>regimes chosen on earlier seasons, followed the next (break-even {{ totals_walk_forward.break_even | cell('f1') }}%)</i></div>
+                    <div class="lab-record-figure"><b class="lab-gold">{{ totals_walk_forward.win_rate | cell('f1') }}%</b><i>{{ totals_walk_forward.wins }}-{{ totals_walk_forward.losses }} &middot; in-sample tracked cells {{ (totals_tracked_overall.hit_rate * 100) | cell('f1') }}% (n={{ totals_tracked_overall.n }})</i></div>
                 </div>
             </div>
 
@@ -608,8 +608,9 @@
                         (Not a literal "N of 3 agree" vote &mdash; one input disagreeing strongly enough can outweigh
                         others that agree, the same way it would in any average.) The two currently live are (1) our
                         full walk-forward margin model &mdash; the same nested model that blends projected points,
-                        drives, pace, team Elo, CORE, FPI and recent-form differentials, deliberately built without
-                        any market inputs &mdash; and (2) CFBD's own raw team Elo, converted to an expected margin.
+                        drives, pace, team Elo, FPI and recent-form differentials, built without any market inputs
+                        (CORE ratings and the head-coach/QB Elo were taken out of it because their historical
+                        values looked ahead of kickoff) &mdash; and (2) CFBD's own raw team Elo, converted to an expected margin.
                         A third input (Efficiency Power, each side's opponent-adjusted points-per-drive converted to
                         a margin) is built and reconciled with discovery, but held back pending its own holdout
                         validation before going live &mdash; wiring in a real third signal changes what "confirms"
