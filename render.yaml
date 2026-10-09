@@ -62,6 +62,10 @@ services:
         value: /var/data/jinja_cache
       - key: SLOW_REQUEST_SECONDS
         value: "3"
+      # Renders the landing pages and the next two days of games while the site is idle (warmer.py). It is also on
+      # by default whenever RENDER is set; this makes the setting visible, and 0 turns it off.
+      - key: CFB_WARM_PAGES
+        value: "1"
       - key: CFB_PAGE_CACHE_THRESHOLD
         value: "600"
       - key: CFB_REFRESH_TIMEZONE
