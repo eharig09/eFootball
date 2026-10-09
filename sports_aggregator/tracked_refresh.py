@@ -154,9 +154,14 @@ def _hours(name: str, default: str) -> set[int]:
 
 #: How long a segment may go without running before a later tick should run it instead of the
 #: segment that owns that hour. Roughly one scheduled interval plus slack.
+#:
+#: `projections` is here because it has its own cron (every two hours) and nothing else ever ran it: with no entry
+#: the catch-up below could not see it, so when that cron stopped reaching the web service the segment went
+#: stale unnoticed -- twelve days once, seven days in October 2026, with the scoreboard's engine scores missing the
+#: whole time. It takes about a minute, so being picked up by the hourly tick costs little.
 SEGMENT_MAX_AGE_HOURS = {
     "core": 14.0, "content": 14.0, "rosters": 30.0, "stats": 30.0, "models": 30.0,
-    "analytics": 30.0,
+    "analytics": 30.0, "projections": 4.0,
 }
 
 
