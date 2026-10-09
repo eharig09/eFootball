@@ -219,6 +219,11 @@ def steps(season: int, *, history_from: int | None = None,
         # were fixed there was no way to re-derive them. This rebuilds ONE stale season per run (oldest first,
         # tracked by projection_backtest.INPUTS_VERSION), so a bumped marker heals over a few nightly runs
         # instead of needing one long job on the small host. Must follow the xpoints/xdrives datasets above.
+        # Pregame snapshots the total anchor reads (its tendency and expected-points ridge). Rebuilt whole, from
+        # the in-house EPA tables, so it needs the team-advanced step to have run; ~1 s locally.
+        Step("total-anchor", "Pregame snapshots for the market-free total anchor",
+             ["sports_aggregator.cfb.total_anchor", "refresh"],
+             ("initial", "refresh"), optional=True, timeout_seconds=300),
         Step("projection-backtest", "Walk-forward projection rows (one stale season per run)",
              ["sports_aggregator.cfb.projection_backtest_cli", "refresh", "--season", year],
              # One season measured 306 s and a 66 MB peak working set locally; the 600 MB address-space

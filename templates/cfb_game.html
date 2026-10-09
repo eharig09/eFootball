@@ -166,10 +166,12 @@
                 <div class="lab-hero-team"><span>{{ game.home_team }}</span><b>{{ research_intelligence.display_score.home | cell('f1') }}</b></div>
             </div>
             <div class="lab-badge-row">
+                {% set ds = research_intelligence.display_score %}
+                {% set dm = ds.margin %}
                 <span class="lab-badge">
-                    {% if ph is none %}Spread &mdash;
-                    {% elif ph > 0 %}{{ game.home_team }} &minus;{{ ph | abs | cell('f1') }} model
-                    {% elif ph < 0 %}{{ game.away_team }} &minus;{{ ph | abs | cell('f1') }} model
+                    {% if dm is none %}Spread &mdash;
+                    {% elif dm > 0 %}{{ game.home_team }} &minus;{{ dm | abs | cell('f1') }} model
+                    {% elif dm < 0 %}{{ game.away_team }} &minus;{{ dm | abs | cell('f1') }} model
                     {% else %}PK model{% endif %}
                     {% if mh is not none %}(market
                         {% if mh > 0 %}{{ game.home_team }} &minus;{{ mh | abs | cell('f1') }}
@@ -185,11 +187,17 @@
                     &middot; 80% range for {{ game.home_team }}'s margin {{ unc.intervals['80%'][0] }} to {{ unc.intervals['80%'][1] }}
                 </span>
                 {% endif %}
+                {% set ct = research_intelligence.totals.closing_total %}
                 <span class="lab-badge lab-badge-gold">
-                    Total {{ (research_intelligence.totals.model_direction or '—') | capitalize }}
-                    {{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}
-                    (market {{ research_intelligence.totals.closing_total | cell('f1') }})
+                    Total {{ ('Over' if ds.total > ct else 'Under' if ds.total < ct else 'Push') if ct is not none else '—' }}
+                    {{ ds.total | cell('f1') }}
+                    (market {{ ct | cell('f1') }})
                 </span>
+                {% if ds.anchor %}
+                <span class="lab-badge lab-badge-muted" title="The xPoints total {{ ds.pre_anchor.total | cell('f1') }} was pulled {{ (ds.anchor.pull * 100) | round | int }}% of the way to a market-free anchor of {{ ds.anchor.total | cell('f1') }} (70% season offense vs opponent defense, 30% opponent-adjusted totals). The change is shared by quality: a higher total goes mostly to the better offense, a lower one costs the better defense less. The anchor only pulls; it never replaces the model.">
+                    Anchor {{ ds.anchor.total | cell('f1') }} &middot; total {{ ds.anchor.change | cell('signed1') }}
+                </span>
+                {% endif %}
                 {% if research_intelligence.spread.inside_lt14_applicability is sameas true %}
                 <span class="lab-badge lab-badge-good">Applicability: supported (market &lt;14)</span>
                 {% elif research_intelligence.spread.inside_lt14_applicability is sameas false %}
@@ -208,7 +216,7 @@
             <p class="lab-hero-note">
                 Independently calibrated score + total model &mdash; a separate pipeline from the Engine A/B
                 convergence signals below. The total's edge ({{ research_intelligence.totals.closing_edge | cell('signed') }}
-                pts vs. the closing line)
+                pts vs. the closing line, before the anchor pull)
                 {% if research_intelligence.totals.regime_benchmark and research_intelligence.totals.regime_benchmark.tracked %}
                 matches a regime with a real historical edge (see below) &mdash; tracked, still research-only, not a frozen pick.
                 {% elif research_intelligence.totals.regime_benchmark %}
@@ -222,7 +230,12 @@
                 <summary>Full score &amp; total data</summary>
                 <dl class="lab-kv-grid">
                     <div><dt>Raw projected total</dt><dd>{{ research_intelligence.totals.raw_projected_total | cell('f1') }}</dd></div>
-                    <div><dt>Calibrated total</dt><dd>{{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}</dd></div>
+                    <div><dt>Calibrated total (before anchor)</dt><dd>{{ research_intelligence.totals.calibrated_projected_total | cell('f1') }}</dd></div>
+                    {% if research_intelligence.display_score.anchor %}
+                    {% set an = research_intelligence.display_score.anchor %}
+                    <div><dt>Anchor total</dt><dd>{{ an.total | cell('f1') }} <span class="ctx">(season midpoint {{ an.season_midpoint_total | cell('f1') }}, opponent-adjusted {{ an.opponent_adjusted_total | cell('f1') }})</span></dd></div>
+                    <div><dt>Displayed total</dt><dd>{{ research_intelligence.display_score.total | cell('f1') }} <span class="ctx">({{ an.change | cell('signed1') }} from the pull; margin {{ research_intelligence.display_score.margin | cell('signed1') }} vs {{ research_intelligence.display_score.pre_anchor.margin | cell('signed1') }})</span></dd></div>
+                    {% endif %}
                     <div><dt>Market total open &rarr; close</dt><dd>{{ research_intelligence.totals.opening_total | cell('f1') }} &rarr; {{ research_intelligence.totals.closing_total | cell('f1') }}</dd></div>
                     <div><dt>50% scoring range</dt><dd>
                         {% if research_intelligence.totals.interval50_low is not none and research_intelligence.totals.interval50_high is not none %}
