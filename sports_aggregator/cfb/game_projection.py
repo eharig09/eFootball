@@ -289,7 +289,7 @@ def matchup_quality_snapshot(repository, game_id: int) -> dict[str, Any]:
         core = {}
         for team in (game["home_team"], game["away_team"]):
             row = connection.execute("""SELECT overall FROM core_ratings
-              WHERE season=? AND team=? AND through_week<?
+              WHERE season=? AND team=? AND through_season_type='regular' AND through_week<?
               ORDER BY through_week DESC LIMIT 1""",
                 (game["season"], team, game["week"])).fetchone()
             core[team] = float(row["overall"]) if row else None
@@ -305,8 +305,13 @@ def matchup_quality_snapshot(repository, game_id: int) -> dict[str, Any]:
                  if home_core is not None and away_core is not None else None),
         "vegas": -spread if spread is not None else None,
     }
+    #: CORE is shown but not blended: it has no pregame history before 2026 (past seasons store only the
+    #: season-final snapshot), so the model that reads this blend was never trained with it in the mix.
+    BLENDED = ("elo", "fpi", "vegas")
+
     def side(components: dict[str, float | None]) -> dict[str, Any]:
-        values = [float(value) for value in components.values() if value is not None]
+        values = [float(value) for key, value in components.items()
+                  if value is not None and key in BLENDED]
         return {"components": components,
                 "blend": sum(values) / len(values) if values else None,
                 "source_count": len(values)}
@@ -314,7 +319,7 @@ def matchup_quality_snapshot(repository, game_id: int) -> dict[str, Any]:
                        for key, value in home_components.items()}
     return {"home": side(home_components), "away": side(away_components),
             "scale": "estimated point-margin edge",
-            "method": "equal-weight mean of available sources"}
+            "method": "equal-weight mean of available Elo, FPI and Vegas sources (CORE shown, not blended)"}
 
 
 def team_special_teams_snapshot(repository, team: str, *, before_date: str,
