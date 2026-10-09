@@ -9,6 +9,7 @@ It does not convert historical hit rates into a recommendation.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sports_aggregator.cfb import derived_cache
@@ -19,6 +20,9 @@ from sports_aggregator.cfb.projection_backtest import BACKTEST_VERSION
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.cfb.live_margin_calibration import predict_live as predict_live_margin
 from sports_aggregator.cfb.uncertainty_calibration import live_packet as margin_uncertainty
+from sports_aggregator.cfb import total_anchor
+
+LOGGER = logging.getLogger(__name__)
 
 
 SPREAD_RESEARCH = {
@@ -584,9 +588,24 @@ def engine_display_score(repository: CFBRepository, game: dict[str, Any],
     total_calibration = _calibrated_live_total(
         repository, season=int(game["season"]), raw_total=raw_total)
     total = float(total_calibration["value"])
+    pre_anchor = {"away": (total - margin) / 2.0, "home": (total + margin) / 2.0, "total": total, "margin": margin}
+    anchored, anchor = pre_anchor, None
+    try:
+        anchor = total_anchor.for_game(repository, game)
+    except Exception:  # an anchor that cannot be built must never take the projection down
+        LOGGER.exception("Total anchor unavailable game=%s", game.get("game_id"))
+    if anchor is not None:
+        moved = total_anchor.adjust(total, margin, anchor)
+        anchored = {"total": moved["total"], "margin": moved["margin"],
+                    "away": (moved["total"] - moved["margin"]) / 2.0, "home": (moved["total"] + moved["margin"]) / 2.0}
+        anchor = {**anchor, "change": moved["change"], "shift": moved["shift"],
+                  "pull": total_anchor.PULL_LAMBDA, "offence_edge": moved["offence_edge"],
+                  "defence_edge": moved["defence_edge"]}
     return {
-        "away": (total - margin) / 2.0, "home": (total + margin) / 2.0,
-        "total": total, "margin": margin,
+        **anchored,
+        # What the totals regimes, the spread research and Engine A/B were validated on: the calibrated total and
+        # margin-v2 as they were before the anchor. Those rules keep reading this, not the displayed projection.
+        "pre_anchor": pre_anchor, "anchor": anchor,
         "raw_total": raw_total, "raw_margin": raw_margin,
         "margin_calibration": margin_calibration, "total_calibration": total_calibration,
     }
@@ -612,7 +631,7 @@ def matchup_research_packet(
     raw_total = score["raw_total"]
     raw_projected_home_margin = score["raw_margin"]
     margin_calibration = score["margin_calibration"]
-    projected_home_margin = score["margin"]
+    projected_home_margin = score["pre_anchor"]["margin"]      # Engine A/B and spread research read this
     spread = lines.get("consensus_spread")
     market_home_margin = -float(spread) if spread is not None else None
     spread_edge_home = (
@@ -626,8 +645,8 @@ def matchup_research_packet(
     )
 
     calibration = score["total_calibration"]
-    projected_total = score["total"]
-    display_home_points = score["home"]
+    projected_total = score["pre_anchor"]["total"]      # research / regimes / picks: validated pre-anchor
+    display_home_points = score["home"]                  # displayed projection: anchored
     display_away_points = score["away"]
     open_total, close_total = _market_totals(lines)
 
@@ -701,16 +720,19 @@ def matchup_research_packet(
         "display_score": {
             "away": display_away_points,
             "home": display_home_points,
-            "total": projected_total,
-            "margin": projected_home_margin,
-            "method": "Independent total + margin-v2 calibration; score reconstructed from T and M.",
+            "total": score["total"],
+            "margin": score["margin"],
+            "pre_anchor": score["pre_anchor"],
+            "anchor": score["anchor"],
+            "method": "Independent total + margin-v2 calibration; score reconstructed from T and M, "
+                      "then pulled part-way toward the market-free total anchor.",
             "raw_margin": raw_projected_home_margin,
             "margin_calibration": margin_calibration,
             # Only a margin-v2 model output carries a calibrated scale: the raw fallback is not the
             # thing the residuals were measured on.
             "uncertainty": (
                 margin_uncertainty(repository, target_season=int(game["season"]),
-                                   margin=projected_home_margin)
+                                   margin=score["margin"])
                 if margin_calibration.get("value") is not None
                 and margin_calibration.get("variant") != "raw_fallback" else None),
         },
