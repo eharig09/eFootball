@@ -715,3 +715,41 @@ def test_disk_report_names_the_volume_it_measured(tmp_path):
     from sports_aggregator.cfb.data_status import disk_report
     report = disk_report(_fill(tmp_path), cache_seconds=0)
     assert report["mount"] and os.path.ismount(report["mount"])             # /var/data on Render, the drive locally
+
+
+def test_host_resources_separates_process_memory_from_reclaimable_file_cache(tmp_path):
+    """The headline 'used' includes the file cache; only the anonymous part can get something OOM-killed."""
+    from sports_aggregator.cfb.data_status import host_resources
+    root = _cgroup_v2(tmp_path, limit="2147483648", current="2108817408", peak="2147483648", oom=0)
+    (root / "memory.stat").write_text(f"anon {420 * 2**20}\nfile {1580 * 2**20}\nkernel_stack 1000\n")
+    info = host_resources(root)
+    assert (info["memory_used_mb"], info["memory_processes_mb"], info["memory_file_cache_mb"]) == (2011, 420, 1580)
+    assert info["oom_kills"] == 0
+
+
+def test_host_resources_reports_the_cpu_quota_not_the_hosts_core_count(tmp_path):
+    from sports_aggregator.cfb.data_status import host_resources
+    root = _cgroup_v2(tmp_path)
+    (root / "cpu.max").write_text("100000 100000\n")
+    assert host_resources(root)["cpu_limit"] == 1.0
+    (root / "cpu.max").write_text("50000 100000\n")
+    assert host_resources(root)["cpu_limit"] == 0.5
+    (root / "cpu.max").write_text("max 100000\n")
+    assert host_resources(root)["cpu_limit"] is None
+
+
+def test_a_cgroup_without_memory_stat_still_reports(tmp_path):
+    from sports_aggregator.cfb.data_status import host_resources
+    info = host_resources(_cgroup_v2(tmp_path))
+    assert info["memory_processes_mb"] is None and info["memory_file_cache_mb"] is None
+
+
+def test_render_yaml_matches_the_two_gigabyte_instance():
+    import re
+    text = open("render.yaml", encoding="utf-8").read()
+    web = text.split("- type: cron")[0]
+    assert "plan: standard" in web and "plan: starter" not in web
+    assert int(re.search(r'CFB_REFRESH_CHILD_MB\s*\n\s*value: "(\d+)"', web).group(1)) >= 768
+    command = re.search(r"startCommand: (gunicorn .*)", web).group(1)
+    assert "--workers 1" in command                                    # a second worker would crowd 2 GB (measured ~490 MB each)
+    assert int(re.search(r"--threads (\d+)", command).group(1)) >= 2

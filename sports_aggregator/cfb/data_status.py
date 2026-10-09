@@ -628,6 +628,33 @@ def _megabytes(raw: str | None) -> int | None:
     return round(value / 2**20) if value < 2**60 else None
 
 
+def _memory_split(root: Path, v2: bool) -> tuple[int | None, int | None]:
+    """(anonymous/process MB, file-cache MB) from the cgroup's memory.stat."""
+    stat = root / "memory.stat" if v2 else root / "memory" / "memory.stat"
+    values: dict[str, int] = {}
+    for line in (_read_text(stat) or "").splitlines():
+        key, _, number = line.partition(" ")
+        if number.strip().isdigit():
+            values[key] = int(number)
+    anon = values.get("anon", values.get("rss"))
+    file_cache = values.get("file", values.get("cache"))
+    to_mb = lambda value: None if value is None else round(value / 2**20)
+    return to_mb(anon), to_mb(file_cache)
+
+
+def _cpu_limit(root: Path, v2: bool) -> float | None:
+    """CPUs this container may use (its quota), not the host's count that os.cpu_count() returns."""
+    try:
+        if v2:
+            quota, _, period = (_read_text(root / "cpu.max") or "").strip().partition(" ")
+            return None if quota in ("", "max") else round(int(quota) / int(period or 100000), 2)
+        quota = int((_read_text(root / "cpu" / "cpu.cfs_quota_us") or "-1").strip())
+        period = int((_read_text(root / "cpu" / "cpu.cfs_period_us") or "100000").strip())
+        return None if quota <= 0 else round(quota / period, 2)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
 def host_resources(root: Path = Path("/sys/fs/cgroup")) -> dict[str, Any] | None:
     """The memory this container is allowed, what it is using, and how many times the kernel has
     killed something in it for memory -- read from the container's own cgroup.
@@ -662,8 +689,13 @@ def host_resources(root: Path = Path("/sys/fs/cgroup")) -> dict[str, Any] | None
                 oom_kills = int(line.split()[1])
     if limit is None and used is None:
         return None
+    # `used` includes the kernel's file cache, which is reclaimable: reading a 3.9 GB SQLite file fills it, so the
+    # headline number sits near the limit without anything being wrong (the peak equals the limit, with no kills).
+    # What can actually get a process killed is the anonymous part, so report it separately.
+    anon, cache = _memory_split(root, v2)
     return {"memory_limit_mb": limit, "memory_used_mb": used, "memory_peak_mb": peak,
-            "oom_kills": oom_kills, "cpus": os.cpu_count()}
+            "memory_processes_mb": anon, "memory_file_cache_mb": cache,
+            "oom_kills": oom_kills, "cpus": os.cpu_count(), "cpu_limit": _cpu_limit(root, v2)}
 
 
 DISK_WALK_SECONDS = 4.0
