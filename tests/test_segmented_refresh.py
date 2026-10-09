@@ -117,3 +117,22 @@ def test_a_degraded_run_counts_as_a_run():
                            "last_success_at": (moment - timedelta(days=9)).isoformat(),
                            "last_status": "degraded"}
     assert _segment_for_light(moment, health) == "content"
+
+
+def test_a_stalled_projections_cron_is_caught_by_the_hourly_tick():
+    """Projections have their own cron; if it stops reaching the web service the hourly tick must run them."""
+    moment = _tick(10)                       # content's hour, nothing else overdue
+    assert _segment_for_light(moment, _fresh(moment, projections=9.0)) == "projections"
+    assert _segment_for_light(moment, _fresh(moment, projections=1.5)) == "content"      # the cron is keeping up
+
+
+def test_projections_that_never_ran_count_as_overdue():
+    moment = _tick(10)
+    health = _fresh(moment)
+    del health["projections"]
+    assert _segment_for_light(moment, health) == "projections"
+
+
+def test_a_scheduled_segment_that_is_itself_overdue_still_goes_before_projections():
+    moment = _tick(6)                        # core's hour
+    assert _segment_for_light(moment, _fresh(moment, core=20.0, projections=9.0)) == "core"
