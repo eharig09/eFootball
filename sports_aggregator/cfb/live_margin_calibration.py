@@ -18,7 +18,9 @@ the points model, which is why the projection features beat the closing line in 
 (xpoints.py, game_projection.py, matchup_research.py now read regular-season snapshots only) and everything
 rebuilt, the engine's slope on the market gap is ~0 in every season and its margin MAE sits 0.2-0.35 points
 behind the closing line (2023-2025: 12.44/12.28/12.19 vs 12.13/12.06/11.83), the same gap the NFL engine has.
-CORE is therefore not a tier feature (no pregame history exists before 2026). The former head-coach/QB tier
+CORE is therefore not a tier feature (no pregame history exists before 2026). The points model's quality
+blend had also averaged in the Vegas margin, so the "Vegas-free" claim below was false for the projection features;
+the blend is now Elo + FPI only (MAE cost: 12.48/12.37/12.29 vs 12.44/12.28/12.19 with the line in it). The former head-coach/QB tier
 is also gone: it added 0.03 MAE, and its historical QB is whoever threw the most passes in that game, which
 is look-ahead the live pregame starter does not have.
 

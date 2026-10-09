@@ -44,6 +44,22 @@ from sports_aggregator.cfb.team_game_special_teams import (
 
 BACKTEST_VERSION = "game-projection-backtest-v1"
 
+#: Names what the stored rows were computed FROM. Bump it whenever a change to the projection's inputs makes
+#: already-stored rows wrong, and `refresh()` rebuilds every season whose marker differs, one season per run.
+#: market-free-blend-core-fix-v1: the points model's quality blend is Elo + FPI only (it had averaged in the
+#: Vegas margin and each season's FINAL CORE rating, a look-ahead; see live_margin_calibration.py).
+INPUTS_VERSION = "market-free-blend-core-fix-v1"
+FIRST_BACKTEST_SEASON = 2021
+CURRENT_SEASON_MAX_AGE_DAYS = 6
+
+META_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cfb_projection_backtest_meta (
+  backtest_version TEXT NOT NULL, season INTEGER NOT NULL, inputs_version TEXT NOT NULL,
+  built_at TEXT NOT NULL, games INTEGER NOT NULL,
+  PRIMARY KEY(backtest_version, season)
+);
+"""
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS cfb_projection_backtest (
   game_id INTEGER NOT NULL,
@@ -356,6 +372,57 @@ def _actuals(repository: CFBRepository, game_ids: Iterable[int]) -> dict[tuple[i
     return output
 
 
+def stale_seasons(repository: CFBRepository, *, current_season: int,
+                  backtest_version: str = BACKTEST_VERSION,
+                  now: datetime | None = None) -> list[int]:
+    """Seasons whose stored rows need rebuilding, oldest first.
+
+    A finished season is stale when its marker is missing or names different inputs; the current season is
+    also rebuilt when its rows are more than a few days old, since games complete every week."""
+    initialize(repository)
+    moment = now or datetime.now(timezone.utc)
+    with closing(repository._connect()) as connection:
+        connection.execute(META_SCHEMA)
+        connection.commit()
+        meta = {int(row[0]): (row[1], row[2]) for row in connection.execute(
+            "SELECT season,inputs_version,built_at FROM cfb_projection_backtest_meta WHERE backtest_version=?",
+            (backtest_version,))}
+        playable = {int(row[0]) for row in connection.execute(
+            """SELECT DISTINCT season FROM games WHERE completed=1 AND start_date IS NOT NULL
+               AND home_points IS NOT NULL AND away_points IS NOT NULL AND season>=?""",
+            (FIRST_BACKTEST_SEASON,))}
+    stale = []
+    for season in sorted(playable):
+        if season > int(current_season):
+            continue
+        marker = meta.get(season)
+        if marker is None or marker[0] != INPUTS_VERSION:
+            stale.append(season)
+        elif season == int(current_season):
+            built = datetime.fromisoformat(str(marker[1]))
+            if built.tzinfo is None:
+                built = built.replace(tzinfo=timezone.utc)
+            if (moment - built).days >= CURRENT_SEASON_MAX_AGE_DAYS:
+                stale.append(season)
+    return stale
+
+
+def refresh(repository: CFBRepository, *, current_season: int,
+            backtest_version: str = BACKTEST_VERSION) -> dict[str, Any]:
+    """Rebuild the single oldest stale season; the scheduled step calls this once per run.
+
+    One season per run bounds the step's time and memory on the small production host, and a season is
+    written (rows and marker) in one transaction, so an interrupted run leaves the previous rows intact."""
+    stale = stale_seasons(repository, current_season=current_season, backtest_version=backtest_version)
+    if not stale:
+        return {"status": "current", "inputs_version": INPUTS_VERSION, "stale_seasons": []}
+    season = stale[0]
+    result = build(repository, from_season=season, to_season=season, backtest_version=backtest_version)
+    return {"status": "rebuilt", "season": season, "remaining_seasons": stale[1:],
+            "inputs_version": INPUTS_VERSION, "games_projected": result["games_projected"],
+            "team_game_rows": result["team_game_rows"]}
+
+
 def build(repository: CFBRepository, *, from_season: int, to_season: int,
           backtest_version: str = BACKTEST_VERSION,
           min_prior_games: int = 1,
@@ -508,6 +575,13 @@ def build(repository: CFBRepository, *, from_season: int, to_season: int,
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             rows,
         )
+        connection.execute(META_SCHEMA)
+        for season in sorted({int(game["season"]) for game in games}):
+            connection.execute(
+                """INSERT OR REPLACE INTO cfb_projection_backtest_meta
+                   (backtest_version,season,inputs_version,built_at,games) VALUES(?,?,?,?,?)""",
+                (backtest_version, season, INPUTS_VERSION, now,
+                 sum(1 for game in games if int(game["season"]) == season)))
 
     return {
         "backtest_version": backtest_version,

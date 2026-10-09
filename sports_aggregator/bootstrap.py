@@ -214,6 +214,16 @@ def steps(season: int, *, history_from: int | None = None,
         Step("xredzone-dataset", "Red-zone shrinkage lookup table",
              ["sports_aggregator.cfb.xredzone_cli", "refresh"],
              ("initial", "refresh"), timeout_seconds=120),
+        # The walk-forward projection rows margin-v2 trains on and the total calibration reads. Nothing built
+        # them in production; they came from a one-off copy, so when the CORE look-ahead and the Vegas-in-blend
+        # were fixed there was no way to re-derive them. This rebuilds ONE stale season per run (oldest first,
+        # tracked by projection_backtest.INPUTS_VERSION), so a bumped marker heals over a few nightly runs
+        # instead of needing one long job on the small host. Must follow the xpoints/xdrives datasets above.
+        Step("projection-backtest", "Walk-forward projection rows (one stale season per run)",
+             ["sports_aggregator.cfb.projection_backtest_cli", "refresh", "--season", year],
+             # One season measured 306 s and a 66 MB peak working set locally; the 600 MB address-space
+             # ceiling is headroom for the interpreter's virtual size, and the host is 2 GB.
+             ("initial", "refresh"), optional=True, timeout_seconds=3300, memory_mb=600),
         # Same gap again, this time with real user-visible impact: Engine B's
         # "families" (bad_loss/bounceback_candidate/statement_win/etc, the
         # tags two_engine_live.py's narrative signal and the game page's

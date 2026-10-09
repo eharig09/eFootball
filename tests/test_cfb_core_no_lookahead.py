@@ -49,5 +49,5 @@ def test_the_pregame_quality_blend_leaves_core_out():
     import inspect
     from sports_aggregator.cfb import game_projection
     source = inspect.getsource(game_projection.matchup_quality_snapshot)
-    assert 'BLENDED = ("elo", "fpi", "vegas")' in source
+    assert 'BLENDED = ("elo", "fpi")' in source             # and Vegas: the engine is market-free
     assert "through_season_type='regular'" in source

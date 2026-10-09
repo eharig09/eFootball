@@ -41,7 +41,7 @@ CONTENT_STEPS = ["articles", "bluesky", "reddit", "youtube", "podcasts", "retag"
 ROSTER_STEPS = ["cfbd-roster-context", "cfbd-recruits", "transfer-grades", "nfl-rosters"]
 MODEL_STEPS = ["cfbd-models", "cfbd-game-ppa", "cfbd-box-scores", "cfbd-lines", "weather", "nfl-pff",
               "coach-elo", "qb-elo", "xdrives-model", "xpoints-model", "xredzone-dataset",
-              "narrative-shapes"]
+              "projection-backtest", "narrative-shapes"]
 
 #: Refresh steps the core segment runs by name after the CORE_DATASETS pull.
 #: `pregame-snapshot` freezes each upcoming game's pregame state and belongs
