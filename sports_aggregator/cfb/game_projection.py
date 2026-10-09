@@ -305,9 +305,10 @@ def matchup_quality_snapshot(repository, game_id: int) -> dict[str, Any]:
                  if home_core is not None and away_core is not None else None),
         "vegas": -spread if spread is not None else None,
     }
-    #: CORE is shown but not blended: it has no pregame history before 2026 (past seasons store only the
-    #: season-final snapshot), so the model that reads this blend was never trained with it in the mix.
-    BLENDED = ("elo", "fpi", "vegas")
+    #: Market-free blend. CORE is shown but not blended (no pregame history before 2026: past seasons store
+    #: only the season-final snapshot), and Vegas is shown but not blended so the projection never sees the
+    #: line it is compared with. The points model was trained on exactly this blend.
+    BLENDED = ("elo", "fpi")
 
     def side(components: dict[str, float | None]) -> dict[str, Any]:
         values = [float(value) for key, value in components.items()
@@ -319,7 +320,7 @@ def matchup_quality_snapshot(repository, game_id: int) -> dict[str, Any]:
                        for key, value in home_components.items()}
     return {"home": side(home_components), "away": side(away_components),
             "scale": "estimated point-margin edge",
-            "method": "equal-weight mean of available Elo, FPI and Vegas sources (CORE shown, not blended)"}
+            "method": "equal-weight mean of available Elo and FPI sources (CORE and Vegas shown, not blended)"}
 
 
 def team_special_teams_snapshot(repository, team: str, *, before_date: str,

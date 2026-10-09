@@ -204,13 +204,14 @@ def build_dataset(repository, *, from_season: int | None = None,
             # averaging. Elo's conventional CFB conversion is about 25 points
             # of rating per scoreboard point; FPI, CORE and Vegas are already
             # expressed on point-like scales.
-            # CORE is stored (core_margin) but not blended: past seasons have no pregame snapshot of it, and
-            # live must blend exactly what the model was trained on.
+            # The blend is market-free: Elo and FPI only. CORE (no pregame history before 2026) and the
+            # Vegas margin are stored as columns for research but are not blended, so the points model, and
+            # everything that reads its projection, never sees the line it is later compared with. Live must
+            # blend exactly what the model was trained on (game_projection.matchup_quality_snapshot).
             quality_components = [value for value in (
                 ((float(team_elo) - float(opponent_elo)) / 25.0
                  if team_elo is not None and opponent_elo is not None else None),
                 float(fpi_margin) if fpi_margin is not None else None,
-                vegas_margin,
             ) if value is not None]
             quality_blend = (sum(quality_components) / len(quality_components)
                              if quality_components else None)

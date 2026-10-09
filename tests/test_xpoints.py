@@ -103,10 +103,12 @@ class LeakSafeDatasetTests(XPointsFixture):
               WHERE game_id=1 AND team='Alpha'""").fetchone())
             beta = dict(connection.execute("""SELECT * FROM cfb_xpoints_dataset
               WHERE game_id=1 AND team='Beta'""").fetchone())
-        # Elo says +4 points and Vegas says +4, with unavailable FPI/CORE omitted.
+        # Elo says +4 points. Vegas also says +4 but is not blended (the engine is market-free), and the
+        # unavailable FPI/CORE are omitted, so Elo is the only source.
         self.assertAlmostEqual(alpha["opponent_quality_blend"], 4.0)
         self.assertAlmostEqual(beta["opponent_quality_blend"], -4.0)
-        self.assertEqual(alpha["quality_source_count"], 2)
+        self.assertEqual(alpha["quality_source_count"], 1)
+        self.assertAlmostEqual(alpha["vegas_margin"], 4.0)             # still stored, for research
 
     def test_quality_blend_adds_strictly_pregame_fpi_and_stores_core(self):
         self.seed_game(1, 2, 31, 17, 4, 2)
@@ -123,12 +125,13 @@ class LeakSafeDatasetTests(XPointsFixture):
         with self.repository._reader() as connection:
             alpha = dict(connection.execute("""SELECT * FROM cfb_xpoints_dataset
               WHERE game_id=1 AND team='Alpha'""").fetchone())
-        # CORE is stored for reference but not blended: past seasons have no pregame snapshot of it, so the
-        # blend is Elo + FPI + Vegas, exactly what live computes.
-        self.assertEqual(alpha["quality_source_count"], 3)
+        # The blend is market-free: Elo (100 points / 25 = 4) and FPI (10), exactly what live computes. CORE
+        # (no pregame history) and the Vegas margin are stored for research but never blended.
+        self.assertEqual(alpha["quality_source_count"], 2)
         self.assertAlmostEqual(alpha["core_margin"], 6.0)
         self.assertAlmostEqual(alpha["fpi_margin"], 10.0)
-        self.assertAlmostEqual(alpha["opponent_quality_blend"], 6.0)
+        self.assertAlmostEqual(alpha["vegas_margin"], 4.0)
+        self.assertAlmostEqual(alpha["opponent_quality_blend"], 7.0)
 
     def test_opponent_adjustment_uses_only_previously_established_norms(self):
         self.seed_game(1, 1, 31, 17, 4, 2)

@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 
 from sports_aggregator.cfb.projection_backtest import (
-    BACKTEST_VERSION, build, prepare_actuals, report, source_coverage,
+    BACKTEST_VERSION, build, prepare_actuals, refresh, report, source_coverage,
 )
 from sports_aggregator.cfb.historical_coverage import audit as historical_coverage_audit, export_report as export_historical_coverage
 from sports_aggregator.cfb.score_construction_calibration import report as score_calibration_report
@@ -20,11 +20,13 @@ from sports_aggregator.cfb.repository import CFBRepository
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Walk-forward backtest of the live CFB projection")
-    p.add_argument("command", choices=("prepare", "coverage", "coverage-audit", "backfill-readiness", "run", "report", "score-calibration", "margin-feature-ablation", "margin-common-sample"))
+    p.add_argument("command", choices=("prepare", "coverage", "coverage-audit", "backfill-readiness", "run", "refresh", "report", "score-calibration", "margin-feature-ablation", "margin-common-sample"))
     p.add_argument("--from-year", type=int, default=None)
     p.add_argument("--to-year", type=int, default=None)
     p.add_argument("--year", type=int, default=None,
                    help="Shortcut for --from-year YEAR --to-year YEAR.")
+    p.add_argument("--season", type=int, default=None,
+                   help="refresh: the current season (defaults to this year); rebuilds the oldest stale one.")
     p.add_argument("--min-prior-games", type=int, default=1)
     p.add_argument("--points-train-from-year", type=int, default=2022,
                    help="Earliest season allowed into each prior-season xPoints fold.")
@@ -76,6 +78,11 @@ def main(argv: list[str] | None = None) -> int:
             points_train_from_season=args.points_train_from_year,
             drives_train_from_season=args.drives_train_from_year,
         )
+    elif args.command == "refresh":
+        from datetime import datetime, timezone
+        payload = refresh(
+            repository, current_season=int(args.season or datetime.now(timezone.utc).year),
+            backtest_version=args.backtest_version)
     elif args.command == "score-calibration":
         payload = score_calibration_report(
             repository,

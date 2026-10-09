@@ -41,6 +41,23 @@ For a single season:
 python -m sports_aggregator.cfb.projection_backtest_cli run --year 2025
 ```
 
+## Keeping production current (`refresh`)
+
+```bash
+python -m sports_aggregator.cfb.projection_backtest_cli refresh --season 2026
+```
+
+Rebuilds the single oldest *stale* season and prints what is left. A season is stale when its marker in
+`cfb_projection_backtest_meta` is missing or names different inputs than `projection_backtest.INPUTS_VERSION`;
+the current season is also rebuilt when its rows are six or more days old. The scheduled `projection-backtest`
+step (the nightly `models` segment) calls this once per run, so a bumped `INPUTS_VERSION` heals production over
+a few nights without one long job on the small host. A season's rows and marker are written in one transaction,
+so an interrupted run leaves the previous rows in place.
+
+Bump `INPUTS_VERSION` whenever a change to the projection's inputs makes stored rows wrong. It is currently
+`market-free-blend-core-fix-v1`: the points model's quality blend is Elo + FPI only (it had averaged in the Vegas
+margin and each season's *final* CORE rating, a look-ahead; see `live_margin_calibration.py`).
+
 ## Report
 
 ```bash
