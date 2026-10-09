@@ -10,6 +10,7 @@ changed.
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 
 from flask import current_app, g, request
@@ -107,7 +108,35 @@ def page_key() -> str:
     return f"page:{code_version()}:{data_version()}:{request.full_path}"
 
 
+#: Seconds a request waits for another thread that is already rendering the same page before it renders too.
+SINGLE_FLIGHT_WAIT_SECONDS = 60.0
+_FLIGHTS: dict[str, threading.Lock] = {}
+_FLIGHTS_GUARD = threading.Lock()
+
+
+def _flight_lock(key: str) -> threading.Lock:
+    with _FLIGHTS_GUARD:
+        lock = _FLIGHTS.get(key)
+        if lock is None:
+            lock = _FLIGHTS[key] = threading.Lock()
+        return lock
+
+
+def _release_flight(key: str, lock: threading.Lock) -> None:
+    lock.release()
+    with _FLIGHTS_GUARD:
+        # nobody else is queued on it any more: drop it so the table does not grow with every page ever built
+        if _FLIGHTS.get(key) is lock and not lock.locked():
+            _FLIGHTS.pop(key, None)
+
+
 def cached_page(view):
+    """Cache a public page, rendering each distinct cold page at most once at a time.
+
+    A cold page is 8-20 s of CPU. With one thread that was invisible -- requests queued and the second one found
+    the first one's result -- but with several threads two visitors would each pay the full render. Callers for the
+    same key now wait for the first, then read its result from the cache; a render that fails or is not cacheable
+    simply lets the next waiter try. The wait is bounded so one stuck render cannot hold the rest."""
     from functools import wraps
 
     @wraps(view)
@@ -123,10 +152,21 @@ def cached_page(view):
         if cached is not None:
             g.page_cache = "hit"
             return cached
-        g.page_cache = "miss"
-        rendered = view(*args, **kwargs)
-        if isinstance(rendered, str):
-            cache.set(key, rendered, timeout=page_cache_seconds())
-        return rendered
+        lock = _flight_lock(key)
+        acquired = lock.acquire(timeout=SINGLE_FLIGHT_WAIT_SECONDS)
+        try:
+            if acquired:
+                cached = cache.get(key)           # whoever held the lock has probably just stored it
+                if cached is not None:
+                    g.page_cache = "hit"
+                    return cached
+            g.page_cache = "miss"
+            rendered = view(*args, **kwargs)
+            if isinstance(rendered, str):
+                cache.set(key, rendered, timeout=page_cache_seconds())
+            return rendered
+        finally:
+            if acquired:
+                _release_flight(key, lock)
 
     return wrapper

@@ -2,12 +2,19 @@ services:
   - type: web
     name: cfb_intelligence
     runtime: python
-    plan: starter
+    # 1 CPU / 2 GB ("1c-2g"). This said `starter` (0.5 CPU / 512 MB) after the instance was upgraded, so a Blueprint
+    # sync could have put it back; the container's own cgroup reports the 2,048 MB limit.
+    plan: standard
     buildCommand: pip install -r requirements.txt
-    # One worker/thread leaves the most headroom on the constrained web service.
-    # The rendered-page cache is disk-backed, so recycling the worker more often
-    # bounds Python heap growth without throwing away warmed page output.
-    startCommand: gunicorn --workers 1 --threads 1 --timeout 120 --max-requests 200 --max-requests-jitter 25 run:app
+    # ONE worker, three threads. Measured: a worker idles near 230 MB after boot and settles at roughly 380-490 MB
+    # once it has served a realistic mix of the heavy pages, so a second worker (~1 GB together) would crowd 2 GB
+    # next to a refresh child that has peaked at ~580 MB. Threads share that memory: with one thread a single cold
+    # page render (8-20 s of CPU) blocked every other request, including cached pages and the health check. The
+    # page cache coalesces identical cold renders (page_cache.cached_page), so extra threads do not repeat work.
+    # --max-requests recycles the worker to bound heap growth; each recycle costs a ~9 s boot with one worker, so it
+    # is spaced out (200 -> 600) now that there is memory to carry the growth. The disk-backed page cache and the
+    # compiled-template cache survive a recycle.
+    startCommand: gunicorn --workers 1 --threads 3 --timeout 120 --max-requests 600 --max-requests-jitter 60 run:app
     # The old /api/v1/cfb/status probe performs several database summaries. The
     # home shell is a much cheaper liveness check and avoids background DB work.
     healthCheckPath: /
@@ -24,8 +31,8 @@ services:
         value: "0"
       - key: LIVE_RSS_CACHE_SECONDS
         value: "3600"
-      # Prevent numerical libraries from creating extra CPU-hungry worker threads
-      # on the 0.5-CPU Render instance.
+      # Prevent numerical libraries from creating extra CPU-hungry worker threads: the container has ONE CPU,
+      # while os.cpu_count() reports the host's (16), which is what libraries size their pools from.
       - key: OMP_NUM_THREADS
         value: "1"
       - key: OPENBLAS_NUM_THREADS
@@ -34,8 +41,12 @@ services:
         value: "1"
       - key: NUMEXPR_NUM_THREADS
         value: "1"
+      # Address-space ceiling (RLIMIT_AS, virtual not resident) for each refresh child. 200 MB was sized for the
+      # 512 MB plan and is below what Python plus numpy/pyarrow reserve, which produced allocation and OpenBLAS
+      # failures at resident peaks of 44-94 MB. One refresh runs at a time (the lock), so 1,024 MB is bounded and
+      # safe on 2 GB next to the web worker; NFL steps already carry their own 1,200 MB.
       - key: CFB_REFRESH_CHILD_MB
-        value: "200"
+        value: "1024"
       # Rendered CFB pages are CPU-heavy but change much less often than requests.
       # Keep them for an hour and let refresh writes invalidate at most once per
       # hour instead of invalidating the whole page cache after every SQLite write.

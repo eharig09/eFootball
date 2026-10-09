@@ -40,7 +40,7 @@ RESULTS_REFRESH_STEPS = ["cfbd-sync", "cfbd-box-scores", "cfbd-lines"]
 SCORES_DATASETS = ["games"]
 REFRESH_PROFILES = frozenset({"light", "heavy", "scores", "results", "news"})
 RESUME_WINDOW_HOURS = 12.0
-DEFAULT_CHILD_MEMORY_MB = 320
+DEFAULT_CHILD_MEMORY_MB = 1024      # 2 GB instance; render.yaml sets the same via CFB_REFRESH_CHILD_MB
 
 CFBD_DATASET_STEPS = [
     "teams", "players", "games", "betting_lines", "media", "records", "coaches",
