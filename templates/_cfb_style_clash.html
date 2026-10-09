@@ -1,0 +1,47 @@
+{% macro cfb_style_clash(sc, game, market) %}
+{% if sc and sc.available %}
+<section class="section" id="style-clash" data-mobile-tab-panel="matchups">
+    <div class="section-head"><div><p class="eyebrow">Style against style</p><h2>Style clash</h2></div></div>
+    <details class="ui-note"><summary>Method</summary><p>Every team's offense and defense is rated separately on each measure, adjusted for the opposition it has faced, using only games before this one and carrying the earlier seasons in until this season has a real sample. Ranks and labels are relative to FBS teams, using league terciles on the same ratings. "This matchup" is what the offense's rating predicts against this defense's rating. This is description and an opponent-adjusted projection, not a pick and not the Football Lab number: in a 2023&ndash;2025 walk-forward its expected margin missed by about 12.8 points on average, against about 11.1 for the Football Lab margin, so the labels describe the matchup and never move a number.</p></details>
+    {% if not sc.settled %}<p class="ctx">Early-season sample: {{ sc.games_played }} game{{ '' if sc.games_played == 1 else 's' }} played by the less-experienced team, so ratings lean on last season. Treat gaps as soft.</p>{% endif %}
+    <div class="ui-side-by-side">
+        {% for d in sc.directions %}
+        <article class="ui-panel">
+            <header class="ui-panel-head"><h3>{{ d.offence }} offense vs {{ d.defence }} defense</h3><span class="ui-median-key">{{ d.alignment }}</span></header>
+            <div class="ui-chips">
+                <span class="ui-chip">{{ d.offence_labels.approach }}</span><span class="ui-chip">{{ d.offence_labels.tempo }}</span><span class="ui-chip">{{ d.offence_labels.explosive }}</span>
+                <em>vs</em>
+                <span class="ui-chip">{{ d.defence_labels.vulnerability }}</span><span class="ui-chip">{{ 'Big-play prone' if d.defence_labels.big_plays == 'Big-play prone' else ('Contains big plays' if d.defence_labels.big_plays == 'Contains' else 'Average big plays') }}</span>
+            </div>
+            <table class="ui-mini">
+                <thead><tr><th>Measure</th><th class="num">{{ d.offence }} off</th><th class="num">{{ d.defence }} def</th><th class="num">This matchup</th><th class="num">vs league</th></tr></thead>
+                <tbody>
+                {% for r in d.rows %}
+                <tr>
+                    <th scope="row">{{ r.label }}{% if r.note %}<small>{{ r.note }}</small>{% endif %}</th>
+                    <td class="num">{{ r.off_value|cell(r.format) }}<small>#{{ r.off_rank }}</small></td>
+                    <td class="num">{{ r.def_value|cell(r.format) }}<small>#{{ r.def_rank }}</small></td>
+                    <td class="num"><b>{{ r.expected|cell(r.format) }}</b></td>
+                    <td class="num{{ ' is-good' if r.tone == 'good' }}{{ ' is-poor' if r.tone == 'poor' }}">{% if r.format == 'rate' %}{{ '%+.1f'|format(r.edge * 100) }} pts{% elif r.format == 'f1' %}{{ '%+.1f'|format(r.edge) }}{% else %}{{ '%+.2f'|format(r.edge) }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </article>
+        {% endfor %}
+    </div>
+    <article class="ui-panel">
+        <header class="ui-panel-head"><h3>Opponent-adjusted projection</h3><span class="ui-median-key">{% if sc.neutral %}neutral site, no home edge{% else %}includes home edge{% endif %}</span></header>
+        <table class="ui-mini">
+            <thead><tr><th></th><th class="num">{{ game.away_team }}</th><th class="num">{{ game.home_team }}</th><th class="num">Margin ({{ game.home_team }})</th><th class="num">Total</th><th class="ctx">Market</th></tr></thead>
+            <tbody><tr>
+                <th scope="row">Expected points</th>
+                <td class="num"><b>{{ sc.expected.away|cell('f1') }}</b></td><td class="num"><b>{{ sc.expected.home|cell('f1') }}</b></td>
+                <td class="num">{{ sc.expected.margin|cell('signed1') }}</td><td class="num">{{ sc.expected.total|cell('f1') }}</td>
+                <td class="ctx">{% if market and market.consensus_spread is not none %}{{ game.home_team }} margin {{ (0 - market.consensus_spread)|cell('signed1') }}{% endif %}{% if market and market.consensus_total is not none %} &middot; total {{ market.consensus_total|cell('f1') }}{% endif %}</td>
+            </tr></tbody>
+        </table>
+    </article>
+</section>
+{% endif %}
+{% endmacro %}
