@@ -35,18 +35,20 @@ class LiveFeaturesTests(unittest.TestCase):
 
 
 class FeatureSetOrderingTests(unittest.TestCase):
-    def test_richest_tier_is_plus_hc_qb_elo_falling_back_through_redzone_to_recent(self):
+    def test_richest_tier_is_plus_redzone_falling_back_through_recent_and_fpi_to_elo(self):
         names = [name for name, _ in lmc.FEATURE_SETS]
-        self.assertEqual(names[0], "plus_hc_qb_elo")
-        self.assertEqual(names[1], "plus_redzone")
-        self.assertEqual(names[2], "plus_recent")
+        self.assertEqual(names, ["plus_redzone", "plus_recent", "plus_fpi", "plus_elo"])
         by_name = dict(lmc.FEATURE_SETS)
-        richest, mid, base = by_name["plus_hc_qb_elo"], by_name["plus_redzone"], by_name["plus_recent"]
+        mid, base = by_name["plus_redzone"], by_name["plus_recent"]
         self.assertNotIn("red_zone_diff", base)
         self.assertEqual(set(mid) - set(base), {"red_zone_diff"})
-        # plus_hc_qb_elo is plus_redzone plus exactly the two new features --
-        # never a silent respecification of an already-validated tier.
-        self.assertEqual(set(richest) - set(mid), {"hc_diff", "qb_diff"})
+
+    def test_no_tier_uses_a_feature_without_pregame_history(self):
+        """CORE was end-of-season in every past season (look-ahead; see the module docstring), and the
+        historical quarterback is whoever threw the most passes in that game, so neither may be a feature."""
+        banned = {"core_margin", "hc_diff", "qb_diff"}
+        for name, features in lmc.FEATURE_SETS:
+            self.assertFalse(banned & set(features), name)
 
 
 class MissingEloTests(unittest.TestCase):
@@ -58,8 +60,7 @@ class MissingEloTests(unittest.TestCase):
     def _rich_row(self, **overrides):
         row = {
             "raw_margin": 3.0, "ppd_diff": 0.2, "drive_diff": 1.0, "elo_diff": 50.0,
-            "core_margin": 2.0, "fpi_margin": 1.5, "recent_margin_diff": 4.0,
-            "red_zone_diff": 0.05, "hc_diff": 10.0, "qb_diff": -5.0,
+            "fpi_margin": 1.5, "recent_margin_diff": 4.0, "red_zone_diff": 0.05,
         }
         row.update(overrides)
         return row

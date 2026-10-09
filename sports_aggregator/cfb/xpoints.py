@@ -149,7 +149,11 @@ def build_dataset(repository, *, from_season: int | None = None,
                    for row in connection.execute(f"""SELECT game_id,team_id,pred_point_diff
                      FROM fpi_game_projections WHERE game_id IN ({marks})""", game_ids)}
         core: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
-        for row in connection.execute("SELECT season,through_week,team,overall FROM core_ratings"):
+        # Only regular-season snapshots can precede a regular-season game. Past seasons are stored as one
+        # `postseason` snapshot (the season's FINAL rating); comparing week numbers alone let every game after
+        # week 1 read its own season's final CORE rating as a pregame input.
+        for row in connection.execute(
+                "SELECT season,through_week,team,overall FROM core_ratings WHERE through_season_type='regular'"):
             core[(int(row["season"]), str(row["team"]))].append(dict(row))
 
     own: dict[str, deque] = defaultdict(lambda: deque(maxlen=TRAILING_WINDOW_GAMES))
@@ -200,11 +204,13 @@ def build_dataset(repository, *, from_season: int | None = None,
             # averaging. Elo's conventional CFB conversion is about 25 points
             # of rating per scoreboard point; FPI, CORE and Vegas are already
             # expressed on point-like scales.
+            # CORE is stored (core_margin) but not blended: past seasons have no pregame snapshot of it, and
+            # live must blend exactly what the model was trained on.
             quality_components = [value for value in (
                 ((float(team_elo) - float(opponent_elo)) / 25.0
                  if team_elo is not None and opponent_elo is not None else None),
                 float(fpi_margin) if fpi_margin is not None else None,
-                core_margin, vegas_margin,
+                vegas_margin,
             ) if value is not None]
             quality_blend = (sum(quality_components) / len(quality_components)
                              if quality_components else None)

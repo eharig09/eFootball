@@ -195,7 +195,7 @@ def _live_narrative_context(
             dict(r) for r in connection.execute(
                 """SELECT team,overall,through_week
                    FROM core_ratings
-                   WHERE season=? AND through_week<?
+                   WHERE season=? AND through_season_type='regular' AND through_week<?
                    ORDER BY through_week""",
                 (season, int(game.get("week") or 0)),
             )

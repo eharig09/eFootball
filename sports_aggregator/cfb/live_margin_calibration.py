@@ -1,14 +1,26 @@
 """Production CFB margin calibration.
 
-Frozen after walk-forward/common-sample validation:
+Frozen after walk-forward/common-sample validation, then corrected 2026-10-09 (see below):
   raw Football Lab margin
   + projected PPD differential
   + projected drive differential
   + Elo differential
-  + CORE margin
   + FPI margin
   + recent margin differential
   + red-zone scoring-rate differential
+
+CORRECTION (2026-10-09): earlier tiers also carried `core_margin`. Past seasons store only one CORE snapshot,
+the season-FINAL one (`postseason`, week 1), and the training-set builder compared week numbers without the
+snapshot's season type, so every historical game after week 1 read its own season's final CORE rating as a
+"pregame" input. Slope of (actual - closing line) on (core_margin - closing line) was +0.35 with t~7 in every
+season 2022-2025, which no pregame input can have; it also flowed into `opponent_quality_blend`, a feature of
+the points model, which is why the projection features beat the closing line in 2024-25. With the leak removed
+(xpoints.py, game_projection.py, matchup_research.py now read regular-season snapshots only) and everything
+rebuilt, the engine's slope on the market gap is ~0 in every season and its margin MAE sits 0.2-0.35 points
+behind the closing line (2023-2025: 12.44/12.28/12.19 vs 12.13/12.06/11.83), the same gap the NFL engine has.
+CORE is therefore not a tier feature (no pregame history exists before 2026). The former head-coach/QB tier
+is also gone: it added 0.03 MAE, and its historical QB is whoever threw the most passes in that game, which
+is look-ahead the live pregame starter does not have.
 
 Vegas is intentionally excluded from model fitting and prediction.
 If a live external rating is unavailable, fall back through nested
@@ -36,6 +48,7 @@ blend -- so it was left out of the live model; see
 margin_feature_ablation.py's "plus_turnovers"/"plus_turnovers_redzone"
 tiers if that's revisited.
 
+(Superseded by the CORRECTION above: the hc_diff/qb_diff tier was removed.)
 hc_diff/qb_diff (home minus away pregame HC/QB Elo -- the same person-level
 ratings Engine A already reads categorically as its 4th convergence signal,
 here as continuous margin-v2 regression inputs instead) were added after
@@ -68,24 +81,16 @@ MODEL_VERSION = "margin-v2"
 L2 = 2.0
 
 FEATURE_SETS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("plus_hc_qb_elo", (
-        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
-        "fpi_margin", "recent_margin_diff", "red_zone_diff", "hc_diff", "qb_diff",
-    )),
     ("plus_redzone", (
         "raw_margin", "ppd_diff", "drive_diff", "elo_diff",
-        "core_margin", "fpi_margin", "recent_margin_diff", "red_zone_diff",
+        "fpi_margin", "recent_margin_diff", "red_zone_diff",
     )),
     ("plus_recent", (
         "raw_margin", "ppd_diff", "drive_diff", "elo_diff",
-        "core_margin", "fpi_margin", "recent_margin_diff",
+        "fpi_margin", "recent_margin_diff",
     )),
     ("plus_fpi", (
-        "raw_margin", "ppd_diff", "drive_diff", "elo_diff",
-        "core_margin", "fpi_margin",
-    )),
-    ("plus_core", (
-        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "core_margin",
+        "raw_margin", "ppd_diff", "drive_diff", "elo_diff", "fpi_margin",
     )),
     ("plus_elo", (
         "raw_margin", "ppd_diff", "drive_diff", "elo_diff",

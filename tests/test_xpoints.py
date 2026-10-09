@@ -108,7 +108,7 @@ class LeakSafeDatasetTests(XPointsFixture):
         self.assertAlmostEqual(beta["opponent_quality_blend"], -4.0)
         self.assertEqual(alpha["quality_source_count"], 2)
 
-    def test_quality_blend_adds_strictly_pregame_fpi_and_core(self):
+    def test_quality_blend_adds_strictly_pregame_fpi_and_stores_core(self):
         self.seed_game(1, 2, 31, 17, 4, 2)
         with closing(sqlite3.connect(self.path)) as connection:
             connection.executemany("INSERT INTO core_ratings VALUES(2026,'regular',1,?,?,?,?,?,?,?,?)", (
@@ -123,7 +123,9 @@ class LeakSafeDatasetTests(XPointsFixture):
         with self.repository._reader() as connection:
             alpha = dict(connection.execute("""SELECT * FROM cfb_xpoints_dataset
               WHERE game_id=1 AND team='Alpha'""").fetchone())
-        self.assertEqual(alpha["quality_source_count"], 4)
+        # CORE is stored for reference but not blended: past seasons have no pregame snapshot of it, so the
+        # blend is Elo + FPI + Vegas, exactly what live computes.
+        self.assertEqual(alpha["quality_source_count"], 3)
         self.assertAlmostEqual(alpha["core_margin"], 6.0)
         self.assertAlmostEqual(alpha["fpi_margin"], 10.0)
         self.assertAlmostEqual(alpha["opponent_quality_blend"], 6.0)
