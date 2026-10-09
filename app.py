@@ -23,6 +23,7 @@ from flask import Flask, abort, jsonify, render_template, request, session
 from dotenv import load_dotenv
 
 from sports_aggregator.process_probe import lock_is_held
+from sports_aggregator.warmer import install_page_warmer
 from sports_aggregator.cfb.refresh_window import profile_for
 from sports_aggregator.cfb.repository import CFBRepository
 from sports_aggregator.nfl.repository import NFLRepository
@@ -176,6 +177,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     install_compression(app)
     install_client_caching(app)
     install_request_timing(app)
+    # Keeps the heaviest pages rendered while the site is idle. On by default on Render (existing services are not
+    # guaranteed to re-sync Blueprint environment additions), opt-in anywhere else; tests are never affected.
+    install_page_warmer(app, enabled=_env_flag("CFB_WARM_PAGES", _env_flag("RENDER", False)))
     _install_template_bytecode_cache(app)
     cache.init_app(app)
     app.extensions["league_aggregation_service"] = app.config.get(

@@ -1649,6 +1649,8 @@ def status_api():
     from sports_aggregator.cfb.data_status import deployed_build, host_resources
     payload["deploy"] = deployed_build()
     payload["host"] = host_resources()
+    warmer = current_app.extensions.get("page_warmer")
+    payload["warmer"] = warmer.status() if warmer else None
     from sports_aggregator.cfb.data_status import _instance_dir, disk_report
     payload["disk"] = disk_report(_instance_dir())
     return jsonify(payload)
