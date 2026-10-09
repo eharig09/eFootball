@@ -40,7 +40,7 @@ from sports_aggregator.cfb import playoff_view
 from sports_aggregator.cfb.playoff_service import build_forecast as build_playoff_forecast
 from sports_aggregator.cfb.matchup_research import (
     matchup_research_packet, TOTALS_RESEARCH_OVERALL, TOTALS_TRACKED_OVERALL,
-    TOTALS_TRACKED_MIN_WIN_RATE)
+    TOTALS_TRACKED_MIN_WIN_RATE, TOTALS_WALK_FORWARD)
 from sports_aggregator.cfb.lines import game_lines, lines_by_game
 from sports_aggregator.cfb.scoreboard_projection import projections_for_games
 from sports_aggregator.cfb import convergence_panel
@@ -1200,6 +1200,7 @@ def game_preview(game_id: int):
         totals_overall=TOTALS_RESEARCH_OVERALL,
         totals_tracked_overall=TOTALS_TRACKED_OVERALL,
         totals_tracked_min_win_rate=TOTALS_TRACKED_MIN_WIN_RATE,
+        totals_walk_forward=TOTALS_WALK_FORWARD,
         team_ratings=team_ratings,
         season_record=season_record,
         season_record_first_appearance=season_record_first_appearance,
