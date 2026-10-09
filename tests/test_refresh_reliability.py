@@ -695,7 +695,8 @@ def test_the_disk_report_is_built_by_the_status_page_not_by_every_page(monkeypat
     from sports_aggregator.cfb import data_status
     calls = []
     monkeypatch.setattr(data_status, "disk_report", lambda directory, **k: calls.append(str(directory)) or
-                        {"total_mb": 5000, "used_mb": 4800, "free_mb": 200, "percent_used": 96.0, "listed_mb": 4700,
+                        {"mount": "/var/data", "total_mb": 5000, "used_mb": 4800, "free_mb": 200, "percent_used": 96.0,
+                         "listed_mb": 4700,
                          "entries": [{"name": "cfbd_raw/", "mb": 3100.0, "partial": False}], "complete": True})
     app = create_app({"TESTING": True, "REGISTER_LEGACY_DASHBOARDS": False,
                       "CFB_DATABASE_PATH": str(tmp_path / "cfb.sqlite3")})
@@ -705,6 +706,12 @@ def test_the_disk_report_is_built_by_the_status_page_not_by_every_page(monkeypat
     assert calls == []                                                          # ordinary pages never walk the disk
     page = client.get("/college-football/data-status/").get_data(as_text=True)
     assert len(calls) == 1
-    assert "disk <strong class=\"data-status-bad\">4800 of 5000 MB used (96.0%)" in page
+    assert "(/var/data)</span> <strong class=\"data-status-bad\">4800 of 5000 MB used (96.0%)" in page   # the volume is named
     assert "cfbd_raw/" in page and "nearly full" in page
     assert client.get("/api/v1/cfb/status").get_json()["disk"]["free_mb"] == 200
+
+
+def test_disk_report_names_the_volume_it_measured(tmp_path):
+    from sports_aggregator.cfb.data_status import disk_report
+    report = disk_report(_fill(tmp_path), cache_seconds=0)
+    assert report["mount"] and os.path.ismount(report["mount"])             # /var/data on Render, the drive locally
