@@ -44,6 +44,7 @@ from sports_aggregator.cfb.matchup_research import (
 from sports_aggregator.cfb.lines import game_lines, lines_by_game
 from sports_aggregator.cfb.scoreboard_projection import projections_for_games
 from sports_aggregator.cfb import convergence_panel
+from sports_aggregator.cfb import style_clash as cfb_style_clash
 from sports_aggregator import pff_team_grades
 from sports_aggregator.cfb import meta as page_meta_for
 from sports_aggregator.cfb import syndication
@@ -1189,6 +1190,7 @@ def game_preview(game_id: int):
         model_probability=model_probability_track(game, fpi, elo, market),
         projection=projection,
         research_intelligence=research_intelligence,
+        style_clash_data=_optional_panel("style clash", lambda: cfb_style_clash.build(repository, game)),
         two_engine_signal=two_engine_signal,
         engine_a_route_plain=engine_a_route_plain,
         engine_b_rules_plain=engine_b_rules_plain,
