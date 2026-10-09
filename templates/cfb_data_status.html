@@ -12,17 +12,17 @@
   {% set o = status.overall %}
   {%- set state = o.state if o.state != 'unknown' else status.latest_status -%}
   {%- set pill = 'warn' if status.running else {'failed':'bad','degraded':'warn','self_healing':'ok','healthy':'ok','success':'ok'}.get(state, 'muted') -%}
-  <div class="data-status-hero"><div><div class="data-status-muted">Pipeline health</div><h1>Data Status</h1><div class="data-status-muted">{% if o.segment_count %}{{ o.healthy_count }} of {{ o.segment_count }} segments healthy{% if o.failed_count %} · {{ o.failed_count }} failed{% endif %}{% if o.actionable_count %} · {{ o.actionable_count }} needing action{% endif %}{% if o.self_healing_count %} · {{ o.self_healing_count }} self-healing{% endif %}{% else %}Last completed refresh: {{ status.latest_finished_label }}{% if status.latest_relative_label != 'unknown' %} · {{ status.latest_relative_label }}{% endif %}{% endif %}{% if deploy_build %} · deployed build <code>{{ deploy_build.commit }}</code>{% endif %}{% if host_resources %} · memory {{ host_resources.memory_used_mb }} of {{ host_resources.memory_limit_mb or 'unlimited' }} MB{% if host_resources.oom_kills %} · <strong>{{ host_resources.oom_kills }} killed for memory</strong>{% endif %}{% endif %}{% if host_disk %} · disk <strong{% if host_disk.percent_used and host_disk.percent_used >= 85 %} class="data-status-bad"{% endif %}>{{ host_disk.used_mb }} of {{ host_disk.total_mb }} MB used ({{ host_disk.percent_used }}%)</strong>{% endif %}</div></div><div class="data-status-pill"><span class="data-status-{{ pill }}">●</span> {% if status.running %}Refresh running{% elif state == 'failed' %}Needs attention{% elif state == 'degraded' %}Degraded{% elif state == 'self_healing' %}Self-healing{% elif state in ('healthy', 'success') %}Healthy{% else %}No status yet{% endif %}</div></div>
+  <div class="data-status-hero"><div><div class="data-status-muted">Pipeline health</div><h1>Data Status</h1><div class="data-status-muted">{% if o.segment_count %}{{ o.healthy_count }} of {{ o.segment_count }} segments healthy{% if o.failed_count %} · {{ o.failed_count }} failed{% endif %}{% if o.actionable_count %} · {{ o.actionable_count }} needing action{% endif %}{% if o.self_healing_count %} · {{ o.self_healing_count }} self-healing{% endif %}{% else %}Last completed refresh: {{ status.latest_finished_label }}{% if status.latest_relative_label != 'unknown' %} · {{ status.latest_relative_label }}{% endif %}{% endif %}{% if deploy_build %} · deployed build <code>{{ deploy_build.commit }}</code>{% endif %}{% if host_resources %} · memory {{ host_resources.memory_used_mb }} of {{ host_resources.memory_limit_mb or 'unlimited' }} MB{% if host_resources.oom_kills %} · <strong>{{ host_resources.oom_kills }} killed for memory</strong>{% endif %}{% endif %}{% if host_disk %} · disk <span title="The volume holding the database. Render's persistent disk reports its own size; running locally this is the whole drive of the machine.">({{ host_disk.mount }})</span> <strong{% if host_disk.percent_used and host_disk.percent_used >= 85 %} class="data-status-bad"{% endif %}>{{ host_disk.used_mb }} of {{ host_disk.total_mb }} MB used ({{ host_disk.percent_used }}%)</strong>{% endif %}</div></div><div class="data-status-pill"><span class="data-status-{{ pill }}">●</span> {% if status.running %}Refresh running{% elif state == 'failed' %}Needs attention{% elif state == 'degraded' %}Degraded{% elif state == 'self_healing' %}Self-healing{% elif state in ('healthy', 'success') %}Healthy{% else %}No status yet{% endif %}</div></div>
 
   {% if host_disk and host_disk.entries %}<details class="disk-usage"{% if host_disk.percent_used and host_disk.percent_used >= 85 %} open{% endif %}>
-    <summary>Disk: {{ host_disk.free_mb }} MB free of {{ host_disk.total_mb }} MB{% if host_disk.percent_used and host_disk.percent_used >= 85 %} <strong class="data-status-bad">&mdash; nearly full</strong>{% endif %}</summary>
+    <summary>Disk {{ host_disk.mount }}: {{ host_disk.free_mb }} MB free of {{ host_disk.total_mb }} MB{% if host_disk.percent_used and host_disk.percent_used >= 85 %} <strong class="data-status-bad">&mdash; nearly full</strong>{% endif %}</summary>
     <table class="data-status-table"><thead><tr><th>Largest items</th><th>Size</th></tr></thead><tbody>
     {% for item in host_disk.entries %}<tr><td>{{ item.name }}</td><td>{{ item.mb }} MB{% if item.partial %}+{% endif %}</td></tr>{% endfor %}
     </tbody></table>
     <p class="data-status-muted">Listed items total {{ host_disk.listed_mb }} MB; the rest of the {{ host_disk.used_mb }} MB in use is outside this folder{% if not host_disk.complete %} or beyond the time allowed to measure{% endif %}.</p>
   </details>{% endif %}
 
-  <div class="audit-subnav">{% if status.attention or status.not_configured %}<a href="#needs-attention">Needs attention</a>{% endif %}<a href="#segment-health">Segment health</a><a href="#content-audit">Recent content</a><a href="#connections">Connections</a><a href="#refresh-history">Refresh history</a>{#- The sources that arrive as files rather than over an API are not
+  <div class="audit-subnav">{% if status.attention or status.not_configured %}<a href="#needs-attention">Needs attention</a>{% endif %}<a href="#segment-health">Segment health</a><a href="#manual-refresh">Manual refresh</a><a href="#content-audit">Recent content</a><a href="#connections">Connections</a><a href="#refresh-history">Refresh history</a>{#- The sources that arrive as files rather than over an API are not
     refreshed by anything on this page, so this is the only route to them. -#}<a href="{{ url_for('cfb_data_import.data_import') }}">Import CSV data</a></div>
 
   {% if status.attention or status.not_configured %}
@@ -57,6 +57,45 @@
   {% if status.change_ledger %}
   <section class="data-status-section"><h2>What changed in the latest tracked run</h2><p class="data-status-muted">Latest tracked {{ status.change_ledger.profile|title }} refresh · {{ status.change_ledger.finished_label }}{% if status.change_ledger.relative_label != 'unknown' %} · {{ status.change_ledger.relative_label }}{% endif %}</p>{% if status.change_ledger.tracking_error %}<p class="data-status-warn">Change tracking was incomplete for this run: {{ status.change_ledger.tracking_error }}</p>{% endif %}<div class="data-status-grid"><div class="data-status-card"><strong>Added</strong><span class="data-status-ok">{{ status.change_ledger.added }}</span></div><div class="data-status-card"><strong>Changed</strong><span>{{ status.change_ledger.changed }}</span></div><div class="data-status-card"><strong>Removed</strong><span>{{ status.change_ledger.removed }}</span></div></div>{% for table in status.change_ledger.tables %}<details class="data-change-card"><summary><strong>{{ table.label }}</strong> · {{ table.added }} added · {{ table.changed }} changed · {{ table.removed }} removed</summary>{% for sample in table.samples %}<div class="data-change-sample"><strong>{{ sample.kind|title }}</strong>{% if sample.key %} · {{ sample.key }}{% endif %}{% for field in sample.fields %}<div class="data-change-field">{{ field.field }}: {{ field.before }} → {{ field.after }}</div>{% endfor %}</div>{% endfor %}</details>{% endfor %}</section>
   {% endif %}
+
+  <section class="data-status-section" id="manual-refresh">
+    <h2>Manual refresh</h2>
+    <p class="data-status-muted">Start one bounded refresh segment now instead of waiting for its schedule. These use the same refresh token or admin PIN as the audit controls. If another refresh is running, the server says so and starts nothing.</p>
+    <div class="attn-actions">
+      {% for segment, label in [
+          ('projections', 'Projections — scoreboard engine scores'),
+          ('core', 'Core — games, lines, weather'),
+          ('scores', 'Live scores'),
+          ('results', 'Results'),
+          ('models', 'Models — Elo, xPoints, backtest'),
+          ('analytics', 'Play-by-play analytics'),
+          ('stats', 'Stats'),
+          ('rosters', 'Rosters'),
+          ('content', 'News + social content'),
+          ('news', 'News shards')
+      ] %}
+      <button class="attn-btn" type="button" data-cfb-rerun="{{ segment }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="refresh-confirm" id="cfb-refresh-confirm" hidden>
+      <span id="cfb-refresh-confirm-text"></span>
+      <label id="cfb-refresh-token-wrap" hidden>Refresh token or admin PIN
+        <input type="password" id="cfb-refresh-token" autocomplete="off" spellcheck="false"></label>
+      <button class="attn-btn" type="button" id="cfb-refresh-go">Run now</button>
+      <button class="attn-btn" type="button" id="cfb-refresh-cancel">Cancel</button>
+    </div>
+    <p class="data-status-muted refresh-result" id="cfb-refresh-result" role="status" aria-live="polite"></p>
+    <style>
+      .refresh-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid var(--line,#2c3038);border-radius:8px}
+      .refresh-confirm[hidden],.refresh-confirm label[hidden]{display:none}
+      .refresh-confirm label{display:flex;align-items:center;gap:8px;font-size:.85rem}
+      .refresh-confirm input{min-width:220px;padding:6px 8px;border:1px solid var(--line,#2c3038);border-radius:6px;background:transparent;color:inherit}
+      .refresh-result[data-tone="ok"]{color:var(--ui-good,#34d27b)}
+      .refresh-result[data-tone="warn"]{color:var(--ui-mid,#f0b429)}
+      .refresh-result[data-tone="error"]{color:var(--ui-poor,#ef5b78)}
+      .attn-btn:disabled{opacity:.55;cursor:wait}
+    </style>
+  </section>
 
   <section class="data-status-section" id="content-audit">
     <h2>Content audit</h2>
@@ -134,4 +173,5 @@
   });
 })();
 </script>
+<script src="{{ url_for('static', filename='cfb_manual_refresh.js') }}"></script>
 {% endblock %}

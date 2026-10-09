@@ -685,6 +685,15 @@ def _tree_bytes(path: Path, deadline: float) -> tuple[int, bool]:
     return total, True
 
 
+def _mount_point(directory: Path) -> str:
+    """The mount (or drive) the directory lives on, so the page can say WHICH disk it measured: /var/data on
+    Render, the PC's own drive when the app runs locally."""
+    path = Path(os.path.abspath(directory))
+    while not os.path.ismount(path) and path.parent != path:
+        path = path.parent
+    return str(path)
+
+
 def disk_report(directory: Path, *, top: int = 10, cache_seconds: float = DISK_CACHE_SECONDS,
                 walk_seconds: float = DISK_WALK_SECONDS) -> dict[str, Any] | None:
     """How full the disk holding `directory` is, and which entries in it use the space.
@@ -722,6 +731,7 @@ def disk_report(directory: Path, *, top: int = 10, cache_seconds: float = DISK_C
     sizes.sort(key=lambda item: -item["mb"])
     mb = lambda value: round(value / 2**20)
     report = {
+        "mount": _mount_point(directory),
         "total_mb": mb(usage.total), "used_mb": mb(usage.used), "free_mb": mb(usage.free),
         "percent_used": round(100 * usage.used / usage.total, 1) if usage.total else None,
         "listed_mb": round(sum(item["mb"] for item in sizes)),
