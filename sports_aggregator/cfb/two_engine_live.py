@@ -124,12 +124,18 @@ FROZEN_QB_STATS = (-0.09133302884958344, 82.76569033618398)
 #: _engine_a() until that holdout test has a real sample to run against --
 #: the reconciled live/discovery code is untouched and ready to flip back on
 #: then, not deleted.
+#: RE-SCORED 2026-10-09 after the CORE look-ahead fix (live_margin_calibration.py's docstring has the story):
+#: the Football Lab margin that feeds Structural had been trained on each season's FINAL CORE rating, so the
+#: route sets and their records below were computed with a leaky margin. Same frozen route definitions, same
+#: 2020-2025 window, scored with the corrected margin-v2 (two_engine_portfolio._engine_a_rows). Samples are
+#: smaller because fewer games now qualify; the old figures were n=51/34/26/23/22 at 64.7/58.8/69.2/56.5/72.7%.
+#: Still retrospective -- the routes were chosen on this same window.
 ENGINE_A_HISTORY = {
-    "positive_4_of_4_spread_lt_14": {"n": 51, "hit_rate": 0.6471, "mean_residual": 7.072},
-    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 34, "hit_rate": 0.5882, "mean_residual": 5.481},
-    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 26, "hit_rate": 0.6923, "mean_residual": 7.655},
-    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 23, "hit_rate": 0.5652, "mean_residual": 3.619},
-    "fade_old_3_of_3_elo_disagrees_spread_14_plus": {"n": 22, "hit_rate": 0.7273, "mean_residual": 3.298},
+    "positive_4_of_4_spread_lt_14": {"n": 34, "hit_rate": 0.6765, "mean_residual": 6.91},
+    "positive_old_2_of_3_elo_agrees_spread_3_to_6_5": {"n": 21, "hit_rate": 0.6190, "mean_residual": 3.60},
+    "positive_old_3_of_3_elo_disagrees_spread_lt_3": {"n": 17, "hit_rate": 0.7059, "mean_residual": 5.69},
+    "fade_old_2_of_3_elo_agrees_spread_lt_3": {"n": 14, "hit_rate": 0.5714, "mean_residual": 4.82},
+    "fade_old_3_of_3_elo_disagrees_spread_14_plus": {"n": 15, "hit_rate": 0.6667, "mean_residual": 2.38},
 }
 ENGINE_B_HISTORY = {
     "rebound_vs_momentum_qb_opposes": {"n": 181, "hit_rate": 0.5801, "mean_residual": 2.706},
@@ -140,7 +146,8 @@ ENGINE_B_HISTORY = {
 #: definitions (narrative-family + rating-direction, not Margin Power or
 #: Structural) are untouched by any of the passes above, so ENGINE_B_HISTORY
 #: itself is unchanged.
-PORTFOLIO_HISTORY = {"n": 326, "hit_rate": 0.6135, "mean_residual": 4.335}
+#: Re-scored with the corrected margin (was n=326, 61.35%, +4.335); Engine B does not use the margin.
+PORTFOLIO_HISTORY = {"n": 274, "hit_rate": 0.6058, "mean_residual": 3.624}
 
 
 def _pooled(history: dict[str, dict[str, Any]]) -> dict[str, Any]:
