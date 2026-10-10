@@ -11,7 +11,8 @@ class ObsidianIntegrationTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         result = subprocess.run(
             ["node", "--test", "integrations/obsidian/tests/engine.test.cjs",
-             "integrations/obsidian/tests/nfl.test.cjs"],
+             "integrations/obsidian/tests/nfl.test.cjs",
+             "integrations/obsidian/tests/observation-buttons.test.cjs"],
             cwd=root, capture_output=True, text=True, timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

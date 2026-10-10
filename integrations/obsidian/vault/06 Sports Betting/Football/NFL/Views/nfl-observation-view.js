@@ -15,7 +15,13 @@ async function launch(options){
   try {
     const file=app.vault.getAbstractFileByPath(`${BASE}/Views/nfl-observations.js`);
     if(!file)throw new Error("Observation helper has not synced.");
-    await new Function(await app.vault.read(file))().open(app,require("obsidian"),options);
+    // Dataview may expose Electron's loader, which cannot resolve Obsidian.
+    // Reuse the host API that Templater supplies as tp.obsidian.
+    const generator=app.plugins?.plugins?.["templater-obsidian"]?.templater?.functions_generator;
+    const obsidian=generator?.additional_functions?.().obsidian;
+    if(!obsidian?.Modal||!obsidian?.Setting||!obsidian?.parseYaml)
+      throw new Error("Enable Templater and wait for it to load, then reopen this note");
+    await new Function(await app.vault.read(file))().open(app,obsidian,options);
   }catch(error){dv.paragraph(`Could not open form: ${error.message||error}. Use NFL Observation Template from the dashboard.`);}
 }
 if(input?.editOnly){
