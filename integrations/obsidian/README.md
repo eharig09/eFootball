@@ -91,3 +91,9 @@ repeatable legacy conversion, team/category/season filters, and frozen atomic
 observations. Bases files are valid YAML using the documented schema. A genuine
 live packet/source note was reorganized with a full YAML parser, preserving every
 source block. Final native UI/render behavior needs a desktop Obsidian smoke check.
+
+## Actionable research and writing
+
+Observation forms now include optional implication, applies_when, invalidated_by, next_check, resolution, and publishable fields. Use the Action triggers and Predictions tabs in CFB Observations.base for fast property edits. Prediction, probability (optional 0–100%), actual, and prediction_result support a before/after mechanism review. Use binary probabilities only for explicitly defined events; mixed or not-testable results are not scored.
+
+New and refreshed matchups gain an additive Decision brief, Predictions and review, and folded Blog draft. Existing prose and quotes remain intact. Article Properties track idea → outline → draft → published → reviewed, reader question, central argument, target date, and URL. CFB Writing Desk collects next checks, unresolved predictions, article queues, and selected evidence. No article is generated or published automatically. Freeze before kickoff to retain the original predictions and conditions.

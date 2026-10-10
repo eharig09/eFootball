@@ -3,6 +3,14 @@ const BASE="06 Sports Betting/Football/CFB";
 const norm=value=>String(value?.path??value??"").replace(/^\[\[|\]\]$/g,"").split("|")[0].replace(/\.md$/,"");
 const link=path=>`[[${norm(path)}]]`;
 const q=value=>JSON.stringify(value);
+const actionDefaults={implication:"",applies_when:"",invalidated_by:"",next_check:"",resolution:"",publishable:false,prediction:"",probability:null,actual:"",prediction_result:"unresolved"};
+function actionFields(values){
+  const result={...actionDefaults};for(const key of Object.keys(result))if(values[key]!=null)result[key]=values[key];
+  if(result.probability==="")result.probability=null;
+  if(result.probability!=null){result.probability=Number(result.probability);if(!Number.isFinite(result.probability)||result.probability<0||result.probability>100)throw new Error("Probability must be blank or 0–100 percent.");}
+  if(!["unresolved","held","failed","mixed","not-testable"].includes(result.prediction_result))throw new Error("Invalid prediction result.");
+  result.publishable=result.publishable===true||result.publishable==="true";return result;
+}
 function properties(text,parseYaml){
   const m=text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if(!m)throw new Error("Note has no Properties.");return {data:parseYaml(m[1]),match:m};
@@ -18,7 +26,7 @@ function serialize(game,file,values,id,legacyKey="") {
     category:values.category,direction:values.direction,carry:values.carry||"game-only",review:values.review||"",
     context:game.game_context||"",venue:game.venue||"",neutral_site:!!game.neutral_site,
     home_line:game.line??null,team_line:game.line==null||game.line===""?null:Number(game.line)*(values.side==="home"?1:-1),
-    total:game.total??null,price:game.price??null,price_market:game.price_market||"",price_selection:game.price_selection||"",sportsbook:game.sportsbook||"",legacy_key:legacyKey};
+    total:game.total??null,price:game.price??null,price_market:game.price_market||"",price_selection:game.price_selection||"",sportsbook:game.sportsbook||"",legacy_key:legacyKey,...actionFields(values)};
   return `---\n${Object.entries(props).map(([k,v])=>`${k}: ${q(v)}`).join("\n")}\n---\n\n# Observation\n\n\`\`\`dataviewjs\nawait dv.view("${BASE}/Views/cfb-observation-view", {editOnly: true});\n\`\`\`\n\n## Evidence\n\n${values.evidence||""}\n\n## Follow-up\n\n${values.followup||""}\n`;
 }
 function content(text,heading) {
@@ -40,7 +48,7 @@ function modal(app,obsidian,games,initial,editing) {
           for(const [value,label] of Object.entries(options))c.addOption(value,label);
           if(values[key]&&!Object.hasOwn(options,values[key]))c.addOption(values[key],values[key]);
           if(key==="side")sideControl=c;
-          c.setValue(values[key]).setDisabled(disabled).onChange(v=>{
+          c.setValue(String(values[key]??"")).setDisabled(disabled).onChange(v=>{
             values[key]=v;
             if(key==="matchup"&&initial.focusTeam){
               const game=games.find(g=>g.file.path===v);
@@ -60,8 +68,13 @@ function modal(app,obsidian,games,initial,editing) {
         }
         select("Carry forward","carry",{"game-only":"This game only",watch:"Watch",active:"Active",retired:"Retired",superseded:"Superseded"});
         new Setting(el).setName("Review date or condition").setDesc("Start with YYYY-MM-DD for a due flag, or write a condition.").addText(c=>c.setValue(values.review||"").onChange(v=>values.review=v));
+        el.createEl("h3",{text:"Optional: action and review"});
+        for(const [key,label] of Object.entries({implication:"Betting implication",applies_when:"Applies when",invalidated_by:"Invalidated by",next_check:"Next check (YYYY-MM-DD or condition)",resolution:"Resolution",prediction:"Testable prediction",probability:"Probability % (optional; binary event)",actual:"Actual outcome"}))
+          new Setting(el).setName(label).addText(c=>c.setValue(String(values[key]??"")).onChange(v=>values[key]=v));
+        select("Prediction result","prediction_result",{unresolved:"Unresolved",held:"Held",failed:"Failed",mixed:"Mixed", "not-testable":"Not testable"});
+        select("Use in blog drafts","publishable",{false:"Private research",true:"Selected for writing"});
         new Setting(el).addButton(c=>c.setButtonText("Cancel").onClick(()=>this.close())).addButton(c=>c.setButtonText("Save observation").setCta().onClick(()=>{
-          if(!String(values.observation||"").trim()){new Notice("Enter an observation.");return;}resolve(values);this.close();
+          if(!String(values.observation||"").trim()){new Notice("Enter an observation.");return;}try{actionFields(values);}catch(error){new Notice(error.message);return;}resolve(values);this.close();
         }));
       }
       onClose(){this.contentEl.empty();resolve(null);}
@@ -89,7 +102,7 @@ async function open(app,obsidian,options={}) {
   const values=await modal(app,obsidian,games,{matchup:selected.file.path,focusTeam:options.teamPath,side:data?.side||options.side||(options.teamPath&&norm(selected.data.home_team)===norm(options.teamPath)?"home":"away"),
     category:data?.category||options.category||"offense",direction:data?.direction||"neutral",observation:data?.observation||"",
     evidence:existing?content(original,"Evidence"):"",followup:existing?content(original,"Follow-up"):"",
-    carry:data?.carry||"game-only",review:data?.review||""},!!existing);
+    carry:data?.carry||"game-only",review:data?.review||"",...actionFields(data||{})},!!existing);
   if(!values)return;
   const chosen=games.find(g=>g.file.path===values.matchup);if(!chosen)throw new Error("Choose a valid matchup.");
   const latest=properties(await vault.read(chosen.file),obsidian.parseYaml).data;
@@ -174,4 +187,4 @@ async function run(tp) {
   }
   return open(tp.app,tp.obsidian,{observationPath,matchupPath:active.startsWith(`${BASE}/Matchups/`)?active:undefined});
 }
-return {open,run,serialize,properties,content,modal,norm,migrate,organizeExisting};
+return {open,run,serialize,properties,content,modal,norm,migrate,organizeExisting,actionFields,actionDefaults};

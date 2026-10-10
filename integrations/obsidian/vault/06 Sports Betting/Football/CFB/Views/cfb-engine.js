@@ -91,7 +91,24 @@ function folded(title, content) {
 function observationView(side, category) {
   return `\`\`\`dataviewjs\nawait dv.view("${BASE}/Views/cfb-observation-view", {side: "${side}", category: "${category}"});\n\`\`\``;
 }
+// Add workflow scaffolding once; never replace authored analysis or editorial fields.
+function workflow(text,parseYaml){
+  const data=frontmatter(text,parseYaml).data,defaults={article_status:"idea",reader_question:"",central_argument:"",publish_by:"",published_url:""};
+  const missing=Object.fromEntries(Object.entries(defaults).filter(([k])=>!Object.hasOwn(data,k)));
+  if(Object.keys(missing).length)text=patchProperties(text,missing,parseYaml);
+  const sections=[
+    ["decision-brief","## Decision brief\n\n- Thesis / expected game script:\n- Strongest evidence (link observations):\n- Counterargument:\n- Unresolved question:\n- Bet only if (selection, line, price, and information conditions):\n- Pass / invalidate if:\n- Decision and next check:\n"],
+    ["prediction-review","## Predictions and review\n\nAdd a testable prediction to an observation before kickoff; record the actual outcome and result afterward. Freeze the pregame note before updating it.\n\n```dataviewjs\nawait dv.view(\"06 Sports Betting/Football/CFB/Views/cfb-observation-view\", {predictions:true});\n```\n\n### Postgame mechanism check\n\n- Expected vs. actual pace / scoring / pressure / personnel:\n- Did the mechanism hold, independent of the bet result?\n- What evidence contradicted the thesis?\n- What carries forward, and under which conditions?\n- Process change for next week:\n"],
+    ["article-draft","> [!abstract]- Blog draft — write in this note\n> ### Pregame: the matchup question\n> Reader question → central argument → 2–3 linked observations → counterargument → market conditions / pass threshold.\n>\n> ### Postgame: what the game taught us\n> Original prediction → actual outcome → mechanism review → next matchup implication.\n>\n> Draft here in normal prose. Verify sources, quote the selection/line/price/book and an as-of date, and link the frozen pregame analysis before publication.\n"]
+  ];
+  for(const [id,body] of sections)if(!block(text,id)){
+    const chunk=`\n<!-- cfb:${id}:start -->\n${body}<!-- cfb:${id}:end -->\n`;
+    const pos=text.indexOf("## Decision and next action");text=pos<0?text+chunk:text.slice(0,pos)+chunk+"\n"+text.slice(pos);
+  }
+  return text;
+}
 function organize(text, parseYaml) {
+  text=workflow(text,parseYaml);
   const props=frontmatter(text,parseYaml).data;
   const day=props.game_date instanceof Date?props.game_date.toISOString().slice(0,10):String(props.game_date).slice(0,10);
   const raw={};
@@ -159,9 +176,12 @@ function organize(text, parseYaml) {
   text=replaceBlock(text,"engine-brief",brief.join("\n"));
   // Move the generated brief before manual game context; source blocks remain where they were.
   const b=block(text,"engine-brief"),part=text.slice(b.a,b.end);
-  text=text.slice(0,b.a)+text.slice(b.end);
-  const anchor=text.indexOf("## Game context");
-  text=anchor>=0?text.slice(0,anchor)+part+"\n\n"+text.slice(anchor):text+"\n"+part;
+  const oldAnchor=text.indexOf("## Game context");
+  if(oldAnchor<0||oldAnchor<b.end||text.slice(b.end,oldAnchor).trim()){
+    text=text.slice(0,b.a)+text.slice(b.end);
+    const anchor=text.indexOf("## Game context");
+    text=anchor>=0?text.slice(0,anchor)+part+"\n\n"+text.slice(anchor):text+"\n"+part;
+  }
   for(const [id,content] of Object.entries(raw))text=replaceBlock(text,id,folded(id.replace("engine-", "Full source: ").replaceAll("-"," "),content));
   for(const side of ["away","home"])for(const cat of ["offense","defense","context"]){
     const id=`${side}-${cat}`,original=block(text,id);
@@ -532,4 +552,4 @@ async function freeze(tp) {
   new tp.obsidian.Notice("Saved pregame snapshot, including your analysis and imported evidence.",8000);
   return target;
 }
-return {run,freeze,refresh,buildImported,emptyNote,mergeRows,patchProperties,parseGameInput,dateInZone,baseUrl,gameValid,cleanDisplay,block,replaceBlock,splitCells,cell,organize,unfold};
+return {run,freeze,refresh,buildImported,emptyNote,mergeRows,patchProperties,parseGameInput,dateInZone,baseUrl,gameValid,cleanDisplay,block,replaceBlock,splitCells,cell,organize,unfold,workflow};

@@ -45,3 +45,26 @@ views:
       - note.review
       - note.matchup
       - file.name
+  - type: table
+    name: Action triggers
+    order:
+      - note.observation
+      - note.implication
+      - note.applies_when
+      - note.invalidated_by
+      - note.next_check
+      - note.resolution
+      - note.team
+      - note.matchup
+  - type: table
+    name: Predictions
+    filters:
+      and:
+        - '!note.prediction.isEmpty()'
+    order:
+      - note.prediction
+      - note.probability
+      - note.prediction_result
+      - note.actual
+      - note.matchup
+      - file.name

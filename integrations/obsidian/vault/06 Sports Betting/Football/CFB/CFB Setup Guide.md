@@ -91,3 +91,9 @@ Run **CFB Freeze Pregame Template** from the dashboard before stored kickoff. Re
 Use **Templater: Create new note from template → CFB Matchup Template** for a new matchup, or **CFB Team Template** for a standalone team. These creation templates require an empty note. Existing team pages remain intact; prefer existing canonical names to alternate spellings.
 
 Keep `Views` at its installed path. Preserve the `<!-- cfb:... -->` markers: they identify exactly which sections the importer and organizer may change.
+
+## Actionable research and writing
+
+Observation forms now include optional implication, applies_when, invalidated_by, next_check, resolution, and publishable fields. Use the Action triggers and Predictions tabs in CFB Observations.base for fast property edits. Prediction, probability (optional 0–100%), actual, and prediction_result support a before/after mechanism review. Use binary probabilities only for explicitly defined events; mixed or not-testable results are not scored.
+
+New and refreshed matchups gain an additive Decision brief, Predictions and review, and folded Blog draft. Existing prose and quotes remain intact. Article Properties track idea → outline → draft → published → reviewed, reader question, central argument, target date, and URL. CFB Writing Desk collects next checks, unresolved predictions, article queues, and selected evidence. No article is generated or published automatically. Freeze before kickoff to retain the original predictions and conditions.

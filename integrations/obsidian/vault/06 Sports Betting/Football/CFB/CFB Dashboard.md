@@ -27,6 +27,10 @@ await dv.view("06 Sports Betting/Football/CFB/Views/cfb-observation-view", {acti
 
 For older notes, run **CFB Organize Existing Notes Template** from this dashboard once. It preserves the source rows, converts authored observations without duplicates, and installs the compact layout. Engine refresh uses the compact layout automatically.
 
+## Writing and review
+
+[[06 Sports Betting/Football/CFB/CFB Writing Desk|Open the Writing Desk]] for next checks, unresolved predictions, selected evidence, and article stages.
+
 ## Action queue
 
 ```dataview

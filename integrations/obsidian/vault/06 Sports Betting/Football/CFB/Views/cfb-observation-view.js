@@ -6,6 +6,7 @@ const isTeam=current.type==="cfb-team",isDashboard=current.type==="cfb-dashboard
 let records=obs.filter(p=>isDashboard?(!current.season||String(p.season)===String(current.season)):
   isTeam?norm(p.team)===norm(current.file.path)&&(!current.season||String(p.season)===String(current.season)):
   norm(p.matchup)===norm(current.file.path));
+if(input?.predictions)records=records.filter(p=>String(p.prediction||"").trim());
 if(input?.side)records=records.filter(p=>p.side===input.side);
 if(input?.category)records=records.filter(p=>p.category===input.category);
 if(input?.active)records=records.filter(p=>["active","watch"].includes(p.carry));
@@ -32,6 +33,9 @@ for(const p of records){
   // Paragraphs keep full text readable; the management grid is available separately.
   const today=dv.date("today").toFormat("yyyy-MM-dd"),review=String(p.review||"");
   const due=/^\d{4}-\d{2}-\d{2}/.test(review)&&review.slice(0,10)<=today?" · REVIEW DUE":"";
+  const actions=[p.implication&&`**Implication:** ${p.implication}`,p.applies_when&&`Applies when: ${p.applies_when}`,p.invalidated_by&&`Invalidated by: ${p.invalidated_by}`,p.next_check&&`Next check: ${p.next_check}`,p.resolution&&`Resolution: ${p.resolution}`].filter(Boolean);
+  if(input?.predictions)actions.push(`**Prediction:** ${p.prediction}${p.probability!=null?` · ${p.probability}%`:""}`,`Result: ${p.prediction_result||"unresolved"}${p.actual?" · Actual: "+p.actual:""}`);
+  if(actions.length)dv.paragraph(actions.join("\n\n"));
   dv.paragraph(`**${sign[p.direction]||"○"} ${p.observation||p.file.name}**\n\n${dv.fileLink(p.file.path,false,"Evidence / full note")} · ${p.carry||"game-only"}${review?" · Review: "+review:""}${due}`+
     (isTeam||isDashboard?`\n\n${p.team} · ${p.category} · ${p.matchup} · Opponent: ${p.opponent}${p.team_line!=null?" · Team spread "+p.team_line:""}${p.total!=null?" · Total "+p.total:""}${p.context?" · "+p.context:""}`:""));
   const edit=dv.container.createEl("button",{text:"Edit"});edit.addEventListener("click",()=>launch({observationPath:p.file.path}));

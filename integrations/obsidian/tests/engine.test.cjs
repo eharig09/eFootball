@@ -288,3 +288,21 @@ test('observation form refuses to overwrite an edit made while the modal was ope
   atomicUI(tp,c=>{files.set(target,files.get(target)+'\nEXTERNAL EDIT\n');c.find(x=>x.label==='Observation').change('Do not overwrite');c.find(x=>x.text==='Save observation').click()});
   await assert.rejects(observations.open(tp.app,tp.obsidian,{observationPath:target}),/changed while editing/);assert(files.get(target).includes('EXTERNAL EDIT'));assert.equal(metadata(files.get(target)).observation,'Check conditions');
 });
+
+
+test('workflow upgrades preserve prose, editorial fields, and repeated refreshes',()=>{
+  const raw=initial();
+  const authored=engine.patchProperties(raw,{article_status:'draft',central_argument:'Pressure matters',custom_property:'Keep'},parseYaml).replace('- Thesis:','- Thesis: My original thesis');
+  const upgraded=engine.organize(authored,parseYaml);
+  assert.equal(metadata(upgraded).article_status,'draft');assert.equal(metadata(upgraded).central_argument,'Pressure matters');
+  assert.ok(upgraded.includes('- Thesis: My original thesis'));assert.equal(metadata(upgraded).custom_property,'Keep');
+  assert.ok(upgraded.includes('Bet only if'));assert.equal(engine.organize(upgraded,parseYaml),upgraded);
+});
+test('action fields preserve binary zero probability and reject invalid inputs',()=>{
+  const helper=new Function(fs.readFileSync(path.join(ROOT,BASE,'Views/cfb-observations.js'),'utf8'))();
+  assert.equal(helper.actionFields({probability:'0',publishable:'true'}).probability,0);
+  assert.equal(helper.actionFields({probability:'',publishable:'false'}).probability,null);
+  assert.equal(helper.actionFields({publishable:'false'}).publishable,false);
+  for(const probability of [-1,101,'unknown'])assert.throws(()=>helper.actionFields({probability}),/Probability/);
+  assert.throws(()=>helper.actionFields({prediction_result:'won'}),/Invalid prediction/);
+});
