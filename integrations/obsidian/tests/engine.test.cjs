@@ -38,8 +38,8 @@ test('initial import maps real API fields, home signs, forecast units, and blank
   const text=refresh(initial()),fm=metadata(text);
   assert.equal(fm.line,-3.5);assert.equal(fm.total,48.5);assert.equal(fm.price,null);
   assert.equal(fm.over_price,null);assert.equal(fm.engine_game_id,123);assert.equal(fm.home_moneyline,-180);
-  assert(text.includes('45.0%'));assert(text.includes('60 °F'));assert(text.includes('15 mph wind'));
-  assert(text.includes('| Home U | 12 | 60 | 24 |'));assert(text.includes('Seconds / play allowed: 27.00'));
+  assert(text.includes('45%'));assert(text.includes('60 °F'));assert(text.includes('15 mph wind'));
+  assert(text.includes('| Home U | 12 | 60 | 24 |'));assert(text.includes('Seconds / play allowed: 27'));
   assert(text.includes('Quarterback questionable. Role: REPORTING'));assert(!text.includes('confirmed out'));
 });
 test('refresh preserves every manual section, initial quote, and custom multiline properties',()=>{
@@ -142,7 +142,67 @@ test('team queries include neutral imported evidence, isolate side, and show opp
     table:(headers,rows)=>output.push({headers,rows}),paragraph:text=>output.push({text}),header:(level,text)=>output.push({text})};
   await new AsyncFunction('dv','input',viewSource)(dv,{mode:'offense'});
   assert(output[0].rows.length>0);assert.equal(output[0].rows[0][1],metadata(text).away_team);
-  assert(output[0].rows.some(row=>String(row[5]).includes('45.0%')));assert(!JSON.stringify(output).includes('Quarterback questionable'));
+  assert(output[0].rows.some(row=>String(row[5]).includes('45%')));assert(!JSON.stringify(output).includes('Quarterback questionable'));
   output.length=0;await new AsyncFunction('dv','input',viewSource)(dv,{mode:'games'});
   assert(JSON.stringify(output).includes('Matchup report'));assert(JSON.stringify(output).includes('15 mph wind'));
+});
+
+const editor=new Function(fs.readFileSync(path.join(ROOT,BASE,'Views/cfb-edit.js'),'utf8'))();
+test('rounding affects displays only and publication dates retain no visible clock times',()=>{
+  const p=fixture();p.game.advanced_metrics['Home U'].offense_ppa=.123456;
+  p.preview.projection.home={drives:12.3456,plays:62.9876,expected_points:28.7654};
+  p.situation.weather.latest.temperature=61.789;p.situation.weather.latest.sustained_wind=14.567;
+  p.content.reported[0].published_at='2099-10-08T08:12:34Z';
+  const text=refresh(initial(p),p),visible=text.replace(/^---[\s\S]*?---/,'').replace(/<!--[\s\S]*?-->/g,'');
+  assert(visible.includes('PPA / play: 0.12'));assert(visible.includes('| Home U | 12.3 | 63 | 28.8 |'));
+  assert(visible.includes('62 °F'));assert(visible.includes('15 mph wind'));assert(!visible.includes('T08:12:34'));
+  assert(!visible.includes('Fetched:'));assert(visible.includes('2099-10-08'));
+  assert.equal(metadata(text).engine_market_timestamp,'2099-10-08T00:00:00Z');assert.equal(metadata(text).line,-3.5);
+  assert(text.includes('cfb:provenance:'));assert.equal(engine.cleanDisplay(text),text);
+});
+test('form saves multiline notes with pipes into the right team and preserves unrelated sections',()=>{
+  const original=refresh(initial());const values={side:'away',category:'defense',plus:'Coverage | improved',minus:'',evidence:'Film\n[[Note|label]]',carry:'active',review:'2099-10-20'};
+  const next=editor.saveRow(original,engine,null,values),rows=editor.entries(next,engine);
+  const row=rows.find(r=>r.id==='away-defense');assert(row);assert.equal(row.cells[0],'Coverage | improved');
+  assert.equal(row.cells[2],'Film<br>[[Note|label]]');assert.equal(row.cells[3],'active');
+  assert.equal(engine.block(next,'home-defense').content,engine.block(original,'home-defense').content);
+  const edited=editor.saveRow(next,engine,row,{...values,plus:'Updated',carry:'retired'});
+  assert.equal(editor.entries(edited,engine).filter(r=>r.id==='away-defense').length,1);
+  assert(edited.includes('| Updated |'));assert(edited.includes('| retired | 2099-10-20 |'));
+  assert.throws(()=>editor.saveRow(edited,engine,row,values),/Row changed/);
+});
+test('form keeps imported evidence and item IDs intact; refresh preserves its assessment',()=>{
+  const original=refresh(initial()),row=editor.entries(original,engine).find(r=>r.id==='engine-away-context'&&r.cells[5]==='availability:away:10');
+  const next=editor.saveRow(original,engine,row,{plus:'Check starter',minus:'',evidence:'Must not replace source',carry:'active',review:'when starter returns'});
+  const result=editor.entries(refresh(next),engine).find(r=>r.cells[5]==='availability:away:10');
+  assert.equal(result.cells[0],'Check starter');assert.equal(result.cells[3],'active');assert.equal(result.cells[4],'when starter returns');
+  assert(result.cells[2].includes('Quarterback questionable'));assert(!next.includes('Must not replace source'));
+});
+test('native form exposes full fields, saves changes, locks imported evidence, and cancels',async()=>{
+  let modal;const controls=[];
+  class Component {
+    constructor(kind,label){this.kind=kind;this.label=label;this.inputEl={style:{}};controls.push(this);}
+    addOption(){return this}setValue(v){this.value=v;return this}setDisabled(v){this.disabled=v;return this}
+    onChange(fn){this.change=fn;return this}setButtonText(v){this.text=v;return this}setCta(){return this}onClick(fn){this.click=fn;return this}
+  }
+  class Setting {
+    setName(v){this.name=v;return this}setDesc(){return this}
+    addDropdown(fn){fn(new Component('dropdown',this.name));return this}
+    addTextArea(fn){fn(new Component('area',this.name));return this}
+    addText(fn){fn(new Component('text',this.name));return this}
+    addButton(fn){fn(new Component('button',this.name));return this}
+  }
+  class Modal {
+    constructor(){modal=this;this.contentEl={createEl(){},empty(){}}}
+    open(){this.onOpen()}close(){this.onClose()}
+  }
+  const tp={app:{},obsidian:{Modal,Setting,Notice:class{}}};
+  const initial={side:'home',category:'context',plus:'',minus:'',evidence:'Full source text',carry:'watch',review:'',fixed:true};
+  let pending=editor.form(tp,initial,true,{home:'Home U',away:'Away U'});
+  assert(controls.find(c=>c.label==='Evidence / condition').disabled);
+  assert.equal(controls.find(c=>c.label==='Evidence / condition').value,'Full source text');
+  controls.find(c=>c.label==='+ Favorable observation').change('Return expected');
+  controls.find(c=>c.text==='Save note').click();assert.equal((await pending).plus,'Return expected');
+  controls.length=0;pending=editor.form(tp,initial,false,{home:'Home U',away:'Away U'});
+  controls.find(c=>c.text==='Cancel').click();assert.equal(await pending,null);
 });

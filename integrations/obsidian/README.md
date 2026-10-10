@@ -9,13 +9,13 @@ JavaScript queries enabled.
 
 Copy the contents of `vault/` into the Obsidian vault root, merging folders:
 
-- `Bins/Templates/`: four Templater templates, including Engine Import and Freeze.
+- `Bins/Templates/`: five Templater templates, including Engine Import and Freeze.
 - `06 Sports Betting/Football/CFB/`: dashboard, instructions, team blueprint,
   local creation/import helpers, and shared Dataview views.
 
 No team or matchup notes are included in the installer, so existing research is
 not replaced. Preserve custom `Views/engine-config.json` settings when updating.
-If templates live elsewhere in your vault, place the four templates in your
+If templates live elsewhere in your vault, place the five templates in your
 configured Templater folder. The data/view path stays as shown above.
 
 ## Use
@@ -62,7 +62,7 @@ carry-forward status, and review condition persist. Older rows/reporting are
 retained by ID, with their source dates. They must be reviewed for continued
 relevance. Raw metrics are neutral evidence (not automatic + or - signals).
 Availability defaults to `watch`, retains the reporting role and publication
-time, and does not turn questionable into confirmed out. Shared reporting stays
+date, and does not turn questionable into confirmed out. Shared reporting stays
 at game level because the current content endpoint does not include reliable
 per-item team ownership. Neutral-site travel estimates based on home campuses are
 omitted. Imports after kickoff are labeled retrospective.
@@ -87,3 +87,15 @@ exercise manual-note and quote preservation, stable-ID deduplication/lifecycle
 edits, partial failures, missing prices, neutral venues, timezone dates, canonical
 identity checks, team-note compilation, pregame snapshots, and end-to-end imports.
 Final display and command behavior should also be checked in desktop Obsidian.
+
+
+Use **CFB Edit Notes Template** from the dashboard to add or edit observations in
+a native form. Manual evidence is editable; imported evidence is read-only while
+direction, carry-forward and review edits persist. No additional plugin is needed.
+The helper refuses concurrent changes and excludes snapshots from selection.
+
+Imported displays round PPA/explosiveness to at most two decimals; pace, yards,
+percentages and projections to one; temperature/wind to whole numbers. Market
+quotes and Properties retain precision. Fetch/forecast times disappear from the
+visible sections; news/input dates remain. Exact times remain in Properties or
+hidden provenance comments. Retained blocks are cleaned on refresh as well.

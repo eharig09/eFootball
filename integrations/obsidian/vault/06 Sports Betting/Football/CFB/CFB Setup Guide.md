@@ -97,7 +97,7 @@ Run imports from the dashboard, not from the matchup being edited. The importer 
 
 ### Imported facts and attribution
 
-Offense/Defense contain raw metrics and trailing snapshot inputs in Evidence / condition, with + and - initially blank. These are contextual evidence, not automatic betting edges. Availability items arrive as `watch`, with their source role and publication time and a game-day review date; questionable does not mean confirmed out. Schedule flags such as look-ahead are descriptions of the calendar, not claims about motivation. Shared reporting stays linked to the game because the current content API does not provide reliable per-item team ownership. Team pages show the game's reporting/context separately from their own team-specific notes.
+Offense/Defense contain raw metrics and trailing snapshot inputs in Evidence / condition, with + and - initially blank. These are contextual evidence, not automatic betting edges. Availability items arrive as `watch`, with their source role and publication date and a game-day review date; questionable does not mean confirmed out. Schedule flags such as look-ahead are descriptions of the calendar, not claims about motivation. Shared reporting stays linked to the game because the current content API does not provide reliable per-item team ownership. Team pages show the game's reporting/context separately from their own team-specific notes.
 
 The API does not supply spread/total juice; those fields stay blank. If your initial sportsbook differs from the selected provider, the importer does not fill initial market fields from the other book. It also omits home-campus travel estimates for neutral-site games.
 
@@ -110,3 +110,12 @@ From **CFB Dashboard**, run **CFB Freeze Pregame Template** and select the match
 ### Connection settings
 
 `06 Sports Betting/Football/CFB/Views/engine-config.json` contains `api_url`, `timezone`, and optional `preferred_sportsbook`. Default API: `https://cfb-intelligence.onrender.com`. Timezone: `America/New_York`. Use the engine's HTTPS root address or an HTTP localhost root. No credentials are stored, and the importer never uploads your notes or betting decisions. The command runs only when invoked; this version does not schedule background refreshes.
+
+
+## Easier note entry and cleaner numbers
+
+Run **CFB Edit Notes Template** using **Templater: Open insert template modal** from the **CFB Dashboard**. Select a matchup and Add observation or Edit existing observation. A single form holds the team, Offense/Defense/Context, favorable and unfavorable observations, evidence, carry-forward status, and review date/condition. No pipe characters or Markdown rows to manage. Cancel leaves the note unchanged. Concurrent changes stop saving so another edit cannot be lost.
+
+Imported rows let you edit +, −, carry-forward, and review; their evidence is read-only because the engine refreshes it. Add a manual observation for your own evidence or interpretation. The form changes matchup observations; the team page Current assessment remains a manually curated synthesis. Team compilation tables are read-only views of those saved observations. Run this command from the dashboard rather than inserting it into a matchup.
+
+Imported displays use two decimal places at most for PPA and explosiveness, one for pace, yards/play, percentages, projected drives/plays/points, and whole numbers for temperature/wind. Trailing zeros are removed. Actual market quotes and numerical Properties keep their original precision. Repeated fetch and forecast times are removed from the visible imported sections; news and input dates remain for relevance checks. Exact times remain in Properties or hidden provenance comments. Refresh also cleans older retained imported sections.

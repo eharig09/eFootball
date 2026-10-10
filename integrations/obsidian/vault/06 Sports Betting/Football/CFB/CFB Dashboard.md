@@ -13,6 +13,10 @@ From this dashboard, press **Ctrl+P → Templater: Open insert template modal �
 
 To save your pregame analysis, run **CFB Freeze Pregame Template** from this dashboard. Snapshots include your manual notes and cannot be created after kickoff.
 
+## Add or edit notes with a form
+
+From this dashboard, press **Ctrl+P → Templater: Open insert template modal → CFB Edit Notes Template**. Choose a matchup, then **Add observation** or **Edit existing observation**. The form has team/section selectors, + and − fields, evidence, carry-forward status, and review condition. Saving updates the source table and its team-page views.
+
 ## Action queue
 
 ```dataview

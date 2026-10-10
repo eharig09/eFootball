@@ -119,6 +119,29 @@ function mergeReporting(old,fresh) {
     [...records.values()].map(c=>`| ${c.map(cell).join(" | ")} |`).join("\n");
 }
 function fact(id,evidence,review="",carry="game-only") {return {id,plus:"",minus:"",evidence,carry,review};}
+// Presentation only: exact market quotes and Properties are never rounded.
+function cleanDisplay(text) {
+  const number = (value, places) => Number.isFinite(Number(value)) ? String(Number(Number(value).toFixed(places))) : value;
+  return text.replace(/(<!-- cfb:engine-[\w-]+:start -->)([\s\S]*?)(<!-- cfb:engine-[\w-]+:end -->)/g, (_,start,body,end) => {
+    const stamps = [...new Set(body.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g)||[])];
+    body = body.replace(/\n?<!-- cfb:provenance:[^\n]*-->\n?/g,"\n")
+      .replace(/Fetched: \S+\. /g,"").replace(/ Imported \S+\. /g," ")
+      .replace(/; fetched \S+\./g,".").replace(/ · quote fetched \S+\./g,".")
+      .replace(/ Forecast issued [^;]+; source /g," Source: ")
+      .replace(/(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g,"$1")
+      .replace(/((?:PPA \/ play|Explosiveness): )(-?\d+(?:\.\d+)?)/g,(_,label,n)=>label+number(n,2))
+      .replace(/((?:Seconds \/ play|Yards \/ dropback|Yards \/ rush)(?: allowed)?: )(-?\d+(?:\.\d+)?)/g,(_,label,n)=>label+number(n,1))
+      .replace(/(-?\d+(?:\.\d+)?) (°F|mph)/g,(_,n,unit)=>number(n,0)+" "+unit)
+      .replace(/(-?\d+(?:\.\d+)?)%/g,(_,n)=>number(n,1)+"%");
+    if(start.includes("engine-projection:")) body=body.split("\n").map(line=>{
+      if(!line.trim().startsWith("|"))return line;
+      const c=splitCells(line);
+      if(c.length!==4 || c[0]==="Team" || /^:?-+:?$/.test(c[0]))return line;
+      return `| ${[c[0],...c.slice(1).map(v=>v!==""?number(v,1):v)].map(cell).join(" | ")} |`;
+    }).join("\n");
+    return start+body.trimEnd()+(stamps.length?`\n<!-- cfb:provenance: ${stamps.join(" ")} -->`:"")+"\n"+end;
+  });
+}
 function gameValid(game,id) {
   if (!game || Number(game.game_id)!==id || !game.home_team || !game.away_team ||
       !Number.isInteger(Number(game.season)) || !Number.isInteger(Number(game.home_team_id)) ||
@@ -249,7 +272,7 @@ function refresh(text,packet,provider,teamPaths,importedAt,base,parseYaml,zone) 
       id==="engine-reporting"?mergeReporting(block(text,id)?.content,value):value;
     text=replaceBlock(text,id,merged);
   }
-  return text;
+  return cleanDisplay(text);
 }
 async function ensureFolder(vault,path) {
   let current="";
@@ -394,4 +417,4 @@ async function freeze(tp) {
   new tp.obsidian.Notice("Saved pregame snapshot, including your analysis and imported evidence.",8000);
   return target;
 }
-return {run,freeze,refresh,buildImported,emptyNote,mergeRows,patchProperties,parseGameInput,dateInZone,baseUrl,gameValid};
+return {run,freeze,refresh,buildImported,emptyNote,mergeRows,patchProperties,parseGameInput,dateInZone,baseUrl,gameValid,cleanDisplay,block,replaceBlock,splitCells,cell};
