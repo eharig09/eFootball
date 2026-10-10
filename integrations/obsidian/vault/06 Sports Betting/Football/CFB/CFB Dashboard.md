@@ -13,9 +13,19 @@ From this dashboard, press **Ctrl+P → Templater: Open insert template modal �
 
 To save your pregame analysis, run **CFB Freeze Pregame Template** from this dashboard. Snapshots include your manual notes and cannot be created after kickoff.
 
-## Add or edit notes with a form
+## Observations
 
-From this dashboard, press **Ctrl+P → Templater: Open insert template modal → CFB Edit Notes Template**. Choose a matchup, then **Add observation** or **Edit existing observation**. The form has team/section selectors, + and − fields, evidence, carry-forward status, and review condition. Saving updates the source table and its team-page views.
+[[06 Sports Betting/Football/CFB/CFB Observations.base|Open the editable observations grid]]
+
+Use the **Add observation** buttons in matchup/team sections in Reading view. The form records team, section, direction, evidence, carry-forward status, and review date/condition. **Edit** opens the same form; **Evidence / full note** opens the complete observation.
+
+Command alternative: **Ctrl+P → Templater: Open insert template modal → CFB Observation Template**. **CFB Edit Notes Template** is an alias for the same workflow.
+
+```dataviewjs
+await dv.view("06 Sports Betting/Football/CFB/Views/cfb-observation-view", {active: true});
+```
+
+For older notes, run **CFB Organize Existing Notes Template** from this dashboard once. It preserves the source rows, converts authored observations without duplicates, and installs the compact layout. Engine refresh uses the compact layout automatically.
 
 ## Action queue
 

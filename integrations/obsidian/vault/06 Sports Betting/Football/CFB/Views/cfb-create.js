@@ -74,7 +74,7 @@ async function matchup(tp) {
   const homeLink = await ensureTeam(tp,home,season);
   await folder(tp,`${BASE}/Matchups`);
   await tp.file.move(target);
-  let text = `---\ntype: cfb-matchup\nseason: ${season}\nweek: ${q(week)}\ngame_date: ${date}\n`;
+  let text = `---\ntype: cfb-matchup\nseason: ${season}\nweek: ${q(week)}\ngame_date: ${q(date)}\n`;
   text += `home_team: ${q(homeLink)}\naway_team: ${q(awayLink)}\n`;
   text += `line:\ntotal:\nprice:\nprice_market: ""\nprice_selection: ""\nhome_spread_price:\naway_spread_price:\nover_price:\nunder_price:\nhome_moneyline:\naway_moneyline:\nsportsbook: ""\nmarket_timestamp: ""\nneutral_site: false\nvenue: ""\nkickoff: ""\ngame_context: ""\nstatus: research\nnext_action: ""\nreview_date:\nhome_score:\naway_score:\ntags:\n  - football/cfb/matchup\n---\n\n`;
   text += `# ${away} at ${home}\n\n**Away:** ${awayLink} · **Home:** ${homeLink}\n\n`;
@@ -83,6 +83,8 @@ async function matchup(tp) {
   text += "## Game context\n\n<!-- cfb:game-context:start -->\n- Weather / surface:\n- Rest / travel / scheduling:\n- Stakes / rivalry / situational factors:\n- Pace / expected game script:\n- Injury / lineup news:\n<!-- cfb:game-context:end -->\n\n";
   text += teamSection("away",away,awayLink) + teamSection("home",home,homeLink);
   text += "## Decision and next action\n\n- Thesis:\n- Conflicting evidence:\n- Price / information needed to act:\n- Decision (watch / pass / bet):\n- Pregame conclusion and timestamp:\n\n## Postgame review\n\n- What happened:\n- Which observations held up:\n- Which observations changed:\n- Carry-forward rows updated:\n\n## Sources\n\n- \n";
+  const helper=tp.app.vault.getAbstractFileByPath(`${BASE}/Views/cfb-engine.js`);
+  if(helper)text=new Function(await tp.app.vault.read(helper))().organize(text,tp.obsidian.parseYaml);
   return text;
 }
 async function team(tp) {

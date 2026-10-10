@@ -12,7 +12,9 @@ function section(text, id) {
   const pos = text.indexOf(start);
   if (pos < 0) return "";
   const stop = text.indexOf(end,pos+start.length);
-  return stop < 0 ? "" : text.slice(pos+start.length,stop).trim();
+  if(stop<0)return "";
+  const content=text.slice(pos+start.length,stop).trim();
+  return content.startsWith("> [!abstract]-")?content.split(/\r?\n/).slice(1).map(line=>line.replace(/^> ?/,"")).join("\n").trim():content;
 }
 function cells(line) {
   // Escaped pipes and wiki-link aliases are kept inside their cells.
@@ -26,9 +28,9 @@ function cells(line) {
   }
   out.push(cell.trim()); return out;
 }
-function rows(text) {
-  return text.split(/\r?\n/).filter(line=>line.trim().startsWith("|"))
-    .map(cells).filter(c=>c.length>=5 && c[0]!=="+" && !/^:?-+:?$/.test(c[0]) && (c[0]||c[1]||c[2]))
+const migrated=Array.from(dv.pages(`"${BASE}/Observations"`)).filter(p=>p.type==="cfb-observation").map(p=>String(p.legacy_key||""));
+function rows(text, prefix="") {
+  return text.split(/\r?\n/).map((line,index)=>({cells:cells(line),index,line})).filter(item=>item.line.trim().startsWith("|")).filter(item=>!migrated.includes(prefix+"::"+(item.cells[5]||item.index))).map(item=>item.cells).filter(c=>c.length>=5 && c[0]!=="+" && !/^:?-+:?$/.test(c[0]) && (c[0]||c[1]||c[2]))
     .map(c=>({plus:c[0],minus:c[1],evidence:c[2],carry:c[3].toLowerCase().trim(),review:c[4]}));
 }
 function reviewLabel(row) {
@@ -40,6 +42,7 @@ const pages=Array.from(dv.pages(`"${BASE}/Matchups"`))
   .filter(p=>p.type==="cfb-matchup" && (norm(p.home_team)===self || norm(p.away_team)===self)
     && (!current.season || String(p.season)===String(current.season)))
   .sort((a,b)=>dateText(b.game_date).localeCompare(dateText(a.game_date)) || a.file.path.localeCompare(b.file.path));
+if(mode!=="games")await dv.view(`${BASE}/Views/cfb-observation-view`,{active:mode==="active",category:mode==="active"?undefined:mode});
 if(!pages.length) { dv.paragraph("No matchups for this team and season yet. Create a matchup using CFB Matchup Template; clear season to show all seasons."); return; }
 const games=[];
 for(const p of pages) {
@@ -49,7 +52,7 @@ for(const p of pages) {
   if(raw===undefined) {dv.paragraph(`Could not read ${p.file.path}. Wait for sync and reopen.`);continue;}
   const line=p.line===null || p.line===undefined || p.line==="" ? null : Number(p.line)*(side==="home"?1:-1);
   const role=p.neutral_site ? `Neutral (${side})` : side==="home"?"Home":"Away";
-  const categories=Object.fromEntries(["offense","defense","context"].map(c=>[c,rows(section(raw,`${side}-${c}`)+"\n"+section(raw,`engine-${side}-${c}`))]));
+  const categories=Object.fromEntries(["offense","defense","context"].map(c=>[c,[...rows(section(raw,`${side}-${c}`),`${p.file.path}::${side}-${c}`),...rows(section(raw,`engine-${side}-${c}`),`${p.file.path}::engine-${side}-${c}`).filter(r=>r.plus||r.minus)]]));
   games.push({p,side,opponent,line,role,categories,fullContext:[section(raw,"game-context"),section(raw,"engine-import-status"),section(raw,"engine-game-context"),section(raw,"engine-reporting")].filter(Boolean).join("\n\n")});
 }
 const gameLink=g=>dv.fileLink(g.p.file.path,false,`${dateText(g.p.game_date)} · W${g.p.week||"?"}`);
@@ -74,7 +77,8 @@ if(mode==="games") {
     dv.header(3,`${dateText(g.p.game_date)} · ${g.role}`);
     dv.paragraph(`${gameLink(g)} · Opponent: ${g.opponent}\n\n${provenance(g)}`);
     if(g.p.game_context) dv.paragraph(g.p.game_context);
-    dv.paragraph(g.fullContext || "No game context entered.");
+    dv.paragraph(section(await dv.io.load(g.p.file.path),"game-context") || "No manual game context entered.");
+    dv.paragraph(dv.fileLink(g.p.file.path,false,"Open matchup comparisons and full source archive"));
     dv.paragraph(dv.sectionLink(g.p.file.path,g.side==="home"?"Home team":"Away team",false,"Open this team's source notes"));
   }
 } else {
@@ -83,5 +87,5 @@ if(mode==="games") {
     for(const r of notes) if(mode==="active"?["active","watch"].includes(r.carry):c===mode) records.push({g,c,r});
   }
   if(records.length) rowTable(records,mode==="active");
-  else dv.paragraph(mode==="active"?"No active/watch observations yet. Set Carry forward to active or watch on a source row.":"No observations entered in this section yet.");
+
 }

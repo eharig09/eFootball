@@ -50,7 +50,7 @@ test('refresh preserves every manual section, initial quote, and custom multilin
   const next=refresh(text,p),fm=metadata(next);
   assert.equal(fm.line,-4);assert.equal(fm.engine_line,-6);assert.equal(fm.status,'bet');
   assert(next.includes('MY ORIGINAL CONCLUSION'));assert(next.includes('custom: |\n  multi\n  line'));
-  assert(next.includes('<!-- cfb:home-offense:start -->\n| + | - |'));
+  assert(next.includes('cfb:observations-home-offense:start'));assert.equal(engine.block(next,'home-offense').content,'');
 });
 test('no quote from a different book fills initial fields under the original book',()=>{
   const text=initial().replace('sportsbook: ""','sportsbook: "Bovada"');
@@ -133,10 +133,11 @@ test('unrelated index notes in team/matchup folders do not block import or snaps
   const target=await engine.run(tp);assert.equal(metadata(files.get(target)).type,'cfb-matchup');
   const snapshot=await engine.freeze(tp);assert.equal(metadata(files.get(snapshot)).type,'cfb-pregame-snapshot');
 });
-test('team queries include neutral imported evidence, isolate side, and show opponent/context',async()=>{
-  const text=refresh(initial());const output=[];const dv={
+test('team queries show authored assessments, isolate side, and link the full archive',async()=>{
+  const text=refresh(initial()).replace('> |  |  | Success rate: 45%', '> | Pressure advantage |  | Success rate: 45%');const output=[];const dv={
     current:()=>({file:{path:paths.home},season:2099}),
-    pages:()=>[{...metadata(text),file:{path:`${BASE}/Matchups/game.md`}}],
+    pages:query=>query.includes("Observations")?[]:[{...metadata(text),file:{path:`${BASE}/Matchups/game.md`}}],
+    view:async()=>{},
     io:{load:async()=>text},date:()=>({toFormat:()=> '2099-10-08'}),
     fileLink:(path,e,label)=>({path,label,toString:()=>`[[${path}]]`}),sectionLink:(path,section,e,label)=>({path,section,label}),
     table:(headers,rows)=>output.push({headers,rows}),paragraph:text=>output.push({text}),header:(level,text)=>output.push({text})};
@@ -144,7 +145,7 @@ test('team queries include neutral imported evidence, isolate side, and show opp
   assert(output[0].rows.length>0);assert.equal(output[0].rows[0][1],metadata(text).away_team);
   assert(output[0].rows.some(row=>String(row[5]).includes('45%')));assert(!JSON.stringify(output).includes('Quarterback questionable'));
   output.length=0;await new AsyncFunction('dv','input',viewSource)(dv,{mode:'games'});
-  assert(JSON.stringify(output).includes('Matchup report'));assert(JSON.stringify(output).includes('15 mph wind'));
+  assert(JSON.stringify(output).includes('full source archive'));assert(!JSON.stringify(output).includes('Matchup report'));
 });
 
 const editor=new Function(fs.readFileSync(path.join(ROOT,BASE,'Views/cfb-edit.js'),'utf8'))();
@@ -205,4 +206,85 @@ test('native form exposes full fields, saves changes, locks imported evidence, a
   controls.find(c=>c.text==='Save note').click();assert.equal((await pending).plus,'Return expected');
   controls.length=0;pending=editor.form(tp,initial,false,{home:'Home U',away:'Away U'});
   controls.find(c=>c.text==='Cancel').click();assert.equal(await pending,null);
+});
+const observations=new Function(fs.readFileSync(path.join(ROOT,BASE,'Views/cfb-observations.js'),'utf8'))();
+const observationViewSource=fs.readFileSync(path.join(ROOT,BASE,'Views/cfb-observation-view.js'),'utf8');
+test('compact comparisons preserve all sources and archive irrelevant or stale headlines',()=>{
+  const p=fixture();p.content.reported.push(
+    {content_id:20,title:'Home U vs Away U injury report',published_at:'2099-10-08',canonical_url:'https://news.test/current'},
+    {content_id:21,title:'Home U vs Away U last season',published_at:'2099-09-01',canonical_url:'https://news.test/old'},
+    {content_id:22,title:'Unrelated university go karts',published_at:'2099-10-08',canonical_url:'https://news.test/unrelated'});
+  const text=refresh(initial(),p),brief=engine.block(text,'engine-brief').content;
+  assert(brief.includes('Home U offense vs. Away U defense'));assert(brief.includes('| PPA / play | — | -0.12 |'));
+  assert(brief.includes('4 games · 2099-10-08'));assert(brief.includes('Home U vs Away U injury report'));
+  assert(!brief.includes('last season'));assert(!brief.includes('go karts'));
+  const reporting=engine.block(text,'engine-reporting').content;assert(reporting.includes('last season'));assert(reporting.includes('go karts'));
+  assert(text.includes('> [!abstract]- Full source: reporting'));
+  assert.equal(engine.block(refresh(text,p),'engine-reporting').content.split('\n').filter(l=>l.startsWith('|')).length,reporting.split('\n').filter(l=>l.startsWith('|')).length);
+  assert.equal((refresh(text,p).match(/cfb:engine-brief:start/g)||[]).length,1);
+});
+test('organizer preserves authored legacy rows and unknown prose without duplication',async()=>{
+  const {tp,files}=runtime();files.set(`${BASE}/Views/cfb-engine.js`,fs.readFileSync(path.join(ROOT,BASE,'Views/cfb-engine.js'),'utf8'));
+  const file=`${BASE}/Matchups/legacy.md`;
+  const original=initial().replace('| | | | game-only | |','| Protection improved | | Film | active | after next game |').replace('- Thesis:','- Thesis: ORIGINAL');
+  files.set(file,original);
+  await observations.organizeExisting(tp);
+  let notes=[...files.keys()].filter(p=>p.startsWith(`${BASE}/Observations/`)&&p.endsWith('.md'));
+  assert.equal(notes.length,1);const props=metadata(files.get(notes[0]));
+  assert.equal(props.team,'[[06 Sports Betting/Football/CFB/Teams/Away U]]');assert.equal(props.opponent,'[[06 Sports Betting/Football/CFB/Teams/Home U]]');
+  assert.equal(props.carry,'active');assert(files.get(file).includes('ORIGINAL'));assert(engine.block(files.get(file),'away-offense').content.includes('Protection improved'));
+  await observations.organizeExisting(tp);
+  notes=[...files.keys()].filter(p=>p.startsWith(`${BASE}/Observations/`)&&p.endsWith('.md'));assert.equal(notes.length,1);
+});
+function atomicUI(tp,onOpen){
+  const controls=[];
+  class C {constructor(label){this.label=label;this.inputEl={style:{}};controls.push(this)}addOption(){return this}setValue(v){this.value=v;return this}setDisabled(v){this.disabled=v;return this}onChange(f){this.change=f;return this}setButtonText(v){this.text=v;return this}setCta(){return this}onClick(f){this.click=f;return this}}
+  class Setting {constructor(){this.settingEl={style:{}};this.controlEl={style:{}}}setName(v){this.name=v;return this}setDesc(){return this}addDropdown(f){f(new C(this.name));return this}addTextArea(f){f(new C(this.name));return this}addText(f){f(new C(this.name));return this}addButton(f){f(new C(this.name));return this}}
+  class Modal {constructor(){this.modalEl={style:{}};this.contentEl={createEl(){},empty(){}}}open(){controls.length=0;this.onOpen();onOpen(controls)}close(){this.onClose()}}
+  tp.obsidian.Modal=Modal;tp.obsidian.Setting=Setting;
+}
+test('capture form creates and edits an atomic note, keeps unknown properties/prose and cancels cleanly',async()=>{
+  const {tp,files}=runtime();files.set(`${BASE}/Views/cfb-engine.js`,fs.readFileSync(path.join(ROOT,BASE,'Views/cfb-engine.js'),'utf8'));
+  const match=`${BASE}/Matchups/game.md`;files.set(match,refresh(initial()));
+  atomicUI(tp,c=>{c.find(x=>x.label==='Observation').change('Front seven depth');c.find(x=>x.label==='Evidence / sources / conditions').change('Full evidence\nSecond line');c.find(x=>x.label==='Team').change('home');c.find(x=>x.label==='Carry forward').change('watch');c.find(x=>x.text==='Save observation').click()});
+  const target=await observations.open(tp.app,tp.obsidian,{matchupPath:match,category:'defense'});
+  const fm=metadata(files.get(target));assert.equal(fm.team,'[[06 Sports Betting/Football/CFB/Teams/Home U]]');assert.equal(fm.opponent,'[[06 Sports Betting/Football/CFB/Teams/Away U]]');assert.equal(fm.category,'defense');assert.equal(fm.matchup,`[[${match.replace(/\.md$/,'')}]]`);
+  files.set(target,files.get(target).replace('---\n','---\ncustom: "KEEP"\n')+'\n## Extra section\n\nKEEP PROSE\n');
+  atomicUI(tp,c=>{assert(c.find(x=>x.label==='Originating matchup').disabled);c.find(x=>x.label==='Observation').change('Depth confirmed');c.find(x=>x.label==='Follow-up').change('Check next week');c.find(x=>x.text==='Save observation').click()});
+  await observations.open(tp.app,tp.obsidian,{observationPath:target});
+  assert.equal(metadata(files.get(target)).observation,'Depth confirmed');assert.equal(metadata(files.get(target)).custom,'KEEP');assert(files.get(target).includes('KEEP PROSE'));assert(files.get(target).includes('Full evidence\nSecond line'));
+  const before=files.get(target),count=files.size;
+  atomicUI(tp,c=>c.find(x=>x.text==='Cancel').click());assert.equal(await observations.open(tp.app,tp.obsidian,{observationPath:target}),undefined);
+  assert.equal(files.get(target),before);assert.equal(files.size,count);
+});
+test('freeze copies full observation content and removes live queries and management grids',async()=>{
+  const {tp,files}=runtime();const match=await engine.run(tp);
+  const obs=`${BASE}/Observations/insight.md`;
+  files.set(obs,observations.serialize(metadata(files.get(match)),{path:match},{side:'away',category:'offense',direction:'positive',observation:'Original thesis',evidence:'Full source evidence',followup:'Check lineup',carry:'active',review:'2099-10-10'},'insight'));
+  const snap=await engine.freeze(tp),frozen=files.get(snap);assert(frozen.includes('Original thesis'));assert(frozen.includes('Full source evidence'));assert(frozen.includes('Check lineup'));
+  assert(!frozen.includes('await dv.view'));assert(!frozen.includes('![[06 Sports Betting/Football/CFB/Views/matchup-observations.base]]'));
+  files.set(obs,files.get(obs).replaceAll('Original thesis','REVISED'));assert.equal(files.get(snap),frozen);
+});
+test('atomic observation views isolate team, season, category and active status with full text',async()=>{
+  const out=[],nodes=[];const records=[
+    {type:'cfb-observation',team:paths.home,opponent:paths.away,season:2099,category:'defense',side:'home',matchup:`${BASE}/Matchups/game.md`,observation:'Full untruncated insight',carry:'active',review:'2099-10-01',direction:'positive',file:{path:`${BASE}/Observations/one.md`}},
+    {type:'cfb-observation',team:paths.away,season:2099,category:'defense',carry:'active',observation:'OPPONENT INSIGHT',file:{path:'other.md'}},
+    {type:'cfb-observation',team:paths.home,season:2098,category:'defense',carry:'active',observation:'OLD SEASON',file:{path:'old.md'}},
+    {type:'cfb-observation',team:paths.home,season:2099,category:'offense',carry:'retired',observation:'RETIRED OFFENSE',file:{path:'retired.md'}}];
+  const dv={current:()=>({type:'cfb-team',season:2099,file:{path:paths.home}}),pages:()=>records,date:()=>({toFormat:()=> '2099-10-08'}),fileLink:p=>`[[${p}]]`,paragraph:s=>out.push(s),container:{createEl:(_,options)=>{const n={...options,addEventListener(){}};nodes.push(n);return n}}};
+  await new AsyncFunction('dv','input',observationViewSource)(dv,{active:true,category:'defense'});
+  assert(out.join('\n').includes('Full untruncated insight'));assert(out.join('\n').includes('REVIEW DUE'));assert(!out.join('\n').includes('OPPONENT INSIGHT'));assert(!out.join('\n').includes('OLD SEASON'));assert(!out.join('\n').includes('RETIRED OFFENSE'));assert.equal(nodes.filter(n=>n.text==='Edit').length,1);
+});
+test('capture from a team page restricts matchups and follows that team across home/away roles',async()=>{
+  const {tp,files}=runtime();const one=`${BASE}/Matchups/game1.md`,two=`${BASE}/Matchups/game2.md`;
+  files.set(one,refresh(initial()));files.set(two,refresh(initial()).replace('home_team: "[[06 Sports Betting/Football/CFB/Teams/Home U]]"','home_team: "[[06 Sports Betting/Football/CFB/Teams/Away U]]"').replace('away_team: "[[06 Sports Betting/Football/CFB/Teams/Away U]]"','away_team: "[[06 Sports Betting/Football/CFB/Teams/Home U]]"'));
+  atomicUI(tp,c=>{assert(c.find(x=>x.label==='Team').disabled);assert.equal(c.find(x=>x.label==='Team').value,'away');c.find(x=>x.label==='Originating matchup').change(one);assert.equal(c.find(x=>x.label==='Team').value,'home');c.find(x=>x.label==='Observation').change('Subject stays Home U');c.find(x=>x.text==='Save observation').click()});
+  const target=await observations.open(tp.app,tp.obsidian,{teamPath:paths.home});assert.equal(metadata(files.get(target)).team,'[[06 Sports Betting/Football/CFB/Teams/Home U]]');assert.equal(metadata(files.get(target)).side,'home');
+});
+test('observation form refuses to overwrite an edit made while the modal was open',async()=>{
+  const {tp,files}=runtime();files.set(`${BASE}/Views/cfb-engine.js`,fs.readFileSync(path.join(ROOT,BASE,'Views/cfb-engine.js'),'utf8'));
+  const match=`${BASE}/Matchups/game.md`;files.set(match,refresh(initial()));const target=`${BASE}/Observations/one.md`;
+  files.set(target,observations.serialize(metadata(files.get(match)),{path:match},{side:'home',category:'context',direction:'neutral',observation:'Check conditions',evidence:'Original',carry:'watch'},'one'));
+  atomicUI(tp,c=>{files.set(target,files.get(target)+'\nEXTERNAL EDIT\n');c.find(x=>x.label==='Observation').change('Do not overwrite');c.find(x=>x.text==='Save observation').click()});
+  await assert.rejects(observations.open(tp.app,tp.obsidian,{observationPath:target}),/changed while editing/);assert(files.get(target).includes('EXTERNAL EDIT'));assert.equal(metadata(files.get(target)).observation,'Check conditions');
 });

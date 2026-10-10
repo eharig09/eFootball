@@ -1,0 +1,47 @@
+filters:
+  and:
+    - 'file.inFolder("06 Sports Betting/Football/CFB/Observations")'
+    - 'note.type == "cfb-observation"'
+properties:
+  note.observation:
+    displayName: Observation
+  note.direction:
+    displayName: Direction
+  note.team:
+    displayName: Team
+  note.category:
+    displayName: Section
+  note.carry:
+    displayName: Carry forward
+  note.review:
+    displayName: Review / condition
+views:
+  - type: table
+    name: Active and watch
+    filters:
+      or:
+        - 'note.carry == "active"'
+        - 'note.carry == "watch"'
+    groupBy:
+      property: note.team
+      direction: ASC
+    order:
+      - note.observation
+      - note.direction
+      - note.category
+      - note.carry
+      - note.review
+      - file.name
+  - type: table
+    name: All observations
+    groupBy:
+      property: note.team
+      direction: ASC
+    order:
+      - note.observation
+      - note.direction
+      - note.category
+      - note.carry
+      - note.review
+      - note.matchup
+      - file.name

@@ -1,101 +1,93 @@
-# CFB engine → Obsidian
+# CFB research in Obsidian
 
-Import the existing Football Lab JSON endpoints directly from Obsidian. No
-server deployment, Python process, credentials, or new Obsidian plugin is needed.
-Requires the vault's existing **Templater** and **Dataview** plugins, with Dataview
-JavaScript queries enabled.
+Import Football Lab's existing CFB JSON API into linked matchup and team pages,
+read compact numerical comparisons, and manage meaningful observations through a
+native capture form and editable Obsidian Bases grids. Engine routes and deployment
+settings do not change. The integration makes GET requests only and never uploads
+vault content.
 
 ## Installation
 
-Copy the contents of `vault/` into the Obsidian vault root, merging folders:
+Merge `vault/` into the vault root. Preserve custom `Views/engine-config.json`
+settings and existing team/matchup notes. The installer contains no real team,
+matchup or observation data.
 
-- `Bins/Templates/`: five Templater templates, including Engine Import and Freeze.
-- `06 Sports Betting/Football/CFB/`: dashboard, instructions, team blueprint,
-  local creation/import helpers, and shared Dataview views.
+- `Bins/Templates/`: seven Templater templates (creation, import, freeze,
+  observation capture/edit, and legacy organization).
+- `06 Sports Betting/Football/CFB/`: dashboard, setup guide, shared helpers,
+  team blueprint and Bases views.
 
-No team or matchup notes are included in the installer, so existing research is
-not replaced. Preserve custom `Views/engine-config.json` settings when updating.
-If templates live elsewhere in your vault, place the five templates in your
-configured Templater folder. The data/view path stays as shown above.
+Requires existing Templater and Dataview plugins, Dataview JavaScript queries,
+and the core Bases plugin. No additional community plugin is required. If the
+configured template folder differs, move the seven templates there; keep the
+CFB helper/view path as installed.
 
 ## Use
 
 1. Open **CFB Dashboard**.
-2. **Ctrl+P → Templater: Open insert template modal → CFB Engine Import Template**.
-3. Paste an engine game-page URL/ID, or leave blank to select an upcoming game.
-4. Select a sportsbook. Map an unfamiliar team name to an existing page if needed.
-5. The new or refreshed matchup opens after Templater finishes.
+2. Run **Templater: Open insert template modal → CFB Engine Import Template**.
+3. Enter a game URL/ID or select an upcoming game, then select a sportsbook.
+4. Read numerical offense-versus-defense comparisons. Season metrics and trailing
+   inputs have separate tables with sample/season labels. Conditions and projection
+   appear once; all source blocks are preserved in folded native callouts.
+5. Use **Add observation** in Reading view, or **CFB Observation Template**.
+   Capture team, section, direction, evidence, carry-forward status and review.
+6. Use **CFB Observations.base** to edit management fields directly. Team and
+   matchup pages also embed filtered grids. Open a note for full Markdown evidence.
+7. Freeze the complete note and observation text with **CFB Freeze Pregame Template**
+   before kickoff. Refresh first if newer evidence is wanted.
 
-Run the same command again to refresh. The importer identifies games by canonical
-ID, with an exact team/season/week match for existing manual notes. It refuses
-ambiguous duplicates, wrong-team/season targets, malformed import markers, and
-concurrent note edits rather than overwriting unrelated text.
+**CFB Edit Notes Template** is an alias for observation capture/edit. Run
+**CFB Organize Existing Notes Template** from the dashboard to convert personally
+authored legacy rows repeatably. Original rows are preserved; converted copies
+are excluded from legacy team displays. Neutral imported metrics/headlines do not
+become personal observations automatically. These are on-demand commands, with no
+scheduled refresh.
 
-Use **CFB Freeze Pregame Template** from the dashboard before kickoff to preserve
-the whole note (including your reasoning) in `Snapshots`. It does not fetch new
-data; refresh first. Snapshots have a different type and are excluded from team
-queries. This is a user-invoked importer, not a scheduled background task.
+## Data, relevance and preservation
 
-## Data and refresh behavior
+Required: `/api/v1/cfb/games/<id>`. Optional independent endpoints: `/preview`,
+`/situation`, `/content`. The default engine is
+`https://cfb-intelligence.onrender.com`; config includes root URL, timezone and
+optional preferred sportsbook. `tp.obsidian.requestUrl` avoids browser CORS.
 
-Required: `/api/v1/cfb/games/<id>` (identity, schedule, venue, neutral flag, basic
-metrics). Optional requests run independently:
+Imports preserve manual analysis, existing team assessments/season filters, and
+initial quoted market fields. Latest quotes use `engine_*` properties and game
+conditions. Unknown spread/total juice stays blank. Neutral-site campus-travel
+assumptions are omitted. Wrong identity, ambiguous duplicates, damaged markers
+and concurrent note changes stop writes. Optional failures retain older sections;
+post-kickoff imports are labeled retrospective.
 
-- `/preview`: quality/metrics, trailing offensive/defensive inputs, projections.
-- `/situation`: per-book opening/current spread and total, moneylines, quote
-  timestamp, schedule context, availability and forecast.
-- `/content`: attributed reporting layers with original source URLs and dates.
+Current-headline screening requires both canonical team names and publication
+within seven days before the game. It indicates a review candidate, not confirmed
+player availability, subject-team ownership or accuracy. Aliases, older reports
+and uncertain matches remain in the complete archive. Stable IDs deduplicate
+source records; no original record is deleted by the relevance screen.
 
-The default engine address is `https://cfb-intelligence.onrender.com`. Configure
-the root URL, local game-date timezone, and preferred sportsbook in
-`Views/engine-config.json`. `tp.obsidian.requestUrl` avoids browser CORS restrictions.
-Only GET requests are made; vault notes and decisions never leave the device.
+Display rounding affects contextual statistics/projections only. Quotes and
+numerical Properties retain precision. Fetch/forecast times disappear from the
+visible sections; publication/input dates and hidden provenance remain available.
 
-Manual note sections and existing quoted-market fields remain intact. Latest
-quotes use `engine_*` properties and Imported game context. No consensus book is
-substituted. Missing spread/total juice stays unknown; the `price` field is never
-guessed. Blank initial market fields are filled only when the initial sportsbook
-is blank or agrees with the selected provider.
+Observations are individual Markdown notes with team, opponent, originating
+matchup, season/week/date, category, direction, carry/review and quoted game context
+Properties. Evidence/Follow-up remain full Markdown prose. Team views show full
+observation text with origin links; neutral raw metrics no longer fill insight
+lists. Positive/negative directions concern team performance, not automatic bets.
 
-Imported fact rows have stable IDs. Evidence refreshes, while user edits to +, -,
-carry-forward status, and review condition persist. Older rows/reporting are
-retained by ID, with their source dates. They must be reviewed for continued
-relevance. Raw metrics are neutral evidence (not automatic + or - signals).
-Availability defaults to `watch`, retains the reporting role and publication
-date, and does not turn questionable into confirmed out. Shared reporting stays
-at game level because the current content endpoint does not include reliable
-per-item team ownership. Neutral-site travel estimates based on home campuses are
-omitted. Imports after kickoff are labeled retrospective.
-
-Optional endpoint failures produce a partial-import label and retain existing
-blocks from the missing endpoint. The required game request must succeed before
-any writes. Imported block delimiters are reserved for refresh; write personal
-analysis in the manual tables. Existing user assessments and team season filters
-are preserved.
+Snapshots contain full observation Properties and text, with live queries/grids
+removed. Later edits do not affect them. Snapshots are excluded from current
+team and observation datasets and cannot be created after stored kickoff.
 
 ## Verification
-
-From the repository root:
 
 ```sh
 node --test integrations/obsidian/tests/engine.test.cjs
 python -m unittest discover -s tests -p test_obsidian_integration.py
 ```
 
-The tests use a mocked Obsidian runtime and the live API's field shapes. They
-exercise manual-note and quote preservation, stable-ID deduplication/lifecycle
-edits, partial failures, missing prices, neutral venues, timezone dates, canonical
-identity checks, team-note compilation, pregame snapshots, and end-to-end imports.
-Final display and command behavior should also be checked in desktop Obsidian.
-
-
-Use **CFB Edit Notes Template** from the dashboard to add or edit observations in
-a native form. Manual evidence is editable; imported evidence is read-only while
-direction, carry-forward and review edits persist. No additional plugin is needed.
-The helper refuses concurrent changes and excludes snapshots from selection.
-
-Imported displays round PPA/explosiveness to at most two decimals; pace, yards,
-percentages and projections to one; temperature/wind to whole numbers. Market
-quotes and Properties retain precision. Fetch/forecast times disappear from the
-visible sections; news/input dates remain. Exact times remain in Properties or
-hidden provenance comments. Retained blocks are cleaned on refresh as well.
+Contract tests cover imports and preservation, partial failures, source retention,
+relevance screening, numerical presentation, forms/cancellation/concurrency,
+repeatable legacy conversion, team/category/season filters, and frozen atomic
+observations. Bases files are valid YAML using the documented schema. A genuine
+live packet/source note was reorganized with a full YAML parser, preserving every
+source block. Final native UI/render behavior needs a desktop Obsidian smoke check.

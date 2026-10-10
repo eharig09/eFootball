@@ -11,31 +11,28 @@ tags:
 
 [[06 Sports Betting/Football/CFB/CFB Dashboard|CFB Dashboard]] · [[06 Sports Betting/Football/CFB/CFB Setup Guide|Instructions]]
 
-> Notes below are pulled from matchups. Edit the source matchup to change a note. Set `season` to a year, or leave it blank for all seasons.
+> Notes below are pulled from matchups. Use Add/Edit observation, or edit the observation note Properties. Set `season` to a year, or leave it blank for all seasons.
 
 ## Current assessment
 
 ### Offense
 
-| + | - | Evidence / condition | Review / expires |
-| --- | --- | --- | --- |
-| | | | |
+- Assessment:
+- Evidence to revisit:
 
 ### Defense
 
-| + | - | Evidence / condition | Review / expires |
-| --- | --- | --- | --- |
-| | | | |
+- Assessment:
+- Evidence to revisit:
 
 ### Context
 
-| + | - | Evidence / condition | Review / expires |
-| --- | --- | --- | --- |
-| | | | |
+- Assessment:
+- Evidence to revisit:
 
 ## Carry-forward watchlist
 
-Rows marked `active` or `watch` in this team's matchup notes. A dated review condition is flagged when due; rows remain visible until you change their status in the source.
+Observations marked `active` or `watch` for this team. A dated review condition is flagged when due; rows remain visible until you change their status in the source.
 
 ```dataviewjs
 await dv.view("06 Sports Betting/Football/CFB/Views/cfb-team", {mode: "active"});
@@ -64,3 +61,8 @@ await dv.view("06 Sports Betting/Football/CFB/Views/cfb-team", {mode: "context"}
 ```dataviewjs
 await dv.view("06 Sports Betting/Football/CFB/Views/cfb-team", {mode: "games"});
 ```
+
+
+## Manage observations in an editable grid
+
+![[06 Sports Betting/Football/CFB/Views/team-observations.base]]

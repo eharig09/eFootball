@@ -74,13 +74,114 @@ function block(text, id) {
   if (a<0 && b<0) return null;
   if(a<0 || b<a || text.indexOf(start,a+start.length)>=0 || text.indexOf(end,b+end.length)>=0)
     throw new Error(`Damaged or duplicate import markers: ${id}. Restore both markers before refreshing.`);
-  return {a,b,end:b+end.length,content:text.slice(a+start.length,b).trim()};
+  return {a,b,end:b+end.length,content:unfold(text.slice(a+start.length,b).trim())};
 }
 function replaceBlock(text,id,content) {
   const existing = block(text,id);
   const replacement = `<!-- cfb:${id}:start -->\n${content}\n<!-- cfb:${id}:end -->`;
   return existing ? text.slice(0,existing.a)+replacement+text.slice(existing.end) : `${text.trimEnd()}\n\n${replacement}\n`;
 }
+function unfold(content) {
+  if (!content.startsWith("> [!abstract]-")) return content;
+  return content.split(/\r?\n/).slice(1).map(line=>line.replace(/^> ?/, "")).join("\n").trim();
+}
+function folded(title, content) {
+  return `> [!abstract]- ${title}\n${content.split("\n").map(line=>"> "+line).join("\n")}`;
+}
+function observationView(side, category) {
+  return `\`\`\`dataviewjs\nawait dv.view("${BASE}/Views/cfb-observation-view", {side: "${side}", category: "${category}"});\n\`\`\``;
+}
+function organize(text, parseYaml) {
+  const props=frontmatter(text,parseYaml).data;
+  const day=props.game_date instanceof Date?props.game_date.toISOString().slice(0,10):String(props.game_date).slice(0,10);
+  const raw={};
+  for(const match of text.matchAll(/<!-- cfb:(engine-[\w-]+):start -->/g))
+    if(match[1]!=="engine-brief")raw[match[1]]=block(text,match[1]).content;
+  const metric=(side,cat,key)=>{
+    const line=(raw[`engine-${side}-${cat}`]||"").split("\n").find(line=>line.includes(`metric:${side}:${cat}:${key} `)||line.includes(`pace:${side}:${cat}:${key} `));
+    if(!line)return "—";
+    const evidence=splitCells(line)[2];return evidence?.match(/: (-?\d+(?:\.\d+)?%?)(?:\. | )/)?.[1]||"—";
+  };
+  const name=side=>linkPath(props[`${side}_team`]).split("/").pop();
+  const basis=(side,category,kind)=>{
+    const lines=(raw[`engine-${side}-${category}`]||"").split("\n");
+    for(const line of lines){
+      const evidence=splitCells(line)[2]||"";
+      const match=kind==="sample"?evidence.match(/Trailing snapshot as of ([^;]+); sample ([^.]+)\./):evidence.match(/(\d{4}) season aggregate/);
+      if(match)return kind==="sample"?`${match[2]} games · ${match[1]}`:match[1];
+    }return "—";
+  };
+  const brief=["## Matchup evidence", "", `**Initial quote:** ${cell(props.sportsbook||"Book unknown")} · home spread ${props.line??"—"} · total ${props.total??"—"} · price ${props.price??"—"}${props.price_selection?" · "+cell(props.price_selection):""}.`];
+  for(const side of ["away","home"]) {
+    const opposing=side==="home"?"away":"home";
+    brief.push("",`### ${name(side)} offense vs. ${name(opposing)} defense`,"",
+      `| Season metric | ${cell(name(side))} offense | ${cell(name(opposing))} defense / allowed |`,"| --- | --- | --- |",
+      `| Season | ${basis(side,"offense","season")} | ${basis(opposing,"defense","season")} |`,
+      ...[["Success rate","success_rate"],["PPA / play","ppa"],["Explosiveness","explosiveness"]].map(([label,key])=>`| ${label} | ${metric(side,"offense",key)} | ${metric(opposing,"defense",key)} |`),
+      "",`| Trailing input | ${cell(name(side))} offense | ${cell(name(opposing))} defense / allowed |`,"| --- | --- | --- |",
+      `| Sample / as of | ${basis(side,"offense","sample")} | ${basis(opposing,"defense","sample")} |`,
+      ...[["Seconds / play","seconds_per_play"],["Pass rate","pass_rate"],["Yards / dropback","yards_per_dropback"],["Yards / rush","yards_per_rush"]].map(([label,key])=>`| ${label} | ${metric(side,"offense",key)} | ${metric(opposing,"defense",key)} |`));
+  }
+  const source=props.engine_api_url&&props.engine_game_id?sourceLink(`${props.engine_api_url}/college-football/games/${props.engine_game_id}/`,"Engine metrics and projection inputs"):"See full source archive";
+  brief.push("", `Basis: season aggregates and trailing samples as labeled above. ${source}. Raw contextual metrics, not opponent-adjusted betting edges.`);
+  const havoc=["", "| Havoc, as supplied | Home | Away |","| --- | --- | --- |",
+    `| Offense | ${metric("home","offense","havoc")} | ${metric("away","offense","havoc")} |`,
+    `| Defense | ${metric("home","defense","havoc")} | ${metric("away","defense","havoc")} |`];
+  brief.push(...havoc);
+  brief.push("", "### Game conditions", "", ...(raw["engine-game-context"]||"No imported conditions yet.").split("\n").filter(l=>l&&!l.startsWith("##")&&!l.includes("cfb:provenance")&&!l.startsWith("[Engine game]")).flatMap(line=>[line,""]));
+  if(raw["engine-projection"])brief.push("",raw["engine-projection"].replace(/<!--[^\n]*-->\n?/g,"").replace(/## Imported projection/,"### Projection"));
+  if(/Partial import|Retrospective import/.test(raw["engine-import-status"]||""))brief.push("",...raw["engine-import-status"].split("\n").filter(l=>/Partial import|Retrospective import/.test(l)));
+  // Headline matching is a conservative relevance screen, never confirmed ownership or availability.
+  const normalize=v=>String(v).toLowerCase().replace(/[^a-z0-9]/g,"");
+  const names=[normalize(name("home")),normalize(name("away"))];
+  const cutoff=Date.parse(day+"T00:00:00Z")-7*86400000;
+  const all=new Map();
+  for(const line of (raw["engine-reporting"]||"").split("\n"))if(line.startsWith("|")){
+    const c=splitCells(line);if(c.length===5&&c[0]!=="Item"&&!/^:?-+:?$/.test(c[0]))all.set(c[4],{title:c[0],role:c[1],date:c[2],source:c[3]});
+  }
+  for(const side of ["home","away"])for(const line of (raw[`engine-${side}-context`]||"").split("\n"))if(line.startsWith("|")){
+    const c=splitCells(line);if(!c[5]?.startsWith("availability:"))continue;
+    const evidence=c[2],title=evidence.split(". Role: ")[0],date=evidence.match(/Published (\d{4}-\d{2}-\d{2})/)?.[1]||"unknown";
+    const source=evidence.match(/\[[^\]]+\]\(<[^>]+>\)/)?.[0]||"Source unavailable";
+    const id=c[5].split(":").slice(2).join(":");if(!all.has(id))all.set(id,{title,role:"Availability headline; verify",date,source});
+  }
+  const candidates=[...all.values()].filter(r=>names.every(n=>n&&normalize(r.title).includes(n))&&Date.parse(r.date)>=cutoff&&String(r.date)<=day);
+  brief.push("", "### Current matchup reporting — verify", "", "Recent headlines naming both teams. Matching names does not confirm the subject team, an absence, or report accuracy. Older and uncertain items remain in the source archive.", "");
+  if(candidates.length){
+    candidates.sort((a,b)=>b.date.localeCompare(a.date));
+    for(const [heading,pattern] of [["Reporting / official sources",/REPORTING|OFFICIAL/],["Analysis",/ANALYSIS/],["Commentary / other",null]]){
+      const group=candidates.filter(r=>pattern?pattern.test(r.role):!/REPORTING|OFFICIAL|ANALYSIS/.test(r.role));
+      if(group.length)brief.push(`#### ${heading}`,"",...group.map(r=>`- **${r.date}** — ${r.title}. ${r.source}`),"");
+    }
+  }
+  else brief.push("No recent headlines confidently matched both team names. Review the source archive.");
+  if(!Object.keys(raw).length)brief.splice(3,brief.length-3,"No engine evidence imported yet. Use the import command from the dashboard.");
+  text=replaceBlock(text,"engine-brief",brief.join("\n"));
+  // Move the generated brief before manual game context; source blocks remain where they were.
+  const b=block(text,"engine-brief"),part=text.slice(b.a,b.end);
+  text=text.slice(0,b.a)+text.slice(b.end);
+  const anchor=text.indexOf("## Game context");
+  text=anchor>=0?text.slice(0,anchor)+part+"\n\n"+text.slice(anchor):text+"\n"+part;
+  for(const [id,content] of Object.entries(raw))text=replaceBlock(text,id,folded(id.replace("engine-", "Full source: ").replaceAll("-"," "),content));
+  for(const side of ["away","home"])for(const cat of ["offense","defense","context"]){
+    const id=`${side}-${cat}`,original=block(text,id);
+    if(!original)continue;
+    const rows=original.content.split("\n").filter(l=>l.trim().startsWith("|")).map(splitCells)
+      .filter(c=>c[0]!=="+"&&!/^:?-+:?$/.test(c[0])&&c.slice(0,3).some(Boolean));
+    text=replaceBlock(text,id,rows.length?folded("Previous table notes — preserved",original.content):"");
+    const viewId=`observations-${side}-${cat}`;
+    if(!block(text,viewId)){
+      const section=block(text,id);text=text.slice(0,section.end)+`\n\n<!-- cfb:${viewId}:start -->\n${observationView(side,cat)}\n<!-- cfb:${viewId}:end -->`+text.slice(section.end);
+    }
+  }
+  const grid="<!-- cfb:observation-grid:start -->\n> [!abstract]- Edit observation properties in a grid\n> ![["+BASE+"/Views/matchup-observations.base]]\n<!-- cfb:observation-grid:end -->";
+  if(!block(text,"observation-grid")) {
+    const pos=text.indexOf("## Decision and next action");
+    text=pos>=0?text.slice(0,pos)+grid+"\n\n"+text.slice(pos):text+"\n\n"+grid;
+  }
+  return text.replace("## Engine imports\n\nOnly the marked imported blocks below are refreshed. Your sections above remain editable.", "## Full source archive\n\nExpand a section for the complete imported evidence and original links. All items are retained; IDs support refresh and deduplication.");
+}
+
 function splitCells(line) {
   const output=[]; let value="",wiki=0;
   line=line.trim().replace(/^\|/,"").replace(/\|$/,"");
@@ -123,6 +224,10 @@ function fact(id,evidence,review="",carry="game-only") {return {id,plus:"",minus
 function cleanDisplay(text) {
   const number = (value, places) => Number.isFinite(Number(value)) ? String(Number(Number(value).toFixed(places))) : value;
   return text.replace(/(<!-- cfb:engine-[\w-]+:start -->)([\s\S]*?)(<!-- cfb:engine-[\w-]+:end -->)/g, (_,start,body,end) => {
+    if(start.includes("engine-brief:"))return start+body+end;
+    const wasFolded=body.trim().startsWith("> [!abstract]-");
+    const title=wasFolded?body.trim().split("\n")[0].replace("> [!abstract]- ",""):null;
+    if(wasFolded)body="\n"+unfold(body.trim())+"\n";
     const stamps = [...new Set(body.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g)||[])];
     body = body.replace(/\n?<!-- cfb:provenance:[^\n]*-->\n?/g,"\n")
       .replace(/Fetched: \S+\. /g,"").replace(/ Imported \S+\. /g," ")
@@ -139,7 +244,8 @@ function cleanDisplay(text) {
       if(c.length!==4 || c[0]==="Team" || /^:?-+:?$/.test(c[0]))return line;
       return `| ${[c[0],...c.slice(1).map(v=>v!==""?number(v,1):v)].map(cell).join(" | ")} |`;
     }).join("\n");
-    return start+body.trimEnd()+(stamps.length?`\n<!-- cfb:provenance: ${stamps.join(" ")} -->`:"")+"\n"+end;
+    const cleaned=body.trim()+(stamps.length?`\n<!-- cfb:provenance: ${stamps.join(" ")} -->`:"");
+    return start+"\n"+(wasFolded?folded(title,cleaned):cleaned)+"\n"+end;
   });
 }
 function gameValid(game,id) {
@@ -272,7 +378,7 @@ function refresh(text,packet,provider,teamPaths,importedAt,base,parseYaml,zone) 
       id==="engine-reporting"?mergeReporting(block(text,id)?.content,value):value;
     text=replaceBlock(text,id,merged);
   }
-  return cleanDisplay(text);
+  return organize(cleanDisplay(text),parseYaml);
 }
 async function ensureFolder(vault,path) {
   let current="";
@@ -410,11 +516,20 @@ async function freeze(tp) {
   if(props.type!=="cfb-matchup" || !Number.isFinite(kickoff))throw new Error("Import this matchup first so its kickoff is known.");
   if(props.engine_completed || kickoff<=now.getTime())throw new Error("Kickoff has passed; a pregame snapshot cannot be created now.");
   const stamp=now.toISOString(), target=`${BASE}/Snapshots/${file.basename} - ${stamp.replace(/[:.]/g,"-")}.md`;
-  const snapshot=patchProperties(text,{type:"cfb-pregame-snapshot",snapshot_at:stamp,source_matchup:link(file.path)},tp.obsidian.parseYaml);
+  let frozen=text.replace(/<!-- cfb:observation-grid:start -->[\s\S]*?<!-- cfb:observation-grid:end -->/g,"Frozen observations are included below.").replace(/```dataviewjs\nawait dv\.view\("[^"\n]*cfb-observation-view"[^\n]*\);\n```/g,"See the frozen observations below.");
+  frozen+="\n\n## Frozen observations\n\n";
+  for(const observation of vault.getMarkdownFiles().filter(f=>f.path.startsWith(`${BASE}/Observations/`))) {
+    const body=await vault.read(observation);if(!body.startsWith("---"))continue;
+    const data=frontmatter(body,tp.obsidian.parseYaml).data;
+    if(data.type!=="cfb-observation" || linkPath(data.matchup)!==linkPath(file.path))continue;
+    const m=frontmatter(body,tp.obsidian.parseYaml).match;
+    frozen+=`### ${cell(data.observation||observation.basename)}\n\n\`\`\`yaml\n${m[1]}\n\`\`\`\n\n${body.slice(m[0].length).replace(/```dataviewjs[\s\S]*?```/g,"")}\n\n`;
+  }
+  const snapshot=patchProperties(frozen,{type:"cfb-pregame-snapshot",snapshot_at:stamp,source_matchup:link(file.path)},tp.obsidian.parseYaml);
   await ensureFolder(vault,`${BASE}/Snapshots`);
   if(vault.getAbstractFileByPath(target))throw new Error("Snapshot already exists. Retry in a moment.");
   await vault.create(target,snapshot);
   new tp.obsidian.Notice("Saved pregame snapshot, including your analysis and imported evidence.",8000);
   return target;
 }
-return {run,freeze,refresh,buildImported,emptyNote,mergeRows,patchProperties,parseGameInput,dateInZone,baseUrl,gameValid,cleanDisplay,block,replaceBlock,splitCells,cell};
+return {run,freeze,refresh,buildImported,emptyNote,mergeRows,patchProperties,parseGameInput,dateInZone,baseUrl,gameValid,cleanDisplay,block,replaceBlock,splitCells,cell,organize,unfold};

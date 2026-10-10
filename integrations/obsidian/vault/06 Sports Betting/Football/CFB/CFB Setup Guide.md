@@ -1,121 +1,93 @@
-# CFB notes — setup and workflow
+# CFB notes — workflow
 
-## Create your first matchup
+## Start here
 
-1. Wait for Google Drive to sync the new files into this vault.
-2. Open the command palette (Ctrl+P) and choose **Templater: Create new note from template**.
-3. Select **CFB Matchup Template**. Enter game date, season, week, away team, and home team. Pick existing teams whenever possible to avoid alternate spellings.
-4. The note is named and moved into `06 Sports Betting/Football/CFB/Matchups`. Missing team pages are generated under `Teams` using the team page blueprint. Existing team pages are preserved.
-5. Fill in the Properties at the top, then write in the team tables. Use Reading view or Live Preview to see the compiled team pages.
+1. Open **CFB Dashboard** after your vault has synced.
+2. Import a game using **Ctrl+P → Templater: Open insert template modal → CFB Engine Import Template**. Enter its engine URL/ID or select an upcoming game, then a sportsbook.
+3. Read the offense-versus-defense comparisons, trailing inputs, game conditions, projections, and current-matchup headline candidates.
+4. Use **Add observation** under the relevant team's **Offense**, **Defense**, or **Context** section. Save what the evidence means to you, its conditions, and whether it should carry forward.
+5. Open each team's page to review its active/watch observations before researching the next game.
 
-Your current Templater folder is `Bins/Templates`; both new templates are installed there. Dataview and DataviewJS are already enabled in the synced settings. If your local settings differ, enable Dataview's JavaScript queries and set Templater's template folder to the installed folder. No folder auto-template rules were changed.
+Templater templates live in `Bins/Templates`. Dataview and its JavaScript queries must be enabled. **Bases** is a core Obsidian plugin; it is already enabled in your synced settings. Use Reading view to display the custom views and Add/Edit buttons. No additional community plugin is required.
 
-To create a team page before a game, use **CFB Team Template** with the same command. For an existing empty note you can use **Templater: Open insert template modal**. Never insert these creation templates into a populated note.
+## Reading the matchup
 
-## Market field definitions
+Season metrics and trailing-sample inputs use separate compact numerical comparison tables. Shared descriptions of season, sample and source basis appear once. Havoc is shown separately, as supplied by the engine; avoid assuming offensive havoc has the same interpretation as defensive havoc. These are contextual measures, not opponent-adjusted betting edges.
 
-| Field | Meaning / example |
+Game conditions collect weather, travel, schedule flags and the latest selected-book market. The original line/total/price remain in Properties and the initial quote. Engine projections stay explicitly labeled and retain their model label.
+
+**Current matchup reporting — verify** is a conservative headline screen: published within the seven days before the game and naming both canonical teams. It is not a confirmation of player availability or the subject team. Headlines using aliases may stay in the archive. Older, uncertain, duplicate-by-source-ID and loosely linked items remain accessible in **Full source archive**. Expand a section to read every imported row and its original link. No report is deleted by this screen.
+
+Imported displays round PPA/explosiveness to at most two decimals; pace, yards, percentages and projections to one; temperature/wind to whole numbers. Actual quoted markets and numerical Properties retain precision. Repeated fetch/forecast times are removed from visible sections; news/input dates remain. Exact times remain in Properties or hidden provenance comments.
+
+## Observations: write normally, manage in a grid
+
+Each meaningful insight is a Markdown note in `06 Sports Betting/Football/CFB/Observations`. Imported metrics and articles do not each become notes automatically.
+
+| Field | Meaning |
 | --- | --- |
-| home_team / away_team | Full Obsidian links to team pages; generated automatically |
-| season / week / game_date | Season year, week label, and actual game date |
-| line | Numeric HOME spread: -3.5 = home favored; +3.5 = home underdog; 0 = pick'em |
-| total | Numeric combined-points total, e.g. 48.5 |
-| price | American odds for the market AND selection specified below, e.g. -110 |
-| price_market | spread, total, moneyline, or other description |
-| price_selection | Explicit selection, e.g. Michigan -3.5 or Under 48.5 |
-| home_spread_price / away_spread_price | Separate odds for each spread side |
-| over_price / under_price | Separate odds for each total side |
-| home_moneyline / away_moneyline | Separate outright-win odds |
-| sportsbook / market_timestamp | Book and exact time you observed the quote |
-| neutral_site / venue / kickoff | Neutral-site flag, location, kickoff with time zone |
-| game_context | Optional one-line context shown alongside every compiled note |
-| status | research, watch, ready, bet, pass, or reviewed |
-| next_action / review_date | What to check next, and when |
-| home_score / away_score | Optional final results |
+| observation | The full observation text, editable in the form or Bases |
+| team / opponent / matchup | Links to the subject team, opponent and originating game |
+| season / week / game_date / side | Originating game context |
+| category | offense, defense, context |
+| direction | positive, negative, neutral, mixed |
+| carry | game-only, watch, active, retired, superseded |
+| review | YYYY-MM-DD or a condition |
+| context / venue / neutral_site | Game setting at capture time |
+| team_line / total / price / sportsbook | Original quoted market context, copied from the originating game |
 
-Leave unknown numbers blank; do not put '?' or 'TBD' in numeric properties. `line` has a single home-team sign convention; team pages automatically reverse it for away games. At neutral sites, use designated home/away and set neutral_site to true. Record the initial quoted market; keep later quotes and their timestamps in the game note instead of silently replacing the earlier price.
+Evidence and Follow-up are ordinary Markdown sections in the note. Keep longer explanations, multiple source links and qualifications there. The form supports multiline input. You can also open the note and write normally.
 
-## + / - tables
+**+** means favorable for the subject team's performance; **−** means unfavorable. A favorable defense can support an under. Direction is not a betting instruction. Use neutral for open questions.
 
-Both teams have **Offense**, **Defense**, and **Context** sections. Each section has this table:
+- **game-only:** retained in history, excluded from the carry-forward watchlist.
+- **watch:** tentative idea to test in later games.
+- **active:** currently relevant beyond the originating game.
+- **retired / superseded:** preserved in history, excluded from the watchlist.
 
-| + | - | Evidence / condition | Carry forward | Review / expires |
-| --- | --- | --- | --- | --- |
-| Hypothetical: pass protection improved | | Film / lineup evidence and opponent-quality caveat | watch | After next comparable opponent |
-| | Hypothetical: thin secondary depth | Injury source and date | active | 2026-10-15 — check injury report |
+A review value starting with YYYY-MM-DD is flagged REVIEW DUE on and after that date. It does not retire a note automatically. Retire or revise it after checking the evidence.
 
-Write one observation per row, usually in either + or -. + means favorable for the named team's performance; - means unfavorable. A strong defense is a team positive even if it might support an under. These are observations, not automatic wager instructions.
+### Editing options
 
-Carry-forward values:
+- **Add/Edit buttons:** open the capture form in Reading view. The section/team are preselected where possible. Matchup selection shows the full game name; choose Home or Away to identify the subject team.
+- **CFB Observation Template:** command-palette alternative. Use **Templater: Open insert template modal** from a dashboard or matchup. **CFB Edit Notes Template** is an alias. Avoid creating a new note from these action templates.
+- **CFB Observations.base:** editable management grid with Active and watch / All observations views grouped by team. Edit observation text, direction, section, status and review directly. Open the file-name column for full evidence.
+- **Embedded grids:** each matchup has a folded grid for its own observations; each team page has a grid filtered to that team and its season.
 
-- **game-only**: visible in history; excluded from the current watchlist.
-- **watch**: tentative idea to test in future games.
-- **active**: relevant beyond this game, subject to its stated conditions.
-- **retired** or **superseded**: retained in history; excluded from the current watchlist.
+Keep relational links, originating game fields and IDs intact. Use the form if changing an observation's team or section, so team/opponent links stay consistent. Do not use an action template inside the observation being edited: Templater could overwrite concurrent file edits. Use its Reading-view Edit button or normal Properties instead. Concurrent file changes stop the form save rather than losing another edit.
 
-A Review / expires value starting with YYYY-MM-DD is flagged REVIEW DUE on and after that date. It does not automatically retire the observation. Update its status after checking the evidence. Conditions such as 'when tackle returns' can be written as text.
+## Team pages and carry-forward notes
 
-Add table rows as needed. Use `<br>` for multiple sentences on different lines within a cell. Escape literal pipes as `\|`, including aliased wiki links inside tables (`[[Note\|Label]]`). Keep the invisible `<!-- cfb:... -->` markers surrounding the tables and game-context section: they identify exactly which team's content to pull. Notes outside these marked tables remain in the game note and are not included in the compiled note tables.
+Each team page retains a manually curated **Current assessment**, followed by Active/watch, Offense, Defense, Context, game history, and the editable observation grid. Existing assessments are preserved. New team assessments use normal prose rather than manual tables.
 
-## Team pages
+Observation views include the originating matchup and opposing-team links. Team pages default to the season used when created; clear `season` for all seasons. Changing a filter does not delete old notes. Game history links to each matchup's complete evidence and source archive, rather than repeating that archive for every observation.
 
-The top **Current assessment** tables are your manually curated season-level synthesis. Below them, the watchlist pulls active/watch rows; Offense, Defense, and Context pull ALL corresponding matchup rows for that team, including retired observations. Every compiled row retains its game link, opposing team link, venue role, team-relative line, total, optional one-line game context, evidence, and review condition. Game history also includes each game's full shared context and the quoted price/selection.
+## Organize older notes
 
-These are live read-only views: edit observations in the linked source matchup. They do not copy old observations into a new matchup or mix in the opponent's notes. Open each team page before researching the next game. Reopen/refresh the page after a source edit if needed; Dataview refresh is enabled.
+From **CFB Dashboard**, run **CFB Organize Existing Notes Template** using the insert-template command. It performs no API requests. It converts manually authored table rows and personally assessed imported rows into linked observation notes, preserves the original rows in folded sections, and installs the compact layout. It does not turn every neutral statistic or availability headline into a personal insight. Repeating the command does not duplicate converted observations. Pregame snapshots are excluded.
 
-Team pages default to the season used when first created. Change `season` for a new season, or clear it to see all seasons. Changing the filter preserves all old games. When starting a new season, refresh your manually curated Current assessment as well. The dashboard has its own season filter.
+Refreshing an engine note installs the new layout automatically. Use the organizer to convert any earlier authored table observations. Legacy rows still display until converted; converted copies are not shown twice in team history.
 
-## Weekly rhythm
+## Import, refresh and attribution
 
-Before a game: review both team pages, fill market/game context, add matchup observations, and record the next action. Freeze your pregame conclusion with a timestamp. Afterward: add results and a postgame review, test the thesis against what happened, and update the carry-forward statuses. Set status to reviewed when complete.
+The importer makes GET requests to the configured engine; it never uploads notes. Run import/refresh from the dashboard. The importer preserves manual Game context, Decision, Postgame review and Sources; quoted original market fields; authored observations; team assessments and season filters. Imported source blocks update by stable item IDs. Older evidence remains in the archive even when it is absent from the latest response.
 
-## Files
+The engine does not supply spread/total juice; these fields stay blank. It omits home-campus travel assumptions for neutral sites. Optional endpoint failure retains that endpoint's older sections and marks the import partial. Required game data must succeed before import. Damaged or duplicate markers stop refresh. Imported data after kickoff is labeled retrospective.
 
-- `Bins/Templates/CFB Matchup Template.md`: interactive game creation.
-- `Bins/Templates/CFB Team Template.md`: standalone team creation.
-- `06 Sports Betting/Football/CFB/Views/team-page.md`: shared team-page blueprint.
-- `06 Sports Betting/Football/CFB/Views/cfb-create.js`: local template helper.
-- `06 Sports Betting/Football/CFB/Views/cfb-team.js`: team compilation view.
-- `06 Sports Betting/Football/CFB/CFB Dashboard.md`: game and action lists.
+`Views/engine-config.json` controls HTTPS engine root, game-date timezone and optional preferred sportsbook. Default engine is `https://cfb-intelligence.onrender.com`, timezone `America/New_York`. Commands run on demand; no background schedule is installed.
 
-The creation and team-query helpers run locally. The engine importer makes read-only requests to the configured engine; it does not upload notes. Keep Views in this exact path. Avoid moving or renaming team pages after creating matchups unless Obsidian updates the links.
+## Market Properties
 
+`line` is the HOME spread: -3.5 = home favored, +3.5 = home underdog. `total` is combined points. `price` is American odds for `price_market` plus `price_selection`. The sportsbook and exact quote time identify the original market. Separate home/away spread, over/under and moneyline fields remain available. Leave unknown numbers blank. `engine_*` market fields show the latest selected-book quote without changing the original quote.
 
-## Engine import and refresh
+`status`, `next_action`, and `review_date` drive the dashboard action queue. `home_score` / `away_score` record results. `game_context` is optional one-line context. `neutral_site`, `venue`, and kickoff record the setting.
 
-The engine connection is installed. Open **CFB Dashboard**, then use **Ctrl+P → Templater: Open insert template modal → CFB Engine Import Template**. Paste a game-page URL or numeric ID, or leave blank to select one of the next games returned by the engine. Choose a sportsbook. On first use, map unmatched team names to an existing page or create the engine's canonical team page. The matchup opens automatically when Templater finishes.
+## Freeze before kickoff
 
-Run imports from the dashboard, not from the matchup being edited. The importer writes the matchup separately so Templater cannot overwrite its updates. Do not use Create new note from template for engine actions; that would leave an unnecessary empty note.
+Run **CFB Freeze Pregame Template** from the dashboard before stored kickoff. Refresh first if you want the latest evidence. It preserves the complete matchup plus the full text and Properties of its observation notes. Live observation queries and the editable grid are removed from the frozen copy, so later edits cannot change the historical snapshot. Snapshots have a different type and are excluded from current team/observation queries. A saved snapshot is never overwritten.
 
-### What refresh preserves
+## Create manual matchups or teams
 
-- Your original Offense, Defense, Context, Game context, Decision, Postgame review, and Sources sections.
-- Initial `line`, `total`, moneylines, sportsbook and timestamp once filled. Imported `engine_*` properties and Imported game context contain the latest selected-book quote. Refreshes do not change `price` or spread/total juice.
-- On imported observation rows, your **+**, **-**, **Carry forward**, and **Review / expires** edits are preserved by Item ID. Evidence updates from the engine. To write your own interpretation/evidence, use the manual tables above the imported blocks.
-- Previously imported evidence rows stay in the history even if they are no longer returned. Their original source/publication dates remain visible. Mark outdated carry-forward rows retired after review.
-- Existing team-page assessments and season filters.
+Use **Templater: Create new note from template → CFB Matchup Template** for a new matchup, or **CFB Team Template** for a standalone team. These creation templates require an empty note. Existing team pages remain intact; prefer existing canonical names to alternate spellings.
 
-### Imported facts and attribution
-
-Offense/Defense contain raw metrics and trailing snapshot inputs in Evidence / condition, with + and - initially blank. These are contextual evidence, not automatic betting edges. Availability items arrive as `watch`, with their source role and publication date and a game-day review date; questionable does not mean confirmed out. Schedule flags such as look-ahead are descriptions of the calendar, not claims about motivation. Shared reporting stays linked to the game because the current content API does not provide reliable per-item team ownership. Team pages show the game's reporting/context separately from their own team-specific notes.
-
-The API does not supply spread/total juice; those fields stay blank. If your initial sportsbook differs from the selected provider, the importer does not fill initial market fields from the other book. It also omits home-campus travel estimates for neutral-site games.
-
-If an optional endpoint fails, the note shows **Partial import**, and prior sections for that endpoint are retained. The required game endpoint must succeed before any import. Refreshing damaged or duplicated imported markers stops with an error instead of replacing unrelated text. Live data imported after kickoff is explicitly labeled retrospective and cannot become a pregame snapshot.
-
-### Freeze before kickoff
-
-From **CFB Dashboard**, run **CFB Freeze Pregame Template** and select the matchup. A new timestamped note in `Snapshots` preserves the entire current matchup, including your analysis and imported evidence. It never overwrites an existing snapshot and refuses after the stored kickoff. It freezes the current note; it does not fetch new data. Import/refresh immediately before saving when you want the latest available evidence. The original matchup can continue to refresh; the snapshot remains a separate historical record. Snapshots are excluded from team-note queries.
-
-### Connection settings
-
-`06 Sports Betting/Football/CFB/Views/engine-config.json` contains `api_url`, `timezone`, and optional `preferred_sportsbook`. Default API: `https://cfb-intelligence.onrender.com`. Timezone: `America/New_York`. Use the engine's HTTPS root address or an HTTP localhost root. No credentials are stored, and the importer never uploads your notes or betting decisions. The command runs only when invoked; this version does not schedule background refreshes.
-
-
-## Easier note entry and cleaner numbers
-
-Run **CFB Edit Notes Template** using **Templater: Open insert template modal** from the **CFB Dashboard**. Select a matchup and Add observation or Edit existing observation. A single form holds the team, Offense/Defense/Context, favorable and unfavorable observations, evidence, carry-forward status, and review date/condition. No pipe characters or Markdown rows to manage. Cancel leaves the note unchanged. Concurrent changes stop saving so another edit cannot be lost.
-
-Imported rows let you edit +, −, carry-forward, and review; their evidence is read-only because the engine refreshes it. Add a manual observation for your own evidence or interpretation. The form changes matchup observations; the team page Current assessment remains a manually curated synthesis. Team compilation tables are read-only views of those saved observations. Run this command from the dashboard rather than inserting it into a matchup.
-
-Imported displays use two decimal places at most for PPA and explosiveness, one for pace, yards/play, percentages, projected drives/plays/points, and whole numbers for temperature/wind. Trailing zeros are removed. Actual market quotes and numerical Properties keep their original precision. Repeated fetch and forecast times are removed from the visible imported sections; news and input dates remain for relevance checks. Exact times remain in Properties or hidden provenance comments. Refresh also cleans older retained imported sections.
+Keep `Views` at its installed path. Preserve the `<!-- cfb:... -->` markers: they identify exactly which sections the importer and organizer may change.
