@@ -127,6 +127,12 @@ test('required game failure writes no notes',async()=>{
   const {tp,files}=runtime();tp.obsidian.requestUrl=async()=>({status:503,json:{}});
   await assert.rejects(engine.run(tp),/HTTP 503/);assert.equal(files.size,1);
 });
+test('unrelated index notes in team/matchup folders do not block import or snapshot',async()=>{
+  const {tp,files}=runtime();files.set(`${BASE}/Teams/Index.md`,'# Teams index');
+  files.set(`${BASE}/Matchups/Index.md`,'# Matchups index');
+  const target=await engine.run(tp);assert.equal(metadata(files.get(target)).type,'cfb-matchup');
+  const snapshot=await engine.freeze(tp);assert.equal(metadata(files.get(snapshot)).type,'cfb-pregame-snapshot');
+});
 test('team queries include neutral imported evidence, isolate side, and show opponent/context',async()=>{
   const text=refresh(initial());const output=[];const dv={
     current:()=>({file:{path:paths.home},season:2099}),

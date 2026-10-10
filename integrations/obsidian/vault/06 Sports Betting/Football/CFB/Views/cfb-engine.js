@@ -281,7 +281,12 @@ async function teamPath(tp,game,side,parseYaml) {
   const vault=tp.app.vault, id=game[`${side}_team_id`], name=game[`${side}_team`];
   const files=vault.getMarkdownFiles().filter(f=>f.path.startsWith(`${BASE}/Teams/`));
   const pages=[];
-  for(const f of files) pages.push({f,props:frontmatter(await vault.read(f),parseYaml).data});
+  for(const f of files) {
+    const raw=await vault.read(f);
+    if(!raw.startsWith("---"))continue;
+    const props=frontmatter(raw,parseYaml).data;
+    if(props.type==="cfb-team")pages.push({f,props});
+  }
   let matches=pages.filter(x=>Number(x.props.engine_team_id)===Number(id));
   if(!matches.length)matches=pages.filter(x=>!x.props.engine_team_id && nameKey(x.props.team_name||x.f.basename)===nameKey(name));
   if(matches.length>1)throw new Error(`Multiple team pages match ${name}. Resolve duplicate pages first.`);
@@ -343,7 +348,10 @@ async function run(tp) {
   const teamPaths={away:await teamPath(tp,game,"away",parseYaml),home:await teamPath(tp,game,"home",parseYaml)};
   const vault=tp.app.vault, candidates=[];
   for(const file of vault.getMarkdownFiles().filter(f=>f.path.startsWith(`${BASE}/Matchups/`))) {
-    const text=await vault.read(file), props=frontmatter(text,parseYaml).data;
+    const text=await vault.read(file);
+    if(!text.startsWith("---"))continue;
+    const props=frontmatter(text,parseYaml).data;
+    if(props.type!=="cfb-matchup")continue;
     const exact=Number(props.engine_game_id)===id;
     const manual=!props.engine_game_id && String(props.season)===String(game.season) && String(props.week)===String(game.week)
       && linkPath(props.home_team)===linkPath(teamPaths.home) && linkPath(props.away_team)===linkPath(teamPaths.away);
@@ -366,7 +374,11 @@ async function run(tp) {
 }
 async function freeze(tp) {
   prohibitActiveMatchup(tp);
-  const vault=tp.app.vault, files=vault.getMarkdownFiles().filter(f=>f.path.startsWith(`${BASE}/Matchups/`));
+  const vault=tp.app.vault, files=[];
+  for(const f of vault.getMarkdownFiles().filter(f=>f.path.startsWith(`${BASE}/Matchups/`))) {
+    const raw=await vault.read(f);
+    if(raw.startsWith("---") && frontmatter(raw,tp.obsidian.parseYaml).data.type==="cfb-matchup")files.push(f);
+  }
   if(!files.length)throw new Error("No matchup notes to snapshot.");
   const file=await tp.system.suggester(files.map(f=>f.basename),files,true,"Select matchup to freeze before kickoff");
   if(!file)throw new Error("Cancelled.");
