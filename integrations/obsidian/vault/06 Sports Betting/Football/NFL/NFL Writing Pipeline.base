@@ -1,0 +1,17 @@
+filters:
+  and:
+    - 'file.inFolder("06 Sports Betting/Football/NFL/Matchups")'
+    - 'note.type == "nfl-matchup"'
+views:
+  - type: table
+    name: Article pipeline
+    groupBy:
+      property: note.article_status
+      direction: ASC
+    order:
+      - file.name
+      - note.article_status
+      - note.reader_question
+      - note.central_argument
+      - note.publish_by
+      - note.published_url

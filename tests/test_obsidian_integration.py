@@ -10,7 +10,8 @@ class ObsidianIntegrationTests(unittest.TestCase):
     def test_engine_import_contract(self):
         root = Path(__file__).resolve().parents[1]
         result = subprocess.run(
-            ["node", "--test", "integrations/obsidian/tests/engine.test.cjs"],
+            ["node", "--test", "integrations/obsidian/tests/engine.test.cjs",
+             "integrations/obsidian/tests/nfl.test.cjs"],
             cwd=root, capture_output=True, text=True, timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

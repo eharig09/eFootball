@@ -1,0 +1,19 @@
+filters:
+  and:
+    - 'file.inFolder("06 Sports Betting/Football/NFL/Observations")'
+    - 'note.type == "nfl-observation"'
+    - 'note.team == link(this.file.path)'
+    - '!this.season || note.season == this.season'
+views:
+  - type: table
+    name: Team observations
+    groupBy:
+      property: note.category
+      direction: ASC
+    order:
+      - note.observation
+      - note.direction
+      - note.carry
+      - note.review
+      - note.matchup
+      - file.name
