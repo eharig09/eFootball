@@ -41,7 +41,8 @@ from sports_aggregator.cfb.playoff_service import build_forecast as build_playof
 from sports_aggregator.cfb.matchup_research import (
     matchup_research_packet, TOTALS_RESEARCH_OVERALL, TOTALS_TRACKED_OVERALL,
     TOTALS_TRACKED_MIN_WIN_RATE, TOTALS_WALK_FORWARD)
-from sports_aggregator.cfb.lines import game_lines, lines_by_game
+from sports_aggregator.cfb.lines import game_lines, lines_by_game, line_history
+from sports_aggregator.cfb import line_tracking as cfb_line_tracking
 from sports_aggregator.cfb.scoreboard_projection import projections_for_games
 from sports_aggregator.cfb import convergence_panel
 from sports_aggregator.cfb import style_clash as cfb_style_clash
@@ -1158,6 +1159,10 @@ def game_preview(game_id: int):
     season_record = two_engine_season_record(repository, season)
     season_record_first_appearance = two_engine_season_record_first_appearance(repository, season)
     two_engine_history = manifest_history_for_game(repository, game_id)
+    line_tracking = _optional_panel("line tracking", lambda: cfb_line_tracking.build(
+        game, market, line_history(repository, game_id), two_engine_history, projection,
+        two_engine_signal,
+        {game["away_team"]: away_identity, game["home_team"]: home_identity}))
     away_schedule = _label_games(repository.team_schedule(game["away_team_id"], season))
     home_schedule = _label_games(repository.team_schedule(game["home_team_id"], season))
     return render_template(
@@ -1205,6 +1210,7 @@ def game_preview(game_id: int):
         season_record=season_record,
         season_record_first_appearance=season_record_first_appearance,
         two_engine_history=two_engine_history,
+        line_tracking=line_tracking,
         projection_lines=projection_narrative(projection),
         projection_table=views.game_projection_table(projection),
         game_shape=game_shape(
