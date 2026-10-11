@@ -480,3 +480,30 @@ main{padding:24px 24px 64px}
 .matchup-team>.proj-score{font:italic 700 1.15rem/1 "Arial Narrow",sans-serif;font-variant-numeric:tabular-nums}.proj-score{color:color-mix(in srgb,#8dc8fb 55%,var(--muted));font-style:italic;opacity:.8}.matchup-line{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 7px 2px;border-top:1px solid #263846;color:var(--muted);font-size:.7rem;font-weight:700;font-variant-numeric:tabular-nums}.matchup-line .proj-score{margin-left:auto;font-weight:600}
 .matchup-team{grid-template-columns:38px 1fr auto auto}
 .matchup-card>header .wx-impact{color:#f6b73c;cursor:help;margin-left:6px}
+
+/* Header polish: one tidy row when it fits, a clean two-tier layout when it doesn't. */
+.nfl-brand,.nfl-brand b,.nfl-brand small,.nav-context,.data-pill,.league-switch a{white-space:nowrap}
+.nfl-brand .shield{flex:0 0 auto}
+.league-switch{flex-wrap:nowrap;gap:0;padding:2px;border:1px solid #334753;border-radius:999px}
+.league-switch a{border:0;padding:4px 10px}
+.league-switch a:hover{background:#1c2b39}
+.primary-nav a{position:relative;padding:0 11px;font-size:.74rem;font-weight:700;letter-spacing:.05em;display:inline-flex;align-items:center;min-height:44px;border-radius:0;box-shadow:none}
+.primary-nav a:hover,.primary-nav a:focus-visible,.primary-nav a.active{background:transparent;box-shadow:none}
+.primary-nav a::after{content:"";position:absolute;left:11px;right:11px;bottom:0;height:2px;background:#d50a0a;transform:scaleX(0);transition:transform .16s}
+.primary-nav a:hover::after,.primary-nav a:focus-visible::after{transform:scaleX(1);background:#5a7c94}
+.primary-nav a.active::after{transform:scaleX(1);background:#d50a0a}
+.nav-context{padding:3px 8px;border:1px solid #334753;border-radius:4px;font-size:.64rem;letter-spacing:.1em;max-width:none}
+@media(min-width:1361px){
+  .nfl-nav-shell{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:20px;min-height:60px;padding:0 24px}
+  .primary-nav{justify-content:center;align-self:stretch;flex-wrap:nowrap}
+  .nfl-nav-tools{flex:initial}
+}
+@media(min-width:621px) and (max-width:1360px){
+  .nfl-nav-shell{padding:6px 20px 0;row-gap:0;align-items:center}
+  .nfl-brand-row{order:1;padding-bottom:6px}
+  .nfl-nav-tools{order:2;margin-left:auto;padding-bottom:6px}
+  .nfl-nav-shell .primary-nav{order:3;flex:1 0 100%;margin:0 -6px;border-top:1px solid #263846;overflow-x:auto;scrollbar-width:none}
+  .nfl-nav-shell .primary-nav::-webkit-scrollbar{display:none}
+  .primary-nav a{flex:0 0 auto;min-height:40px}
+}
+@media(max-width:620px){.primary-nav a{padding:0 11px;min-height:40px}.primary-nav a::after{left:8px;right:8px}}
