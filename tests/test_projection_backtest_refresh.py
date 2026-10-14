@@ -76,6 +76,12 @@ class StaleSeasonTests(RefreshFixture):
 
 
 class RefreshTests(RefreshFixture):
+    @staticmethod
+    def prepared(*seasons):
+        def coverage(repository, *, from_season, to_season):
+            return {"team_game_pace_rows": 10 if from_season in seasons else 0}
+        return patch.object(pb, "source_coverage", coverage)
+
     def test_rebuilds_only_the_oldest_stale_season_and_reports_the_rest(self):
         built = []
 
@@ -83,11 +89,30 @@ class RefreshTests(RefreshFixture):
             built.append((from_season, to_season))
             return {"games_projected": 1, "team_game_rows": 2}
 
-        with patch.object(pb, "build", fake_build):
+        with patch.object(pb, "build", fake_build), self.prepared(2021, 2022, 2023, 2026):
             result = pb.refresh(self.repository, current_season=2026)
         self.assertEqual(built, [(2021, 2021)])
         self.assertEqual(result["status"], "rebuilt")
         self.assertEqual(result["remaining_seasons"], [2022, 2023, 2026])
+
+    def test_a_season_without_prepared_actuals_does_not_block_the_next_one(self):
+        built = []
+
+        def fake_build(repository, *, from_season, to_season, **kwargs):
+            built.append(from_season)
+            return {"games_projected": 1, "team_game_rows": 2}
+
+        with patch.object(pb, "build", fake_build), self.prepared(2022, 2023, 2026):
+            result = pb.refresh(self.repository, current_season=2026)
+        self.assertEqual(built, [2022])
+        self.assertEqual(result["unprepared_seasons"], [2021])
+        self.assertEqual(result["remaining_seasons"], [2023, 2026])
+
+    def test_reports_inputs_missing_instead_of_raising_when_nothing_is_buildable(self):
+        with patch.object(pb, "build", side_effect=AssertionError("must not build")), self.prepared():
+            result = pb.refresh(self.repository, current_season=2026)
+        self.assertEqual(result["status"], "inputs-missing")
+        self.assertEqual(result["unprepared_seasons"], [2021, 2022, 2023, 2026])
 
     def test_reports_current_when_nothing_is_stale(self):
         for season in (2021, 2022, 2023, 2026):
