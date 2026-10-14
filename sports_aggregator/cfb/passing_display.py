@@ -183,6 +183,19 @@ def _matchup_cell(data, source, *, minimum, best=False):
     )
 
 
+def _matchup_edge(offense_epa, allowed_epa):
+    """Which column has the edge: 0 for the offense, 1 for the defense, None if level.
+
+    The two numbers point opposite ways -- an offense wants high EPA, a defense
+    wants low EPA allowed -- so marking the larger one marked a leaky defense as
+    the winner. The offense has the edge when the defense allows more per play
+    than that offense produces; the defense has it when it allows less.
+    """
+    if offense_epa == allowed_epa:
+        return None
+    return 0 if allowed_epa > offense_epa else 1
+
+
 def _matchup_matrix(attacker, defender, offense, defense, *, minimum):
     """Three scannable middle-of-field rows for one possession matchup."""
     columns = (("%s offense" % attacker, offense),
@@ -195,9 +208,7 @@ def _matchup_matrix(attacker, defender, offense, defense, *, minimum):
         counts = [data[source]["middle"].get("plays") or 0 for _label, data in columns]
         usable = all(value is not None and count >= minimum
                      for value, count in zip(values, counts))
-        winner = None
-        if usable and values[0] != values[1]:
-            winner = values.index(max(values))
+        winner = _matchup_edge(*values) if usable else None
         cells = "".join(
             _matchup_cell(data, source, minimum=minimum, best=(index == winner))
             for index, (_label, data) in enumerate(columns)
@@ -293,8 +304,10 @@ def render_matchup(repository, game):
     detail = (
         '<details class="mof-method"><summary>How to read this</summary>'
         '<p>Values are EPA per play through the middle; Outside is the same '
-        'team&rsquo;s baseline. A row under %d middle plays is muted and carries '
-        'no edge mark. Direction coverage varies by game, and the comparison '
+        'team&rsquo;s baseline. Green marks the edge in each pairing: the offense '
+        'when the defense has allowed more per play than that offense produces, '
+        'the defense when it has allowed less (lower is better for a defense). '
+        'A row under %d middle plays is muted and carries no edge mark. Direction coverage varies by game, and the comparison '
         'is descriptive rather than a play-call recommendation.</p></details>'
         % MIN_SEASON_PLAYS
     )
