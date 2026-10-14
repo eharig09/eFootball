@@ -46,6 +46,16 @@
     {"name": "Neil Paine", "url": "https://neilpaine.substack.com/feed", "source_type": "analysis", "reliability": 4, "topic_terms": ["nfl", "quarterback", "epa"]},
     {"name": "Koalaty Stats", "url": "https://koalatystats.substack.com/feed", "source_type": "analysis", "reliability": 3},
     {"name": "The Spade", "url": "https://thespade.substack.com/feed", "source_type": "analysis", "reliability": 4, "topic_terms": ["nfl", "quarterback"]},
-    {"name": "The Read Optional", "url": "https://www.readoptional.com/feed", "source_type": "analysis", "reliability": 4}
+    {"name": "The Read Optional", "url": "https://www.readoptional.com/feed", "source_type": "analysis", "reliability": 4},
+    {"name": "Go Long", "url": "https://golongtd.substack.com/feed", "source_type": "news", "reliability": 4},
+    {"name": "Football Film Room", "url": "https://footballfilmroom.substack.com/feed", "source_type": "analysis", "reliability": 4},
+    {"name": "Trench Warfare", "url": "https://trenchwarfare.substack.com/feed", "source_type": "analysis", "reliability": 4},
+    {"name": "Mike Tanier's Too Deep Zone", "url": "https://miketanier.substack.com/feed", "source_type": "analysis", "reliability": 4},
+    {"name": "Between The Hashmarks", "url": "https://mattlombardonfl.substack.com/feed", "source_type": "news", "reliability": 3},
+    {"name": "The Leap", "url": "https://theleap.substack.com/feed", "source_type": "analysis", "reliability": 3, "team": "GNB"},
+    {"name": "Last Man Standig", "url": "https://lastmanstandig.substack.com/feed", "source_type": "news", "reliability": 4, "team": "WAS"},
+    {"name": "The KCSN Chiefs Newsletter", "url": "https://kcsn.substack.com/feed", "source_type": "news", "reliability": 4, "team": "KAN"},
+    {"name": "The Chief in the North", "url": "https://mnchiefsfan.substack.com/feed", "source_type": "analysis", "reliability": 3, "team": "KAN"},
+    {"name": "Wobby's Substack", "url": "https://realwobby.substack.com/feed", "source_type": "news", "reliability": 3, "team": "MIN"}
   ]
 }
