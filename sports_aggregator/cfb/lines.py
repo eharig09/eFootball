@@ -35,6 +35,13 @@ CREATE TABLE IF NOT EXISTS game_lines (
  PRIMARY KEY(game_id,provider)
 );
 CREATE INDEX IF NOT EXISTS idx_game_lines_game ON game_lines(game_id);
+-- Consensus (provider-average) spread/total, appended only when it moves, so a game's
+-- line can be drawn over time. game_lines itself keeps just the opener and the latest.
+CREATE TABLE IF NOT EXISTS game_line_history (
+ game_id INTEGER NOT NULL, captured_at TEXT NOT NULL,
+ spread REAL, over_under REAL, books INTEGER NOT NULL,
+ PRIMARY KEY(game_id,captured_at)
+);
 """
 
 
@@ -74,8 +81,42 @@ def store_lines(repository: CFBRepository, season: int, payload: Iterable[dict[s
                home_moneyline=excluded.home_moneyline,away_moneyline=excluded.away_moneyline,
                formatted_spread=excluded.formatted_spread,fetched_at=excluded.fetched_at""",
             rows)
+        _record_line_history(connection, {row[0] for row in rows}, now)
         connection.commit()
     return len(rows)
+
+
+def _record_line_history(connection, game_ids: set[int], captured_at: str) -> None:
+    """Append the consensus line for each game whose spread or total moved since the last reading."""
+    ids = sorted(game_ids)
+    for start in range(0, len(ids), 500):
+        chunk = ids[start:start + 500]
+        marks = ",".join("?" * len(chunk))
+        current = connection.execute(
+            f"""SELECT game_id,AVG(spread),AVG(over_under),COUNT(*) FROM game_lines
+                WHERE game_id IN ({marks}) AND (spread IS NOT NULL OR over_under IS NOT NULL)
+                GROUP BY game_id""", chunk).fetchall()
+        latest = {row[0]: (row[1], row[2]) for row in connection.execute(
+            f"""SELECT h.game_id,h.spread,h.over_under FROM game_line_history h
+                JOIN (SELECT game_id,MAX(captured_at) m FROM game_line_history
+                      WHERE game_id IN ({marks}) GROUP BY game_id) last
+                  ON last.game_id=h.game_id AND last.m=h.captured_at""", chunk)}
+        fresh = []
+        for game_id, spread, total, books in current:
+            spread = None if spread is None else round(spread, 2)
+            total = None if total is None else round(total, 2)
+            if latest.get(game_id) != (spread, total):
+                fresh.append((game_id, captured_at, spread, total, books))
+        connection.executemany("INSERT OR IGNORE INTO game_line_history VALUES(?,?,?,?,?)", fresh)
+
+
+def line_history(repository: CFBRepository, game_id: int) -> list[dict[str, Any]]:
+    """Consensus readings for one game, oldest first."""
+    initialize(repository)
+    with repository._reader() as connection:
+        return [dict(row) for row in connection.execute(
+            "SELECT captured_at,spread,over_under,books FROM game_line_history WHERE game_id=? "
+            "ORDER BY captured_at", (game_id,))]
 
 
 def _moneyline_implied(odds: int | None) -> float | None:
@@ -117,6 +158,7 @@ def game_lines(repository: CFBRepository, game_id: int) -> dict[str, Any]:
     spreads = [row["spread"] for row in rows if row["spread"] is not None]
     totals = [row["over_under"] for row in rows if row["over_under"] is not None]
     spreads_open = [row["spread_open"] for row in rows if row["spread_open"] is not None]
+    totals_open = [row["over_under_open"] for row in rows if row["over_under_open"] is not None]
     home_probs = [row["home_win_prob"] for row in rows if row["home_win_prob"] is not None]
     return {
         "providers": rows,
@@ -128,6 +170,7 @@ def game_lines(repository: CFBRepository, game_id: int) -> dict[str, Any]:
         "consensus_spread": (round(sum(spreads) / len(spreads), 1) if spreads else None),
         "consensus_total": (round(sum(totals) / len(totals), 1) if totals else None),
         "consensus_spread_open": (round(sum(spreads_open) / len(spreads_open), 1) if spreads_open else None),
+        "consensus_total_open": (round(sum(totals_open) / len(totals_open), 1) if totals_open else None),
         "consensus_home_win_prob": (round(100 * sum(home_probs) / len(home_probs), 1) if home_probs else None),
     }
 

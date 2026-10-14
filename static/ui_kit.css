@@ -520,3 +520,5 @@ a.ui-chip{text-decoration:none}
 .ui-summary td.num,.ui-signals td.num{font-variant-numeric:tabular-nums}
 .ui-signals th small{display:block;margin:2px 0 0;font-size:.62rem;font-weight:500}
 .ui-unit-compare td b em{font-style:normal;font-weight:400;font-size:.7em;color:var(--muted)}
+.ui-svg .pick-mark circle{fill:#f4f6f8;stroke:var(--ui-def);stroke-width:1.5}
+.pick-timeline{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}.pick-timeline .pick-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 10px 5px 6px;border:1px solid #2b3038;border-radius:999px;background:#14171c;font-size:.74rem;color:var(--muted)}.pick-timeline .pick-chip.is-current{border-color:var(--ui-def)}.pick-timeline .pick-chip img{width:20px;height:20px;border-radius:50%;background:#f4f6f8;padding:2px;object-fit:contain}.pick-timeline .pick-chip b{color:#eef1f4}

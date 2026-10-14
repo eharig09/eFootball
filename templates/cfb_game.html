@@ -1,7 +1,7 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import conference_mark, data_table, linked_piece_meta, story_list, tabbed_tables, tabs_script %}
 {% from "_cfb_style_clash.html" import cfb_style_clash %}
-{% from "_ui_kit.html" import rank_gap_panel, grade_matchup_panel, unit_grades_compare, production_compare, measure_compare, player_matchup_panel, advanced_compare, tendency_compare, penalty_compare %}
+{% from "_ui_kit.html" import line_panel, rank_gap_panel, grade_matchup_panel, unit_grades_compare, production_compare, measure_compare, player_matchup_panel, advanced_compare, tendency_compare, penalty_compare %}
 {% from "_cfb_page_visuals.html" import compact_passing_matchups, compact_rushing_matchups, drive_outcomes_module, game_shape_module, probability_track, recent_form, visual_scripts %}
 
 {% block title %}{{ game.away_team }} at {{ game.home_team }} | Game Preview{% endblock %}
@@ -534,29 +534,16 @@
             </div>
         </div>
 
-        {# ---------- Pick history: how this game's classification has moved ---------- #}
-        {% if two_engine_history %}
+        {# ---------- Line tracking: market vs engine over time, logos where a pick was confirmed ---------- #}
+        {% if line_tracking %}
         <div class="lab-card">
-            <div class="lab-card-title">Pick history</div>
-            <div class="lab-record-list">
-                {% for entry in two_engine_history %}
-                <div class="lab-record-row">
-                    <div>
-                        <b>{{ entry.state | replace('_', ' ') | title }}</b>
-                        <i>{{ entry.recorded_at }}{% if entry.market_spread is not none %} &middot; market {{ entry.market_spread | cell('signed') }} home{% endif %}</i>
-                    </div>
-                    <div class="lab-record-figure">
-                        <b>{% if entry.selected_team %}{{ entry.selected_team }}{% else %}&mdash;{% endif %}</b>
-                        <i>
-                            {% if entry.engine_a.qualified %}A: {{ entry.engine_a.selected_team }}{% endif %}
-                            {% if entry.engine_a.qualified and entry.engine_b.qualified %} &middot; {% endif %}
-                            {% if entry.engine_b.qualified %}B: {{ entry.engine_b.selected_team }}{% endif %}
-                            {% if not entry.engine_a.qualified and not entry.engine_b.qualified %}neither qualified{% endif %}
-                        </i>
-                    </div>
-                </div>
-                {% endfor %}
+            <div class="lab-card-title">Line tracking</div>
+            <div class="pick-timeline">
+                {% for pick in line_tracking.picks %}<span class="pick-chip{{ ' is-current' if pick.current }}">{% if pick.logo %}<img src="{{ pick.logo }}" alt="">{% endif %}<b>{{ pick.team }}</b>{{ pick.engine }} &middot; {{ pick.when }}{% if pick.current %} &middot; current{% endif %}</span>
+                {% else %}<span class="pick-chip">No engine pick confirmed yet</span>{% endfor %}
             </div>
+            {{ line_panel(game.home_team ~ ' spread', line_tracking.spread_chart, 'Home spread from the opener', 'Home line: negative means the home team is favoured. Dashed line is the Football Lab projection on the same scale; logos mark where an engine pick was confirmed.', '', 'Needs at least two stored readings.') }}
+            {{ line_panel('Total', line_tracking.total_chart, 'Total movement from the opener', 'Dashed line is the Football Lab projected total.', '', 'Needs at least two stored readings.') }}
         </div>
         {% endif %}
 
