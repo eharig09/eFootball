@@ -237,6 +237,30 @@ class RenderTests(MiddleFixture):
         self.assertIn("How to read this", html)
         self.assertNotIn("Run â€” outside", html)
 
+    def test_a_low_epa_allowed_is_the_defensive_edge(self):
+        from sports_aggregator.cfb.passing_display import _matchup_edge
+
+        # Kennesaw State offense -0.04 against Missouri State allowing +0.20:
+        # the defense leaks more than the offense makes, so the offense has the edge.
+        self.assertEqual(_matchup_edge(-0.04, 0.20), 0)
+        # Missouri State offense +0.09 against Kennesaw State allowing -0.08:
+        # a stingy defense (lower is better) has the edge, not the larger number.
+        self.assertEqual(_matchup_edge(0.09, -0.08), 1)
+        self.assertEqual(_matchup_edge(-0.09, -0.20), 1)
+        self.assertIsNone(_matchup_edge(0.10, 0.10))
+
+    def test_the_matchup_marks_the_stingy_defence_not_the_leaky_one(self):
+        for _ in range(30):
+            self.rush("Michigan", "Purdue", "middle", 1.0, game_id=2)     # Michigan offense +1.00
+            self.rush("Purdue", "Ohio State", "middle", -0.5, game_id=3)  # Ohio State allowed -0.50
+        html = self.render("passing_matchup_splits",
+                           {"season": 2026, "away_team": "Michigan", "home_team": "Ohio State"})
+        block = html.split("When Michigan has the ball")[1].split("When Ohio State has the ball")[0]
+        # The defense allows less than the offense makes: the defense has the edge.
+        self.assertIn('<strong class="best">-0.50</strong>', block)
+        self.assertNotIn('<strong class="best">+1.00</strong>', block)
+        self.assertIn("lower is better for a defense", html)
+
     def test_a_game_without_direction_says_so_rather_than_vanishing(self):
         html = self.render("passing_game_splits",
                            {"game_id": 1, "season": 2026,

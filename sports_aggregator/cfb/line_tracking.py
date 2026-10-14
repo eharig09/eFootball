@@ -69,7 +69,7 @@ def _chart(timeline: list[dict[str, Any]], key: str, model: float | None, name: 
         series.append({"key": "def", "label": "Football Lab", "values": {i: float(model) for i in xs},
                        "dashed": True, "markers": False})
     chart = line_chart(xs, series, fmt=".1f", label_of=lambda i: events[i]["label"],
-                       label_every=max(1, len(xs) // 6))
+                       label_every=max(1, len(xs) // 4))
     marks = []
     dated = [(i, e["at"]) for i, e in enumerate(events) if e["at"] is not None]
     points = chart["series"][0]["points"]
