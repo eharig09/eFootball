@@ -108,7 +108,9 @@ def test_duplicate_downloads_name_the_datasets_that_collided(client):
     copies -- is only obvious if the page says which dataset matched twice.
     """
     files = _batch()
-    files.append((io.BytesIO(_csv(PRIMARY_SIGNATURES["passing"])), "passing (1).csv"))
+    # Same headers, different contents: a fuller export beside the first.
+    longer = _csv(PRIMARY_SIGNATURES["passing"]) + b",".join(b"2" for _ in PRIMARY_SIGNATURES["passing"]) + b"\n"
+    files.append((io.BytesIO(longer), "passing (1).csv"))
     response = _post_pff(client, files)
     body = response.get_data(as_text=True)
 
@@ -116,8 +118,21 @@ def test_duplicate_downloads_name_the_datasets_that_collided(client):
     assert "primary:passing matched 2 files" in body
     # Row counts, not just names: the copies in a real download folder are a
     # filtered export beside a full season, and the names cannot say which.
-    assert "passing (1).csv (1 rows)" in body
+    assert "passing (1).csv (2 rows)" in body
     assert _metric_rows(client) == 0
+
+
+def test_byte_identical_redownloads_are_ignored_and_said_so(client):
+    """The same export downloaded again is not a choice to make."""
+    files = _batch()
+    for suffix in ("(1)", "(2)"):
+        files.append((io.BytesIO(_csv(PRIMARY_SIGNATURES["passing"])), f"download-passing {suffix}.csv"))
+    response = _post_pff(client, files, validate_only="1")
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "would import cleanly" in body
+    assert "2 identical copies ignored" in body
 
 
 def test_validate_only_reports_a_clean_batch_without_importing_it(client):

@@ -9,6 +9,7 @@ stages them under the canonical names that importer already understands.
 from __future__ import annotations
 
 import csv
+import hashlib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import shutil
@@ -59,6 +60,7 @@ class PFFBatchPreflight:
     duplicates: dict[str, tuple[str, ...]]
     unclassified: tuple[str, ...]
     csv_files: int
+    identical_copies: tuple[str, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -152,6 +154,31 @@ def _assign(pool: dict[Path, list[tuple[str, str]]]) -> dict[tuple[str, str], Pa
     return assigned
 
 
+def _drop_identical_copies(paths: list[Path]) -> tuple[list[Path], tuple[str, ...]]:
+    """Collapse byte-identical files to the first of them by name.
+
+    Re-downloading the same export leaves `x.csv`, `x (1).csv`, `x (2).csv`.
+    Those carry nothing to choose between, so they are not ambiguity. Files that
+    merely look alike (same headers, even the same row count) are kept apart:
+    only an exact content match is safe to discard.
+    """
+    seen: dict[str, Path] = {}
+    kept: list[Path] = []
+    dropped: list[str] = []
+    for path in paths:
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            kept.append(path)
+            continue
+        if digest in seen:
+            dropped.append(f"{path.name} (same as {seen[digest].name})")
+        else:
+            seen[digest] = path
+            kept.append(path)
+    return kept, tuple(dropped)
+
+
 def preflight_pff_directory(directory: str | Path) -> PFFBatchPreflight:
     root = Path(directory)
     if not root.is_dir():
@@ -160,7 +187,8 @@ def preflight_pff_directory(directory: str | Path) -> PFFBatchPreflight:
     unclassified: list[str] = []
     pool: dict[Path, list[tuple[str, str]]] = {}
     csv_paths = sorted(path for path in root.glob("*.csv") if path.is_file())
-    for path in csv_paths:
+    unique_paths, identical = _drop_identical_copies(csv_paths)
+    for path in unique_paths:
         matches = _candidates(_headers(path))
         if not matches:
             unclassified.append(path.name)
@@ -192,6 +220,7 @@ def preflight_pff_directory(directory: str | Path) -> PFFBatchPreflight:
         directory=str(root), primary=primary, supplemental=supplemental,
         missing_primary=missing, duplicates=duplicates,
         unclassified=tuple(unclassified), csv_files=len(csv_paths),
+        identical_copies=identical,
     )
 
 

@@ -23,15 +23,35 @@ def test_pff_preflight_uses_headers_not_download_filenames(tmp_path: Path):
 
 
 def test_pff_preflight_rejects_duplicate_dataset_matches(tmp_path: Path):
+    # Same headers, different contents: a filtered export beside the full one.
     signature = sorted(PRIMARY_SIGNATURES["passing"])
-    content = ",".join(signature) + "\n" + ",".join("1" for _ in signature) + "\n"
-    (tmp_path / "passing-one.csv").write_text(content)
-    (tmp_path / "passing-two.csv").write_text(content)
+    header = ",".join(signature) + "\n"
+    row = ",".join("1" for _ in signature) + "\n"
+    (tmp_path / "passing-one.csv").write_text(header + row)
+    (tmp_path / "passing-two.csv").write_text(header + row + row)
 
     report = preflight_pff_directory(tmp_path)
 
     assert report.ready is False
     assert "primary:passing" in report.duplicates
+    assert report.identical_copies == ()
+
+
+def test_pff_preflight_treats_byte_identical_redownloads_as_one_file(tmp_path: Path):
+    for index, (dataset, signature) in enumerate(PRIMARY_SIGNATURES.items(), start=1):
+        content = ",".join(sorted(signature)) + "\n" + ",".join("1" for _ in signature) + "\n"
+        (tmp_path / f"{dataset}_summary.csv").write_text(content)
+    passing = (tmp_path / "passing_summary.csv").read_text()
+    (tmp_path / "passing_summary (1).csv").write_text(passing)
+    (tmp_path / "passing_summary (2).csv").write_text(passing)
+
+    report = preflight_pff_directory(tmp_path)
+
+    assert report.ready is True
+    assert report.duplicates == {}
+    assert Path(report.primary["passing"]).name == "passing_summary (1).csv" or         Path(report.primary["passing"]).name == "passing_summary.csv"
+    assert len(report.identical_copies) == 2
+    assert report.csv_files == len(PRIMARY_SIGNATURES) + 2
 
 
 def test_cfbdepth_upload_normalizes_header_punctuation():
@@ -65,6 +85,13 @@ def _write(path: Path, *signatures) -> None:
     """
     columns = sorted(set().union(*signatures))
     path.write_text(",".join(columns) + "\n" + ",".join("1" for _ in columns) + "\n")
+
+
+def _append_row(path: Path) -> None:
+    """Make a file differ from its siblings without changing which dataset it is."""
+    columns = path.read_text().splitlines()[0].split(",")
+    with path.open("a") as handle:
+        handle.write(",".join("2" for _ in columns) + "\n")
 
 
 def test_a_superset_export_does_not_steal_the_dataset_it_merely_contains(tmp_path: Path):
@@ -110,6 +137,7 @@ def test_an_ambiguity_the_batch_cannot_settle_is_reported_not_guessed(tmp_path: 
     both = (PRIMARY_SIGNATURES["rushing"], PRIMARY_SIGNATURES["receiving"])
     _write(tmp_path / "one.csv", *both)
     _write(tmp_path / "two.csv", *both)
+    _append_row(tmp_path / "two.csv")  # distinct contents: identical bytes collapse to one file
 
     report = preflight_pff_directory(tmp_path)
 
@@ -135,10 +163,16 @@ def test_the_assignment_does_not_depend_on_filesystem_order(tmp_path: Path):
 
 def test_duplicate_copies_of_one_export_are_still_refused(tmp_path: Path):
     """Resolving the batch together must not paper over real duplicates: three
-    downloads of the same export are three files nobody can tell apart."""
+    downloads of the same export are three files nobody can tell apart.
+
+    They must differ in content: byte-identical copies are collapsed to one
+    file instead and are covered by their own test.
+    """
     for index in range(3):
-        _write(tmp_path / f"pass_rush_summary ({index}).csv",
-               PRIMARY_SIGNATURES["pass_rush"])
+        path = tmp_path / f"pass_rush_summary ({index}).csv"
+        _write(path, PRIMARY_SIGNATURES["pass_rush"])
+        for _ in range(index):
+            _append_row(path)
 
     report = preflight_pff_directory(tmp_path)
 

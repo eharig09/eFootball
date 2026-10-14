@@ -345,7 +345,7 @@ CREATE TABLE IF NOT EXISTS pff_team_grades (
     week INTEGER NOT NULL,
     cfbd_team_id INTEGER NOT NULL,
     team_name TEXT NOT NULL,
-    wins INTEGER NOT NULL, losses INTEGER NOT NULL,
+    wins INTEGER NOT NULL, losses INTEGER NOT NULL, ties INTEGER NOT NULL DEFAULT 0,
     points_for INTEGER NOT NULL, points_against INTEGER NOT NULL,
     overall REAL NOT NULL, offense REAL NOT NULL, passing REAL NOT NULL, pass_block REAL NOT NULL,
     receiving REAL NOT NULL, rushing REAL NOT NULL, run_block REAL NOT NULL, defense REAL NOT NULL,
@@ -716,6 +716,8 @@ class CFBRepository:
             for name in ("conference_games","conference_wins","conference_losses","conference_ties"):
                 if name not in record_columns:
                     connection.execute(f"ALTER TABLE team_records ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
+            if "ties" not in {row["name"] for row in connection.execute("PRAGMA table_info(pff_team_grades)")}:
+                connection.execute("ALTER TABLE pff_team_grades ADD COLUMN ties INTEGER NOT NULL DEFAULT 0")
             primary_key = [
                 row["name"]
                 for row in sorted(

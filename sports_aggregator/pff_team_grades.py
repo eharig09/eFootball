@@ -56,10 +56,11 @@ class TeamGradeRow:
     points_for: int
     points_against: int
     grades: dict[str, float]
+    ties: int = 0
 
     @property
     def games(self) -> int:
-        return self.wins + self.losses
+        return self.wins + self.losses + self.ties
 
 
 def _number(text: str, what: str, team: str) -> float:
@@ -97,14 +98,15 @@ def _parse_stream(stream: list[str], column: int) -> list[TeamGradeRow]:
             raise TeamGradesError(
                 f"{name}: expected {3 + len(GRADE_KEYS)} cells, found {len(block)}")
         record = _RECORD.fullmatch(block[0])
-        if not record or record.group(3):
-            raise TeamGradesError(f"{name}: record {block[0]!r} is not 'W - L'")
+        if not record:
+            raise TeamGradesError(f"{name}: record {block[0]!r} is not 'W - L' or 'W - L - T'")
         grades = {key: _number(value, key, name) for key, value in zip(GRADE_KEYS, block[3:])}
         bad = {key: value for key, value in grades.items() if not 0 <= value <= 100}
         if bad:
             raise TeamGradesError(f"{name}: grade out of range {bad}")
         rows.append(TeamGradeRow(
             name=name, wins=int(record.group(1)), losses=int(record.group(2)),
+            ties=int(record.group(3) or 0),
             points_for=int(_number(block[1], "points for", name)),
             points_against=int(_number(block[2], "points against", name)), grades=grades))
     return rows
@@ -153,10 +155,10 @@ def import_nfl(repository, rows: list[TeamGradeRow], *, season: int, week: int) 
         now = datetime.now(timezone.utc).isoformat()
         connection.execute("DELETE FROM nfl_pff_team_grades WHERE season=? AND week=?", (season, week))
         connection.executemany(
-            f"""INSERT INTO nfl_pff_team_grades (season,week,team,wins,losses,points_for,
+            f"""INSERT INTO nfl_pff_team_grades (season,week,team,wins,losses,ties,points_for,
                   points_against,{','.join(GRADE_KEYS)},imported_at)
-                VALUES (?,?,?,?,?,?,?,{','.join('?' * len(GRADE_KEYS))},?)""",
-            [(season, week, abbreviations[r.name], r.wins, r.losses, r.points_for,
+                VALUES (?,?,?,?,?,?,?,?,{','.join('?' * len(GRADE_KEYS))},?)""",
+            [(season, week, abbreviations[r.name], r.wins, r.losses, r.ties, r.points_for,
               r.points_against, *_grade_values(r), now) for r in rows])
         connection.commit()
     return {"league": "nfl", "season": season, "week": week, "teams": len(rows), **check}
@@ -188,11 +190,11 @@ def import_cfb(repository, rows: list[TeamGradeRow], *, season: int, week: int) 
         now = datetime.now(timezone.utc).isoformat()
         connection.execute("DELETE FROM pff_team_grades WHERE season=? AND week=?", (season, week))
         connection.executemany(
-            f"""INSERT INTO pff_team_grades (season,week,cfbd_team_id,team_name,wins,losses,
+            f"""INSERT INTO pff_team_grades (season,week,cfbd_team_id,team_name,wins,losses,ties,
                   points_for,points_against,{','.join(GRADE_KEYS)},imported_at)
-                VALUES (?,?,?,?,?,?,?,?,{','.join('?' * len(GRADE_KEYS))},?)""",
+                VALUES (?,?,?,?,?,?,?,?,?,{','.join('?' * len(GRADE_KEYS))},?)""",
             [(season, week, resolved[r.name]["team_id"], resolved[r.name]["school"], r.wins,
-              r.losses, r.points_for, r.points_against, *_grade_values(r), now) for r in rows])
+              r.losses, r.ties, r.points_for, r.points_against, *_grade_values(r), now) for r in rows])
         connection.commit()
     return {"league": "cfb", "season": season, "week": week, "teams": len(rows), **check}
 
@@ -275,7 +277,7 @@ def team_grades_table(pool: list[dict[str, Any]], team_id: Any, id_key: str):
         Column("value", "Grade", "f1"),
         Column("rank", "Rank", "text", align="right", sort="number"),
     ], rows, dense=True, sortable=False)
-    return {"table": table, "week": mine["week"], "record": f"{mine['wins']}-{mine['losses']}"}
+    return {"table": table, "week": mine["week"], "record": f"{mine['wins']}-{mine['losses']}" + (f"-{mine['ties']}" if mine.get("ties") else "")}
 
 
 # --------------------------------------------------------------------- CLI
