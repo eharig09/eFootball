@@ -1032,9 +1032,12 @@ class NFLSourceDirectoryTests(unittest.TestCase):
     def test_real_rss_directory_covers_every_team_and_national_feed(self):
         national = national_feeds()
         # 22 unique workbook feeds, minus 3 permanently broken feeds, plus
-        # 11 live-validated supplemental reporting/analysis feeds.
-        self.assertEqual(len(national), 30)
-        self.assertEqual(len({feed.url for feed in national}), 30)
+        # 16 live-validated supplemental reporting/analysis feeds (the team-scoped
+        # supplemental rows are excluded -- they belong to team_feeds()).
+        self.assertEqual(len(national), 35)
+        self.assertEqual(len({feed.url for feed in national}), 35)
+        self.assertIn("Trench Warfare", {feed.name for feed in national})
+        self.assertNotIn("The Leap", {feed.name for feed in national})
         self.assertIn("ESPN NFL Headlines", {feed.name for feed in national})
         self.assertIn("Unexpected Points", {feed.name for feed in national})
         self.assertIn("Over the Cap", {feed.name for feed in national})
@@ -1044,8 +1047,16 @@ class NFLSourceDirectoryTests(unittest.TestCase):
 
         teams = team_feeds()
         self.assertEqual(len(teams), 32)
-        # Every team has a subreddit, a PFF feed, and a blog feed.
-        self.assertTrue(all(len(feeds) == 3 for feeds in teams.values()))
+        # Every team has at least a subreddit, a PFF feed, and a blog feed; teams
+        # with supplemental beat newsletters have more.
+        self.assertTrue(all(len(feeds) >= 3 for feeds in teams.values()))
+        self.assertEqual(
+            {feed.name for feed in teams["KAN"]} & {"The KCSN Chiefs Newsletter", "The Chief in the North"},
+            {"The KCSN Chiefs Newsletter", "The Chief in the North"},
+        )
+        self.assertIn("The Leap", {feed.name for feed in teams["GNB"]})
+        self.assertIn("Last Man Standig", {feed.name for feed in teams["WAS"]})
+        self.assertIn("Wobby's Substack", {feed.name for feed in teams["MIN"]})
         self.assertEqual({feed.source_type for feeds in teams.values() for feed in feeds
                           if "reddit.com" in feed.url}, {"reddit"})
         cin = {feed.name: feed.url for feed in teams["CIN"]}

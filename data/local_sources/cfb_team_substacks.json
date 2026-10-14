@@ -1,0 +1,29 @@
+{
+  "_note": "Team-scoped CFB newsletters. Kept apart from cfb_local_source_registry.json, which local_sources_cli research regenerates. Keys: team (registry team name), name, url, reliability.",
+  "feeds": [
+    {
+      "team": "Michigan",
+      "name": "The Scott Bell Newsletter",
+      "url": "https://scottbell.substack.com/feed",
+      "reliability": 3
+    },
+    {
+      "team": "Michigan",
+      "name": "The Kornacki Wolverine Report",
+      "url": "https://kornackiwolverinereport.substack.com/feed",
+      "reliability": 3
+    },
+    {
+      "team": "Notre Dame",
+      "name": "Spreadsheets & Tailgates",
+      "url": "https://spreadsheetsandtailgates.substack.com/feed",
+      "reliability": 3
+    },
+    {
+      "team": "Texas",
+      "name": "Dance With Who Brung Ya",
+      "url": "https://whobrungya.substack.com/feed",
+      "reliability": 3
+    }
+  ]
+}

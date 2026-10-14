@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -276,6 +277,23 @@ def main(argv=None) -> int:
                     source_entity_key=f"local-publisher:{publisher_id}",
                     source_endpoint_key=f"rss:google-news:{publisher_id}:{team['team_id']}",
                 )))
+        # Team-dedicated newsletters live beside the generated registry so a
+        # research re-run cannot overwrite them. Everything they publish is about
+        # their team, so it is tagged without the headline match the Google News
+        # fallbacks need.
+        substacks_path=Path("data/local_sources/cfb_team_substacks.json")
+        if substacks_path.exists():
+            for row in json.loads(substacks_path.read_text(encoding="utf-8")).get("feeds",[]):
+                team=registry["teams"].get(row["team"])
+                if team is None:
+                    print(f"team substack skipped, unknown team {row['team']!r}"); continue
+                domain=urlsplit(row["url"]).hostname or row["url"]
+                tasks.append((team,{"name":row["name"],"domain":domain,"team_scoped":True},FeedConfig(
+                    name=row["name"],url=row["url"],max_articles=args.limit,
+                    source_type="local_reporting",reliability=int(row.get("reliability",3)),
+                    source_entity_key=f"team-substack:{_publisher_id(domain)}",
+                    source_endpoint_key=f"rss:{row['url']}",
+                )))
         errors=[]; succeeded=0; combined={}; team_ids={}; abandoned=0
         started=datetime.now(timezone.utc).isoformat()
         def fetch_local(task):
@@ -298,7 +316,7 @@ def main(argv=None) -> int:
                         # Process each completed feed immediately instead of
                         # holding every response until the slowest one ends.
                         for article in articles:
-                            if not article_matches_team(
+                            if not source.get("team_scoped") and not article_matches_team(
                                 f"{article.title} {article.summary}", team,
                                 publisher=article.publisher or source["name"],
                             ):

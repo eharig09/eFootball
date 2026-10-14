@@ -59,6 +59,30 @@ def _feed(name: str, url: str, *, source_type: str, reliability: int, key_prefix
     )
 
 
+def _overrides() -> dict:
+    override_path = Path(DEFAULT_OVERRIDES_PATH)
+    if not override_path.exists():
+        return {}
+    try:
+        return json.loads(override_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise NFLRSSDirectoryError(f"cannot read NFL source overrides: {exc}") from exc
+
+
+def _supplemental_feed(item: dict) -> FeedConfig:
+    name = str(item.get("name") or "").strip()
+    url = str(item.get("url") or "").strip()
+    if not name or not url:
+        raise NFLRSSDirectoryError("supplemental RSS rows require name and url")
+    team = canon_team(item["team"]) if item.get("team") else None
+    return _feed(
+        name, url, source_type=str(item.get("source_type") or "news"),
+        reliability=int(item.get("reliability") or 3),
+        key_prefix=f"nfl-team-rss:{team}" if team else "nfl-supplemental-rss",
+        topic_terms=tuple(str(term) for term in item.get("topic_terms") or ()),
+    )
+
+
 def national_feeds(path: str | Path = DEFAULT_PATH) -> tuple[FeedConfig, ...]:
     """League-wide feeds: national/specialist RSS plus cross-team subreddits."""
     feeds: dict[str, FeedConfig] = {}
@@ -72,34 +96,22 @@ def national_feeds(path: str | Path = DEFAULT_PATH) -> tuple[FeedConfig, ...]:
         feed = _feed(row["Community"].strip(), row["RSS URL"].strip(), source_type="reddit",
                     reliability=2, key_prefix="nfl-community")
         feeds.setdefault(feed.url, feed)
-    override_path = Path(DEFAULT_OVERRIDES_PATH)
-    if override_path.exists():
-        try:
-            overrides = json.loads(override_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise NFLRSSDirectoryError(f"cannot read NFL source overrides: {exc}") from exc
-        disabled = {
-            str(item.get("url") or "").strip()
-            for item in overrides.get("disabled_rss", [])
-        }
-        feeds = {url: feed for url, feed in feeds.items() if url not in disabled}
-        for item in overrides.get("supplemental_rss", []):
-            name = str(item.get("name") or "").strip()
-            url = str(item.get("url") or "").strip()
-            if not name or not url:
-                raise NFLRSSDirectoryError("supplemental RSS rows require name and url")
-            feed = _feed(
-                name, url, source_type=str(item.get("source_type") or "news"),
-                reliability=int(item.get("reliability") or 3),
-                key_prefix="nfl-supplemental-rss",
-                topic_terms=tuple(str(term) for term in item.get("topic_terms") or ()),
-            )
+    overrides = _overrides()
+    disabled = {
+        str(item.get("url") or "").strip()
+        for item in overrides.get("disabled_rss", [])
+    }
+    feeds = {url: feed for url, feed in feeds.items() if url not in disabled}
+    # Rows carrying a "team" belong to team_feeds(), not the league-wide list.
+    for item in overrides.get("supplemental_rss", []):
+        if not item.get("team"):
+            feed = _supplemental_feed(item)
             feeds.setdefault(feed.url, feed)
     return tuple(feeds.values())
 
 
 def team_feeds(path: str | Path = DEFAULT_PATH) -> dict[str, tuple[FeedConfig, ...]]:
-    """Per-team subreddit, PFF, and blog feeds, keyed by canonical team code."""
+    """Per-team subreddit, PFF, blog, and supplemental feeds, keyed by canonical team code."""
     grouped: dict[str, list[FeedConfig]] = {}
     for row in _rows(path, "Team Sources", "Subreddit RSS"):
         team = canon_team(row["Abbr"].strip())
@@ -112,4 +124,12 @@ def team_feeds(path: str | Path = DEFAULT_PATH) -> dict[str, tuple[FeedConfig, .
                        key_prefix=f"nfl-team-rss:{team}")
                 for name, url, source_type, reliability in candidates if url]
         grouped.setdefault(team, []).extend(feeds)
+    # Team-scoped supplemental feeds (beat newsletters etc.) add to the workbook's
+    # subreddit/PFF/blog trio; a team can have any number of them.
+    for item in _overrides().get("supplemental_rss", []):
+        if item.get("team"):
+            feed = _supplemental_feed(item)
+            team = canon_team(item["team"])
+            if all(existing.url != feed.url for existing in grouped.get(team, [])):
+                grouped.setdefault(team, []).append(feed)
     return {team: tuple(feeds) for team, feeds in grouped.items()}
