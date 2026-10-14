@@ -542,8 +542,10 @@
                 {% for pick in line_tracking.picks %}<span class="pick-chip{{ ' is-current' if pick.current }}">{% if pick.logo %}<img src="{{ pick.logo }}" alt="">{% endif %}<b>{{ pick.team }}</b>{{ pick.engine }} &middot; {{ pick.when }}{% if pick.current %} &middot; current{% endif %}</span>
                 {% else %}<span class="pick-chip">No engine pick confirmed yet</span>{% endfor %}
             </div>
-            {{ line_panel(game.home_team ~ ' spread', line_tracking.spread_chart, 'Home spread from the opener', 'Home line: negative means the home team is favoured. Dashed line is the Football Lab projection on the same scale; logos mark where an engine pick was confirmed.', '', 'Needs at least two stored readings.') }}
-            {{ line_panel('Total', line_tracking.total_chart, 'Total movement from the opener', 'Dashed line is the Football Lab projected total.', '', 'Needs at least two stored readings.') }}
+            <div class="line-track-grid">
+                {{ line_panel(game.home_team ~ ' spread', line_tracking.spread_chart, 'Home spread from the opener', 'Home line: negative means the home team is favoured. Dashed line is the Football Lab projection on the same scale; logos mark where an engine pick was confirmed.', '', 'Needs at least two stored readings.') }}
+                {{ line_panel('Total', line_tracking.total_chart, 'Total movement from the opener', 'Dashed line is the Football Lab projected total.', '', 'Needs at least two stored readings.') }}
+            </div>
         </div>
         {% endif %}
 
