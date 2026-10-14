@@ -416,9 +416,19 @@ def refresh(repository: CFBRepository, *, current_season: int,
     stale = stale_seasons(repository, current_season=current_season, backtest_version=backtest_version)
     if not stale:
         return {"status": "current", "inputs_version": INPUTS_VERSION, "stale_seasons": []}
-    season = stale[0]
+    # Production only builds team-game actuals for the current season, so an older season whose pace rows
+    # were never prepared cannot be rebuilt there. It must not block the seasons behind it: skip it, say so.
+    buildable = [season for season in stale if source_coverage(
+        repository, from_season=season, to_season=season)["team_game_pace_rows"] > 0]
+    unprepared = [season for season in stale if season not in buildable]
+    if not buildable:
+        return {"status": "inputs-missing", "inputs_version": INPUTS_VERSION,
+                "unprepared_seasons": unprepared,
+                "note": "No stale season has prepared team-game actuals; run projection_backtest_cli prepare."}
+    season = buildable[0]
     result = build(repository, from_season=season, to_season=season, backtest_version=backtest_version)
-    return {"status": "rebuilt", "season": season, "remaining_seasons": stale[1:],
+    return {"status": "rebuilt", "season": season, "remaining_seasons": buildable[1:],
+            "unprepared_seasons": unprepared,
             "inputs_version": INPUTS_VERSION, "games_projected": result["games_projected"],
             "team_game_rows": result["team_game_rows"]}
 
