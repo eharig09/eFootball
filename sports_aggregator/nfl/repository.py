@@ -445,7 +445,7 @@ CREATE TABLE IF NOT EXISTS nfl_pff_players (
 );
 CREATE TABLE IF NOT EXISTS nfl_pff_team_grades (
  season INTEGER NOT NULL, week INTEGER NOT NULL, team TEXT NOT NULL,
- wins INTEGER NOT NULL, losses INTEGER NOT NULL,
+ wins INTEGER NOT NULL, losses INTEGER NOT NULL, ties INTEGER NOT NULL DEFAULT 0,
  points_for INTEGER NOT NULL, points_against INTEGER NOT NULL,
  overall REAL NOT NULL, offense REAL NOT NULL, passing REAL NOT NULL, pass_block REAL NOT NULL,
  receiving REAL NOT NULL, rushing REAL NOT NULL, run_block REAL NOT NULL, defense REAL NOT NULL,
@@ -853,6 +853,8 @@ class NFLRepository:
             for name, definition in game_migrations.items():
                 if name not in game_columns:
                     connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
+            if "ties" not in {row[1] for row in connection.execute("PRAGMA table_info(nfl_pff_team_grades)")}:
+                connection.execute("ALTER TABLE nfl_pff_team_grades ADD COLUMN ties INTEGER NOT NULL DEFAULT 0")
             forecast_columns = {row[1] for row in connection.execute("PRAGMA table_info(nfl_engine_forecasts)")}
             added_prices = False
             for name in ("su_price_at_issue", "total_price_at_issue"):

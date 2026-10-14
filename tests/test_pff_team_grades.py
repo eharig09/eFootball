@@ -40,11 +40,27 @@ def test_two_side_by_side_tables_of_different_lengths_parse_into_per_team_rows()
     assert list(nfl[0].grades) == list(GRADE_KEYS)
 
 
+def test_a_malformed_record_is_refused_not_guessed_at():
+    # The first block's record locates the table, so the bad one must follow it.
+    text = _sheet({"Team A": _block(), "Team B": _block("W - L")})
+    with pytest.raises(TeamGradesError, match="not 'W - L'"):
+        parse_team_grades(text)
+
+
+def test_a_record_with_ties_parses_and_counts_them_as_games():
+    text = _sheet({"Team A": _block("3 - 1 - 1", 90, 80), "Team B": _block("2 - 3", 70, 75)})
+
+    (rows,) = parse_team_grades(text)
+
+    a, b = rows
+    assert (a.wins, a.losses, a.ties, a.games) == (3, 1, 1, 5)
+    assert (b.wins, b.losses, b.ties, b.games) == (2, 3, 0, 5)
+
+
 @pytest.mark.parametrize("mutate,message", [
     (lambda b: b[:-1], "cut off"),                                   # lost the closing marker
     (lambda b: [*b[:5], "x", *b[6:]], "not a number"),
     (lambda b: [*b[:3], "140", *b[4:]], "out of range"),
-    (lambda b: ["1 - 2 - 3", *b[1:]], "not 'W - L'"),
     (lambda b: b[:10] + b[11:], "expected 16 cells"),                # dropped a grade
 ])
 def test_malformed_sheets_are_refused_not_guessed_at(mutate, message):
@@ -60,8 +76,8 @@ def test_name_and_block_counts_must_agree():
         parse_team_grades("a,b\nc,d\n")
 
 
-def _row(name, record=(1, 2), pf=63, pa=81):
-    return TeamGradeRow(name, record[0], record[1], pf, pa, {k: 60.0 for k in GRADE_KEYS})
+def _row(name, record=(1, 2), pf=63, pa=81, ties=0):
+    return TeamGradeRow(name, record[0], record[1], pf, pa, {k: 60.0 for k in GRADE_KEYS}, ties)
 
 
 def test_misaligned_names_are_caught_by_comparing_with_stored_results():
@@ -102,6 +118,44 @@ def test_nfl_import_stores_latest_snapshot_and_replaces_the_same_week(tmp_path):
     latest = latest_nfl_team_grades(repository, 2026)
     assert [(r["team"], r["week"]) for r in latest] == [("ARI", 2)]
     assert len(latest_nfl_team_grades(repository, 2026, "ARI")) == 1
+
+
+def test_ties_are_stored_and_shown_in_the_record(tmp_path):
+    from sports_aggregator.pff_team_grades import team_grades_table
+
+    repository = _nfl_repo(tmp_path)
+    import_nfl(repository, [_row("Arizona Cardinals", (0, 1), 17, 24, ties=1),
+                            _row("Atlanta Falcons", (1, 0), 24, 17)], season=2026, week=1)
+
+    latest = latest_nfl_team_grades(repository, 2026)
+    assert {r["team"]: r["ties"] for r in latest} == {"ARI": 1, "ATL": 0}
+    assert team_grades_table(latest, "ARI", "team")["record"] == "0-1-1"
+    assert team_grades_table(latest, "ATL", "team")["record"] == "1-0"
+
+
+def test_existing_databases_gain_the_ties_column_and_keep_their_rows(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "nfl.sqlite3"
+    repository = NFLRepository(path)
+    repository.initialize()
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute("DROP TABLE nfl_pff_team_grades")
+        connection.execute(
+            "CREATE TABLE nfl_pff_team_grades (season INTEGER NOT NULL, week INTEGER NOT NULL, "
+            "team TEXT NOT NULL, wins INTEGER NOT NULL, losses INTEGER NOT NULL, "
+            "points_for INTEGER NOT NULL, points_against INTEGER NOT NULL, "
+            + ", ".join(f"{key} REAL NOT NULL" for key in GRADE_KEYS)
+            + ", imported_at TEXT NOT NULL, PRIMARY KEY(season,week,team))")
+        connection.execute(
+            "INSERT INTO nfl_pff_team_grades VALUES (2025,1,'ARI',1,0,20,10,"
+            + ",".join("60" for _ in GRADE_KEYS) + ",'now')")
+        connection.commit()
+
+    NFLRepository(path)._initialize_schema()     # initialize() is memoised once per process
+
+    (row,) = latest_nfl_team_grades(NFLRepository(path), 2025)
+    assert (row["wins"], row["losses"], row["ties"]) == (1, 0, 0)
 
 
 def test_unknown_team_names_stop_the_import_before_anything_is_written(tmp_path):

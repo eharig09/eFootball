@@ -365,6 +365,10 @@ def import_pff():
             notes.append("unrecognized: " + ", ".join(sorted(check.unclassified)))
         if check.missing_primary:
             notes.append("missing: " + ", ".join(check.missing_primary))
+        if check.identical_copies:
+            count = len(check.identical_copies)
+            notes.append(f"{count} identical {'copy' if count == 1 else 'copies'} ignored: "
+                         + ", ".join(check.identical_copies))
         for dataset, names in sorted(check.duplicates.items()):
             notes.append(f"{dataset} matched {len(names)} files: "
                          + ", ".join(_described(staging / name) for name in names))
