@@ -19,7 +19,7 @@
 {% endmacro %}
 {% macro record_card(label, tally, show_rate) %}
 <article><small>{{ label }}</small><b>{{ tally.record if tally.n else '—' }}</b>
-    <span>{% if tally.n and show_rate and tally.win_rate is not none %}{{ '%.1f'|format(tally.win_rate * 100) }}% &middot; {{ '%+.1f'|format(tally.units) }}u{% elif tally.n %}{{ tally.n }} graded{% else %}none graded yet{% endif %}</span></article>
+    <span>{% if tally.n and show_rate and tally.win_rate is not none %}{{ '%.1f'|format(tally.win_rate * 100) }}% &middot; {{ '%+.1f'|format(tally.units) }}u{% if tally.priced is defined and tally.priced < tally.n %} ({{ tally.priced }} priced){% endif %}{% elif tally.n %}{{ tally.n }} graded{% else %}none graded yet{% endif %}</span></article>
 {% endmacro %}
 <!DOCTYPE html>
 <html lang="en">
@@ -40,7 +40,7 @@
     <section class="nfl-hero compact-hero">
         <p class="eyebrow">Accountability · {{ season }}</p>
         <h1>Football Lab pick record</h1>
-        <p>Every pick is stored before kickoff and graded against the exact line it was issued at. Each game counts once, at its first stored pick, priced at flat -110. Tracking starts with the first stored forecast; nothing is back-filled.</p>
+        <p>Every pick is stored before kickoff and graded against the exact line it was issued at. Each game counts once, at its first stored pick, priced at flat -110 against the spread and at the stored moneyline or over/under price for straight-up and totals. Tracking starts with the first stored forecast; nothing is back-filled.</p>
         <p><a href="{{ url_for('nfl.engine_picks', season=season) }}">&larr; This week's picks</a></p>
     </section>
 
