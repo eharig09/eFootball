@@ -7,7 +7,7 @@ import json
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sports_aggregator.nfl.repository import NFLRepository
+from sports_aggregator.nfl.repository import NFLRepository, issue_prices, pick_prices
 
 
 def _kickoff_passed(row, issued: datetime) -> bool:
@@ -70,14 +70,19 @@ def freeze_dashboard(repository: NFLRepository, dashboard: dict[str, Any],
             ).fetchone()
             if previous is not None and tuple(previous) == values:
                 continue
+            su_price, total_price = pick_prices(
+                {"straight_up_pick": game.get("straight_up_pick"), "total_pick": game.get("total_pick"),
+                 "home_team": game["home_team"]},
+                issue_prices(connection, game["game_id"], issued))
             connection.execute(
                 """INSERT INTO nfl_engine_forecasts (
                      game_id,season,week,generated_at,model_version,away_team,home_team,
                      away_points,home_points,model_margin,model_total,spread_at_issue,
-                     total_at_issue,straight_up_pick,ats_pick_team,total_pick,tags_json
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     total_at_issue,straight_up_pick,ats_pick_team,total_pick,tags_json,
+                     su_price_at_issue,total_price_at_issue
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game["game_id"], int(game["season"]), int(game["week"]), issued,
-                 version, game["away_team"], game["home_team"], *values),
+                 version, game["away_team"], game["home_team"], *values, su_price, total_price),
             )
             stored += 1
         connection.commit()

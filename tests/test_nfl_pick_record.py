@@ -113,3 +113,44 @@ def test_settled_record_page_shows_charts(tmp_path):
     page = app.test_client().get("/nfl/picks/record/?season=2026")
     assert page.status_code == 200
     assert b"<polyline" in page.data and b"Building sample" not in page.data
+
+
+def test_american_profit_pays_the_real_price():
+    assert pick_record.american_profit(-300) == 100 / 300
+    assert pick_record.american_profit(150) == 1.5
+
+
+def test_su_and_total_units_use_the_stored_price_not_flat_110():
+    picks = [
+        {"g": "win", "p": -300.0}, {"g": "win", "p": 150.0},
+        {"g": "loss", "p": -200.0}, {"g": "win", "p": None},
+    ]
+    tally = pick_record._tally(picks, "g", "p")
+    assert tally["record"] == "3-1"
+    assert tally["priced"] == 3
+    assert tally["units"] == round(1 / 3 + 1.5 - 1, 2)
+    flat = pick_record._tally(picks, "g")
+    assert flat["units"] == round(3 * 100 / 110 - 1, 2)
+
+
+def test_freeze_stores_moneyline_of_the_picked_side_and_backfill_matches(tmp_path):
+    import sqlite3
+    repository = NFLRepository(tmp_path / "nfl.sqlite3")
+    repository.initialize()
+    repository.replace_games(2026, [_game("g1", 1, 20, 27, spread=4.0, total=44.0)])
+    with closing(repository._connect()) as connection:
+        connection.execute(
+            "INSERT INTO market_line_snapshots (game_id,season,week,captured_at,source,spread_line,total_line,"
+            "away_moneyline,home_moneyline,under_odds,over_odds) VALUES ('g1',2026,1,'2026-08-30T00:00:00+00:00','t',"
+            "4.0,44.0,220,-260,-105,-115)")
+        connection.commit()
+    freeze_dashboard(repository, _dashboard("g1", 1, margin=6.0, total=47.0, market_margin=3.0, market_total=45.0),
+                     generated_at="2026-08-31T00:00:00+00:00")
+    with closing(repository._connect()) as connection:
+        row = connection.execute("SELECT su_price_at_issue,total_price_at_issue FROM nfl_engine_forecasts").fetchone()
+        assert (row[0], row[1]) == (-260.0, -115.0)
+        connection.execute("UPDATE nfl_engine_forecasts SET su_price_at_issue=NULL,total_price_at_issue=NULL")
+        from sports_aggregator.nfl.repository import backfill_issue_prices
+        assert backfill_issue_prices(connection) == 1
+        row = connection.execute("SELECT su_price_at_issue,total_price_at_issue FROM nfl_engine_forecasts").fetchone()
+        assert (row[0], row[1]) == (-260.0, -115.0)

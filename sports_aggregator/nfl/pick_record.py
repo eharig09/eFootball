@@ -50,20 +50,35 @@ def _first_per_game(issuances: list[dict[str, Any]], grade_key: str) -> list[dic
     return picks
 
 
-def _tally(picks: list[dict[str, Any]], grade_key: str) -> dict[str, Any]:
+def american_profit(price: float) -> float:
+    """Units won on a 1u stake at an American price."""
+    return price / 100.0 if price > 0 else 100.0 / -price
+
+
+def _tally(picks: list[dict[str, Any]], grade_key: str, price_key: str | None = None) -> dict[str, Any]:
+    """Record and units. Without `price_key` units are flat -110; with it each
+    pick is paid at its own stored price and picks lacking one are left out of
+    units and ROI (counted in `priced`)."""
     wins = sum(p[grade_key] == "win" for p in picks)
     losses = sum(p[grade_key] == "loss" for p in picks)
     pushes = sum(p[grade_key] == "push" for p in picks)
     decisions = wins + losses
-    units = wins * WIN_UNITS - losses
     interval = wilson(wins, decisions)
+    if price_key is None:
+        units, staked = wins * WIN_UNITS - losses, wins + losses + pushes
+        priced = staked
+    else:
+        priced_picks = [p for p in picks if p.get(price_key) is not None]
+        units = sum(american_profit(float(p[price_key])) if p[grade_key] == "win"
+                    else -1.0 if p[grade_key] == "loss" else 0.0 for p in priced_picks)
+        staked, priced = len(priced_picks), len(priced_picks)
     return {
         "wins": wins, "losses": losses, "pushes": pushes, "n": wins + losses + pushes,
         "record": f"{wins}-{losses}" + (f"-{pushes}" if pushes else ""),
         "win_rate": wins / decisions if decisions else None,
         "interval": interval,
-        "units": round(units, 2),
-        "roi": units / (wins + losses + pushes) if (wins + losses + pushes) else None,
+        "units": round(units, 2), "priced": priced,
+        "roi": units / staked if staked else None,
     }
 
 
@@ -242,7 +257,12 @@ def build(repository: NFLRepository, season: int) -> dict[str, Any]:
 
     ats_tally = _tally(ats, "ats_grade")
     total_tally = _tally(totals, "total_grade")
-    su_tally = _tally(su, "straight_up_grade")
+    su_tally = _tally(su, "straight_up_grade", "su_price_at_issue")
+    su_flat = _tally(su, "straight_up_grade")
+    total_tally["flat_units"] = total_tally["units"]
+    total_tally.update({k: v for k, v in _tally(totals, "total_grade", "total_price_at_issue").items()
+                        if k in ("units", "roi", "priced")})
+    su_tally["flat_units"] = su_flat["units"]
     settled = ats_tally["n"] >= MIN_GRADED or total_tally["n"] >= MIN_GRADED
 
     weekly = _weekly(ats, totals, su)
@@ -276,7 +296,7 @@ def build(repository: NFLRepository, season: int) -> dict[str, Any]:
         "calibration_chart": {"ats": interval_chart(calibration_ats),
                               "totals": interval_chart(calibration_total)},
         "policy": {
-            "pricing": "Flat -110.",
+            "pricing": "Against the spread at flat -110. Straight up and totals at the moneyline / over-under price stored with the pick.",
             "counting": "Each game is counted once, at its first stored pick, before kickoff.",
             "start": "Tracking begins with the first stored forecast; earlier seasons are not back-filled.",
         },

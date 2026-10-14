@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS nfl_engine_forecasts (
  model_margin REAL NOT NULL, model_total REAL NOT NULL,
  spread_at_issue REAL, total_at_issue REAL,
  straight_up_pick TEXT, ats_pick_team TEXT, total_pick TEXT,
- tags_json TEXT NOT NULL DEFAULT '[]'
+ tags_json TEXT NOT NULL DEFAULT '[]',
+ su_price_at_issue REAL, total_price_at_issue REAL
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_engine_forecast_game
  ON nfl_engine_forecasts(game_id, forecast_id);
@@ -663,6 +664,45 @@ CREATE INDEX IF NOT EXISTS idx_nfl_plays_rusher ON nfl_plays(season, rusher_id);
 """
 
 
+def issue_prices(connection: sqlite3.Connection, game_id: str, as_of: str) -> sqlite3.Row | None:
+    """Stored market row a pick could have taken: the latest snapshot at or before
+    `as_of`, else the earliest snapshot, else the games row (nflverse close)."""
+    row = connection.execute(
+        "SELECT * FROM market_line_snapshots WHERE game_id=? AND captured_at<=? "
+        "ORDER BY captured_at DESC LIMIT 1", (game_id, as_of)).fetchone()
+    if row is None:
+        row = connection.execute(
+            "SELECT * FROM market_line_snapshots WHERE game_id=? ORDER BY captured_at LIMIT 1",
+            (game_id,)).fetchone()
+    return row or connection.execute("SELECT * FROM games WHERE game_id=?", (game_id,)).fetchone()
+
+
+def pick_prices(forecast: Any, market: Any) -> tuple[float | None, float | None]:
+    """American price of the straight-up side and of the over/under side picked."""
+    if market is None:
+        return None, None
+    su = total = None
+    if forecast["straight_up_pick"]:
+        side = "home" if forecast["straight_up_pick"] == forecast["home_team"] else "away"
+        su = market[f"{side}_moneyline"]
+    if forecast["total_pick"]:
+        total = market["over_odds" if str(forecast["total_pick"]).startswith("Over") else "under_odds"]
+    return su, total
+
+
+def backfill_issue_prices(connection: sqlite3.Connection) -> int:
+    """Fill the price columns for ledger rows stored before they existed."""
+    rows = connection.execute(
+        "SELECT forecast_id,game_id,generated_at,home_team,straight_up_pick,total_pick "
+        "FROM nfl_engine_forecasts WHERE su_price_at_issue IS NULL AND total_price_at_issue IS NULL").fetchall()
+    for row in rows:
+        su, total = pick_prices(row, issue_prices(connection, row["game_id"], row["generated_at"]))
+        connection.execute(
+            "UPDATE nfl_engine_forecasts SET su_price_at_issue=?,total_price_at_issue=? WHERE forecast_id=?",
+            (su, total, row["forecast_id"]))
+    return len(rows)
+
+
 def _bump_stat_versions(connection: sqlite3.Connection, seasons: Iterable[int]) -> None:
     """Advance the write counter of every season whose weekly stats just changed.
 
@@ -813,6 +853,14 @@ class NFLRepository:
             for name, definition in game_migrations.items():
                 if name not in game_columns:
                     connection.execute(f"ALTER TABLE games ADD COLUMN {name} {definition}")
+            forecast_columns = {row[1] for row in connection.execute("PRAGMA table_info(nfl_engine_forecasts)")}
+            added_prices = False
+            for name in ("su_price_at_issue", "total_price_at_issue"):
+                if name not in forecast_columns:
+                    connection.execute(f"ALTER TABLE nfl_engine_forecasts ADD COLUMN {name} REAL")
+                    added_prices = True
+            if added_prices:
+                backfill_issue_prices(connection)
             connection.commit()
             self._ensure_statistics(connection)
         self.seed_team_venues()
