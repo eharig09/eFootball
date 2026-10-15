@@ -822,6 +822,17 @@ def _int_arg(name: str, default: int) -> int:
         return default
 
 
+def _margin_model() -> dict[str, Any]:
+    """The live margin model's tier status; the panel is advisory, so it must never take the page down."""
+    try:
+        from sports_aggregator.cfb.margin_model_status import margin_model_status
+        from sports_aggregator.cfb.repository import CFBRepository
+
+        return margin_model_status(CFBRepository(_database_path()))
+    except Exception as exc:
+        return {"available": False, "reason": f"Could not be read: {str(exc)[:160]}"}
+
+
 @data_status_pages.get("/college-football/data-status/")
 def data_status():
     options = {
@@ -834,7 +845,8 @@ def data_status():
         model = _status_model(include_audit=True, audit_options=options)
     except Exception:
         model = _status_model(include_audit=False)
-    return render_template("cfb_data_status.html", status=model, host_disk=disk_report(_instance_dir()))
+    return render_template("cfb_data_status.html", status=model, host_disk=disk_report(_instance_dir()),
+                           margin_model=_margin_model())
 
 
 @data_status_pages.get("/college-football/data-status/log-tail")
