@@ -822,6 +822,22 @@ def _int_arg(name: str, default: int) -> int:
         return default
 
 
+def _odds_tracker() -> dict[str, Any]:
+    """Credits spent and the latest sweeps of the odds-line tracker; advisory, so it never breaks the page."""
+    try:
+        from sports_aggregator import odds_api_tracker as tracker
+
+        if not (os.getenv("ODDS_API_KEY") or "").strip():
+            return {"available": False, "reason": "ODDS_API_KEY is not set, so no lines are being tracked."}
+        report = tracker.status()
+        for call in report.get("recent_calls", []):
+            call["when"] = _display_time(call.get("called_at"))
+            call["relative"] = _relative_time(call.get("called_at"))
+        return {"available": True, **report}
+    except Exception as exc:
+        return {"available": False, "reason": f"Could not be read: {str(exc)[:160]}"}
+
+
 def _margin_model() -> dict[str, Any]:
     """The live margin model's tier status; the panel is advisory, so it must never take the page down."""
     try:
@@ -846,7 +862,7 @@ def data_status():
     except Exception:
         model = _status_model(include_audit=False)
     return render_template("cfb_data_status.html", status=model, host_disk=disk_report(_instance_dir()),
-                           margin_model=_margin_model())
+                           margin_model=_margin_model(), odds_tracker=_odds_tracker())
 
 
 @data_status_pages.get("/college-football/data-status/log-tail")

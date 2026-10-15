@@ -314,6 +314,25 @@ def create_app(test_config: dict | None = None) -> Flask:
                         **({"segment": segment} if segment else {}),
                         **({"reason": decision["reason"], "games": decision["games"]} if decision else {})}), 202
 
+    @app.post("/internal/odds-lines-refresh")
+    def start_odds_lines_refresh():
+        # A light lane of its own: it takes no refresh lock and costs no credits unless a scheduled slot is due. The
+        # cron ticks every 15 minutes; due_leagues() reads the credit ledger and returns at once when nothing is due.
+        require_refresh_auth()
+        from sports_aggregator import odds_api_tracker
+
+        if not (os.getenv("ODDS_API_KEY") or "").strip():
+            return jsonify({"status": "skipped", "reason": "odds_api_key_not_set"}), 200
+        due = odds_api_tracker.due_leagues()
+        if not due:
+            return jsonify({"status": "skipped", "reason": "no_slot_due"}), 200
+        subprocess.Popen(
+            [sys.executable, "-m", "sports_aggregator.odds_api_tracker", "run-due"],
+            cwd=str(Path(__file__).resolve().parent),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+        )
+        return jsonify({"status": "accepted", "leagues": due}), 202
+
     @app.post("/internal/nfl-refresh")
     def start_nfl_refresh():
         # NFL had no recurring refresh at all -- the cron below is new. Content
