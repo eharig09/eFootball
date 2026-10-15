@@ -198,6 +198,22 @@ services:
         value: core-foundation
 
   - type: cron
+    name: odds-lines-trigger
+    runtime: python
+    # Records DraftKings, FanDuel, BetMGM and BetRivers lines from The Odds API on the free plan (500 credits a
+    # month). The web service decides whether a scheduled slot is due and replies "skipped" without spending
+    # anything on the ticks where none is, so this can run every 15 minutes. ODDS_API_KEY is set on the web
+    # service only; this job needs just the refresh URL and token.
+    schedule: "*/15 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m sports_aggregator.odds_render_trigger
+    envVars:
+      - key: CFB_REFRESH_URL
+        sync: false
+      - key: CFB_REFRESH_TOKEN
+        sync: false
+
+  - type: cron
     name: nfl-availability-refresh-trigger
     runtime: python
     # The job checks every 15 minutes, but the web worker fetches ESPN only

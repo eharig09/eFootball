@@ -417,6 +417,28 @@ def sweep(league: str, *, force: bool = False, now: datetime | None = None, sess
                 "credits_remaining": remaining, "credits_used": used}
 
 
+def due_leagues(*, now: datetime | None = None) -> list[str]:
+    """Leagues with a scheduled slot due and room in the budget. Reads the ledger only: no request, no credits.
+
+    The web service asks this before starting a process, so the 15-minute cron that nudges it costs nothing on the
+    ninety-odd ticks a week where nothing is due.
+    """
+    now = now or _now()
+    if not (os.getenv("ODDS_API_KEY") or "").strip():
+        return []
+    due = []
+    with closing(_connect(ledger_path())) as ledger:
+        ledger.executescript(LEDGER_SCHEMA)
+        if not budget_allows(ledger, now)[0]:
+            return []
+        for league in SPORTS:
+            last = ledger.execute("SELECT MAX(called_at) FROM odds_api_calls WHERE league=? AND status='ok'",
+                                  (league,)).fetchone()[0]
+            if slot_due(now, league, _parse(last)) is not None:
+                due.append(league)
+    return due
+
+
 def run_due(*, now: datetime | None = None, session=requests) -> dict[str, dict[str, Any]]:
     return {league: sweep(league, now=now, session=session) for league in SPORTS}
 

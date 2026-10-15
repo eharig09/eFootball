@@ -22,7 +22,7 @@
     <p class="data-status-muted">Listed items total {{ host_disk.listed_mb }} MB; the rest of the {{ host_disk.used_mb }} MB in use is outside this folder{% if not host_disk.complete %} or beyond the time allowed to measure{% endif %}.</p>
   </details>{% endif %}
 
-  <div class="audit-subnav">{% if status.attention or status.not_configured %}<a href="#needs-attention">Needs attention</a>{% endif %}<a href="#segment-health">Segment health</a><a href="#margin-model">Margin model</a><a href="#manual-refresh">Manual refresh</a><a href="#content-audit">Recent content</a><a href="#connections">Connections</a><a href="#refresh-history">Refresh history</a>{#- The sources that arrive as files rather than over an API are not
+  <div class="audit-subnav">{% if status.attention or status.not_configured %}<a href="#needs-attention">Needs attention</a>{% endif %}<a href="#segment-health">Segment health</a><a href="#margin-model">Margin model</a><a href="#odds-lines">Odds lines</a><a href="#manual-refresh">Manual refresh</a><a href="#content-audit">Recent content</a><a href="#connections">Connections</a><a href="#refresh-history">Refresh history</a>{#- The sources that arrive as files rather than over an API are not
     refreshed by anything on this page, so this is the only route to them. -#}<a href="{{ url_for('cfb_data_import.data_import') }}">Import CSV data</a></div>
 
   {% if status.attention or status.not_configured %}
@@ -71,6 +71,23 @@
       {% for row in margin_model.backtest %}<tr><td>{{ row.season }}</td><td>{{ row.games }}<div class="data-status-counts">{{ row.inputs_version }}</div></td><td>{{ fpi_by_season.get(row.season, 'none') }}</td></tr>{% endfor %}
     </tbody></table>
     {% else %}<p class="data-status-muted">{{ margin_model.reason }}</p>{% endif %}
+  </section>
+
+  <section class="data-status-section" id="odds-lines">
+    <h2>Odds lines</h2>
+    {% if odds_tracker.available %}
+    <p class="data-status-muted">DraftKings, FanDuel, BetMGM and BetRivers spreads and totals from The Odds API, on the free plan. A sweep costs 2 credits and runs only in scheduled slots, with a hard stop at {{ odds_tracker.monthly_cap }} credits a month.</p>
+    <div class="data-status-grid">
+      <div class="data-status-card"><strong>Credits used this month</strong><span>{{ odds_tracker.month_used }} of {{ odds_tracker.monthly_cap }}</span></div>
+      <div class="data-status-card"><strong>Reported by the API</strong><span>{{ odds_tracker.api_remaining if odds_tracker.api_remaining is not none else 'no call yet' }} remaining</span></div>
+      {% for league in ('cfb', 'nfl') %}{% set row = odds_tracker.get(league) %}{% if row %}<div class="data-status-card"><strong>{{ league|upper }} line rows</strong><span>{{ row.rows_stored or 0 }}</span><div class="data-status-counts">{% if row.events %}{{ row.events }} games · {{ row.books }} books{% else %}nothing stored yet{% endif %}</div></div>{% endif %}{% endfor %}
+    </div>
+    {% if odds_tracker.recent_calls %}
+    <table class="data-status-table"><thead><tr><th>When</th><th>League</th><th>Result</th><th>Games</th><th>Rows stored</th><th>Matched</th><th>Credits left</th></tr></thead><tbody>
+      {% for call in odds_tracker.recent_calls %}<tr><td>{{ call.when }}<div class="data-status-counts">{{ call.relative }}</div></td><td>{{ call.league|upper }}</td><td>{% if call.status == 'ok' %}<span class="data-status-ok">Stored</span>{% else %}<span class="data-status-warn">{{ call.status|replace('-', ' ')|title }}</span>{% endif %}{% if call.message %}<div class="data-status-counts">{{ call.message }}</div>{% endif %}</td><td>{{ call.events if call.events is not none else '—' }}</td><td>{{ call.rows_stored if call.rows_stored is not none else '—' }}</td><td>{{ call.matched_games if call.matched_games is not none else '—' }}</td><td>{{ call.remaining if call.remaining is not none else '—' }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="data-status-muted">No sweep has run yet.</p>{% endif %}
+    {% else %}<p class="data-status-muted">{{ odds_tracker.reason }}</p>{% endif %}
   </section>
 
   <section class="data-status-section" id="manual-refresh">
