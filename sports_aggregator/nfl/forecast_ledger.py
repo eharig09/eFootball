@@ -7,6 +7,7 @@ import json
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from sports_aggregator import best_lines
 from sports_aggregator.nfl.repository import NFLRepository, issue_prices, pick_prices
 
 
@@ -27,6 +28,37 @@ def _kickoff_passed(row, issued: datetime) -> bool:
     except ValueError:
         return False
     return kickoff.astimezone(timezone.utc) <= issued
+
+
+def _best_line_fields(connection, game: dict[str, Any], ats_team: str | None,
+                      issued_at: datetime) -> tuple[float | None, str | None, float | None, str | None]:
+    """(best ATS spread, its book, best total, its book) at the moment of issue, in the ledger's sign convention.
+
+    The ledger's spreads are nflverse's (positive = home favored), so a home pick's own spread is negated and an away
+    pick's is kept. Anything that goes wrong leaves the pick to be graded at the consensus line it was issued at.
+    """
+    try:
+        moment = issued_at.astimezone(timezone.utc).isoformat(timespec="seconds")
+        live = abs((datetime.now(timezone.utc) - issued_at).total_seconds()) < 3 * 3600
+        snapshot = best_lines.snapshot(
+            connection, game["game_id"], as_of=moment,
+            fallback=best_lines.espn_rows(connection, game["game_id"]) if live else None)
+    except Exception:
+        return None, None, None, None
+    if not snapshot:
+        return None, None, None, None
+    spread = book = None
+    if ats_team and ats_team == game.get("home_team"):
+        own, book = best_lines.side_spread(snapshot, "home")
+        spread = -own if own is not None else None
+    elif ats_team and ats_team == game.get("away_team"):
+        spread, book = best_lines.side_spread(snapshot, "away")
+    total = total_book = None
+    pick = str(game.get("total_pick") or "")
+    side = "over" if pick.startswith("Over") else "under" if pick.startswith("Under") else None
+    if side and isinstance(snapshot.get(side), dict):
+        total, total_book = snapshot[side]["total"], snapshot[side]["name"]
+    return spread, book, total, total_book
 
 
 def freeze_dashboard(repository: NFLRepository, dashboard: dict[str, Any],
@@ -74,15 +106,17 @@ def freeze_dashboard(repository: NFLRepository, dashboard: dict[str, Any],
                 {"straight_up_pick": game.get("straight_up_pick"), "total_pick": game.get("total_pick"),
                  "home_team": game["home_team"]},
                 issue_prices(connection, game["game_id"], issued))
+            best_fields = _best_line_fields(connection, game, ats_team, issued_at)
             connection.execute(
                 """INSERT INTO nfl_engine_forecasts (
                      game_id,season,week,generated_at,model_version,away_team,home_team,
                      away_points,home_points,model_margin,model_total,spread_at_issue,
                      total_at_issue,straight_up_pick,ats_pick_team,total_pick,tags_json,
-                     su_price_at_issue,total_price_at_issue
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     su_price_at_issue,total_price_at_issue,
+                     best_ats_spread,best_ats_book,best_total,best_total_book
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game["game_id"], int(game["season"]), int(game["week"]), issued,
-                 version, game["away_team"], game["home_team"], *values, su_price, total_price),
+                 version, game["away_team"], game["home_team"], *values, su_price, total_price, *best_fields),
             )
             stored += 1
         connection.commit()
@@ -118,14 +152,24 @@ def grading_report(repository: NFLRepository, *, season: int | None = None) -> d
                 "win" if (row["home_score"] > row["away_score"]) == (row["straight_up_pick"] == row["home_team"])
                 else "loss"
             )
-        if row["spread_at_issue"] is not None and row["ats_pick_team"]:
+        # Judged at the best tracked-book line stored with the pick; a pick issued before line tracking, or one no
+        # tracked book priced, is judged at the consensus line it was issued at, as it always was.
+        ats_line = row.get("best_ats_spread")
+        row["ats_line_basis"] = "best" if ats_line is not None else "consensus"
+        if ats_line is None:
+            ats_line = row["spread_at_issue"]
+        if ats_line is not None and row["ats_pick_team"]:
             direction = 1.0 if row["ats_pick_team"] == row["home_team"] else -1.0
-            row["ats_grade"] = _grade((actual_margin - float(row["spread_at_issue"])) * direction)
+            row["ats_grade"] = _grade((actual_margin - float(ats_line)) * direction)
         else:
             row["ats_grade"] = None
-        if row["total_at_issue"] is not None and row["total_pick"]:
+        total_line = row.get("best_total")
+        row["total_line_basis"] = "best" if total_line is not None else "consensus"
+        if total_line is None:
+            total_line = row["total_at_issue"]
+        if total_line is not None and row["total_pick"]:
             direction = 1.0 if str(row["total_pick"]).startswith("Over") else -1.0
-            row["total_grade"] = _grade((actual_total - float(row["total_at_issue"])) * direction)
+            row["total_grade"] = _grade((actual_total - float(total_line)) * direction)
         else:
             row["total_grade"] = None
         row["tags"] = json.loads(row.pop("tags_json"))

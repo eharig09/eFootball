@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS nfl_engine_forecasts (
  spread_at_issue REAL, total_at_issue REAL,
  straight_up_pick TEXT, ats_pick_team TEXT, total_pick TEXT,
  tags_json TEXT NOT NULL DEFAULT '[]',
- su_price_at_issue REAL, total_price_at_issue REAL
+ su_price_at_issue REAL, total_price_at_issue REAL,
+ best_ats_spread REAL, best_ats_book TEXT, best_total REAL, best_total_book TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_nfl_engine_forecast_game
  ON nfl_engine_forecasts(game_id, forecast_id);
@@ -863,6 +864,12 @@ class NFLRepository:
                     added_prices = True
             if added_prices:
                 backfill_issue_prices(connection)
+            # The best tracked-book line stored with a new pick (nflverse sign: positive = home favored), which is what
+            # the pick is graded against when present. Older rows leave these NULL and keep the consensus grading.
+            for name, definition in (("best_ats_spread", "REAL"), ("best_ats_book", "TEXT"),
+                                     ("best_total", "REAL"), ("best_total_book", "TEXT")):
+                if name not in forecast_columns:
+                    connection.execute(f"ALTER TABLE nfl_engine_forecasts ADD COLUMN {name} {definition}")
             connection.commit()
             self._ensure_statistics(connection)
         self.seed_team_venues()

@@ -8,7 +8,7 @@
 {% from '_nfl_style_clash.html' import style_clash %}
 {% from '_nfl_comparables.html' import comparable_games %}
 {% from '_nfl_playcalling.html' import playcalling_lens %}
-{% from '_ui_kit.html' import ordinal, line_panel, table_panel, rank_gap_panel, wp_chart, swing_table, drive_chart, play_table, tendency_compare, penalty_compare %}
+{% from '_ui_kit.html' import ordinal, book_lines_panel, line_panel, table_panel, rank_gap_panel, wp_chart, swing_table, drive_chart, play_table, tendency_compare, penalty_compare %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -415,6 +415,10 @@
                 </table>
             </article>
         </div>
+        {% if book_lines and book_lines.has_data %}
+        <div class="section-head"><div><p class="eyebrow">Tracked books &middot; DraftKings, FanDuel, BetMGM, BetRivers</p><h2>Sportsbook lines</h2></div></div>
+        {{ book_lines_panel(book_lines, game.home_team, game.away_team) }}
+        {% endif %}
         {% if line_movement.available %}
         <div class="section-head"><div><p class="eyebrow">{{ line_movement.provider }} &middot; {{ 'closed' if line_movement.final else 'live' }}</p><h2>Line movement</h2></div></div>
         {{ table_panel('Open to ' ~ ('close' if game.completed else 'now'), line_movement.table, note='spread is the away-team line') }}

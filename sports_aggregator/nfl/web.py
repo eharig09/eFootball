@@ -21,6 +21,7 @@ from sports_aggregator.nfl.engine_picks import (
     build_dashboard as build_engine_picks_dashboard,
     default_week as default_engine_pick_week,
 )
+from sports_aggregator import best_lines
 from sports_aggregator import pff_team_grades
 from sports_aggregator.nfl import injury_impact, odds_history, pick_record, style_clash, team_profile as team_profile_analysis, comparable_games, playcalling_lens
 from sports_aggregator.nfl.explorer import (
@@ -1355,6 +1356,13 @@ def _game_packet(game_id: str) -> dict:
     line_movement = odds_history.movement_packet(
         repository, game, model_margin=lab.get("margin"), model_total=lab.get("total"))
 
+    try:
+        with closing(repository._connect()) as connection:
+            book_lines = best_lines.display_rows(
+                connection, game["game_id"], fallback=best_lines.espn_rows(connection, game["game_id"]))
+    except Exception:                 # a panel must never take the matchup page down
+        book_lines = None
+
     impact = (injury_impact.game_impact(
                   repository, game, model_margin=lab.get("margin_pre_injury", lab.get("margin")))
               if not game["completed"] else {"available": False})
@@ -1388,7 +1396,7 @@ def _game_packet(game_id: str) -> dict:
     return {"game": game, "situational": situational, "discipline": discipline,
             "style_clash_data": style_clash_data, "comparables_data": comparables_data,
             "playcalling_data": playcalling_data,
-            "line_movement": line_movement, "injury_impact": impact,
+            "line_movement": line_movement, "book_lines": book_lines, "injury_impact": impact,
             "injury_impact_tables": (injury_impact.tables(impact, game["season"])
                                      if impact["available"] else {}),
             "away_identity": identities.get(game["away_team"], {}),

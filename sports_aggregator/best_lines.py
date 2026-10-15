@@ -104,6 +104,29 @@ def cfbd_rows(connection: sqlite3.Connection, game_id: Any) -> list[dict[str, An
     return list(out.values())
 
 
+def espn_rows(connection: sqlite3.Connection, game_id: Any) -> list[dict[str, Any]]:
+    """NFL: ESPN's DraftKings line (stored the nflverse way, positive = home favored, so the sign flips here)."""
+    try:
+        rows = connection.execute(
+            "SELECT provider, open_spread, open_total, current_spread, current_total, fetched_at "
+            "FROM espn_market_lines WHERE game_id=?", (str(game_id),)).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    out = []
+    for row in rows:
+        key = CFBD_BOOKS.get(str(row["provider"] or "").strip().casefold())
+        if key is None or (row["current_spread"] is None and row["current_total"] is None):
+            continue
+        current, opened = _number(row["current_spread"]), _number(row["open_spread"])
+        out.append({
+            "book": key, "name": book_name(key), "source": "espn", "home_spread": None if current is None else -current,
+            "home_price": None, "away_price": None, "total": row["current_total"], "over_price": None,
+            "under_price": None, "updated": row["fetched_at"], "captured_at": row["fetched_at"],
+            "opened_spread": None if opened is None else -opened, "opened_total": row["open_total"],
+        })
+    return out
+
+
 def merge_fallback(rows: list[dict[str, Any]], fallback: Iterable[dict[str, Any]] | None) -> list[dict[str, Any]]:
     """Add fallback books the tracker does not already supply (the tracker's reading is the fresher one)."""
     have = {row["book"] for row in rows}
