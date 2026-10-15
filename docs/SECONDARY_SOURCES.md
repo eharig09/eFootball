@@ -113,8 +113,25 @@ showing nothing, and carry no flags.
 CFBD's `/lines` endpoint already supplies DraftKings and Bovada quotes, stored
 per provider in `game_lines` with opening and current values. That covers the
 stated goal — comparing market expectations with model ratings — without a paid
-plan, so a commercial odds provider was **not** added. `ODDS_API_KEY` is
-reserved in `.env.example` for a later decision; nothing depends on it.
+plan, and nothing depends on a commercial provider.
+
+**The Odds API (optional, free tier).** `sports_aggregator/odds_api_tracker.py` adds a line *history* from
+DraftKings, FanDuel, BetMGM and BetRivers (ESPN BET is kept if the feed offers it; it was not in the feed
+when this was written). Rows land in `odds_api_lines` in `cfb.sqlite3` / `nfl.sqlite3`, appended only when a
+book's number moves, with the matching game id where one can be found.
+
+Credits are the constraint, so a sweep is guarded three ways: a calendar slot must be due (college: Sunday
+night, Tue/Thu/Fri noon, three Saturday waves; NFL: Wed, Thu night, Sat, two Sunday windows, Monday), the free
+`/events` endpoint must show a game inside eight days, and a shared ledger plus the API's own
+remaining-credit header must leave room under a 450-credit monthly cap. Spreads and totals for the US region
+cost 2 credits per sweep whatever the slate size, so the schedule uses roughly 120 of the 500.
+
+    python -m sports_aggregator.odds_api_tracker status
+    python -m sports_aggregator.odds_api_tracker sweep --league cfb --force   # spends 2 credits
+    python -m sports_aggregator.odds_api_tracker run-due                      # what a scheduler calls
+
+The free plan has no historical data, so history starts the day collection starts. Set `ODDS_API_KEY` in the
+environment (never in the repository).
 
 ---
 
