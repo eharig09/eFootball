@@ -65,22 +65,28 @@ DEFENSE_GROUPS = (
 
 # Offense vs defense pairings for the game page: (label, offense key, offense lower?, defense key, defense lower?, format)
 GAP_SECTIONS = (
-    ("Efficiency", "play-by-play EPA (ep-v2)", (
-        ("EPA / play", "epa_per_play", False, "def_epa_per_play", True, "signed2"),
-        ("Dropback EPA", "pass_epa_per_play", False, "def_pass_epa_per_play", True, "signed2"),
-        ("Rush EPA", "rush_epa_per_play", False, "def_rush_epa_per_play", True, "signed2"),
-        ("Success rate", "success_rate", False, "def_success_rate", True, "rate"),
-        ("Explosive rate", "explosive_rate", False, "def_explosive_rate", True, "rate"),
-        ("Havoc", "havoc_rate", True, "def_havoc_rate", False, "rate"),
-    )),
-    ("Traditional", "box score + drives", (
+    ("Points", "box score + drives", (
         ("Points", "points_per_game", False, "points_allowed_per_game", True, "f1"),
         ("Points / drive", "points_per_drive", False, "def_points_per_drive", True, "f2"),
         ("Red-zone TDs", "red_zone_td_rate", False, "def_red_zone_td_rate", True, "rate"),
-        ("Yards / dropback", "yards_per_dropback", False, "def_yards_per_dropback", True, "f2"),
-        ("Yards / rush", "yards_per_rush", False, "def_yards_per_rush", True, "f2"),
-        ("Ball security vs takeaways", "giveaways_per_game", True, "takeaways_per_game", False, "f1"),
+    )),
+    ("Efficiency", "play-by-play EPA (ep-v2) + drives", (
+        ("EPA / play", "epa_per_play", False, "def_epa_per_play", True, "signed2"),
+        ("Success rate", "success_rate", False, "def_success_rate", True, "rate"),
+        ("Explosive rate", "explosive_rate", False, "def_explosive_rate", True, "rate"),
         ("Three-and-outs", "three_and_out_rate", True, "def_three_and_out_rate", False, "rate"),
+    )),
+    ("Passing", "EPA (ep-v2) + box score", (
+        ("Dropback EPA", "pass_epa_per_play", False, "def_pass_epa_per_play", True, "signed2"),
+        ("Yards / dropback", "yards_per_dropback", False, "def_yards_per_dropback", True, "f2"),
+    )),
+    ("Rushing", "EPA (ep-v2) + box score", (
+        ("Rush EPA", "rush_epa_per_play", False, "def_rush_epa_per_play", True, "signed2"),
+        ("Yards / rush", "yards_per_rush", False, "def_yards_per_rush", True, "f2"),
+    )),
+    ("Mistakes", "turnovers + havoc", (
+        ("Ball security vs takeaways", "giveaways_per_game", True, "takeaways_per_game", False, "f1"),
+        ("Havoc", "havoc_rate", True, "def_havoc_rate", False, "rate"),
     )),
 )
 
