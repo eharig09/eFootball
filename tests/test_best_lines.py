@@ -167,6 +167,56 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(snap["home"]["spread"], -6.0)
 
 
+class OpenerTests(unittest.TestCase):
+    """Movement runs from the book's own opening line when a fallback source has it."""
+
+    def setUp(self):
+        self.c = make_connection()
+        self.addCleanup(self.c.close)
+        # the tracker first saw both books at 40.5 / +2.5, long after they opened
+        add(self.c, "draftkings", "2026-10-15T16:21:00", 2.5, total=40.5)
+        add(self.c, "fanduel", "2026-10-15T16:23:00", 2.5, total=40.5)
+
+    def espn_open(self, spread_open, total_open):
+        return [{"book": "draftkings", "name": "DraftKings", "source": "espn", "home_spread": 2.5, "total": 40.5,
+                 "opened_spread": spread_open, "opened_total": total_open, "updated": "x", "captured_at": "x"}]
+
+    def rows(self, fallback):
+        return {r["book"]: r for r in bl.display_rows(self.c, "g1", fallback=fallback)["rows"]}
+
+    def test_a_fallbacks_true_opener_replaces_the_trackers_first_seen_line(self):
+        draftkings = self.rows(self.espn_open(3.5, 43.5))["draftkings"]
+        self.assertEqual((draftkings["opened_spread"], draftkings["opened_total"]), (3.5, 43.5))
+        self.assertEqual((draftkings["spread_move"], draftkings["total_move"]), (-1.0, -3.0))
+        self.assertEqual(draftkings["opener_source"], "espn")
+
+    def test_the_trackers_reading_is_still_the_current_number(self):
+        fallback = self.espn_open(3.5, 43.5)
+        fallback[0]["home_spread"], fallback[0]["total"] = 9.9, 99.0         # a stale or different current line
+        draftkings = self.rows(fallback)["draftkings"]
+        self.assertEqual((draftkings["home_spread"], draftkings["total"], draftkings["source"]), (2.5, 40.5, "odds-api"))
+
+    def test_a_book_the_fallback_does_not_cover_keeps_its_first_seen_opener(self):
+        fanduel = self.rows(self.espn_open(3.5, 43.5))["fanduel"]
+        self.assertEqual((fanduel["spread_move"], fanduel["total_move"]), (0.0, 0.0))
+        self.assertNotIn("opener_source", fanduel)
+
+    def test_a_fallback_with_no_opener_changes_nothing(self):
+        draftkings = self.rows(self.espn_open(None, None))["draftkings"]
+        self.assertEqual((draftkings["opened_spread"], draftkings["spread_move"]), (2.5, 0.0))
+
+    def test_the_opener_does_not_touch_the_best_line_itself(self):
+        plain = bl.snapshot(self.c, "g1")
+        lent = bl.snapshot(self.c, "g1", fallback=self.espn_open(3.5, 43.5))
+        self.assertEqual(bl.signature(plain), bl.signature(lent))
+
+    def test_the_merge_does_not_change_the_callers_rows(self):
+        tracker = bl.tracker_rows(self.c, "g1")
+        before = [dict(r) for r in tracker]
+        bl.merge_fallback(tracker, self.espn_open(3.5, 43.5))
+        self.assertEqual(tracker, before)
+
+
 class TableProvidersTests(unittest.TestCase):
     """The Book by book table: CFBD's rows plus the tracked books, for display only."""
 

@@ -8,7 +8,7 @@
 {% from '_nfl_style_clash.html' import style_clash %}
 {% from '_nfl_comparables.html' import comparable_games %}
 {% from '_nfl_playcalling.html' import playcalling_lens %}
-{% from '_ui_kit.html' import ordinal, book_lines_panel, line_panel, table_panel, rank_gap_panel, wp_chart, swing_table, drive_chart, play_table, tendency_compare, penalty_compare %}
+{% from '_ui_kit.html' import ordinal, best_line_note, book_lines_panel, line_panel, table_panel, rank_gap_panel, wp_chart, swing_table, drive_chart, play_table, tendency_compare, penalty_compare %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -383,6 +383,7 @@
     </section>
     <section class="section" id="market" data-nfl-panel="stats">
         <div class="section-head"><div><p class="eyebrow">Market context</p><h2>Lines and against the number</h2></div></div>
+        {{ best_line_note(book_lines, game.home_team, game.away_team) }}
 
         <details class="ui-note"><summary>Method</summary><p>The spread is the away-team line. Coach records use every earlier stored game coached by that coach with a closing consensus line; they are descriptive, not picks.</p></details>
         <div class="ui-side-by-side">

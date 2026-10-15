@@ -193,6 +193,40 @@ def test_an_existing_ledger_gains_the_new_columns_and_keeps_its_rows(tmp_path):
     assert {"best_ats_spread", "best_ats_book", "best_total", "best_total_book"} <= set(row)
 
 
+def test_the_nfl_book_table_moves_from_espns_true_open(tmp_path):
+    repository = _repository(tmp_path)
+    _books(repository)                                   # the tracker first saw DraftKings at -3.0 / 44.5
+    with closing(repository._connect()) as c:
+        c.row_factory = sqlite3.Row
+        c.execute("DELETE FROM espn_market_lines WHERE game_id='g1'")
+        c.execute(
+            "INSERT INTO espn_market_lines (game_id,season,week,event_id,provider,final,open_spread,open_total,"
+            "open_home_moneyline,open_away_moneyline,current_spread,current_total,current_home_moneyline,"
+            "current_away_moneyline,fetched_at) VALUES ('g1',2026,1,'x','DraftKings',0,4.5,47.5,NULL,NULL,3.0,44.5,NULL,NULL,?)",
+            (datetime.now(timezone.utc).isoformat(),))
+        c.commit()
+        view = best_lines.display_rows(c, "g1", fallback=best_lines.espn_rows(c, "g1"))
+    rows = {r["book"]: r for r in view["rows"]}
+    # ESPN stores positive = home favored, so an open of 4.5 is a home spread of -4.5; now -3.0 is a move of +1.5
+    assert (rows["draftkings"]["spread_move"], rows["draftkings"]["total_move"]) == (1.5, -3.0)
+    assert rows["fanduel"]["spread_move"] == 0.0         # no ESPN opener for FanDuel: first-seen
+
+
+def test_the_best_number_note_renders_on_its_own(tmp_path):
+    repository = _repository(tmp_path)
+    _books(repository)
+    with closing(repository._connect()) as c:
+        c.row_factory = sqlite3.Row
+        view = best_lines.display_rows(c, "g1")
+    app = create_app({"TESTING": True, "REGISTER_LEGACY_DASHBOARDS": False, "NFL_DATABASE_PATH": str(repository.path),
+                      "CFB_DATABASE_PATH": str(tmp_path / "cfb.sqlite3")})
+    html = app.jinja_env.from_string(
+        "{% from '_ui_kit.html' import best_line_note %}{{ best_line_note(view, 'B', 'A') }}").render(view=view)
+    assert "Best number on offer" in html and "<table" not in html
+    assert app.jinja_env.from_string(
+        "{% from '_ui_kit.html' import best_line_note %}{{ best_line_note(none, 'B', 'A') }}").render().strip() == ""
+
+
 def test_the_shared_table_marks_the_best_numbers_on_both_pages(tmp_path):
     repository = _repository(tmp_path)
     _books(repository)
