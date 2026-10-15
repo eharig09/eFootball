@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sports_aggregator import best_lines
+
 from sports_aggregator.cfb.two_engine_live import (
     engine_b_rules_plain_language,
     manifest_for_games,
@@ -43,11 +45,21 @@ def default_week(repository, season: int) -> int | None:
     return weeks[-1] if weeks else None
 
 
-def _side_spread(packet: dict[str, Any], side: str | None) -> float | None:
+def _side_line(packet: dict[str, Any], side: str | None) -> tuple[float | None, str | None]:
+    """The line a pick is judged against and the book offering it: the best tracked number when the packet holds one."""
+    if side not in {"home", "away"}:
+        return None, None
+    best, book = best_lines.side_spread(packet.get("best_lines"), side)
+    if best is not None:
+        return best, book
     spread = packet.get("market_spread")
-    if spread is None or side not in {"home", "away"}:
-        return None
-    return float(spread) if side == "home" else -float(spread)
+    if spread is None:
+        return None, None
+    return (float(spread) if side == "home" else -float(spread)), None
+
+
+def _side_spread(packet: dict[str, Any], side: str | None) -> float | None:
+    return _side_line(packet, side)[0]
 
 
 def _result(game: dict[str, Any], side: str | None, spread: float | None) -> str:
@@ -70,7 +82,7 @@ def _total_result(game: dict[str, Any], direction: str | None, line: Any) -> str
 def _engine_row(game: dict[str, Any], packet: dict[str, Any], key: str) -> dict[str, Any]:
     leg = packet.get(key) or {}
     side = leg.get("selected_side")
-    spread = _side_spread(packet, side)
+    spread, line_book = _side_line(packet, side)
     detail = (
         route_plain_language(leg.get("route"))
         if key == "engine_a"
@@ -81,6 +93,7 @@ def _engine_row(game: dict[str, Any], packet: dict[str, Any], key: str) -> dict[
         "engine": "Engine A" if key == "engine_a" else "Engine B",
         "pick": leg.get("selected_team"),
         "line": spread,
+        "line_book": line_book,
         "detail": detail or leg.get("reason") or "Qualified model rule",
         "state": packet.get("state"),
         "state_label": packet.get("state_label"),

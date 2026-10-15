@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
+from sports_aggregator import best_lines
 from sports_aggregator.cfb import derived_cache
 from sports_aggregator.cfb import coach_elo
 from sports_aggregator.cfb import conditional_convergence as cc
@@ -1042,6 +1043,20 @@ def _implication(state: str, team: str | None) -> str:
     return "No frozen two-engine rule qualifies for this matchup."
 
 
+def _best_lines_for(repository: CFBRepository, game: dict[str, Any]) -> dict[str, Any] | None:
+    """The best tracked-book numbers as of now, frozen into the packet so the pick can be judged against them.
+
+    This is the judging layer, not the classifier: it is never read by the engines, and any failure simply leaves
+    the pick to be graded at the consensus line, exactly as before.
+    """
+    try:
+        game_id = int(game["game_id"])
+        with repository._reader() as connection:
+            return best_lines.snapshot(connection, game_id, fallback=best_lines.cfbd_rows(connection, game_id))
+    except Exception:
+        return None
+
+
 def classify_game(
     repository: CFBRepository,
     game: dict[str, Any],
@@ -1120,6 +1135,10 @@ def classify_game(
         # holds current + opening, no timeline), so a history snapshot needs
         # to capture it here rather than reading it back afterward.
         "market_spread": spread,
+        # What a bettor could actually have taken: the best number across the tracked books at this moment. New picks
+        # are judged against it (see _pick_spread); packets frozen before this existed carry none and keep the
+        # consensus grading.
+        "best_lines": _best_lines_for(repository, game),
         "portfolio_reference": PORTFOLIO_HISTORY,
         "method_note": (
             "Pregame-only classification. Engine A uses corrected walk-forward "
@@ -1258,6 +1277,7 @@ def _packet_signature(packet: dict[str, Any]) -> str:
         "selected_side": packet.get("selected_side"),
         "selected_team": packet.get("selected_team"),
         "market_spread": packet.get("market_spread"),
+        "best_lines": best_lines.signature(packet.get("best_lines")),
         "engine_a": packet.get("engine_a") or {},
         "engine_b": packet.get("engine_b") or {},
         "totals": packet.get("totals") or {},
@@ -1359,10 +1379,26 @@ def freeze_week(repository: CFBRepository, *, season: int, week: int) -> dict[st
 
 
 def _season_grade_blank() -> dict[str, Any]:
-    return {"wins": 0, "losses": 0, "pushes": 0, "n": 0}
+    return {"wins": 0, "losses": 0, "pushes": 0, "n": 0, "at_best_line": 0}
 
 
-def _season_grade(bucket: dict[str, Any], edge: float) -> None:
+def _pick_spread(packet: dict[str, Any], side: str, consensus: Any) -> tuple[float | None, bool]:
+    """The spread a pick on `side` is judged against, and whether it is the best line.
+
+    A packet frozen with best_lines is judged at the best number on offer for that side; one frozen before the
+    tracker existed, or for a game no tracked book priced, falls back to the consensus line as it always did.
+    """
+    best, _book = best_lines.side_spread(packet.get("best_lines"), side)
+    if best is not None:
+        return best, True
+    if consensus is None:
+        return None, False
+    return (float(consensus) if side == "home" else -float(consensus)), False
+
+
+def _season_grade(bucket: dict[str, Any], edge: float, *, best: bool = False) -> None:
+    if best:
+        bucket["at_best_line"] = bucket.get("at_best_line", 0) + 1
     if abs(edge) < 1e-9:
         bucket["pushes"] += 1
     elif edge > 0:
@@ -1432,15 +1468,16 @@ def record_summary(
         lines = game_lines(repository, int(row["game_id"]))
         spread = lines.get("consensus_spread")
 
-        if spread is not None:
-            for engine_key, bucket in (("engine_a", engine_a), ("engine_b", engine_b)):
-                leg = packet.get(engine_key) or {}
-                side = leg.get("selected_side")
-                if not leg.get("qualified") or side not in ("home", "away"):
-                    continue
-                margin = home_margin if side == "home" else -home_margin
-                side_spread = float(spread) if side == "home" else -float(spread)
-                _season_grade(bucket, margin + side_spread)
+        for engine_key, bucket in (("engine_a", engine_a), ("engine_b", engine_b)):
+            leg = packet.get(engine_key) or {}
+            side = leg.get("selected_side")
+            if not leg.get("qualified") or side not in ("home", "away"):
+                continue
+            side_spread, used_best = _pick_spread(packet, side, spread)
+            if side_spread is None:
+                continue
+            margin = home_margin if side == "home" else -home_margin
+            _season_grade(bucket, margin + side_spread, best=used_best)
 
         # Totals are graded only when the exact pregame state was retained in
         # the manifest. Rebuilding an old total during a web request is both
@@ -1504,8 +1541,6 @@ def season_record_first_appearance(repository: CFBRepository, season: int) -> di
         packet = json.loads(row["packet_json"])
         home_margin = float(row["home_points"]) - float(row["away_points"])
         spread = row["market_spread"]
-        if spread is None:
-            continue
         for engine_key, bucket in (("engine_a", engine_a), ("engine_b", engine_b)):
             key = (int(row["game_id"]), engine_key)
             if first_seen.get(key):
@@ -1514,10 +1549,12 @@ def season_record_first_appearance(repository: CFBRepository, season: int) -> di
             side = leg.get("selected_side")
             if not leg.get("qualified") or side not in ("home", "away"):
                 continue
+            side_spread, used_best = _pick_spread(packet, side, spread)
+            if side_spread is None:
+                continue
             first_seen[key] = True
             margin = home_margin if side == "home" else -home_margin
-            side_spread = float(spread) if side == "home" else -float(spread)
-            _season_grade(bucket, margin + side_spread)
+            _season_grade(bucket, margin + side_spread, best=used_best)
 
     return {
         "season": int(season),
