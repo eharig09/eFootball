@@ -18,7 +18,7 @@
   <tbody>{% for row in rows %}<tr>
     <td><a href="{{ url_for('cfb.game_preview', game_id=row.game_id) }}"><b>{{ row.away_team }}</b><span>@ {{ row.home_team }}</span></a></td>
     <td>{{ row.date_label }}<span>{{ row.time_label or 'TBD' }}</span></td><td><strong>{{ row.pick }}</strong></td>
-    <td>{% if kind == 'totals' %}{{ row.line | cell('f1') }}{% else %}{{ row.line | cell('signed') }}{% endif %}</td>
+    <td>{% if kind == 'totals' %}{{ row.line | cell('f1') }}{% else %}{{ row.line | cell('signed') }}{% if row.line_book %}<span>best &middot; {{ row.line_book }}</span>{% endif %}{% endif %}</td>
     {% if kind == 'totals' %}<td>{{ row.projected_total | cell('f1') }}</td><td>{{ row.edge | cell('signed') }}</td>{% endif %}
     <td>{{ row.detail }}</td><td><span class="result result-{{ row.result | lower }}">{{ row.result }}</span></td>
   </tr>{% else %}<tr><td colspan="8" class="empty-cell">No qualifying picks match these filters.</td></tr>{% endfor %}</tbody>

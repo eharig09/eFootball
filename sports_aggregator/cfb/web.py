@@ -42,6 +42,7 @@ from sports_aggregator.cfb.matchup_research import (
     matchup_research_packet, TOTALS_RESEARCH_OVERALL, TOTALS_TRACKED_OVERALL,
     TOTALS_TRACKED_MIN_WIN_RATE, TOTALS_WALK_FORWARD)
 from sports_aggregator.cfb.lines import game_lines, lines_by_game, line_history
+from sports_aggregator import best_lines
 from sports_aggregator.cfb import line_tracking as cfb_line_tracking
 from sports_aggregator.cfb.scoreboard_projection import projections_for_games
 from sports_aggregator.cfb import convergence_panel
@@ -202,6 +203,12 @@ def _kit_identity(identity: dict) -> dict:
     """The two fields the shared UI kit paints a team with: its readable accent and a logo that shows on dark."""
     return {"color": identity.get("accent") or identity.get("fill"),
             "logo_url": identity.get("logo_dark") or identity.get("logo")}
+
+
+def _book_lines(repository, game_id: int):
+    """Each tracked sportsbook's current number side by side, with the best of each flagged (the pick-judging line)."""
+    with repository._reader() as connection:
+        return best_lines.display_rows(connection, game_id, fallback=best_lines.cfbd_rows(connection, game_id))
 
 
 def _optional_panel(name: str, build):
@@ -1163,6 +1170,7 @@ def game_preview(game_id: int):
         game, market, line_history(repository, game_id), two_engine_history, projection,
         two_engine_signal,
         {game["away_team"]: away_identity, game["home_team"]: home_identity}))
+    book_lines = _optional_panel("sportsbook lines", lambda: _book_lines(repository, game_id))
     away_schedule = _label_games(repository.team_schedule(game["away_team_id"], season))
     home_schedule = _label_games(repository.team_schedule(game["home_team_id"], season))
     return render_template(
@@ -1211,6 +1219,7 @@ def game_preview(game_id: int):
         season_record_first_appearance=season_record_first_appearance,
         two_engine_history=two_engine_history,
         line_tracking=line_tracking,
+        book_lines=book_lines,
         projection_lines=projection_narrative(projection),
         projection_table=views.game_projection_table(projection),
         game_shape=game_shape(

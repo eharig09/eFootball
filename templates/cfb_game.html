@@ -534,6 +534,26 @@
             </div>
         </div>
 
+        {# ---------- Sportsbook lines: every tracked book side by side; picks are judged at the best number ---------- #}
+        {% if book_lines and book_lines.has_data %}
+        <div class="lab-card" id="book-lines">
+            <div class="lab-card-title">Sportsbook lines</div>
+            {% set best = book_lines.best %}
+            {% if best %}<p class="ui-panel-note">Best number on offer: {% if best.home %}<b>{{ game.home_team }} {{ best.home.spread | cell('signed') }}</b> at {{ best.home.name }}{% endif %}{% if best.away %} &middot; <b>{{ game.away_team }} {{ best.away.spread | cell('signed') }}</b> at {{ best.away.name }}{% endif %}{% if best.over %} &middot; <b>Over {{ best.over.total | cell('f1') }}</b> at {{ best.over.name }}{% endif %}{% if best.under %} &middot; <b>Under {{ best.under.total | cell('f1') }}</b> at {{ best.under.name }}{% endif %}. New picks are judged against these numbers.</p>{% endif %}
+            <table class="ui-mini book-lines">
+                <thead><tr><th>Book</th><th class="num">{{ game.home_team }}</th><th class="num">{{ game.away_team }}</th><th class="num">Total</th><th class="num">Spread / total since first seen</th><th>Updated</th></tr></thead>
+                <tbody>{% for b in book_lines.rows %}<tr>
+                    <th scope="row">{{ b.name }}</th>
+                    <td class="num{{ ' best-line' if b.best_home }}">{{ b.home_spread | cell('signed') }}{% if b.home_price is not none %} <small>{{ '%+d'|format(b.home_price|int) }}</small>{% endif %}</td>
+                    <td class="num{{ ' best-line' if b.best_away }}">{{ b.away_spread | cell('signed') }}{% if b.away_price is not none %} <small>{{ '%+d'|format(b.away_price|int) }}</small>{% endif %}</td>
+                    <td class="num"><span class="{{ 'best-line' if b.best_over }}">o{{ b.total | cell('f1') }}{% if b.over_price is not none %} <small>{{ '%+d'|format(b.over_price|int) }}</small>{% endif %}</span> <span class="{{ 'best-line' if b.best_under }}">u{{ b.total | cell('f1') }}{% if b.under_price is not none %} <small>{{ '%+d'|format(b.under_price|int) }}</small>{% endif %}</span></td>
+                    <td class="num">{% if b.spread_move is not none or b.total_move is not none %}{{ b.spread_move | cell('signed') }} / {{ b.total_move | cell('signed') }}{% else %}&mdash;{% endif %}</td>
+                    <td>{{ (b.updated or '')[:16].replace('T', ' ') }}</td>
+                </tr>{% endfor %}</tbody>
+            </table>
+        </div>
+        {% endif %}
+
         {# ---------- Line tracking: market vs engine over time, logos where a pick was confirmed ---------- #}
         {% if line_tracking %}
         <div class="lab-card">
