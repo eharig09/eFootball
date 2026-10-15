@@ -66,6 +66,21 @@ class PanelTests(unittest.TestCase):
         self.assertEqual(reverse["lean"], "T0")
 
 
+    def test_matchup_sections_come_in_reading_order_with_every_stat_once(self):
+        keys = {key for _, _, rows in team_panels.GAP_SECTIONS
+                for _l, off, _o, dfn, _d, _f in rows for key in (off, dfn)}
+        pool = [_pool_row(f"T{index}", **{key: float(index) for key in keys}) for index in range(10)]
+        self.pools = {2026: pool}
+        card = team_panels.matchup_cards(_Repository(self.pools), 2026, "T0", "T9")["cards"][0]
+        self.assertEqual([section["label"] for section in card["sections"]],
+                         ["Points", "Efficiency", "Passing", "Rushing", "Mistakes"])
+        labels = [row["label"] for section in card["sections"] for row in section["rows"]]
+        self.assertEqual(len(labels), len(set(labels)))
+        self.assertEqual(labels, ["Points", "Points / drive", "Red-zone TDs", "EPA / play", "Success rate",
+                                  "Explosive rate", "Three-and-outs", "Dropback EPA", "Yards / dropback",
+                                  "Rush EPA", "Yards / rush", "Ball security vs takeaways", "Havoc"])
+
+
 class RealDatabaseSmokeTests(unittest.TestCase):
     @unittest.skipUnless(Path("instance/cfb.sqlite3").exists(), "needs the local college football database")
     def test_pool_covers_fbs_and_panels_build(self):

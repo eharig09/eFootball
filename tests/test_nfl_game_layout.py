@@ -54,10 +54,10 @@ class GameLayoutTests(unittest.TestCase):
         self.assertNotIn("expanded-matchup", self.html)
         self.assertNotIn("unit-matchup-card", self.html)
 
-    def test_matchups_shows_two_rank_gap_groupings_in_order(self):
-        traditional = self.html.index("('Traditional', 'PFF')")
-        efficiency = self.html.index("('Efficiency', 'Next Gen Stats')")
-        self.assertLess(traditional, efficiency)
+    def test_matchups_shows_one_rank_gap_table_per_side_in_category_order(self):
+        self.assertIn("('Points', 'Efficiency', 'Passing', 'Rushing', 'Mistakes')", self.html)
+        self.assertNotIn("('Traditional', 'PFF')", self.html)
+        self.assertNotIn("('Efficiency', 'Next Gen Stats')", self.html)
 
     def test_review_tab_carries_the_play_story(self):
         self.assertEqual(self.panel("plays"), "review")

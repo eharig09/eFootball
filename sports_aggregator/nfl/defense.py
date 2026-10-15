@@ -82,36 +82,43 @@ def defensive_profile(repository: NFLRepository, pff: NFLPFFService, season: int
             "groups": groups, "has_data": bool(groups)}
 
 
+# Each row names the data pool it reads: (label, offense key, defense key, format,
+# offense lower is better, defense lower is better, pool). Rows are grouped by what
+# a reader asks about -- points, efficiency, passing, rushing, mistakes -- not by
+# where the number comes from, so one category can mix box-score, play-by-play,
+# Next Gen and PFF rows.
 MATCHUP_SPECS = (
-    ("Traditional", "NFL box scores", (
-        ("Scoring", "points_per_game", "points_allowed_per_game", "f1", False, True),
-        ("Passing yards / game", "passing_yards_per_game", "pass_yards_allowed_per_game", "f1", False, True),
-        ("Rushing yards / game", "rushing_yards_per_game", "rush_yards_allowed_per_game", "f1", False, True),
-        ("Completion rate", "completion_rate", "completion_rate_allowed", "rate", False, True),
-        ("Pass yards / attempt", "pass_yards_per_attempt", "pass_yards_per_attempt_allowed", "f2", False, True),
-        ("Rush yards / carry", "rush_yards_per_carry", "rush_yards_per_carry_allowed", "f2", False, True),
-        ("First downs / game", "first_downs_per_game", "first_downs_allowed_per_game", "f1", False, True),
-        ("Ball security vs takeaways", "turnovers_per_game", "takeaways_per_game", "f1", True, False),
-        ("Protection vs sacks", "sacks_allowed_per_game", "sacks_per_game", "f1", True, False),
+    ("Points", "NFL box scores", (
+        ("Scoring", "points_per_game", "points_allowed_per_game", "f1", False, True, "traditional"),
     )),
-    ("Efficiency", "nflfastR play-by-play", (
-        ("Overall EPA / play", "epa_per_play", "defensive_epa_allowed", "signed2", False, True),
-        ("Dropback EPA", "pass_epa_per_play", "defensive_pass_epa_allowed", "signed2", False, True),
-        ("Rush EPA", "rush_epa_per_play", "defensive_rush_epa_allowed", "signed2", False, True),
-        ("Success rate", "success_rate", "defensive_success_allowed", "rate", False, True),
-        ("Explosive rate", "explosive_rate", "defensive_explosive_allowed", "rate", False, True),
+    ("Efficiency", "nflfastR play-by-play + box scores", (
+        ("Overall EPA / play", "epa_per_play", "defensive_epa_allowed", "signed2", False, True, "efficiency"),
+        ("Success rate", "success_rate", "defensive_success_allowed", "rate", False, True, "efficiency"),
+        ("Explosive rate", "explosive_rate", "defensive_explosive_allowed", "rate", False, True, "efficiency"),
+        ("First downs / game", "first_downs_per_game", "first_downs_allowed_per_game", "f1", False, True, "traditional"),
     )),
-    ("Next Gen Stats", "NFL Next Gen Stats", (
-        ("CPOE", "pass_cpoe", "pass_cpoe", "pct", False, True),
-        ("Receiver separation", "rec_separation", "rec_separation", "f2", False, True),
-        ("Rush YOE / carry", "rush_yards_over_expected_per_carry", "rush_yards_over_expected_per_carry", "signed2", False, True),
-        ("YACOE / reception", "rec_yac_over_expected_per_reception", "rec_yac_over_expected_per_reception", "signed2", False, True),
+    ("Passing", "box scores, nflfastR, Next Gen Stats, PFF", (
+        ("Dropback EPA", "pass_epa_per_play", "defensive_pass_epa_allowed", "signed2", False, True, "efficiency"),
+        ("Passing yards / game", "passing_yards_per_game", "pass_yards_allowed_per_game", "f1", False, True, "traditional"),
+        ("Pass yards / attempt", "pass_yards_per_attempt", "pass_yards_per_attempt_allowed", "f2", False, True, "traditional"),
+        ("Completion rate", "completion_rate", "completion_rate_allowed", "rate", False, True, "traditional"),
+        ("CPOE", "pass_cpoe", "pass_cpoe", "pct", False, True, "ngs"),
+        ("Receiver separation", "rec_separation", "rec_separation", "f2", False, True, "ngs"),
+        ("YACOE / reception", "rec_yac_over_expected_per_reception", "rec_yac_over_expected_per_reception", "signed2", False, True, "ngs"),
+        ("Pass block vs pass rush", "pass_block_grade", "pass_rush_grade", "f1", False, False, "pff"),
+        ("Routes vs coverage", "route_grade", "coverage_grade", "f1", False, False, "pff"),
     )),
-    ("PFF", "PFF licensed local data", (
-        ("Pass block vs pass rush", "pass_block_grade", "pass_rush_grade", "f1", False, False),
-        ("Run block vs run defense", "run_block_grade", "run_defense_grade", "f1", False, False),
-        ("Routes vs coverage", "route_grade", "coverage_grade", "f1", False, False),
-        ("Rushing vs run defense", "rushing_grade", "run_defense_grade", "f1", False, False),
+    ("Rushing", "box scores, nflfastR, Next Gen Stats, PFF", (
+        ("Rush EPA", "rush_epa_per_play", "defensive_rush_epa_allowed", "signed2", False, True, "efficiency"),
+        ("Rushing yards / game", "rushing_yards_per_game", "rush_yards_allowed_per_game", "f1", False, True, "traditional"),
+        ("Rush yards / carry", "rush_yards_per_carry", "rush_yards_per_carry_allowed", "f2", False, True, "traditional"),
+        ("Rush YOE / carry", "rush_yards_over_expected_per_carry", "rush_yards_over_expected_per_carry", "signed2", False, True, "ngs"),
+        ("Run block vs run defense", "run_block_grade", "run_defense_grade", "f1", False, False, "pff"),
+        ("Rushing vs run defense", "rushing_grade", "run_defense_grade", "f1", False, False, "pff"),
+    )),
+    ("Mistakes", "NFL box scores", (
+        ("Ball security vs takeaways", "turnovers_per_game", "takeaways_per_game", "f1", True, False, "traditional"),
+        ("Protection vs sacks", "sacks_allowed_per_game", "sacks_per_game", "f1", True, False, "traditional"),
     )),
 )
 
@@ -121,27 +128,28 @@ def matchup_defense_cards(repository: NFLRepository, pff: NFLPFFService, season:
                           baseline_season: int, pff_season: int | None) -> list[dict[str, Any]]:
     cutoff = before_week if baseline_season == season else None
     offense_pools = {
-        "Traditional": repository.league_team_summary(baseline_season, before_week=cutoff),
-        "Efficiency": repository.league_efficiency(baseline_season, before_week=cutoff),
-        "Next Gen Stats": repository.league_ngs_summary(baseline_season, before_week=cutoff),
-        "PFF": pff.league_unit_grades(pff_season) if pff_season is not None else [],
+        "traditional": repository.league_team_summary(baseline_season, before_week=cutoff),
+        "efficiency": repository.league_efficiency(baseline_season, before_week=cutoff),
+        "ngs": repository.league_ngs_summary(baseline_season, before_week=cutoff),
+        "pff": pff.league_unit_grades(pff_season) if pff_season is not None else [],
     }
     defense_pools = {
-        "Traditional": repository.league_defensive_summary(baseline_season, before_week=cutoff),
-        "Efficiency": offense_pools["Efficiency"],
-        "Next Gen Stats": repository.league_ngs_summary(
+        "traditional": repository.league_defensive_summary(baseline_season, before_week=cutoff),
+        "efficiency": offense_pools["efficiency"],
+        "ngs": repository.league_ngs_summary(
             baseline_season, before_week=cutoff, defense=True),
-        "PFF": offense_pools["PFF"],
+        "pff": offense_pools["pff"],
     }
     cards = []
     for offense, defense in ((away, home), (home, away)):
         sections = []
         for label, source, specs in MATCHUP_SPECS:
-            offense_pool = offense_pools[label]; defense_pool = defense_pools[label]
-            offense_values = next((row for row in offense_pool if row.get("team") == offense), {})
-            defense_values = next((row for row in defense_pool if row.get("team") == defense), {})
             rows = []
-            for metric_label, offense_key, defense_key, value_format, offense_lower, defense_lower in specs:
+            for (metric_label, offense_key, defense_key, value_format,
+                 offense_lower, defense_lower, pool) in specs:
+                offense_pool = offense_pools[pool]; defense_pool = defense_pools[pool]
+                offense_values = next((row for row in offense_pool if row.get("team") == offense), {})
+                defense_values = next((row for row in defense_pool if row.get("team") == defense), {})
                 offense_value = offense_values.get(offense_key); defense_value = defense_values.get(defense_key)
                 if offense_value is None or defense_value is None:
                     continue

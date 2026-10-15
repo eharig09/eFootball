@@ -1004,12 +1004,10 @@
     <div class="section-note">
         {{ gap_matchups.season }} FBS ranks{% if gap_matchups.baseline %} (prior-season baseline until this season has a real sample){% endif %}. Each row sets one offense's rank against what the opposing defense allows; the left edge is #1 and a connector spans the gap. An edge needs at least a five-rank separation and is descriptive, not a projection. Hover or focus a row for the values.
     </div>
-    {% for wanted, heading in ((('Efficiency',), 'Efficiency'), (('Traditional',), 'Scoring, drives and yardage')) %}
-    <h3 class="subhead">{{ heading }}</h3>
+    {% set gap_categories = ('Points', 'Efficiency', 'Passing', 'Rushing', 'Mistakes') %}
     <div class="ui-deep-grid">
-        {% for card in gap_matchups.cards %}{% if card.has_data %}{{ rank_gap_panel(card, gap_identities[card.offense], gap_identities[card.defense], wanted) }}{% endif %}{% endfor %}
+        {% for card in gap_matchups.cards %}{% if card.has_data %}{{ rank_gap_panel(card, gap_identities[card.offense], gap_identities[card.defense], gap_categories) }}{% endif %}{% endfor %}
     </div>
-    {% endfor %}
 </section>
 {% endif %}
 {{ cfb_style_clash(style_clash_data, game, lines) }}
