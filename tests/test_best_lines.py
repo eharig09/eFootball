@@ -167,6 +167,74 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(snap["home"]["spread"], -6.0)
 
 
+class TableProvidersTests(unittest.TestCase):
+    """The Book by book table: CFBD's rows plus the tracked books, for display only."""
+
+    def cfbd(self):
+        return [
+            {"provider": "Bovada", "spread": 3.5, "spread_open": 3.0, "over_under": 47.5, "over_under_open": 47.0,
+             "formatted_spread": "Away -3.5", "spread_move": 0.5, "total_move": 0.5, "home_moneyline": 150,
+             "away_moneyline": -175, "fetched_at": "2026-10-15T10:10:00"},
+            {"provider": "DraftKings", "spread": 3.5, "spread_open": 2.5, "over_under": 47.5, "over_under_open": 49.5,
+             "formatted_spread": "Away -3.5", "spread_move": 1.0, "total_move": -2.0, "home_moneyline": 150,
+             "away_moneyline": -180, "fetched_at": "2026-10-15T10:10:00"},
+        ]
+
+    def tracked(self):
+        def row(book, spread, total, captured, opened_spread=None, opened_total=None):
+            return {"book": book, "name": bl.book_name(book), "source": "odds-api", "home_spread": spread, "total": total,
+                    "captured_at": captured, "updated": captured, "opened_spread": opened_spread if opened_spread is not None else spread,
+                    "opened_total": opened_total if opened_total is not None else total}
+        return [row("draftkings", 3.0, 46.5, "2026-10-15T15:40:00+00:00"),
+                row("fanduel", 3.5, 47.0, "2026-10-15T15:40:00+00:00", opened_spread=4.0, opened_total=47.5),
+                {"book": "draftkings", "name": "DraftKings", "source": "cfbd", "home_spread": 9.9, "total": 99.0}]
+
+    def merged(self):
+        return {p["provider"]: p for p in bl.table_providers(self.cfbd(), self.tracked(), "Old Dominion", "Georgia Southern")}
+
+    def test_new_books_join_and_untracked_ones_are_kept_as_they_were(self):
+        merged = self.merged()
+        self.assertEqual(set(merged), {"Bovada", "DraftKings", "FanDuel"})
+        self.assertEqual(merged["Bovada"], self.cfbd()[0])
+
+    def test_the_trackers_fresher_draftkings_replaces_cfbds_but_keeps_its_opener_and_moneylines(self):
+        draftkings = self.merged()["DraftKings"]
+        self.assertEqual((draftkings["spread"], draftkings["over_under"]), (3.0, 46.5))
+        self.assertEqual(draftkings["spread_move"], 0.5)           # 3.0 now against CFBD's true open of 2.5
+        self.assertEqual(draftkings["total_move"], -3.0)           # 46.5 against 49.5
+        self.assertEqual((draftkings["home_moneyline"], draftkings["away_moneyline"]), (150, -180))
+        self.assertEqual(draftkings["fetched_at"], "2026-10-15T15:40:00+00:00")
+
+    def test_a_tracker_only_book_moves_from_the_first_line_the_tracker_saw(self):
+        fanduel = self.merged()["FanDuel"]
+        self.assertEqual((fanduel["spread_move"], fanduel["total_move"]), (-0.5, -0.5))
+        self.assertIsNone(fanduel["home_moneyline"])
+
+    def test_the_favorite_is_named_the_way_cfbd_formats_it(self):
+        merged = self.merged()
+        self.assertEqual(merged["FanDuel"]["formatted_spread"], "Georgia Southern -3.5")      # home is the dog
+        flipped = bl.table_providers([], [{"book": "fanduel", "name": "FanDuel", "source": "odds-api", "home_spread": -6.0,
+                                           "total": 50.0, "captured_at": "t", "opened_spread": -6.0, "opened_total": 50.0}],
+                                     "Old Dominion", "Georgia Southern")
+        self.assertEqual(flipped[0]["formatted_spread"], "Old Dominion -6.0")
+        self.assertEqual(bl._formatted_spread(0.0, "A", "B"), "Pick'em")
+        self.assertIsNone(bl._formatted_spread(None, "A", "B"))
+
+    def test_the_original_provider_list_is_never_changed(self):
+        original = self.cfbd()
+        snapshot = [dict(p) for p in original]
+        bl.table_providers(original, self.tracked(), "Old Dominion", "Georgia Southern")
+        self.assertEqual(original, snapshot)
+
+    def test_no_tracked_rows_means_the_table_is_exactly_as_before(self):
+        self.assertEqual(bl.table_providers(self.cfbd(), [], "Home", "Away"), self.cfbd())
+        self.assertEqual(bl.table_providers(self.cfbd(), [{"book": "draftkings", "source": "cfbd"}], "Home", "Away"), self.cfbd())
+
+    def test_the_rows_come_out_in_a_stable_alphabetical_order(self):
+        order = [p["provider"] for p in bl.table_providers(self.cfbd(), self.tracked(), "Home", "Away")]
+        self.assertEqual(order, sorted(order, key=str.casefold))
+
+
 class DisplayTests(unittest.TestCase):
     def test_the_best_numbers_are_flagged_and_movement_is_shown(self):
         c = make_connection()

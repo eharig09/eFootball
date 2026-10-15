@@ -1226,7 +1226,11 @@ def game_preview(game_id: int):
             game["away_team"], game["home_team"], away_pace, home_pace,
             away_drives, home_drives, away_stats.get("advanced"), home_stats.get("advanced")),
         lines=market,
-        market_table=views.market_table(market, game),
+        # Display only: the tracked books join the table, but `lines` (the consensus the engines read) is untouched.
+        market_table=views.market_table(
+            {**market, "providers": best_lines.table_providers(
+                market.get("providers") or [], (book_lines or {}).get("rows") or [],
+                game["home_team"], game["away_team"])}, game),
         # Every arrival ranked together, not portal additions alone: a team's
         # best signee belongs beside the transfers he is competing with.
         away_arrivals_table=views.arrivals_table(

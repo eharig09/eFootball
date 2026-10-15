@@ -445,11 +445,17 @@
 {% endmacro %}
 
 {# Generic line chart from pick_record.line_chart() geometry. Series with markers=false draw as dashed reference lines. #}
+{# The best number on offer across the tracked books, and what it means for the picks. #}
+{% macro best_line_note(book_lines, home, away) %}
+{% if book_lines and book_lines.has_data %}{% set best = book_lines.best %}
+{% if best %}<p class="ui-panel-note">Best number on offer: {% if best.home %}<b>{{ home }} {{ best.home.spread | cell('signed') }}</b> at {{ best.home.name }}{% endif %}{% if best.away %} &middot; <b>{{ away }} {{ best.away.spread | cell('signed') }}</b> at {{ best.away.name }}{% endif %}{% if best.over %} &middot; <b>Over {{ best.over.total | cell('f1') }}</b> at {{ best.over.name }}{% endif %}{% if best.under %} &middot; <b>Under {{ best.under.total | cell('f1') }}</b> at {{ best.under.name }}{% endif %}. New picks are judged against these numbers.</p>{% endif %}
+{% endif %}
+{% endmacro %}
+
 {# Every tracked book's number side by side, the best of each highlighted (best_lines.display_rows output). #}
 {% macro book_lines_panel(book_lines, home, away) %}
 {% if book_lines and book_lines.has_data %}
-{% set best = book_lines.best %}
-{% if best %}<p class="ui-panel-note">Best number on offer: {% if best.home %}<b>{{ home }} {{ best.home.spread | cell('signed') }}</b> at {{ best.home.name }}{% endif %}{% if best.away %} &middot; <b>{{ away }} {{ best.away.spread | cell('signed') }}</b> at {{ best.away.name }}{% endif %}{% if best.over %} &middot; <b>Over {{ best.over.total | cell('f1') }}</b> at {{ best.over.name }}{% endif %}{% if best.under %} &middot; <b>Under {{ best.under.total | cell('f1') }}</b> at {{ best.under.name }}{% endif %}. New picks are judged against these numbers.</p>{% endif %}
+{{ best_line_note(book_lines, home, away) }}
 <table class="ui-mini book-lines">
     <thead><tr><th>Book</th><th class="num">{{ home }}</th><th class="num">{{ away }}</th><th class="num">Total</th><th class="num">Spread / total since first seen</th><th>Updated</th></tr></thead>
     <tbody>{% for b in book_lines.rows %}<tr>

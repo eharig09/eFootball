@@ -1,7 +1,7 @@
 {% extends "_layout.html" %}
 {% from "_tables.html" import conference_mark, data_table, linked_piece_meta, story_list, tabbed_tables, tabs_script %}
 {% from "_cfb_style_clash.html" import cfb_style_clash %}
-{% from "_ui_kit.html" import book_lines_panel, line_panel, rank_gap_panel, grade_matchup_panel, unit_grades_compare, production_compare, measure_compare, player_matchup_panel, advanced_compare, tendency_compare, penalty_compare %}
+{% from "_ui_kit.html" import best_line_note, book_lines_panel, line_panel, rank_gap_panel, grade_matchup_panel, unit_grades_compare, production_compare, measure_compare, player_matchup_panel, advanced_compare, tendency_compare, penalty_compare %}
 {% from "_cfb_page_visuals.html" import compact_passing_matchups, compact_rushing_matchups, drive_outcomes_module, game_shape_module, probability_track, recent_form, visual_scripts %}
 
 {% block title %}{{ game.away_team }} at {{ game.home_team }} | Game Preview{% endblock %}
@@ -923,6 +923,7 @@
         Each book with its movement since opening. The spread between books is the part
                 worth reading.
     </div>
+    {{ best_line_note(book_lines, game.home_team, game.away_team) }}
     {{ data_table(market_table) }}
 </section>
 

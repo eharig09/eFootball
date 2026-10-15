@@ -198,6 +198,56 @@ def signature(best: dict[str, Any] | None) -> list[Any] | None:
 
 # ------------------------------------------------------------------ for display
 
+def _formatted_spread(home_spread: float | None, home: str, away: str) -> str | None:
+    """'Georgia Southern -3.5': the favorite and its number, the way CFBD formats a quote."""
+    if home_spread is None:
+        return None
+    if home_spread < 0:
+        return f"{home} {home_spread:+.1f}"
+    if home_spread > 0:
+        return f"{away} {-home_spread:+.1f}"
+    return "Pick'em"
+
+
+def _cfbd_book(provider: Any) -> str | None:
+    return CFBD_BOOKS.get(str(provider or "").strip().casefold())
+
+
+def table_providers(providers: list[dict[str, Any]], tracked: Iterable[dict[str, Any]], home: str, away: str
+                    ) -> list[dict[str, Any]]:
+    """CFBD's provider rows plus the tracked books, shaped like `game_lines` rows, for the Book by book table.
+
+    DISPLAY ONLY. `game_lines` consensus is an input to the engines, so it is never fed from here. For a book both
+    have (DraftKings) the tracker's fresher reading replaces CFBD's but keeps CFBD's opening numbers and moneylines,
+    so movement still runs from the true open; a book only the tracker has (FanDuel, BetMGM, BetRivers) moves from the
+    first line the tracker saw. Books only CFBD has (Bovada) are kept as they were.
+    """
+    tracked = [row for row in tracked if row.get("source") == "odds-api"]
+    if not tracked:
+        return list(providers)
+    cfbd_by_book = {}
+    for provider in providers:
+        key = _cfbd_book(provider.get("provider"))
+        if key:
+            cfbd_by_book.setdefault(key, provider)
+    merged = [p for p in providers if _cfbd_book(p.get("provider")) not in {row["book"] for row in tracked}]
+    for row in tracked:
+        old = cfbd_by_book.get(row["book"]) or {}
+        spread, total = _number(row.get("home_spread")), _number(row.get("total"))
+        spread_open = _number(old.get("spread_open")) if old.get("spread_open") is not None else _number(row.get("opened_spread"))
+        total_open = _number(old.get("over_under_open")) if old.get("over_under_open") is not None else _number(row.get("opened_total"))
+        merged.append({
+            "home_moneyline": None, "away_moneyline": None, "home_win_prob": None,
+            **{k: v for k, v in old.items() if k in ("home_moneyline", "away_moneyline", "home_win_prob")},
+            "provider": row["name"], "spread": spread, "formatted_spread": _formatted_spread(spread, home, away),
+            "spread_open": spread_open, "over_under": total, "over_under_open": total_open,
+            "spread_move": round(spread - spread_open, 1) if spread is not None and spread_open is not None else None,
+            "total_move": round(total - total_open, 1) if total is not None and total_open is not None else None,
+            "fetched_at": row.get("captured_at") or row.get("updated"), "source": "odds-api",
+        })
+    return sorted(merged, key=lambda p: str(p.get("provider") or "").casefold())
+
+
 def display_rows(connection: sqlite3.Connection, game_id: Any, *,
                  fallback: Iterable[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Every tracked book beside the others for the game page, the best numbers flagged, with movement since opening."""
