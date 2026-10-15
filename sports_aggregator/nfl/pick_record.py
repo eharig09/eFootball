@@ -280,6 +280,11 @@ def build(repository: NFLRepository, season: int) -> dict[str, Any]:
         "min_graded": MIN_GRADED,
         "settled": settled,
         "straight_up": su_tally, "ats": ats_tally, "totals": total_tally,
+        # How many of the counted picks were judged at the best tracked line rather than the consensus one.
+        "best_line": {
+            "ats": sum(p.get("ats_line_basis") == "best" for p in ats), "ats_of": len(ats),
+            "totals": sum(p.get("total_line_basis") == "best" for p in totals), "totals_of": len(totals),
+        },
         "clv": {"ats": _clv(ats, kind="ats"), "totals": _clv(totals, kind="totals")},
         "weekly": weekly,
         "units_chart": line_chart(weeks, [{
@@ -297,6 +302,7 @@ def build(repository: NFLRepository, season: int) -> dict[str, Any]:
                               "totals": interval_chart(calibration_total)},
         "policy": {
             "pricing": "Against the spread at flat -110. Straight up and totals at the moneyline / over-under price stored with the pick.",
+            "line": "Against the spread and totals at the best tracked-book line stored with the pick (DraftKings, ESPN BET, FanDuel, BetMGM, BetRivers); picks stored before line tracking, or that no tracked book priced, at the consensus line.",
             "counting": "Each game is counted once, at its first stored pick, before kickoff.",
             "start": "Tracking begins with the first stored forecast; earlier seasons are not back-filled.",
         },
