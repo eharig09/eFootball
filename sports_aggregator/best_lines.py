@@ -140,11 +140,29 @@ def espn_rows(connection: sqlite3.Connection, game_id: Any) -> list[dict[str, An
 
 
 def merge_fallback(rows: list[dict[str, Any]], fallback: Iterable[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    """Add fallback books the tracker does not already supply (the tracker's reading is the fresher one)."""
+    """Add fallback books the tracker does not supply, and lend the tracker its fallback's true opener.
+
+    The tracker's reading of a book is the fresher one, so it wins for the current number. But the tracker only
+    began watching a game when it first swept, long after the book posted it; CFBD and ESPN record the book's own
+    opening line. Where the fallback has one it replaces the tracker's first-seen opener, so a book that has moved
+    since it opened shows that move instead of "+0".
+    """
+    fallback_by_book = {row["book"]: row for row in (fallback or ()) if row.get("book") in TRACKED_BOOKS}
+    merged = []
+    for row in rows:
+        old = fallback_by_book.get(row["book"])
+        if old is not None:
+            row = dict(row)
+            if old.get("opened_spread") is not None:
+                row["opened_spread"] = old["opened_spread"]
+            if old.get("opened_total") is not None:
+                row["opened_total"] = old["opened_total"]
+            row["opener_source"] = old.get("source")
+        merged.append(row)
     have = {row["book"] for row in rows}
-    extra = [dict(row, name=row.get("name") or book_name(row["book"])) for row in (fallback or ())
-             if row.get("book") in TRACKED_BOOKS and row["book"] not in have]
-    return rows + extra
+    extra = [dict(row, name=row.get("name") or book_name(row["book"])) for book, row in fallback_by_book.items()
+             if book not in have]
+    return merged + extra
 
 
 # ------------------------------------------------------------------ choosing the best

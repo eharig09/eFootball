@@ -457,7 +457,7 @@
 {% if book_lines and book_lines.has_data %}
 {{ best_line_note(book_lines, home, away) }}
 <table class="ui-mini book-lines">
-    <thead><tr><th>Book</th><th class="num">{{ home }}</th><th class="num">{{ away }}</th><th class="num">Total</th><th class="num">{{ home }} ML</th><th class="num">{{ away }} ML</th><th class="num">Spread / total since first seen</th><th>Updated</th></tr></thead>
+    <thead><tr><th>Book</th><th class="num">{{ home }}</th><th class="num">{{ away }}</th><th class="num">Total</th><th class="num">{{ home }} ML</th><th class="num">{{ away }} ML</th><th class="num" title="Change in the home spread and the total since the book opened. Where the book's own opening line is not on file it runs from the first line the tracker saw.">Moved since open (spread / total)</th><th>Updated</th></tr></thead>
     <tbody>{% for b in book_lines.rows %}<tr>
         <th scope="row">{{ b.name }}</th>
         <td class="num{{ ' best-line' if b.best_home }}">{{ b.home_spread | cell('signed') }}{% if b.home_price is not none %} <small>{{ '%+d'|format(b.home_price|int) }}</small>{% endif %}</td>
