@@ -11,12 +11,15 @@ from unittest.mock import patch
 from sports_aggregator import odds_api_tracker as tracker
 
 
-def book(key, home_spread, total=48.5, home_price=-110, update="2026-10-15T15:00:00Z"):
-    return {"key": key, "last_update": update, "markets": [
+def book(key, home_spread, total=48.5, home_price=-110, update="2026-10-15T15:00:00Z", ml=None):
+    markets = [
         {"key": "spreads", "outcomes": [{"name": "Home U", "price": home_price, "point": home_spread},
                                         {"name": "Away U", "price": -110, "point": -home_spread}]},
         {"key": "totals", "outcomes": [{"name": "Over", "price": -105, "point": total},
-                                       {"name": "Under", "price": -115, "point": total}]}]}
+                                       {"name": "Under", "price": -115, "point": total}]}]
+    if ml is not None:
+        markets.append({"key": "h2h", "outcomes": [{"name": "Home U", "price": ml[0]}, {"name": "Away U", "price": ml[1]}]})
+    return {"key": key, "last_update": update, "markets": markets}
 
 
 def event(event_id="e1", books=None):
@@ -45,6 +48,7 @@ class FakeSession:
 
     def get(self, url, params=None, timeout=None):
         self.calls.append(url)
+        self.params = params
         if url.endswith("/events"):
             return FakeResponse(self.events, {"x-requests-remaining": "480", "x-requests-last": "0"})
         return FakeResponse(self.odds, self.headers)
@@ -70,6 +74,70 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(tracker.parse_event(event(books=[empty])), [])
 
 
+class MoneylineTests(unittest.TestCase):
+    def test_the_moneyline_is_requested_and_the_cost_reflects_three_markets(self):
+        self.assertIn("h2h", tracker.MARKETS.split(","))
+        self.assertEqual(tracker.CALL_COST, len(tracker.MARKETS.split(",")) * len(tracker.REGIONS.split(",")))
+
+    def test_both_moneylines_are_parsed_by_team(self):
+        row = tracker.parse_event(event(books=[book("fanduel", -3.5, ml=(-170, 145))]))[0]
+        self.assertEqual((row["home_moneyline"], row["away_moneyline"]), (-170, 145))
+
+    def test_a_book_with_no_moneyline_market_has_none(self):
+        row = tracker.parse_event(event(books=[book("fanduel", -3.5)]))[0]
+        self.assertEqual((row["home_moneyline"], row["away_moneyline"]), (None, None))
+
+    def test_a_book_that_only_posts_a_moneyline_is_still_kept(self):
+        only = {"key": "betrivers", "last_update": "x", "markets": [
+            {"key": "h2h", "outcomes": [{"name": "Home U", "price": -200}, {"name": "Away U", "price": 170}]}]}
+        rows = tracker.parse_event(event(books=[only]))
+        self.assertEqual((rows[0]["home_moneyline"], rows[0]["home_spread"]), (-200, None))
+
+    def test_a_moneyline_for_unknown_teams_is_ignored(self):
+        wrong = {"key": "betmgm", "last_update": "x", "markets": [
+            {"key": "spreads", "outcomes": [{"name": "Home U", "price": -110, "point": 3.0}, {"name": "Away U", "price": -110, "point": -3.0}]},
+            {"key": "h2h", "outcomes": [{"name": "Somebody Else", "price": -200}, {"name": "Another", "price": 170}]}]}
+        self.assertEqual(tracker.parse_event(event(books=[wrong]))[0]["home_moneyline"], None)
+
+
+class MigrationTests(unittest.TestCase):
+    def test_a_table_made_before_moneylines_gains_the_columns_and_keeps_its_rows(self):
+        connection = sqlite3.connect(":memory:")
+        self.addCleanup(connection.close)
+        connection.executescript("""
+            CREATE TABLE odds_api_lines (line_id INTEGER PRIMARY KEY AUTOINCREMENT, captured_at TEXT NOT NULL,
+                league TEXT NOT NULL, event_id TEXT NOT NULL, commence_time TEXT NOT NULL, game_id TEXT,
+                home_team TEXT NOT NULL, away_team TEXT NOT NULL, bookmaker TEXT NOT NULL, home_spread REAL,
+                home_spread_price REAL, away_spread_price REAL, total REAL, over_price REAL, under_price REAL,
+                book_updated_at TEXT);
+            INSERT INTO odds_api_lines (captured_at,league,event_id,commence_time,home_team,away_team,bookmaker,home_spread,total)
+                VALUES ('2026-10-14T10:00:00+00:00','cfb','e1','2026-10-17T16:00:00Z','Home U','Away U','fanduel',3.0,48.5);""")
+        connection.row_factory = sqlite3.Row
+        tracker.ensure_lines_schema(connection)
+        tracker.ensure_lines_schema(connection)                       # idempotent
+        columns = {r[1] for r in connection.execute("PRAGMA table_info(odds_api_lines)")}
+        self.assertTrue({"home_moneyline", "away_moneyline"} <= columns)
+        self.assertEqual(connection.execute("SELECT home_spread FROM odds_api_lines").fetchone()[0], 3.0)
+
+    def test_the_first_sweep_after_the_upgrade_stores_the_moneyline_as_a_move(self):
+        connection = sqlite3.connect(":memory:")
+        self.addCleanup(connection.close)
+        connection.row_factory = sqlite3.Row
+        legacy = tracker.LINES_SCHEMA.replace("home_moneyline REAL, away_moneyline REAL", "").replace("book_updated_at TEXT,", "book_updated_at TEXT")
+        connection.executescript(legacy)
+        connection.execute(
+            "INSERT INTO odds_api_lines (captured_at,league,event_id,commence_time,game_id,home_team,away_team,bookmaker,"
+            "home_spread,home_spread_price,away_spread_price,total,over_price,under_price) "
+            "VALUES ('2026-10-14T10:00:00+00:00','cfb','e1','2026-10-17T16:00:00Z','g1','Home U','Away U','draftkings',"
+            "5.5,-110,-110,48.5,-105,-115)")
+        now = datetime(2026, 10, 15, 15, 0, tzinfo=timezone.utc)
+        stored, _ = tracker.store_snapshot(connection, "cfb", now, [event(books=[book("draftkings", 5.5, ml=(150, -180))])],
+                                            lambda e: "g1")
+        self.assertEqual(stored, 1)
+        latest = connection.execute("SELECT home_moneyline, away_moneyline FROM odds_api_lines ORDER BY line_id DESC").fetchone()
+        self.assertEqual((latest[0], latest[1]), (150, -180))
+
+
 class StoreTests(unittest.TestCase):
     def setUp(self):
         self.connection = sqlite3.connect(":memory:")
@@ -88,6 +156,12 @@ class StoreTests(unittest.TestCase):
         rows = self.connection.execute(
             "SELECT home_spread FROM odds_api_lines WHERE bookmaker='draftkings' ORDER BY line_id").fetchall()
         self.assertEqual([r[0] for r in rows], [5.5, 6.0])
+
+    def test_a_moneyline_change_alone_counts_as_a_move(self):
+        self.store([event(books=[book("fanduel", 5.5, ml=(150, -180))])])
+        self.assertEqual(self.store([event(books=[book("fanduel", 5.5, ml=(150, -180))])], when=self.now + timedelta(hours=1))[0], 0)
+        stored, _ = self.store([event(books=[book("fanduel", 5.5, ml=(145, -175))])], when=self.now + timedelta(hours=2))
+        self.assertEqual(stored, 1)
 
     def test_a_price_change_alone_counts_as_a_move(self):
         self.store([event(books=[book("fanduel", 5.5, home_price=-110)])])
@@ -192,6 +266,11 @@ class SweepTests(unittest.TestCase):
 
     def session(self, **kwargs):
         return FakeSession(kwargs.get("events", self.upcoming), kwargs.get("odds", self.odds))
+
+    def test_a_sweep_asks_for_all_three_markets(self):
+        session = self.session()
+        tracker.sweep("cfb", now=self.now, session=session)
+        self.assertEqual(session.params["markets"], "spreads,totals,h2h")
 
     def test_a_due_sweep_stores_lines_matches_games_and_records_the_spend(self):
         session = self.session()

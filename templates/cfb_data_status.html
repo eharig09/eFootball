@@ -76,7 +76,7 @@
   <section class="data-status-section" id="odds-lines">
     <h2>Odds lines</h2>
     {% if odds_tracker.available %}
-    <p class="data-status-muted">DraftKings, FanDuel, BetMGM and BetRivers spreads and totals from The Odds API, on the free plan. A sweep costs 2 credits and runs only in scheduled slots, with a hard stop at {{ odds_tracker.monthly_cap }} credits a month.</p>
+    <p class="data-status-muted">DraftKings, FanDuel, BetMGM and BetRivers spreads and totals from The Odds API, on the free plan. Spreads, totals and moneylines: a sweep costs {{ odds_tracker.call_cost }} credits and runs only in scheduled slots and gated refresh runs, with a hard stop at {{ odds_tracker.monthly_cap }} credits a month.</p>
     <div class="data-status-grid">
       <div class="data-status-card"><strong>Credits used this month</strong><span>{{ odds_tracker.month_used }} of {{ odds_tracker.monthly_cap }}</span></div>
       <div class="data-status-card"><strong>Reported by the API</strong><span>{{ odds_tracker.api_remaining if odds_tracker.api_remaining is not none else 'no call yet' }} remaining</span></div>

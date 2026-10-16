@@ -54,6 +54,14 @@ def _ledger_row(repository):
         return dict(c.execute("SELECT * FROM nfl_engine_forecasts ORDER BY forecast_id DESC LIMIT 1").fetchone())
 
 
+def _moneylines(repository):
+    # B (home, the SU pick) pays +/-: DraftKings -150, FanDuel -140 (best for B), BetMGM -160; A pays +120, +125 (best), +115
+    with closing(repository._connect()) as c:
+        for book, home, away in (("draftkings", -150, 120), ("fanduel", -140, 115), ("betmgm", -160, 125)):
+            c.execute("UPDATE odds_api_lines SET home_moneyline=?, away_moneyline=? WHERE bookmaker=?", (home, away, book))
+        c.commit()
+
+
 def _books(repository):
     # B is the home favourite: DraftKings -3.0, FanDuel -2.5 (best for B), BetMGM -3.5 (best for A)
     _line(repository, "draftkings", "2026-08-30T10:00:00+00:00", -3.0, 44.5)
@@ -124,12 +132,50 @@ def test_totals_are_graded_at_the_best_total(tmp_path):
     assert (issuance["total_grade"], issuance["total_line_basis"]) == ("win", "best")
 
 
+def test_the_best_moneyline_for_the_straight_up_team_is_stored_and_priced(tmp_path):
+    repository = _repository(tmp_path)
+    _books(repository)
+    _moneylines(repository)
+    freeze_dashboard(repository, _dashboard(su="B"), generated_at=ISSUED)
+    row = _ledger_row(repository)
+    assert (row["best_su_price"], row["best_su_book"]) == (-140.0, "FanDuel")          # B: the highest of -150/-140/-160
+    issuance = grading_report(repository, season=2026)["issuances"][0]
+    assert (issuance["su_price_basis"], issuance["su_price_used"]) == ("best", -140.0)
+
+
+def test_an_away_straight_up_pick_takes_the_best_away_moneyline(tmp_path):
+    repository = _repository(tmp_path)
+    _books(repository)
+    _moneylines(repository)
+    freeze_dashboard(repository, _dashboard(ats="A +3", su="A"), generated_at=ISSUED)
+    row = _ledger_row(repository)
+    assert (row["best_su_price"], row["best_su_book"]) == (125.0, "BetMGM")
+
+
+def test_straight_up_units_use_the_best_price_only_when_one_was_stored(tmp_path):
+    # B wins 23-20 at -140 (best) vs the consensus price stored at issue
+    repository = _repository(tmp_path)
+    _books(repository)
+    _moneylines(repository)
+    freeze_dashboard(repository, _dashboard(su="B"), generated_at=ISSUED)
+    best = pick_record.build(repository, 2026)
+    assert best["best_line"]["su"] == 1
+    assert best["straight_up"]["units"] == round(100 / 140, 2)          # one win at -140
+
+    (tmp_path / "plain").mkdir()
+    plain_repo = _repository(tmp_path / "plain")
+    freeze_dashboard(plain_repo, _dashboard(su="B"), generated_at=ISSUED)
+    plain = pick_record.build(plain_repo, 2026)
+    assert plain["best_line"]["su"] == 0
+    assert plain["straight_up"]["priced"] in (0, 1)                      # no stored price at all here, so none can be priced
+
+
 def test_the_record_says_how_many_picks_were_judged_at_the_best_line(tmp_path):
     repository = _repository(tmp_path)
     _books(repository)
     freeze_dashboard(repository, _dashboard(), generated_at=ISSUED)
     record = pick_record.build(repository, 2026)
-    assert record["best_line"] == {"ats": 1, "ats_of": 1, "totals": 1, "totals_of": 1}
+    assert record["best_line"] == {"ats": 1, "ats_of": 1, "totals": 1, "totals_of": 1, "su": 0, "su_of": 1}
     assert "best tracked-book line" in record["policy"]["line"]
 
 

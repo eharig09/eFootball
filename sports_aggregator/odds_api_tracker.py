@@ -32,13 +32,13 @@ import requests
 
 BASE_URL = "https://api.the-odds-api.com/v4"
 SPORTS = {"cfb": "americanfootball_ncaaf", "nfl": "americanfootball_nfl"}
-MARKETS = "spreads,totals"
+MARKETS = "spreads,totals,h2h"      # h2h is the moneyline
 REGIONS = "us"
 #: The only books stored (The Odds API bookmaker keys). The request still asks for the whole US region, which costs
 #: the same 2 credits, and the rest are dropped before they reach the database. espnbet is listed so it is kept if
 #: the feed offers it; it was not in the live response when this was written.
 TRACKED_BOOKS = frozenset({"draftkings", "espnbet", "fanduel", "betmgm", "betrivers"})
-CALL_COST = 2                       # markets x regions
+CALL_COST = 3                       # markets x regions: spreads, totals and the moneyline
 MONTHLY_CAP = 450                   # of 500: the rest is a cushion for manual checks and clock skew
 MIN_REMAINING = 40                  # never call when the API itself reports fewer credits than this
 LOOKAHEAD_DAYS = 8                  # a sweep needs a game this close (the /events check is free)
@@ -77,11 +77,26 @@ CREATE TABLE IF NOT EXISTS odds_api_lines (
     bookmaker TEXT NOT NULL,
     home_spread REAL, home_spread_price REAL, away_spread_price REAL,
     total REAL, over_price REAL, under_price REAL,
-    book_updated_at TEXT
+    book_updated_at TEXT,
+    home_moneyline REAL, away_moneyline REAL
 );
 CREATE INDEX IF NOT EXISTS idx_odds_api_lines_event ON odds_api_lines(event_id, bookmaker, line_id);
 CREATE INDEX IF NOT EXISTS idx_odds_api_lines_game ON odds_api_lines(game_id);
 """
+
+#: Columns added after the table first shipped; a table created without them is altered in place.
+LINES_ADDED_COLUMNS = (("home_moneyline", "REAL"), ("away_moneyline", "REAL"))
+
+
+def ensure_lines_schema(connection: sqlite3.Connection) -> None:
+    """Create the lines table if it is missing and add any column an older copy lacks."""
+    connection.executescript(LINES_SCHEMA)
+    present = {row[1] for row in connection.execute("PRAGMA table_info(odds_api_lines)")}
+    for name, definition in LINES_ADDED_COLUMNS:
+        if name not in present:
+            connection.execute(f"ALTER TABLE odds_api_lines ADD COLUMN {name} {definition}")
+    connection.commit()
+
 
 LEDGER_SCHEMA = """
 CREATE TABLE IF NOT EXISTS odds_api_calls (
@@ -243,7 +258,7 @@ def _number(value: Any) -> float | None:
 
 
 def parse_event(event: dict[str, Any]) -> list[dict[str, Any]]:
-    """One row per bookmaker: the home spread and both prices, the total and both prices."""
+    """One row per bookmaker: the home spread and both prices, the total and both prices, and both moneylines."""
     home, away = event.get("home_team"), event.get("away_team")
     rows = []
     for book in event.get("bookmakers") or []:
@@ -253,6 +268,7 @@ def parse_event(event: dict[str, Any]) -> list[dict[str, Any]]:
             "bookmaker": book.get("key"), "book_updated_at": book.get("last_update"),
             "home_spread": None, "home_spread_price": None, "away_spread_price": None,
             "total": None, "over_price": None, "under_price": None,
+            "home_moneyline": None, "away_moneyline": None,
         }
         for market in book.get("markets") or []:
             outcomes = {o.get("name"): o for o in market.get("outcomes") or []}
@@ -264,7 +280,10 @@ def parse_event(event: dict[str, Any]) -> list[dict[str, Any]]:
                 row["total"] = _number(outcomes["Over"].get("point"))
                 row["over_price"] = _number(outcomes["Over"].get("price"))
                 row["under_price"] = _number(outcomes["Under"].get("price"))
-        if row["bookmaker"] and (row["home_spread"] is not None or row["total"] is not None):
+            elif market.get("key") == "h2h" and home in outcomes and away in outcomes:
+                row["home_moneyline"] = _number(outcomes[home].get("price"))
+                row["away_moneyline"] = _number(outcomes[away].get("price"))
+        if row["bookmaker"] and any(row[k] is not None for k in ("home_spread", "total", "home_moneyline")):
             rows.append(row)
     return rows
 
@@ -355,7 +374,8 @@ def nfl_game_id(connection: sqlite3.Connection, names: dict[str, str], event: di
 
 # ------------------------------------------------------------------ storing
 
-_VALUE_COLUMNS = ("home_spread", "home_spread_price", "away_spread_price", "total", "over_price", "under_price")
+_VALUE_COLUMNS = ("home_spread", "home_spread_price", "away_spread_price", "total", "over_price", "under_price",
+                  "home_moneyline", "away_moneyline")
 
 
 def store_snapshot(connection: sqlite3.Connection, league: str, captured_at: datetime, events: list[dict[str, Any]],
@@ -365,7 +385,7 @@ def store_snapshot(connection: sqlite3.Connection, league: str, captured_at: dat
 
     If `changed_games` is given, the ids of games that gained a row are added to it.
     """
-    connection.executescript(LINES_SCHEMA)
+    ensure_lines_schema(connection)
     stored = matched = 0
     for event in events:
         game_id = resolve(event)
@@ -381,11 +401,12 @@ def store_snapshot(connection: sqlite3.Connection, league: str, captured_at: dat
                 continue
             connection.execute(
                 "INSERT INTO odds_api_lines (captured_at,league,event_id,commence_time,game_id,home_team,away_team,"
-                "bookmaker,home_spread,home_spread_price,away_spread_price,total,over_price,under_price,book_updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "bookmaker,home_spread,home_spread_price,away_spread_price,total,over_price,under_price,book_updated_at,"
+                "home_moneyline,away_moneyline) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (_iso(captured_at), league, event["id"], event["commence_time"], game_id, event["home_team"],
                  event["away_team"], row["bookmaker"], row["home_spread"], row["home_spread_price"],
-                 row["away_spread_price"], row["total"], row["over_price"], row["under_price"], row["book_updated_at"]))
+                 row["away_spread_price"], row["total"], row["over_price"], row["under_price"], row["book_updated_at"],
+                 row["home_moneyline"], row["away_moneyline"]))
             stored += 1
             if changed_games is not None and game_id is not None:
                 changed_games.add(str(game_id))
@@ -501,7 +522,8 @@ def pending_freeze(league: str, *, now: datetime | None = None) -> tuple[list[st
     if not path.exists():
         return [], None
     with closing(_connect(path)) as connection:
-        connection.executescript(LINES_SCHEMA + FREEZE_SCHEMA)
+        ensure_lines_schema(connection)
+        connection.executescript(FREEZE_SCHEMA)
         high = connection.execute("SELECT MAX(captured_at) FROM odds_api_lines").fetchone()[0]
         if high is None:
             return [], None
@@ -557,7 +579,7 @@ def status() -> dict[str, Any]:
     now = _now()
     with closing(_connect(ledger_path())) as ledger:
         ledger.executescript(LEDGER_SCHEMA)
-        out: dict[str, Any] = {"month_used": month_used(ledger, now), "monthly_cap": MONTHLY_CAP,
+        out: dict[str, Any] = {"month_used": month_used(ledger, now), "monthly_cap": MONTHLY_CAP, "call_cost": CALL_COST,
                                "api_remaining": last_known_remaining(ledger, now),
                                "recent_calls": [dict(r) for r in ledger.execute(
                                    "SELECT called_at,league,status,cost,remaining,events,rows_stored,matched_games,message "

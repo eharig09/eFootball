@@ -41,7 +41,7 @@
         <p class="eyebrow">Accountability · {{ season }}</p>
         <h1>Football Lab pick record</h1>
         <p>Every pick is stored before kickoff and graded against the exact line it was issued at. Each game counts once, at its first stored pick, priced at flat -110 against the spread and at the stored moneyline or over/under price for straight-up and totals. Tracking starts with the first stored forecast; nothing is back-filled.</p>
-        {% if record.best_line and (record.best_line.ats or record.best_line.totals) %}<p>{{ record.best_line.ats }} of {{ record.best_line.ats_of }} against-the-spread picks and {{ record.best_line.totals }} of {{ record.best_line.totals_of }} totals were judged at the best tracked-book line; the rest at the consensus line they were issued at.</p>{% endif %}
+        {% if record.best_line and (record.best_line.ats or record.best_line.totals or record.best_line.su) %}<p>{{ record.best_line.ats }} of {{ record.best_line.ats_of }} against-the-spread picks and {{ record.best_line.totals }} of {{ record.best_line.totals_of }} totals were judged at the best tracked-book line, and {{ record.best_line.su }} of {{ record.best_line.su_of }} straight-up picks were priced at the best moneyline; the rest at the numbers they were issued at.</p>{% endif %}
         <p><a href="{{ url_for('nfl.engine_picks', season=season) }}">&larr; This week's picks</a></p>
     </section>
 
