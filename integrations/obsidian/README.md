@@ -1,6 +1,6 @@
 # Obsidian football game notebook
 
-The main workflow is one prose note per watched game, shared between two team pages. CFB and NFL use the same layout. Run **CFB/NFL Game Notes Template** from the corresponding dashboard, import a specific historical/current game URL or ID, select existing imported research, or create a manual game.
+The main workflow is one prose note per watched game, shared between two team pages. CFB and NFL use the same layout. Run **CFB/NFL Game Notes Template** from the corresponding dashboard, choose a team, season, and game from its full stored schedule; alternatively import a specific game URL/ID, select existing research, or create a manual game. Completed and upcoming games are both available. Existing game notes reopen without reimporting; use the URL/ID option to refresh site data.
 
 - `Games/`: normal writing under Game context and each team's Offense, Defense, Context headings. No observation form, table editing, betting decision, or publication fields are required.
 - `Teams/`: reads that team's full text from each game with the opponent, date, role, and shared context. It never copies notes or silently assigns legacy research to a historical game.

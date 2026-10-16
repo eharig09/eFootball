@@ -13,7 +13,8 @@ class ObsidianIntegrationTests(unittest.TestCase):
             ["node", "--test", "integrations/obsidian/tests/engine.test.cjs",
              "integrations/obsidian/tests/nfl.test.cjs",
              "integrations/obsidian/tests/observation-buttons.test.cjs",
-             "integrations/obsidian/tests/film.test.cjs"],
+             "integrations/obsidian/tests/film.test.cjs",
+             "integrations/obsidian/tests/selector.test.cjs"],
             cwd=root, capture_output=True, text=True, timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

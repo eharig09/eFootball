@@ -84,16 +84,83 @@ async function manual(tp){
   for(const t of [away,home])if(typeof t==="object"){await folder(vault,`${BASE}/Teams`);await vault.create(t.path,`---\ntype: ${LEAGUE}-team\nteam_name: ${q(t.name)}\nseason: ${Number(season)}\n---\n\n`+teamBody(t.name));}
   await folder(vault,`${BASE}/Games`);await vault.create(target,gameBody({season:Number(season),game_date:date,away_team:a,home_team:h}));return target;
 }
+async function jsonRequest(tp,url){
+  let timer;try{
+    const r=await Promise.race([tp.obsidian.requestUrl({url,method:"GET",throw:false}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("Schedule request timed out. Retry or use the game URL option.")),45000);})]);
+    if(r.status!==200||!r.json||typeof r.json!=="object")throw new Error(`Could not load schedule data (HTTP ${r.status}). Retry or use the game URL option.`);return r.json;
+  }finally{clearTimeout(timer);}
+}
+function scheduleGames(packet,team,season,base,engine,zone="America/New_York"){
+  const nfl=BASE.endsWith("/NFL");
+  if(String(packet.season)!==String(season)||String(nfl?packet.team?.abbreviation:packet.team?.team_id)!==String(team.id))throw new Error("The returned schedule belongs to another team or season.");
+  const rows=nfl?packet.schedule?.rows:packet.schedule;if(!Array.isArray(rows))throw new Error("The engine did not return a team schedule.");
+  const seen=new Set(),games=[];
+  for(const row of rows){
+    const home=nfl?row.home:row.home_team_id,away=nfl?row.away:row.away_team_id;
+    if(![home,away].some(id=>String(id)===String(team.id)))throw new Error("A schedule row belongs to another team; no notes were changed.");
+    const id=nfl?engine.parseGameInput(new URL(row.date_url,base).href,base):engine.parseGameInput(String(row.game_id),base);
+    if(seen.has(String(id)))continue;seen.add(String(id));
+    const isHome=String(home)===String(team.id),complete=nfl?!!row.result:!!row.completed;
+    const own=nfl?(isHome?row.home_score:row.away_score):(isHome?row.home_points:row.away_points),other=nfl?(isHome?row.away_score:row.home_score):(isHome?row.away_points:row.home_points);
+    const result=nfl?row.result:own!=null&&other!=null?(own>other?"W":own<other?"L":"T"):"";
+    const score=nfl?row.score:own!=null&&other!=null?`${own}–${other}`:"";
+    games.push({id,date:nfl?row.date:engine.dateInZone(row.start_date,zone),week:row.week,isHome,
+      opponent:nfl?row.opponent:(isHome?row.away_team:row.home_team),complete,result,score});
+  }
+  return games.sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.id).localeCompare(String(b.id)));
+}
+async function selectGame(tp){
+  const engine=await engineFor(tp),vault=tp.app.vault,nfl=BASE.endsWith("/NFL");
+  const configFile=vault.getAbstractFileByPath(`${BASE}/Views/engine-config.json`),config=configFile?JSON.parse(await vault.read(configFile)):{};
+  const base=engine.baseUrl(config.api_url||"https://cfb-intelligence.onrender.com");
+  const local=[];
+  for(const file of vault.getMarkdownFiles().filter(f=>f.path.startsWith(`${BASE}/Teams/`))){const raw=await vault.read(file);if(!raw.startsWith("---"))continue;const p=properties(raw,tp.obsidian.parseYaml).data;if(p.type===`${LEAGUE}-team`&&p.engine_team_id!=null)local.push({id:p.engine_team_id,name:p.team_name||file.basename,season:p.season});}
+  let teams;
+  if(nfl&&local.length>=32)teams=local;
+  else{const catalog=await jsonRequest(tp,`${base}/api/v1/${LEAGUE}${nfl?"":"/teams?limit=200"}`);teams=(catalog.teams||[]).map(t=>({id:nfl?t.abbreviation:t.team_id,name:nfl?t.name:t.school}));}
+  const unique=new Map([...teams,...local].filter(t=>t.id!=null&&t.name).map(t=>[String(t.id),t]));
+  const choices=[...unique.values()].sort((a,b)=>a.name.localeCompare(b.name));if(!choices.length)throw new Error("No teams returned by the engine. Use the game URL option instead.");
+  const team=await tp.system.suggester([...choices.map(t=>t.name),...(nfl?[]:["Search another college team…"])],[...choices,...(nfl?[]:["search"])],true,"Choose a team (type to search)");if(team==null)return null;
+  let selected=team;
+  if(team==="search"){
+    const query=await tp.system.prompt("College team name or alias","",true);if(query===null)return null;if(query.trim().length<2)throw new Error("Enter at least two letters.");
+    const matches=await jsonRequest(tp,`${base}/api/v1/cfb/teams/resolve?q=${encodeURIComponent(query.trim())}`);
+    const found=(matches.matches||[]).map(t=>({id:t.team_id,name:t.school}));if(!found.length)throw new Error("No matching team was found.");
+    selected=await tp.system.suggester(found.map(t=>t.name),found,true,"Choose matching team");if(!selected)return null;
+  }
+  const year=new Date().getFullYear()-(nfl&&new Date().getMonth()<2?1:0);
+  const season=await tp.system.prompt("Season (year the season began)",String(selected.season||year),true);if(season===null)return null;
+  if(!/^\d{4}$/.test(season.trim()))throw new Error("Enter a four-digit season.");
+  const packet=await jsonRequest(tp,`${base}/api/v1/${LEAGUE}/teams/${encodeURIComponent(selected.id)}?season=${season.trim()}`);
+  const games=scheduleGames(packet,selected,season.trim(),base,engine,config.timezone||"America/New_York");
+  if(!games.length)throw new Error(`No games are stored for ${selected.name} in ${season}. Choose another season or use a game URL.`);
+  const names=new Map(choices.map(t=>[String(t.id),t.name]));
+  const labels=games.map(g=>`${g.date} · W${g.week??"?"} · ${g.isHome?"vs":"at"} ${names.get(String(g.opponent))||g.opponent} · ${g.complete?`Final ${g.result||""} ${g.score||""}`.trim():"Scheduled"}`);
+  const chosen=await tp.system.suggester(labels,games,true,`${selected.name} · ${season} · all games`);return chosen?String(chosen.id):null;
+}
+async function existingGame(tp,id){
+  const vault=tp.app.vault,matches=[];
+  for(const file of vault.getMarkdownFiles().filter(f=>f.path.startsWith(`${BASE}/Games/`))){
+    const raw=await vault.read(file);if(!raw.startsWith("---"))continue;const p=properties(raw,tp.obsidian.parseYaml).data;
+    if(p.type!==`${LEAGUE}-game`||!p.source_matchup)continue;
+    const source=vault.getAbstractFileByPath(norm(p.source_matchup)+".md");if(!source)continue;
+    const meta=properties(await vault.read(source),tp.obsidian.parseYaml).data;
+    if(meta.type===`${LEAGUE}-matchup`&&String(meta.engine_game_id)===String(id))matches.push(file.path);
+  }
+  if(matches.length>1)throw new Error("Multiple game notes match this ID. Resolve duplicates before opening.");return matches[0]||null;
+}
+
 async function run(tp){
   const active=tp.file.path(true);if(active.startsWith(`${BASE}/Games/`)||active.startsWith(`${BASE}/Matchups/`))throw new Error("Run Game Notes Template from the dashboard so Templater cannot overwrite the game you are editing.");
-  const action=await tp.system.suggester(["Game from site — past or current (URL/ID)","Open notes for an already imported game","Manual game — no import"],["import","existing","manual"],true,"Game notes");if(!action)return;
+  const action=await tp.system.suggester(["Select team → season → game","Game from site — past or current (URL/ID)","Open notes for an already imported game","Manual game — no import"],["select","import","existing","manual"],true,"Game notes");if(!action)return;
   let path;
   if(action==="manual")path=await manual(tp);
   else if(action==="existing"){
     const files=[];for(const f of tp.app.vault.getMarkdownFiles().filter(f=>f.path.startsWith(`${BASE}/Matchups/`))){const raw=await tp.app.vault.read(f);if(!raw.startsWith("---"))continue;const p=properties(raw,tp.obsidian.parseYaml).data;if(p.type===`${LEAGUE}-matchup`)files.push(f);}
     const source=await tp.system.suggester(files.map(f=>f.basename),files,true,"Choose the game that supplied the research");if(!source)return;path=await ensure(tp,source.path);
   }else{
-    const input=await tp.system.prompt("Paste a past or current game URL/ID from the site.","",true);if(input===null)return;if(!input.trim())throw new Error("Paste the specific game URL/ID so the notes refer to the game you watched.");
+    const input=action==="select"?await selectGame(tp):await tp.system.prompt("Paste a past or current game URL/ID from the site.","",true);if(input===null)return;if(!input.trim())throw new Error("Paste the specific game URL/ID so the notes refer to the game you watched.");
+    if(action==="select"){const existing=await existingGame(tp,input);if(existing){tp.hooks.on_all_templates_executed(()=>tp.app.workspace.openLinkText(existing,"",false));return existing;}}
     const engine=await engineFor(tp);
     // Use the proven importer for source data; open only the simple game note.
     const system={...tp.system,prompt:async(label,...args)=>label.startsWith("Paste engine game")?input:tp.system.prompt(label,...args),suggester:async(labels,values,required,title)=>/^Choose sportsbook|^Choose supplied market/.test(title||"")?values[0]:tp.system.suggester(labels,values,required,title)};
@@ -101,4 +168,4 @@ async function run(tp){
   }
   tp.hooks.on_all_templates_executed(()=>tp.app.workspace.openLinkText(path,"",false));return path;
 }
-return {norm,properties,sections,hasNotes,gameBody,teamBody,upgradeTeam,ensure,manual,run,siteURL};
+return {norm,properties,sections,hasNotes,gameBody,teamBody,upgradeTeam,ensure,manual,run,siteURL,selectGame,scheduleGames,existingGame};

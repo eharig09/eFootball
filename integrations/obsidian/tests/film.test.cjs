@@ -35,7 +35,7 @@ for(const league of ['CFB','NFL']){
  test(`${league} game command imports the requested historical ID, skips duplicate source opening, and opens the prose note`,async()=>{
    const {tp,files}=runtime(),hooks=[],opened=[];let prompts=0;
    tp.file={path:()=>base+'/Dashboard.md'};tp.hooks={on_all_templates_executed:fn=>hooks.push(fn)};tp.app.workspace={openLinkText:p=>opened.push(p)};
-   tp.system={prompt:async()=>{prompts++;return 'past-game-id';},suggester:async(_labels,values)=>values[0]};
+   tp.system={prompt:async()=>{prompts++;return 'past-game-id';},suggester:async(_labels,values,_required,title)=>title==="Game notes"?"import":values[0]};
    files.set(base+`/Views/${low}-engine.js`,`return {run:async(tp)=>{tp.app.pasted=await tp.system.prompt("Paste engine game URL or ID.");tp.app.quote=await tp.system.suggester(["quote"],["supplied quote"],true,"Choose sportsbook");tp.hooks.on_all_templates_executed(()=>tp.app.workspace.openLinkText("WRONG SOURCE VIEW"));return ${JSON.stringify(base+'/Matchups/source.md')};}};`);
    const result=await h.run(tp);for(const fn of hooks)await fn();assert.equal(prompts,1);assert.equal(tp.app.pasted,'past-game-id');assert.equal(tp.app.quote,'supplied quote');assert.deepEqual(opened,[result]);assert(result.startsWith(base+'/Games/'));
  });

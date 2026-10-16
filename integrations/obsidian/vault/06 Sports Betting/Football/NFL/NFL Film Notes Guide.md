@@ -2,7 +2,7 @@
 
 [[06 Sports Betting/Football/NFL/NFL Dashboard|Game notebook]]
 
-1. Run **NFL Game Notes Template** from the notebook. Paste the exact past/current game URL or ID; dates, opponents, and links fill automatically. You can also use an already imported game or create a manual game.
+1. Run **NFL Game Notes Template** from the notebook. Choose **Select team → season → game**. Type a team name, enter the season, then choose a game by date, opponent, and score/status. Completed and upcoming games are included, and historical seasons can be entered. Selecting existing notes opens them without reimporting; the URL/ID option refreshes site data. Dates, opponents, and links fill automatically. You can also use an already imported game or create a manual game.
 2. Open the game's note in **Live Preview / editing mode**. Write ordinary bullets under the team and Offense, Defense, or Context heading. No special syntax, forms, or tags are needed. `+` and `−` are optional text within your bullets.
 3. Record shared context once: what portion of the tape you watched, personnel, weather, opponent strength, and score/game state where relevant. Add play timestamps, down/distance, or sources inside an individual bullet only when useful. `tape_url` is optional.
 4. Open a team page to see its notes from every game in the selected season. Each entry retains its opponent, date, game link, shared context, and full text. Empty sections are skipped. Edit the original game note; team pages update automatically. Leave a team's season Property blank for all seasons.

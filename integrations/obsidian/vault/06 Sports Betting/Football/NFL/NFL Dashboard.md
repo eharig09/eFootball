@@ -7,7 +7,7 @@ season: 2026
 
 **Start here:** Ctrl+P → Templater: Open insert template modal → **NFL Game Notes Template**.
 
-Paste the URL/ID of a past or current game from the site, choose an existing imported game, or create a manual game. Write directly in that game's note. No separate observation form or table is required.
+Choose **Select team → season → game** to search a team and browse its full stored schedule, including completed and upcoming games. You can also paste a game URL/ID, choose existing research, or create a manual game. Write directly in that game's note. No separate observation form or table is required.
 
 [[06 Sports Betting/Football/NFL/NFL Film Notes Guide|How to use game notes]]
 
