@@ -30,9 +30,11 @@ def _kickoff_passed(row, issued: datetime) -> bool:
     return kickoff.astimezone(timezone.utc) <= issued
 
 
-def _best_line_fields(connection, game: dict[str, Any], ats_team: str | None,
-                      issued_at: datetime) -> tuple[float | None, str | None, float | None, str | None]:
-    """(best ATS spread, its book, best total, its book) at the moment of issue, in the ledger's sign convention.
+def _best_line_fields(connection, game: dict[str, Any], ats_team: str | None, issued_at: datetime
+                      ) -> tuple[float | None, str | None, float | None, str | None, float | None, str | None]:
+    """(best ATS spread, its book, best total, its book, best moneyline for the straight-up pick, its book) at issue.
+
+    The spread is in the ledger's sign convention.
 
     The ledger's spreads are nflverse's (positive = home favored), so a home pick's own spread is negated and an away
     pick's is kept. Anything that goes wrong leaves the pick to be graded at the consensus line it was issued at.
@@ -44,9 +46,9 @@ def _best_line_fields(connection, game: dict[str, Any], ats_team: str | None,
             connection, game["game_id"], as_of=moment,
             fallback=best_lines.espn_rows(connection, game["game_id"]) if live else None)
     except Exception:
-        return None, None, None, None
+        return None, None, None, None, None, None
     if not snapshot:
-        return None, None, None, None
+        return None, None, None, None, None, None
     spread = book = None
     if ats_team and ats_team == game.get("home_team"):
         own, book = best_lines.side_spread(snapshot, "home")
@@ -58,7 +60,11 @@ def _best_line_fields(connection, game: dict[str, Any], ats_team: str | None,
     side = "over" if pick.startswith("Over") else "under" if pick.startswith("Under") else None
     if side and isinstance(snapshot.get(side), dict):
         total, total_book = snapshot[side]["total"], snapshot[side]["name"]
-    return spread, book, total, total_book
+    # the straight-up pick is a team code; its best moneyline is the highest price any tracked book pays on that team
+    su_team = game.get("straight_up_pick")
+    su_side = "home" if su_team and su_team == game.get("home_team") else "away" if su_team and su_team == game.get("away_team") else None
+    su_price, su_book = best_lines.side_moneyline(snapshot, su_side)
+    return spread, book, total, total_book, su_price, su_book
 
 
 def freeze_dashboard(repository: NFLRepository, dashboard: dict[str, Any],
@@ -113,8 +119,8 @@ def freeze_dashboard(repository: NFLRepository, dashboard: dict[str, Any],
                      away_points,home_points,model_margin,model_total,spread_at_issue,
                      total_at_issue,straight_up_pick,ats_pick_team,total_pick,tags_json,
                      su_price_at_issue,total_price_at_issue,
-                     best_ats_spread,best_ats_book,best_total,best_total_book
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     best_ats_spread,best_ats_book,best_total,best_total_book,best_su_price,best_su_book
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game["game_id"], int(game["season"]), int(game["week"]), issued,
                  version, game["away_team"], game["home_team"], *values, su_price, total_price, *best_fields),
             )
@@ -172,6 +178,10 @@ def grading_report(repository: NFLRepository, *, season: int | None = None) -> d
             row["total_grade"] = _grade((actual_total - float(total_line)) * direction)
         else:
             row["total_grade"] = None
+        # Straight-up units are priced at the best moneyline stored with the pick when there is one.
+        best_price = row.get("best_su_price")
+        row["su_price_basis"] = "best" if best_price is not None else "consensus"
+        row["su_price_used"] = best_price if best_price is not None else row.get("su_price_at_issue")
         row["tags"] = json.loads(row.pop("tags_json"))
         graded.append(row)
 

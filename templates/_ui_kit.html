@@ -448,7 +448,7 @@
 {# The best number on offer across the tracked books, and what it means for the picks. #}
 {% macro best_line_note(book_lines, home, away) %}
 {% if book_lines and book_lines.has_data %}{% set best = book_lines.best %}
-{% if best %}<p class="ui-panel-note">Best number on offer: {% if best.home %}<b>{{ home }} {{ best.home.spread | cell('signed') }}</b> at {{ best.home.name }}{% endif %}{% if best.away %} &middot; <b>{{ away }} {{ best.away.spread | cell('signed') }}</b> at {{ best.away.name }}{% endif %}{% if best.over %} &middot; <b>Over {{ best.over.total | cell('f1') }}</b> at {{ best.over.name }}{% endif %}{% if best.under %} &middot; <b>Under {{ best.under.total | cell('f1') }}</b> at {{ best.under.name }}{% endif %}. New picks are judged against these numbers.</p>{% endif %}
+{% if best %}<p class="ui-panel-note">Best number on offer: {% if best.home %}<b>{{ home }} {{ best.home.spread | cell('signed') }}</b> at {{ best.home.name }}{% endif %}{% if best.away %} &middot; <b>{{ away }} {{ best.away.spread | cell('signed') }}</b> at {{ best.away.name }}{% endif %}{% if best.over %} &middot; <b>Over {{ best.over.total | cell('f1') }}</b> at {{ best.over.name }}{% endif %}{% if best.under %} &middot; <b>Under {{ best.under.total | cell('f1') }}</b> at {{ best.under.name }}{% endif %}{% if best.home_ml or best.away_ml %} &middot; Moneyline {% if best.home_ml %}<b>{{ home }} {{ best.home_ml.price | cell('signed') }}</b> at {{ best.home_ml.name }}{% endif %}{% if best.away_ml %}{% if best.home_ml %}, {% endif %}<b>{{ away }} {{ best.away_ml.price | cell('signed') }}</b> at {{ best.away_ml.name }}{% endif %}{% endif %}. New picks are judged against these numbers.</p>{% endif %}
 {% endif %}
 {% endmacro %}
 
@@ -457,12 +457,14 @@
 {% if book_lines and book_lines.has_data %}
 {{ best_line_note(book_lines, home, away) }}
 <table class="ui-mini book-lines">
-    <thead><tr><th>Book</th><th class="num">{{ home }}</th><th class="num">{{ away }}</th><th class="num">Total</th><th class="num" title="Change in the home spread and the total since the book opened. Where the book's own opening line is not on file it runs from the first line the tracker saw.">Moved since open (spread / total)</th><th>Updated</th></tr></thead>
+    <thead><tr><th>Book</th><th class="num">{{ home }}</th><th class="num">{{ away }}</th><th class="num">Total</th><th class="num">{{ home }} ML</th><th class="num">{{ away }} ML</th><th class="num" title="Change in the home spread and the total since the book opened. Where the book's own opening line is not on file it runs from the first line the tracker saw.">Moved since open (spread / total)</th><th>Updated</th></tr></thead>
     <tbody>{% for b in book_lines.rows %}<tr>
         <th scope="row">{{ b.name }}</th>
         <td class="num{{ ' best-line' if b.best_home }}">{{ b.home_spread | cell('signed') }}{% if b.home_price is not none %} <small>{{ '%+d'|format(b.home_price|int) }}</small>{% endif %}</td>
         <td class="num{{ ' best-line' if b.best_away }}">{{ b.away_spread | cell('signed') }}{% if b.away_price is not none %} <small>{{ '%+d'|format(b.away_price|int) }}</small>{% endif %}</td>
         <td class="num"><span class="{{ 'best-line' if b.best_over }}">o{{ b.total | cell('f1') }}{% if b.over_price is not none %} <small>{{ '%+d'|format(b.over_price|int) }}</small>{% endif %}</span> <span class="{{ 'best-line' if b.best_under }}">u{{ b.total | cell('f1') }}{% if b.under_price is not none %} <small>{{ '%+d'|format(b.under_price|int) }}</small>{% endif %}</span></td>
+        <td class="num{{ ' best-line' if b.best_home_ml }}">{% if b.home_moneyline is not none %}{{ b.home_moneyline | cell('signed') }}{% else %}&mdash;{% endif %}</td>
+        <td class="num{{ ' best-line' if b.best_away_ml }}">{% if b.away_moneyline is not none %}{{ b.away_moneyline | cell('signed') }}{% else %}&mdash;{% endif %}</td>
         <td class="num">{% if b.spread_move is not none or b.total_move is not none %}{{ b.spread_move | cell('signed') }} / {{ b.total_move | cell('signed') }}{% else %}&mdash;{% endif %}</td>
         <td>{{ (b.updated or '')[:16].replace('T', ' ') }}</td>
     </tr>{% endfor %}</tbody>

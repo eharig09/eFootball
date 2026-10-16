@@ -257,7 +257,7 @@ def build(repository: NFLRepository, season: int) -> dict[str, Any]:
 
     ats_tally = _tally(ats, "ats_grade")
     total_tally = _tally(totals, "total_grade")
-    su_tally = _tally(su, "straight_up_grade", "su_price_at_issue")
+    su_tally = _tally(su, "straight_up_grade", "su_price_used")
     su_flat = _tally(su, "straight_up_grade")
     total_tally["flat_units"] = total_tally["units"]
     total_tally.update({k: v for k, v in _tally(totals, "total_grade", "total_price_at_issue").items()
@@ -284,6 +284,7 @@ def build(repository: NFLRepository, season: int) -> dict[str, Any]:
         "best_line": {
             "ats": sum(p.get("ats_line_basis") == "best" for p in ats), "ats_of": len(ats),
             "totals": sum(p.get("total_line_basis") == "best" for p in totals), "totals_of": len(totals),
+            "su": sum(p.get("su_price_basis") == "best" for p in su), "su_of": len(su),
         },
         "clv": {"ats": _clv(ats, kind="ats"), "totals": _clv(totals, kind="totals")},
         "weekly": weekly,
@@ -301,7 +302,7 @@ def build(repository: NFLRepository, season: int) -> dict[str, Any]:
         "calibration_chart": {"ats": interval_chart(calibration_ats),
                               "totals": interval_chart(calibration_total)},
         "policy": {
-            "pricing": "Against the spread at flat -110. Straight up and totals at the moneyline / over-under price stored with the pick.",
+            "pricing": "Against the spread at flat -110. Straight up at the best tracked moneyline stored with the pick, otherwise the moneyline stored at issue; totals at the over-under price stored with the pick.",
             "line": "Against the spread and totals at the best tracked-book line stored with the pick (DraftKings, ESPN BET, FanDuel, BetMGM, BetRivers); picks stored before line tracking, or that no tracked book priced, at the consensus line.",
             "counting": "Each game is counted once, at its first stored pick, before kickoff.",
             "start": "Tracking begins with the first stored forecast; earlier seasons are not back-filled.",

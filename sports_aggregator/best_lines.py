@@ -5,6 +5,9 @@ favorable spread among the tracked books, and for an over or under the most favo
 go to the better price. Both leagues use this module; each supplies its own fallback rows for books the odds
 tracker does not cover (CFBD's DraftKings and ESPN BET quotes for college, ESPN's DraftKings feed for the NFL).
 
+Moneylines work the same way: the best price on offer for a side is the highest American price (+135 beats +130,
+-120 beats -130), because that is the one that pays most.
+
 Everything here is shaped for a pick packet that gets frozen: plain dicts, JSON-safe, spreads already oriented to
 the side they belong to (a team's spread is what that team gets: +5.5 means it can lose by five and cover).
 
@@ -13,6 +16,7 @@ The books are the ones the user chose to track: DraftKings, ESPN BET, FanDuel, B
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import sqlite3
 from typing import Any, Iterable
 
@@ -46,6 +50,20 @@ def _price_key(price: Any) -> float:
 
 # ------------------------------------------------------------------ reading the tracker
 
+def _before_kickoff(row: sqlite3.Row) -> bool:
+    """False for a row captured at or after the game started: that is an in-play line, not a pregame one."""
+    try:
+        captured = datetime.fromisoformat(str(row["captured_at"]).replace("Z", "+00:00"))
+        kickoff = datetime.fromisoformat(str(row["commence_time"]).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return True
+    if captured.tzinfo is None:
+        captured = captured.replace(tzinfo=timezone.utc)
+    if kickoff.tzinfo is None:
+        kickoff = kickoff.replace(tzinfo=timezone.utc)
+    return captured < kickoff
+
+
 def tracker_rows(connection: sqlite3.Connection, game_id: Any, *, as_of: str | None = None) -> list[dict[str, Any]]:
     """Each tracked book's latest line for a game, with the first line the tracker saw (its opener).
 
@@ -65,29 +83,36 @@ def tracker_rows(connection: sqlite3.Connection, game_id: Any, *, as_of: str | N
     latest: dict[str, Any] = {}
     for row in rows:
         key = row["bookmaker"]
-        if key not in TRACKED_BOOKS:
+        if key not in TRACKED_BOOKS or not _before_kickoff(row):
             continue
         first.setdefault(key, row)
         latest[key] = row
     out = []
     for key, row in latest.items():
         opener = first[key]
+        columns = row.keys()
         out.append({
             "book": key, "name": book_name(key), "source": "odds-api",
             "home_spread": row["home_spread"], "home_price": row["home_spread_price"], "away_price": row["away_spread_price"],
             "total": row["total"], "over_price": row["over_price"], "under_price": row["under_price"],
+            "home_moneyline": row["home_moneyline"] if "home_moneyline" in columns else None,
+            "away_moneyline": row["away_moneyline"] if "away_moneyline" in columns else None,
             "updated": row["book_updated_at"] or row["captured_at"], "captured_at": row["captured_at"],
             "opened_spread": opener["home_spread"], "opened_total": opener["total"],
         })
     return out
 
 
+def _col(row: sqlite3.Row, name: str) -> Any:
+    """A column's value, or None when this copy of the table does not have it."""
+    return row[name] if name in row.keys() else None
+
+
 def cfbd_rows(connection: sqlite3.Connection, game_id: Any) -> list[dict[str, Any]]:
     """College: CFBD's current DraftKings and ESPN BET quotes (no prices, no history), for books the tracker lacks."""
     try:
         rows = connection.execute(
-            "SELECT provider, spread, spread_open, over_under, over_under_open, fetched_at FROM game_lines "
-            "WHERE game_id=? ORDER BY fetched_at", (game_id,)).fetchall()
+            "SELECT * FROM game_lines WHERE game_id=? ORDER BY fetched_at", (game_id,)).fetchall()
     except sqlite3.OperationalError:
         return []
     out: dict[str, dict[str, Any]] = {}
@@ -98,6 +123,7 @@ def cfbd_rows(connection: sqlite3.Connection, game_id: Any) -> list[dict[str, An
         out[key] = {                                  # later fetches overwrite earlier ones; "Draft Kings" is DraftKings
             "book": key, "name": book_name(key), "source": "cfbd", "home_spread": row["spread"], "home_price": None,
             "away_price": None, "total": row["over_under"], "over_price": None, "under_price": None,
+            "home_moneyline": _col(row, "home_moneyline"), "away_moneyline": _col(row, "away_moneyline"),
             "updated": row["fetched_at"], "captured_at": row["fetched_at"],
             "opened_spread": row["spread_open"], "opened_total": row["over_under_open"],
         }
@@ -108,8 +134,7 @@ def espn_rows(connection: sqlite3.Connection, game_id: Any) -> list[dict[str, An
     """NFL: ESPN's DraftKings line (stored the nflverse way, positive = home favored, so the sign flips here)."""
     try:
         rows = connection.execute(
-            "SELECT provider, open_spread, open_total, current_spread, current_total, fetched_at "
-            "FROM espn_market_lines WHERE game_id=?", (str(game_id),)).fetchall()
+            "SELECT * FROM espn_market_lines WHERE game_id=?", (str(game_id),)).fetchall()
     except sqlite3.OperationalError:
         return []
     out = []
@@ -121,7 +146,9 @@ def espn_rows(connection: sqlite3.Connection, game_id: Any) -> list[dict[str, An
         out.append({
             "book": key, "name": book_name(key), "source": "espn", "home_spread": None if current is None else -current,
             "home_price": None, "away_price": None, "total": row["current_total"], "over_price": None,
-            "under_price": None, "updated": row["fetched_at"], "captured_at": row["fetched_at"],
+            "under_price": None, "home_moneyline": _col(row, "current_home_moneyline"),
+            "away_moneyline": _col(row, "current_away_moneyline"),
+            "updated": row["fetched_at"], "captured_at": row["fetched_at"],
             "opened_spread": None if opened is None else -opened, "opened_total": row["open_total"],
         })
     return out
@@ -146,6 +173,9 @@ def merge_fallback(rows: list[dict[str, Any]], fallback: Iterable[dict[str, Any]
             if old.get("opened_total") is not None:
                 row["opened_total"] = old["opened_total"]
             row["opener_source"] = old.get("source")
+            for column in ("home_moneyline", "away_moneyline"):      # until the tracker has a moneyline for this book
+                if row.get(column) is None and old.get(column) is not None:
+                    row[column] = old[column]
         merged.append(row)
     have = {row["book"] for row in rows}
     extra = [dict(row, name=row.get("name") or book_name(row["book"])) for book, row in fallback_by_book.items()
@@ -179,6 +209,12 @@ def best_of(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
                           "price": _number(over.get("over_price")), "updated": over.get("updated")}
         result["under"] = {"total": float(under["total"]), "book": under["book"], "name": under["name"],
                            "price": _number(under.get("under_price")), "updated": under.get("updated")}
+    for side, column in (("home_ml", "home_moneyline"), ("away_ml", "away_moneyline")):
+        priced = [r for r in rows if _number(r.get(column)) is not None]
+        if priced:
+            top = max(priced, key=lambda r: float(r[column]))
+            result[side] = {"price": float(top[column]), "book": top["book"], "name": top["name"],
+                            "updated": top.get("updated")}
     if not result:
         return None
     result["books"] = len({r["book"] for r in rows})
@@ -204,6 +240,14 @@ def side_spread(best: dict[str, Any] | None, side: str | None) -> tuple[float | 
     if not isinstance(entry, dict) or entry.get("spread") is None:
         return None, None
     return float(entry["spread"]), entry.get("name") or entry.get("book")
+
+
+def side_moneyline(best: dict[str, Any] | None, side: str | None) -> tuple[float | None, str | None]:
+    """The best moneyline price for `side` ('home'/'away') and the book that offers it."""
+    entry = (best or {}).get(f"{side}_ml" if side in ("home", "away") else "")
+    if not isinstance(entry, dict) or entry.get("price") is None:
+        return None, None
+    return float(entry["price"]), entry.get("name") or entry.get("book")
 
 
 def signature(best: dict[str, Any] | None) -> list[Any] | None:
@@ -263,6 +307,10 @@ def table_providers(providers: list[dict[str, Any]], tracked: Iterable[dict[str,
             "total_move": round(total - total_open, 1) if total is not None and total_open is not None else None,
             "fetched_at": row.get("captured_at") or row.get("updated"), "source": "odds-api",
         })
+        if _number(row.get("home_moneyline")) is not None:      # the tracker's reading is the fresher one
+            merged[-1]["home_moneyline"] = _number(row["home_moneyline"])
+        if _number(row.get("away_moneyline")) is not None:
+            merged[-1]["away_moneyline"] = _number(row["away_moneyline"])
     return sorted(merged, key=lambda p: str(p.get("provider") or "").casefold())
 
 
@@ -290,5 +338,7 @@ def display_rows(connection: sqlite3.Connection, game_id: Any, *,
                               and _price_key(row.get("over_price")) == _price_key(best["over"]["price"])),
             "best_under": bool(best and "under" in best and total == best["under"]["total"]
                                and _price_key(row.get("under_price")) == _price_key(best["under"]["price"])),
+            "best_home_ml": bool(best and "home_ml" in best and _number(row.get("home_moneyline")) == best["home_ml"]["price"]),
+            "best_away_ml": bool(best and "away_ml" in best and _number(row.get("away_moneyline")) == best["away_ml"]["price"]),
         })
     return {"rows": out, "best": best, "has_data": bool(out)}

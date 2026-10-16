@@ -28,6 +28,76 @@ def add(connection, book, captured, spread, home_price=-110, away_price=-110, to
          total, over, under, captured))
 
 
+class MoneylineBestTests(unittest.TestCase):
+    def rows(self, *specs):
+        return [{"book": b, "name": bl.book_name(b), **spec} for b, spec in specs]
+
+    def test_the_best_moneyline_is_the_highest_price_for_each_side(self):
+        best = bl.best_of(self.rows(
+            ("draftkings", {"home_moneyline": 140, "away_moneyline": -165}),
+            ("fanduel", {"home_moneyline": 145, "away_moneyline": -170}),
+            ("betmgm", {"home_moneyline": 135, "away_moneyline": -160})))
+        self.assertEqual((best["home_ml"]["price"], best["home_ml"]["book"]), (145.0, "fanduel"))     # +145 pays most
+        self.assertEqual((best["away_ml"]["price"], best["away_ml"]["book"]), (-160.0, "betmgm"))     # -160 beats -170
+
+    def test_a_favorite_and_an_underdog_compare_correctly_across_the_sign(self):
+        best = bl.best_of(self.rows(("draftkings", {"home_moneyline": -105, "away_moneyline": -115}),
+                                    ("fanduel", {"home_moneyline": 100, "away_moneyline": -120})))
+        self.assertEqual(best["home_ml"]["book"], "fanduel")           # +100 beats -105
+
+    def test_side_moneyline_reads_the_price_and_the_book(self):
+        best = bl.best_of(self.rows(("fanduel", {"home_moneyline": 145, "away_moneyline": -170})))
+        self.assertEqual(bl.side_moneyline(best, "home"), (145.0, "FanDuel"))
+        self.assertEqual(bl.side_moneyline(best, "away"), (-170.0, "FanDuel"))
+        self.assertEqual(bl.side_moneyline(best, None), (None, None))
+        self.assertEqual(bl.side_moneyline(None, "home"), (None, None))
+
+    def test_a_book_with_no_moneyline_does_not_win_anything(self):
+        best = bl.best_of(self.rows(("draftkings", {"home_spread": 5.5}), ("fanduel", {"home_moneyline": 130, "away_moneyline": -150})))
+        self.assertEqual(best["home_ml"]["book"], "fanduel")
+
+    def test_moneyline_only_rows_still_give_a_best(self):
+        self.assertIsNotNone(bl.best_of(self.rows(("fanduel", {"home_moneyline": 130, "away_moneyline": -150}))))
+
+    def test_the_moneyline_does_not_change_the_pick_signature(self):
+        base = self.rows(("draftkings", {"home_spread": 5.5, "total": 48.5, "home_price": -110, "away_price": -110,
+                                         "over_price": -110, "under_price": -110}))
+        moved = [dict(base[0], home_moneyline=150, away_moneyline=-180)]
+        self.assertEqual(bl.signature(bl.best_of(base)), bl.signature(bl.best_of(moved)))
+
+    def test_the_display_marks_the_best_moneylines(self):
+        c = make_connection()
+        self.addCleanup(c.close)
+        c.execute("ALTER TABLE odds_api_lines ADD COLUMN home_moneyline REAL")
+        c.execute("ALTER TABLE odds_api_lines ADD COLUMN away_moneyline REAL")
+        add(c, "draftkings", "2026-10-15T10:00:00", 5.5)
+        add(c, "fanduel", "2026-10-15T10:05:00", 5.5)
+        c.execute("UPDATE odds_api_lines SET home_moneyline=140, away_moneyline=-165 WHERE bookmaker='draftkings'")
+        c.execute("UPDATE odds_api_lines SET home_moneyline=145, away_moneyline=-170 WHERE bookmaker='fanduel'")
+        rows = {r["book"]: r for r in bl.display_rows(c, "g1")["rows"]}
+        self.assertTrue(rows["fanduel"]["best_home_ml"])
+        self.assertTrue(rows["draftkings"]["best_away_ml"])
+        self.assertFalse(rows["draftkings"]["best_home_ml"])
+
+    def test_the_fallbacks_carry_moneylines(self):
+        c = make_connection()
+        self.addCleanup(c.close)
+        c.execute("ALTER TABLE game_lines ADD COLUMN home_moneyline REAL")
+        c.execute("ALTER TABLE game_lines ADD COLUMN away_moneyline REAL")
+        c.execute("INSERT INTO game_lines (game_id, provider, spread, spread_open, over_under, over_under_open, fetched_at, "
+                  "home_moneyline, away_moneyline) VALUES (1,'DraftKings',-5.0,-4.0,48.5,48.0,'t',-210,175)")
+        row = bl.cfbd_rows(c, 1)[0]
+        self.assertEqual((row["home_moneyline"], row["away_moneyline"]), (-210, 175))
+
+    def test_an_older_table_without_the_moneyline_columns_reads_as_none(self):
+        c = make_connection()                                   # its tables carry no moneyline columns at all
+        self.addCleanup(c.close)
+        add(c, "draftkings", "2026-10-15T10:00:00", 5.5)
+        c.execute("INSERT INTO game_lines (game_id, provider, spread, over_under, fetched_at) VALUES (1,'ESPN Bet',-4.5,48.0,'t')")
+        self.assertEqual(bl.tracker_rows(c, "g1")[0]["home_moneyline"], None)
+        self.assertEqual(bl.cfbd_rows(c, 1)[0]["home_moneyline"], None)
+
+
 class TrackerRowsTests(unittest.TestCase):
     def setUp(self):
         self.c = make_connection()
@@ -49,6 +119,18 @@ class TrackerRowsTests(unittest.TestCase):
         add(self.c, "fanduel", "2026-10-14T10:00:00", 6.0)
         add(self.c, "fanduel", "2026-10-15T10:00:00", 5.0)
         self.assertEqual(bl.tracker_rows(self.c, "g1", as_of="2026-10-14T23:00:00")[0]["home_spread"], 6.0)
+
+    def test_in_play_rows_already_on_disk_are_ignored_and_the_last_pregame_line_stands(self):
+        add(self.c, "draftkings", "2026-10-17T10:00:00", 5.5, total=48.5)               # pregame (kickoff is 16:00Z)
+        add(self.c, "draftkings", "2026-10-17T18:30:00", 1.5, total=31.5)               # in play, two hours into the game
+        row = bl.tracker_rows(self.c, "g1")[0]
+        self.assertEqual((row["home_spread"], row["total"]), (5.5, 48.5))
+        self.assertEqual(row["opened_spread"], 5.5)
+
+    def test_a_game_with_only_in_play_rows_has_no_lines(self):
+        add(self.c, "fanduel", "2026-10-17T18:30:00", 1.5)
+        self.assertEqual(bl.tracker_rows(self.c, "g1"), [])
+        self.assertIsNone(bl.snapshot(self.c, "g1"))
 
     def test_a_database_without_the_table_has_no_rows_not_an_error(self):
         empty = sqlite3.connect(":memory:")
@@ -196,6 +278,22 @@ class OpenerTests(unittest.TestCase):
         draftkings = self.rows(fallback)["draftkings"]
         self.assertEqual((draftkings["home_spread"], draftkings["total"], draftkings["source"]), (2.5, 40.5, "odds-api"))
 
+    def test_a_fallbacks_moneyline_fills_in_until_the_tracker_has_one(self):
+        fallback = self.espn_open(3.5, 43.5)
+        fallback[0]["home_moneyline"], fallback[0]["away_moneyline"] = -142, 120
+        draftkings = self.rows(fallback)["draftkings"]
+        self.assertEqual((draftkings["home_moneyline"], draftkings["away_moneyline"]), (-142, 120))
+        self.assertEqual(draftkings["source"], "odds-api")
+
+    def test_the_trackers_own_moneyline_is_never_overwritten_by_the_fallback(self):
+        self.c.execute("ALTER TABLE odds_api_lines ADD COLUMN home_moneyline REAL")
+        self.c.execute("ALTER TABLE odds_api_lines ADD COLUMN away_moneyline REAL")
+        self.c.execute("UPDATE odds_api_lines SET home_moneyline=-150, away_moneyline=130 WHERE bookmaker='draftkings'")
+        fallback = self.espn_open(3.5, 43.5)
+        fallback[0]["home_moneyline"], fallback[0]["away_moneyline"] = -142, 120
+        draftkings = self.rows(fallback)["draftkings"]
+        self.assertEqual((draftkings["home_moneyline"], draftkings["away_moneyline"]), (-150, 130))
+
     def test_a_book_the_fallback_does_not_cover_keeps_its_first_seen_opener(self):
         fanduel = self.rows(self.espn_open(3.5, 43.5))["fanduel"]
         self.assertEqual((fanduel["spread_move"], fanduel["total_move"]), (0.0, 0.0))
@@ -275,6 +373,22 @@ class TableProvidersTests(unittest.TestCase):
         snapshot = [dict(p) for p in original]
         bl.table_providers(original, self.tracked(), "Old Dominion", "Georgia Southern")
         self.assertEqual(original, snapshot)
+
+    def test_the_trackers_moneyline_fills_the_table_and_replaces_cfbds_when_it_has_one(self):
+        providers = self.cfbd()
+        tracked = [{"book": "draftkings", "name": "DraftKings", "source": "odds-api", "home_spread": 3.0, "total": 46.5,
+                    "captured_at": "t", "opened_spread": 3.0, "opened_total": 46.5, "home_moneyline": 140, "away_moneyline": -165},
+                   {"book": "fanduel", "name": "FanDuel", "source": "odds-api", "home_spread": 3.5, "total": 47.0,
+                    "captured_at": "t", "opened_spread": 3.5, "opened_total": 47.0, "home_moneyline": 150, "away_moneyline": -170}]
+        merged = {p["provider"]: p for p in bl.table_providers(providers, tracked, "Old Dominion", "Georgia Southern")}
+        self.assertEqual((merged["DraftKings"]["home_moneyline"], merged["DraftKings"]["away_moneyline"]), (140, -165))
+        self.assertEqual((merged["FanDuel"]["home_moneyline"], merged["FanDuel"]["away_moneyline"]), (150, -170))
+
+    def test_cfbds_moneyline_is_kept_when_the_tracker_has_none(self):
+        tracked = [{"book": "draftkings", "name": "DraftKings", "source": "odds-api", "home_spread": 3.0, "total": 46.5,
+                    "captured_at": "t", "opened_spread": 3.0, "opened_total": 46.5}]
+        merged = {p["provider"]: p for p in bl.table_providers(self.cfbd(), tracked, "Home", "Away")}
+        self.assertEqual((merged["DraftKings"]["home_moneyline"], merged["DraftKings"]["away_moneyline"]), (150, -180))
 
     def test_no_tracked_rows_means_the_table_is_exactly_as_before(self):
         self.assertEqual(bl.table_providers(self.cfbd(), [], "Home", "Away"), self.cfbd())
