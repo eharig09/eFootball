@@ -106,9 +106,9 @@ class ScheduleTests(unittest.TestCase):
         return datetime(year, month, day, hour, minute, tzinfo=tracker.EASTERN).astimezone(timezone.utc)
 
     def test_a_college_slot_is_due_just_after_it_and_fires_once(self):
-        now = self.at(2026, 10, 17, 11, 20)                    # Saturday 11:20 ET, slot at 11:00
+        now = self.at(2026, 10, 17, 10, 20)                    # Saturday 10:20 ET, slot at 10:00
         slot = tracker.slot_due(now, "cfb", None)
-        self.assertEqual(slot, self.at(2026, 10, 17, 11, 0))
+        self.assertEqual(slot, self.at(2026, 10, 17, 10, 0))
         self.assertIsNone(tracker.slot_due(now, "cfb", slot + timedelta(minutes=2)))           # already done
 
     def test_nothing_is_due_in_the_quiet_hours(self):
@@ -116,7 +116,7 @@ class ScheduleTests(unittest.TestCase):
         self.assertIsNone(tracker.slot_due(self.at(2026, 10, 14, 2, 0), "nfl", None))          # Wednesday 02:00
 
     def test_a_slot_is_not_made_up_long_after_it_passed(self):
-        self.assertIsNone(tracker.slot_due(self.at(2026, 10, 17, 14, 30), "cfb", None))        # 3.5h after the 11:00 slot
+        self.assertIsNone(tracker.slot_due(self.at(2026, 10, 17, 13, 30), "cfb", None))        # 3.5h after the 10:00 slot
 
     def test_nfl_has_its_own_slots(self):
         self.assertIsNotNone(tracker.slot_due(self.at(2026, 10, 18, 11, 40), "nfl", None))     # Sunday 11:30
@@ -185,8 +185,8 @@ class SweepTests(unittest.TestCase):
                                              "ODDS_API_LEDGER_PATH": str(root / "ledger.sqlite3"), "ODDS_API_KEY": "test-key"})
         patcher.start()
         self.addCleanup(patcher.stop)
-        # Saturday 11:10 ET: a college slot is due
-        self.now = datetime(2026, 10, 17, 11, 10, tzinfo=tracker.EASTERN).astimezone(timezone.utc)
+        # Saturday 10:10 ET: a college slot is due
+        self.now = datetime(2026, 10, 17, 10, 10, tzinfo=tracker.EASTERN).astimezone(timezone.utc)
         self.upcoming = [{"id": "e1", "commence_time": "2026-10-17T16:00:00Z"}]
         self.odds = [event()]
 
