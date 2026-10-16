@@ -16,6 +16,7 @@ The books are the ones the user chose to track: DraftKings, ESPN BET, FanDuel, B
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import sqlite3
 from typing import Any, Iterable
 
@@ -49,6 +50,20 @@ def _price_key(price: Any) -> float:
 
 # ------------------------------------------------------------------ reading the tracker
 
+def _before_kickoff(row: sqlite3.Row) -> bool:
+    """False for a row captured at or after the game started: that is an in-play line, not a pregame one."""
+    try:
+        captured = datetime.fromisoformat(str(row["captured_at"]).replace("Z", "+00:00"))
+        kickoff = datetime.fromisoformat(str(row["commence_time"]).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return True
+    if captured.tzinfo is None:
+        captured = captured.replace(tzinfo=timezone.utc)
+    if kickoff.tzinfo is None:
+        kickoff = kickoff.replace(tzinfo=timezone.utc)
+    return captured < kickoff
+
+
 def tracker_rows(connection: sqlite3.Connection, game_id: Any, *, as_of: str | None = None) -> list[dict[str, Any]]:
     """Each tracked book's latest line for a game, with the first line the tracker saw (its opener).
 
@@ -68,7 +83,7 @@ def tracker_rows(connection: sqlite3.Connection, game_id: Any, *, as_of: str | N
     latest: dict[str, Any] = {}
     for row in rows:
         key = row["bookmaker"]
-        if key not in TRACKED_BOOKS:
+        if key not in TRACKED_BOOKS or not _before_kickoff(row):
             continue
         first.setdefault(key, row)
         latest[key] = row
@@ -158,6 +173,9 @@ def merge_fallback(rows: list[dict[str, Any]], fallback: Iterable[dict[str, Any]
             if old.get("opened_total") is not None:
                 row["opened_total"] = old["opened_total"]
             row["opener_source"] = old.get("source")
+            for column in ("home_moneyline", "away_moneyline"):      # until the tracker has a moneyline for this book
+                if row.get(column) is None and old.get(column) is not None:
+                    row[column] = old[column]
         merged.append(row)
     have = {row["book"] for row in rows}
     extra = [dict(row, name=row.get("name") or book_name(row["book"])) for book, row in fallback_by_book.items()

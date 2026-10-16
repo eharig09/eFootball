@@ -122,8 +122,8 @@ book's number moves, with the matching game id where one can be found.
 
 Credits are the constraint, so every sweep is guarded: the free `/events` endpoint must show a game inside the
 look-ahead window, and a shared ledger plus the API's own remaining-credit header must leave room under a hard
-cap. Spreads and totals for the US region cost 2 credits per sweep whatever the slate size. Sweeps come from two
-places, and both feed the same ledger:
+cap. Spreads, totals and moneylines for the US region cost 3 credits per sweep whatever the slate size. Sweeps come
+from two places, and both feed the same ledger:
 
 * **Calendar slots** (college: Sunday night, Tue/Thu/Fri noon, and three Saturday waves at 10:00, 14:00 and 18:00
   ET, each just ahead of an even-hour projections refresh; NFL: Wed, Thu night, Sat, two Sunday windows, Monday),
@@ -132,10 +132,15 @@ places, and both feed the same ledger:
   at :20) sweep the college books just before they re-freeze the picks, and the NFL availability lane does the
   same for the NFL, so a pick captures a best line at most a couple of hours old. These are the loose, frequent
   callers, so they get tighter gates: at least 3 hours since the league was last looked at, at most 3 sweeps per
-  league in any 24 hours (slots included), a game within 60 hours, and only 350 of the month's credits.
+  league in any 24 hours (slots included), a game within 60 hours, and only 300 of the month's credits.
 
 The NFL picks are re-frozen only when lines newer than the last freeze are on file, so a quiet 15-minute tick
-costs one small read. Typical use is roughly 235 credits a month; the caps bound the worst case.
+costs one small read. The slots alone use about 170 credits a month and refresh runs add roughly 130 more, so
+typical use is about 300 of the 500; the caps bound the worst case.
+
+Each book's spread, total and moneyline are stored per sweep (a row is appended only when one of them moves). Games
+that have already kicked off are skipped, because the feed returns live in-play numbers for them. The best moneyline
+for a side is the highest American price on offer; NFL straight-up picks are priced at it, for new picks only.
 
     python -m sports_aggregator.odds_api_tracker status
     python -m sports_aggregator.odds_api_tracker sweep --league cfb --force   # spends 2 credits

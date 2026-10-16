@@ -48,7 +48,8 @@ LOOKAHEAD_DAYS = 8                  # a sweep needs a game this close (the /even
 #: smaller share of the month's credits (the slots keep the rest), and only games close enough to matter.
 REFRESH_MIN_GAP_HOURS = 3
 REFRESH_DAILY_CAP = 3               # successful sweeps per league in any rolling 24 hours, slots included
-REFRESH_BUDGET_CAP = 350            # of the 450 hard cap
+REFRESH_BUDGET_CAP = 300            # of the 450 hard cap. The slots alone use about 170 a month at 3 credits a sweep,
+                                    # so this leaves them 150 of headroom even if refresh runs use their whole share early
 REFRESH_LOOKAHEAD_HOURS = 60
 SLOT_WINDOW_HOURS = 3               # a slot can still fire this long after its time (scheduler jitter, restarts)
 TIMEOUT = 30
@@ -388,6 +389,11 @@ def store_snapshot(connection: sqlite3.Connection, league: str, captured_at: dat
     ensure_lines_schema(connection)
     stored = matched = 0
     for event in events:
+        # The feed also lists games already under way, with live in-play numbers (a total of 31.5 on a game that opened
+        # at 43.5). They are not pregame lines and nothing here may mistake them for one, so they are not stored.
+        kickoff = _parse(event.get("commence_time"))
+        if kickoff is not None and kickoff <= captured_at:
+            continue
         game_id = resolve(event)
         matched += game_id is not None
         if game_id is not None:           # rows stored before this game could be matched get its id

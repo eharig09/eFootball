@@ -120,6 +120,18 @@ class TrackerRowsTests(unittest.TestCase):
         add(self.c, "fanduel", "2026-10-15T10:00:00", 5.0)
         self.assertEqual(bl.tracker_rows(self.c, "g1", as_of="2026-10-14T23:00:00")[0]["home_spread"], 6.0)
 
+    def test_in_play_rows_already_on_disk_are_ignored_and_the_last_pregame_line_stands(self):
+        add(self.c, "draftkings", "2026-10-17T10:00:00", 5.5, total=48.5)               # pregame (kickoff is 16:00Z)
+        add(self.c, "draftkings", "2026-10-17T18:30:00", 1.5, total=31.5)               # in play, two hours into the game
+        row = bl.tracker_rows(self.c, "g1")[0]
+        self.assertEqual((row["home_spread"], row["total"]), (5.5, 48.5))
+        self.assertEqual(row["opened_spread"], 5.5)
+
+    def test_a_game_with_only_in_play_rows_has_no_lines(self):
+        add(self.c, "fanduel", "2026-10-17T18:30:00", 1.5)
+        self.assertEqual(bl.tracker_rows(self.c, "g1"), [])
+        self.assertIsNone(bl.snapshot(self.c, "g1"))
+
     def test_a_database_without_the_table_has_no_rows_not_an_error(self):
         empty = sqlite3.connect(":memory:")
         empty.row_factory = sqlite3.Row
@@ -265,6 +277,22 @@ class OpenerTests(unittest.TestCase):
         fallback[0]["home_spread"], fallback[0]["total"] = 9.9, 99.0         # a stale or different current line
         draftkings = self.rows(fallback)["draftkings"]
         self.assertEqual((draftkings["home_spread"], draftkings["total"], draftkings["source"]), (2.5, 40.5, "odds-api"))
+
+    def test_a_fallbacks_moneyline_fills_in_until_the_tracker_has_one(self):
+        fallback = self.espn_open(3.5, 43.5)
+        fallback[0]["home_moneyline"], fallback[0]["away_moneyline"] = -142, 120
+        draftkings = self.rows(fallback)["draftkings"]
+        self.assertEqual((draftkings["home_moneyline"], draftkings["away_moneyline"]), (-142, 120))
+        self.assertEqual(draftkings["source"], "odds-api")
+
+    def test_the_trackers_own_moneyline_is_never_overwritten_by_the_fallback(self):
+        self.c.execute("ALTER TABLE odds_api_lines ADD COLUMN home_moneyline REAL")
+        self.c.execute("ALTER TABLE odds_api_lines ADD COLUMN away_moneyline REAL")
+        self.c.execute("UPDATE odds_api_lines SET home_moneyline=-150, away_moneyline=130 WHERE bookmaker='draftkings'")
+        fallback = self.espn_open(3.5, 43.5)
+        fallback[0]["home_moneyline"], fallback[0]["away_moneyline"] = -142, 120
+        draftkings = self.rows(fallback)["draftkings"]
+        self.assertEqual((draftkings["home_moneyline"], draftkings["away_moneyline"]), (-150, 130))
 
     def test_a_book_the_fallback_does_not_cover_keeps_its_first_seen_opener(self):
         fanduel = self.rows(self.espn_open(3.5, 43.5))["fanduel"]

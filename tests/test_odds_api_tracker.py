@@ -157,6 +157,18 @@ class StoreTests(unittest.TestCase):
             "SELECT home_spread FROM odds_api_lines WHERE bookmaker='draftkings' ORDER BY line_id").fetchall()
         self.assertEqual([r[0] for r in rows], [5.5, 6.0])
 
+    def test_a_game_already_under_way_is_not_stored_because_its_lines_are_in_play(self):
+        started = dict(event("e_live"), commence_time="2026-10-15T14:00:00Z")          # kicked off an hour before self.now
+        upcoming = event("e_next")
+        stored, matched = self.store([started, upcoming])
+        self.assertEqual(stored, 2)                                                    # only the upcoming game's two books
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM odds_api_lines WHERE event_id='e_live'").fetchone()[0], 0)
+        self.assertEqual(matched, 1)
+
+    def test_a_game_that_kicks_off_exactly_now_is_not_pregame_either(self):
+        starting = dict(event("e_now"), commence_time="2026-10-15T15:00:00Z")           # self.now is 15:00:00 UTC
+        self.assertEqual(self.store([starting])[0], 0)
+
     def test_a_moneyline_change_alone_counts_as_a_move(self):
         self.store([event(books=[book("fanduel", 5.5, ml=(150, -180))])])
         self.assertEqual(self.store([event(books=[book("fanduel", 5.5, ml=(150, -180))])], when=self.now + timedelta(hours=1))[0], 0)
