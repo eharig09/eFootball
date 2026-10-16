@@ -13,6 +13,18 @@ import tempfile
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_live_odds_api(monkeypatch, tmp_path_factory):
+    """Keep every test away from the real Odds API key and credit ledger.
+
+    The refresh segments now sweep the tracked books, and a developer's .env supplies a real key. A test that ran a whole
+    segment unpatched then made paid requests and wrote real rows. A blank key makes the tracker a no-op (load_dotenv never
+    overrides a variable that is already set, even to ""); tests that exercise the tracker set their own key and ledger.
+    """
+    monkeypatch.setenv("ODDS_API_KEY", "")
+    monkeypatch.setenv("ODDS_API_LEDGER_PATH", str(tmp_path_factory.getbasetemp() / "odds_api_usage.sqlite3"))
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _isolated_refresh_state():
     with tempfile.TemporaryDirectory(prefix="refresh-state-") as directory:

@@ -42,14 +42,25 @@ CALL_COST = 2                       # markets x regions
 MONTHLY_CAP = 450                   # of 500: the rest is a cushion for manual checks and clock skew
 MIN_REMAINING = 40                  # never call when the API itself reports fewer credits than this
 LOOKAHEAD_DAYS = 8                  # a sweep needs a game this close (the /events check is free)
+
+#: A sweep can also ride on the app's own refresh runs (core and projections), without waiting for a calendar slot.
+#: Those are the loose, frequent callers, so they get the tighter gates: a long minimum gap, a daily cap per league, a
+#: smaller share of the month's credits (the slots keep the rest), and only games close enough to matter.
+REFRESH_MIN_GAP_HOURS = 3
+REFRESH_DAILY_CAP = 3               # successful sweeps per league in any rolling 24 hours, slots included
+REFRESH_BUDGET_CAP = 350            # of the 450 hard cap
+REFRESH_LOOKAHEAD_HOURS = 60
 SLOT_WINDOW_HOURS = 3               # a slot can still fire this long after its time (scheduler jitter, restarts)
 TIMEOUT = 30
 EASTERN = ZoneInfo("America/New_York")
 
 #: (weekday Mon=0..Sun=6, hour, minute) in Eastern time. College: openers Sunday night, midweek, then the three
 #: Saturday waves so each wave's closing number is caught. NFL: midweek, Thursday night, Sunday windows, Monday.
+#: The Saturday college slots sit 20 minutes before the even-hour projections refresh (:20 every two hours), which
+#: re-freezes the picks, so each wave's pick captures the line swept just before it: 10:00, 14:00 and 18:00 feed the
+#: 10:20, 14:20 and 18:20 runs ahead of the noon, 3:30 and 7:00 kickoffs.
 SLOTS: dict[str, tuple[tuple[int, int, int], ...]] = {
-    "cfb": ((6, 20, 0), (1, 12, 0), (3, 12, 0), (4, 12, 0), (5, 11, 0), (5, 15, 0), (5, 19, 0)),
+    "cfb": ((6, 20, 0), (1, 12, 0), (3, 12, 0), (4, 12, 0), (5, 10, 0), (5, 14, 0), (5, 18, 0)),
     "nfl": ((2, 12, 0), (3, 17, 0), (5, 12, 0), (6, 11, 30), (6, 15, 30), (0, 17, 30)),
 }
 
@@ -153,13 +164,36 @@ def last_known_used(ledger: sqlite3.Connection, now: datetime) -> int | None:
     return int(row[0]) if row else None
 
 
-def budget_allows(ledger: sqlite3.Connection, now: datetime, cost: int = CALL_COST) -> tuple[bool, str]:
+def budget_allows(ledger: sqlite3.Connection, now: datetime, cost: int = CALL_COST,
+                  cap: int = MONTHLY_CAP) -> tuple[bool, str]:
     used = max(month_used(ledger, now), last_known_used(ledger, now) or 0)
-    if used + cost > MONTHLY_CAP:
-        return False, f"monthly cap: {used} credits used of {MONTHLY_CAP} allowed ({cost} needed)"
+    if used + cost > cap:
+        return False, f"monthly cap: {used} credits used of {cap} allowed ({cost} needed)"
     remaining = last_known_remaining(ledger, now)
     if remaining is not None and remaining - cost < MIN_REMAINING:
         return False, f"the API reports {remaining} credits remaining; keeping {MIN_REMAINING} in reserve"
+    return True, ""
+
+
+# ------------------------------------------------------------------ refresh-mode gate
+
+def refresh_gate(ledger: sqlite3.Connection, league: str, now: datetime) -> tuple[bool, str]:
+    """May a sweep riding on a refresh run go ahead? Local checks only: no request, no credits.
+
+    It must be a while since the league was last looked at (a sweep, or a free check that found no games, so an
+    offseason tick does not repeat the free call every few minutes), and the league must be under its daily cap.
+    """
+    gap_start = _iso(now - timedelta(hours=REFRESH_MIN_GAP_HOURS))
+    recent = ledger.execute(
+        "SELECT MAX(called_at) FROM odds_api_calls WHERE league=? AND status IN ('ok','no-games') AND called_at>=?",
+        (league, gap_start)).fetchone()[0]
+    if recent:
+        return False, f"looked at {league} within the last {REFRESH_MIN_GAP_HOURS} hours"
+    day_start = _iso(now - timedelta(hours=24))
+    swept = ledger.execute("SELECT COUNT(*) FROM odds_api_calls WHERE league=? AND status='ok' AND called_at>=?",
+                           (league, day_start)).fetchone()[0]
+    if swept >= REFRESH_DAILY_CAP:
+        return False, f"{swept} sweeps of {league} in the last 24 hours (cap {REFRESH_DAILY_CAP})"
     return True, ""
 
 
@@ -325,8 +359,12 @@ _VALUE_COLUMNS = ("home_spread", "home_spread_price", "away_spread_price", "tota
 
 
 def store_snapshot(connection: sqlite3.Connection, league: str, captured_at: datetime, events: list[dict[str, Any]],
-                   resolve: Callable[[dict[str, Any]], str | None]) -> tuple[int, int]:
-    """Append a row per (event, book) whose numbers changed. Returns (rows stored, events matched to a game)."""
+                   resolve: Callable[[dict[str, Any]], str | None],
+                   changed_games: set[str] | None = None) -> tuple[int, int]:
+    """Append a row per (event, book) whose numbers changed. Returns (rows stored, events matched to a game).
+
+    If `changed_games` is given, the ids of games that gained a row are added to it.
+    """
     connection.executescript(LINES_SCHEMA)
     stored = matched = 0
     for event in events:
@@ -349,6 +387,8 @@ def store_snapshot(connection: sqlite3.Connection, league: str, captured_at: dat
                  event["away_team"], row["bookmaker"], row["home_spread"], row["home_spread_price"],
                  row["away_spread_price"], row["total"], row["over_price"], row["under_price"], row["book_updated_at"]))
             stored += 1
+            if changed_games is not None and game_id is not None:
+                changed_games.add(str(game_id))
     connection.commit()
     return stored, matched
 
@@ -367,8 +407,12 @@ def _record(ledger: sqlite3.Connection, now: datetime, league: str, status: str,
 
 
 def sweep(league: str, *, force: bool = False, now: datetime | None = None, session=requests,
-          api_key: str | None = None) -> dict[str, Any]:
-    """One guarded sweep. Never raises for an expected refusal; returns {'status': ..., 'message': ...}."""
+          api_key: str | None = None, mode: str = "slot") -> dict[str, Any]:
+    """One guarded sweep. Never raises for an expected refusal; returns {'status': ..., 'message': ...}.
+
+    mode="slot" waits for a calendar slot (or `force`); mode="refresh" is for callers that ride on the app's own
+    refresh runs, and instead passes refresh_gate, a smaller budget share and a shorter look-ahead.
+    """
     now = now or _now()
     key = api_key or (os.getenv("ODDS_API_KEY") or "").strip()
     if not key:
@@ -378,9 +422,16 @@ def sweep(league: str, *, force: bool = False, now: datetime | None = None, sess
     with closing(_connect(ledger_path())) as ledger:
         ledger.executescript(LEDGER_SCHEMA)
         last = ledger.execute("SELECT MAX(called_at) FROM odds_api_calls WHERE league=? AND status='ok'", (league,)).fetchone()[0]
-        if not force and slot_due(now, league, _parse(last)) is None:
-            return {"status": "not-due", "message": "no scheduled slot is due"}
-        ok, reason = budget_allows(ledger, now)
+        if mode == "refresh":
+            gate_ok, gate_reason = refresh_gate(ledger, league, now)
+            if not gate_ok:
+                return {"status": "not-due", "message": gate_reason}
+            cap, horizon_span = REFRESH_BUDGET_CAP, timedelta(hours=REFRESH_LOOKAHEAD_HOURS)
+        else:
+            if not force and slot_due(now, league, _parse(last)) is None:
+                return {"status": "not-due", "message": "no scheduled slot is due"}
+            cap, horizon_span = MONTHLY_CAP, timedelta(days=LOOKAHEAD_DAYS)
+        ok, reason = budget_allows(ledger, now, cap=cap)
         if not ok:
             _record(ledger, now, league, "budget", message=reason)
             return {"status": "budget", "message": reason}
@@ -390,7 +441,7 @@ def sweep(league: str, *, force: bool = False, now: datetime | None = None, sess
         except Exception as exc:
             _record(ledger, now, league, "error", message=f"events: {exc}")
             return {"status": "error", "message": f"events check failed: {exc}"}
-        horizon = now + timedelta(days=LOOKAHEAD_DAYS)
+        horizon = now + horizon_span
         soon = [e for e in upcoming if (_parse(e.get("commence_time")) or horizon) <= horizon]
         if not soon:
             _record(ledger, now, league, "no-games", events=0, message="no games inside the look-ahead window")
@@ -409,12 +460,71 @@ def sweep(league: str, *, force: bool = False, now: datetime | None = None, sess
             else:
                 names = {row["name"]: row["abbreviation"] for row in connection.execute("SELECT abbreviation, name FROM teams")}
                 resolve = lambda event: nfl_game_id(connection, names, event)         # noqa: E731
-            stored, matched = store_snapshot(connection, league, now, events, resolve)
+            changed: set[str] = set()
+            stored, matched = store_snapshot(connection, league, now, events, resolve, changed)
         remaining, used, last_cost = _credits(response.headers)
         _record(ledger, now, league, "ok", cost=last_cost if last_cost is not None else CALL_COST,
-                headers=response.headers, events=len(events), stored=stored, matched=matched)
-        return {"status": "ok", "events": len(events), "matched_games": matched, "rows_stored": stored,
-                "credits_remaining": remaining, "credits_used": used}
+                headers=response.headers, events=len(events), stored=stored, matched=matched,
+                message=f"{mode} sweep")
+        return {"status": "ok", "mode": mode, "events": len(events), "matched_games": matched, "rows_stored": stored,
+                "changed_games": len(changed), "credits_remaining": remaining, "credits_used": used}
+
+
+def auto(league: str, *, now: datetime | None = None, session=requests, api_key: str | None = None) -> dict[str, Any]:
+    """The entry point for refresh runs: a slot sweep if a slot is due, otherwise a gated refresh-mode sweep."""
+    now = now or _now()
+    if not (api_key or os.getenv("ODDS_API_KEY") or "").strip():
+        return {"status": "skipped", "message": "ODDS_API_KEY is not set"}
+    with closing(_connect(ledger_path())) as ledger:
+        ledger.executescript(LEDGER_SCHEMA)
+        last = ledger.execute("SELECT MAX(called_at) FROM odds_api_calls WHERE league=? AND status='ok'",
+                              (league,)).fetchone()[0]
+    mode = "slot" if slot_due(now, league, _parse(last)) is not None else "refresh"
+    return sweep(league, now=now, session=session, api_key=api_key, mode=mode)
+
+
+# ------------------------------------------------------------------ has the engine seen the latest lines?
+
+FREEZE_SCHEMA = "CREATE TABLE IF NOT EXISTS odds_api_freeze_state (league TEXT PRIMARY KEY, frozen_through TEXT)"
+PENDING_WINDOW_DAYS = 5
+
+
+def pending_freeze(league: str, *, now: datetime | None = None) -> tuple[list[str], str | None]:
+    """Games about to be played whose tracked lines are newer than the last time the engine froze its picks.
+
+    Returns (game ids, high-water mark). Pass the mark to mark_frozen after the freeze, so lines that arrive while
+    it runs are still pending next time. A caller that freezes picks on a frequent cadence (the NFL availability lane)
+    uses this to freeze only when there is something new for the picks to capture.
+    """
+    now = now or _now()
+    path = league_database(league)
+    if not path.exists():
+        return [], None
+    with closing(_connect(path)) as connection:
+        connection.executescript(LINES_SCHEMA + FREEZE_SCHEMA)
+        high = connection.execute("SELECT MAX(captured_at) FROM odds_api_lines").fetchone()[0]
+        if high is None:
+            return [], None
+        through = connection.execute("SELECT frozen_through FROM odds_api_freeze_state WHERE league=?",
+                                     (league,)).fetchone()
+        floor = through[0] if through and through[0] else ""
+        stamp = lambda moment: moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")      # noqa: E731
+        ids = [row[0] for row in connection.execute(
+            "SELECT DISTINCT game_id FROM odds_api_lines WHERE game_id IS NOT NULL AND captured_at>? "
+            "AND commence_time>=? AND commence_time<=?",
+            (floor, stamp(now), stamp(now + timedelta(days=PENDING_WINDOW_DAYS))))]
+    return ids, high
+
+
+def mark_frozen(league: str, high_water: str | None) -> None:
+    if not high_water:
+        return
+    with closing(_connect(league_database(league))) as connection:
+        connection.executescript(FREEZE_SCHEMA)
+        connection.execute(
+            "INSERT INTO odds_api_freeze_state (league, frozen_through) VALUES (?, ?) "
+            "ON CONFLICT(league) DO UPDATE SET frozen_through=excluded.frozen_through", (league, high_water))
+        connection.commit()
 
 
 def due_leagues(*, now: datetime | None = None) -> list[str]:
@@ -472,14 +582,20 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError:                                                       # pragma: no cover
         pass
     parser = argparse.ArgumentParser(description="Track sportsbook lines from The Odds API within the free quota")
-    parser.add_argument("command", choices=("run-due", "sweep", "status"))
-    parser.add_argument("--league", choices=tuple(SPORTS), default="cfb")
+    parser.add_argument("command", choices=("run-due", "sweep", "auto", "status"))
+    parser.add_argument("--league", choices=(*SPORTS, "all"), default="cfb")
     parser.add_argument("--force", action="store_true", help="skip the schedule slot (the credit budget still applies)")
     args = parser.parse_args(argv)
     if args.command == "status":
         print(json.dumps(status(), indent=2, default=str))
         return 0
-    result = run_due() if args.command == "run-due" else sweep(args.league, force=args.force)
+    if args.command == "run-due":
+        result = run_due()
+    elif args.command == "auto":
+        result = {league: auto(league) for league in (SPORTS if args.league == "all" else (args.league,))}
+        result = result if args.league == "all" else result[args.league]
+    else:
+        result = sweep(args.league if args.league != "all" else "cfb", force=args.force)
     print(json.dumps(result, indent=2, default=str))
     statuses = [result.get("status")] if "status" in result else [r.get("status") for r in result.values()]
     return 1 if "error" in statuses else 0

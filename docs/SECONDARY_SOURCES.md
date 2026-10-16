@@ -120,11 +120,22 @@ DraftKings, FanDuel, BetMGM and BetRivers (ESPN BET is kept if the feed offers i
 when this was written). Rows land in `odds_api_lines` in `cfb.sqlite3` / `nfl.sqlite3`, appended only when a
 book's number moves, with the matching game id where one can be found.
 
-Credits are the constraint, so a sweep is guarded three ways: a calendar slot must be due (college: Sunday
-night, Tue/Thu/Fri noon, three Saturday waves; NFL: Wed, Thu night, Sat, two Sunday windows, Monday), the free
-`/events` endpoint must show a game inside eight days, and a shared ledger plus the API's own
-remaining-credit header must leave room under a 450-credit monthly cap. Spreads and totals for the US region
-cost 2 credits per sweep whatever the slate size, so the schedule uses roughly 120 of the 500.
+Credits are the constraint, so every sweep is guarded: the free `/events` endpoint must show a game inside the
+look-ahead window, and a shared ledger plus the API's own remaining-credit header must leave room under a hard
+cap. Spreads and totals for the US region cost 2 credits per sweep whatever the slate size. Sweeps come from two
+places, and both feed the same ledger:
+
+* **Calendar slots** (college: Sunday night, Tue/Thu/Fri noon, and three Saturday waves at 10:00, 14:00 and 18:00
+  ET, each just ahead of an even-hour projections refresh; NFL: Wed, Thu night, Sat, two Sunday windows, Monday),
+  started by a 15-minute Render cron. Look-ahead eight days, hard cap 450 credits a month.
+* **The app's own refresh runs.** The `core` segment (6 and 18 ET) and the `projections` segment (every two hours
+  at :20) sweep the college books just before they re-freeze the picks, and the NFL availability lane does the
+  same for the NFL, so a pick captures a best line at most a couple of hours old. These are the loose, frequent
+  callers, so they get tighter gates: at least 3 hours since the league was last looked at, at most 3 sweeps per
+  league in any 24 hours (slots included), a game within 60 hours, and only 350 of the month's credits.
+
+The NFL picks are re-frozen only when lines newer than the last freeze are on file, so a quiet 15-minute tick
+costs one small read. Typical use is roughly 235 credits a month; the caps bound the worst case.
 
     python -m sports_aggregator.odds_api_tracker status
     python -m sports_aggregator.odds_api_tracker sweep --league cfb --force   # spends 2 credits

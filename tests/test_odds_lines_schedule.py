@@ -40,11 +40,11 @@ def _spend(when, league="cfb", cost=2, used=None, remaining=None):
 
 def test_due_leagues_is_empty_without_a_key(env, monkeypatch):
     monkeypatch.setenv("ODDS_API_KEY", "")
-    assert tracker.due_leagues(now=_saturday(11, 10)) == []
+    assert tracker.due_leagues(now=_saturday(10, 10)) == []
 
 
 def test_due_leagues_names_the_league_whose_slot_is_due(env):
-    assert tracker.due_leagues(now=_saturday(11, 10)) == ["cfb"]
+    assert tracker.due_leagues(now=_saturday(10, 10)) == ["cfb"]
 
 
 def test_due_leagues_is_empty_in_the_quiet_hours(env):
@@ -52,18 +52,18 @@ def test_due_leagues_is_empty_in_the_quiet_hours(env):
 
 
 def test_due_leagues_forgets_a_slot_once_it_has_been_swept(env):
-    _spend(_saturday(11, 12))
-    assert tracker.due_leagues(now=_saturday(11, 40)) == []
+    _spend(_saturday(10, 12))
+    assert tracker.due_leagues(now=_saturday(10, 40)) == []
 
 
 def test_due_leagues_is_empty_when_the_budget_is_spent(env):
     _spend(_saturday(9, 0) - timedelta(days=1), cost=tracker.MONTHLY_CAP)
-    assert tracker.due_leagues(now=_saturday(11, 10)) == []
+    assert tracker.due_leagues(now=_saturday(10, 10)) == []
 
 
 def test_due_leagues_makes_no_request(env):
     with patch.object(tracker.requests, "get", side_effect=AssertionError("no network allowed")):
-        tracker.due_leagues(now=_saturday(11, 10))
+        tracker.due_leagues(now=_saturday(10, 10))
 
 
 # ------------------------------------------------------------------ the web endpoint

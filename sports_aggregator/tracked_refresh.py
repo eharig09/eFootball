@@ -91,6 +91,40 @@ def _nearest_upcoming_week(repository, season: int) -> int | None:
     return int(week) if week is not None else None
 
 
+def _refresh_odds_lines(season: int, *, root: Path, log) -> dict:
+    """Sweep the tracked sportsbooks just before the manifest freezes the picks, so they capture the freshest best line.
+
+    The tracker decides whether a sweep is worth making (a calendar slot, or the gated refresh mode: a long minimum
+    gap, a daily cap, a smaller share of the month's free credits, and a game within about two days), so most calls
+    return at once and spend nothing. It is optional: a failure shows as a degraded step and never fails the segment,
+    and a missing key is listed as not configured.
+    """
+    started = datetime.now(timezone.utc)
+    base = {"step": "odds-lines", "optional": True, "parent_rss_mb": _rss_mb(), "child_peak_rss_mb": _children_rss_mb()}
+
+    def seconds() -> float:
+        return round((datetime.now(timezone.utc) - started).total_seconds(), 1)
+
+    if not (os.getenv("ODDS_API_KEY") or "").strip():
+        return {**base, "status": "skipped", "message": "needs ODDS_API_KEY (odds lines are not being tracked)", "seconds": 0.0}
+    try:
+        from sports_aggregator import odds_api_tracker
+
+        result = odds_api_tracker.auto("cfb")
+    except Exception as exc:
+        return {**base, "status": "failed", "message": f"{type(exc).__name__}: {exc}"[:200], "seconds": seconds()}
+    outcome = result.get("status")
+    if outcome == "ok":
+        message = (f"{result.get('mode')}: {result.get('rows_stored')} new line rows across {result.get('changed_games')} "
+                   f"games; {result.get('credits_remaining')} credits left")
+        return {**base, "status": "success", "message": message, "seconds": seconds()}
+    if outcome == "error":
+        return {**base, "status": "failed", "message": str(result.get("message"))[:200], "seconds": seconds()}
+    # not due, no games coming up, or the budget is spent: all expected, and none an issue
+    return {**base, "status": "success" if outcome in {"not-due", "no-games"} else "skipped",
+            "message": f"{outcome}: {result.get('message')}"[:200], "seconds": seconds()}
+
+
 def _refresh_two_engine_manifest(season: int, *, root: Path, log) -> dict:
     from sports_aggregator.cfb.repository import CFBRepository
 
@@ -244,8 +278,10 @@ def _segment_results(segment: str, season: int, *, root: Path, log, heartbeat) -
         )
         # Betting lines land in core. Re-evaluate the weekly manifest after
         # they do so a newly viable pick is surfaced on the next page load.
+        # The tracked books are swept first, so the picks freeze against the freshest best line.
         if heartbeat:
             heartbeat()
+        results.append(_refresh_odds_lines(season, root=root, log=log))
         results.append(_refresh_two_engine_manifest(season, root=root, log=log))
         return results
 
@@ -341,6 +377,9 @@ def _segment_results(segment: str, season: int, *, root: Path, log, heartbeat) -
         )
         if heartbeat:
             heartbeat()
+        # Every two hours, and it re-freezes the picks: the tracked books are swept just before, so a pick captures the
+        # best line at most two hours old. The tracker's own gates keep most of these ticks from spending anything.
+        results.append(_refresh_odds_lines(season, root=root, log=log))
         results.append(
             _refresh_two_engine_manifest(
                 season,

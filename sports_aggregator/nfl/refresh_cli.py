@@ -157,7 +157,29 @@ def _sync_market_lines(repository, season: int) -> None:
         print(f"nfl_market_lines: skipped ({exc.__class__.__name__}: {exc})")
 
 
-def _freeze_forecasts(repository, season: int) -> None:
+def _sweep_odds_and_freeze(season: int) -> None:
+    """Sweep the tracked books, then re-freeze the picks if lines newer than the last freeze are on file.
+
+    Runs on the availability lane, which wakes every fifteen minutes near kickoff. The tracker decides whether a sweep is
+    worth making and spends nothing otherwise; the picks are re-frozen only when a sweep (this one or a scheduled slot's)
+    left lines the last freeze has not seen, so a quiet tick costs one small read. Never fails the refresh.
+    """
+    if not (os.getenv("ODDS_API_KEY") or "").strip():
+        return                       # odds are not being tracked here, so there is nothing to sweep or to re-freeze for
+    try:
+        from sports_aggregator import odds_api_tracker as tracker
+
+        print("odds_lines: " + json.dumps(tracker.auto("nfl"), sort_keys=True, default=str))
+        pending, high_water = tracker.pending_freeze("nfl")
+        if pending:
+            if _freeze_forecasts(_nfl_repository(), season):
+                tracker.mark_frozen("nfl", high_water)
+                print("odds_lines: picks re-frozen for " + json.dumps(sorted(pending)))
+    except Exception as exc:
+        print(f"odds_lines: skipped ({exc.__class__.__name__}: {exc})")
+
+
+def _freeze_forecasts(repository, season: int) -> bool:
     """Store the upcoming week's picks in the immutable ledger behind /nfl/picks/record/.
 
     Runs beside the model-cache warm-up because the walk-forward inputs are
@@ -171,11 +193,13 @@ def _freeze_forecasts(repository, season: int) -> None:
         week = default_week(repository, season)
         if week is None:
             print("forecast_ledger: skipped (no upcoming week)")
-            return
+            return False
         stored = freeze_dashboard(repository, build_dashboard(repository, season, week))
         print("forecast_ledger: " + json.dumps({"week": week, "stored": stored}, sort_keys=True))
+        return True
     except Exception as exc:
         print(f"forecast_ledger: skipped ({exc.__class__.__name__}: {exc})")
+        return False
 
 
 def _sync_content(season: int) -> None:
@@ -434,6 +458,7 @@ def _run_segment(args, record: dict, started: datetime) -> int:
             _sync_rosters(args.season)
         elif args.segment == "availability":
             _sync_availability(args.season)
+            _sweep_odds_and_freeze(args.season)
         elif args.segment in _CORE_SEGMENTS:
             from sports_aggregator.nfl import sync as sync_module
             group, include_pbp = {
